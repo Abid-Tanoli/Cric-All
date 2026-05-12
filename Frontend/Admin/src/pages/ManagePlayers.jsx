@@ -63,6 +63,11 @@ export default function ManagePlayers() {
     setValue("Campus", p.Campus || "");
     setValue("imageUrl", p.imageUrl || "");
     setValue("team", p.team?._id || p.team || "");
+    setValue("category", p.category || "Other");
+    setValue("subCategory", p.subCategory || "");
+    setValue("ageGroup", p.ageGroup || "Open");
+    setValue("organization", p.organization || "");
+    setValue("address", p.address || { town: "", district: "", city: "", province: "", country: "Pakistan" });
   };
 
   const cancelEdit = () => {
@@ -243,6 +248,32 @@ export default function ManagePlayers() {
                   className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none font-bold text-slate-800 transition-all"
                   placeholder="https://..."
                 />
+              </div>
+
+              {/* Deep Categorization Section */}
+              <div className="bg-blue-50/50 p-4 rounded-xl border border-blue-100 space-y-3">
+                <label className="block text-[9px] font-black uppercase tracking-widest text-blue-900 mb-1">
+                  Categorization
+                </label>
+                <select {...register("category")} className="w-full p-2 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-800">
+                  {["School", "College", "University", "Organization", "Business", "Industry", "Club", "International", "Other"].map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+                <input {...register("subCategory")} placeholder="Sub-Category (e.g. CS, Eng)" className="w-full p-2 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-800" />
+                <select {...register("ageGroup")} className="w-full p-2 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-800">
+                  {["U-10", "U-13", "U-15", "U-17", "U-19", "Open"].map(a => <option key={a} value={a}>{a}</option>)}
+                </select>
+                <input {...register("organization")} placeholder="Institution Name" className="w-full p-2 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-800" />
+              </div>
+
+              {/* Location Section */}
+              <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-2">
+                <label className="block text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1">
+                  Location
+                </label>
+                <input {...register("address.town")} placeholder="Town" className="w-full p-2 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-800" />
+                <input {...register("address.district")} placeholder="District" className="w-full p-2 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-800" />
+                <input {...register("address.city")} placeholder="City" className="w-full p-2 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-800" />
+                <input {...register("address.province")} placeholder="Province" className="w-full p-2 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-800" />
               </div>
               <button
                 type="submit"

@@ -5,10 +5,26 @@ import { getIO } from "../socket/socket.js";
 
 export const getEvents = async (req, res) => {
   try {
-    const { eventType, status } = req.query;
+    const { eventType, status, category, subCategory, ageGroup, organization, city, search } = req.query;
     const query = {};
+    
     if (eventType) query.eventType = eventType;
     if (status) query.status = status;
+    if (category) query.category = category;
+    if (subCategory) query.subCategory = { $regex: subCategory, $options: "i" };
+    if (ageGroup) query.ageGroup = ageGroup;
+    if (organization) query.organization = { $regex: organization, $options: "i" };
+    if (city) query["address.city"] = { $regex: city, $options: "i" };
+    
+    if (search) {
+      query.$or = [
+        { name: { $regex: search, $options: "i" } },
+        { shortName: { $regex: search, $options: "i" } },
+        { organization: { $regex: search, $options: "i" } },
+        { "address.city": { $regex: search, $options: "i" } },
+        { "address.town": { $regex: search, $options: "i" } }
+      ];
+    }
 
     const events = await Event.find(query)
       .populate("teams", "name shortName logo")
@@ -64,7 +80,10 @@ export const getEvent = async (req, res) => {
 
 export const createEvent = async (req, res) => {
   try {
-    const { name, shortName, eventType, teams, format, startDate, endDate, venue, description, totalMatches, overs } = req.body;
+    const { 
+      name, shortName, eventType, teams, format, startDate, endDate, venue, description, totalMatches, overs,
+      category, subCategory, ageGroup, organization, address
+    } = req.body;
 
     if (!name || !eventType) {
       return res.status(400).json({ message: "Name and event type are required" });
@@ -97,7 +116,12 @@ export const createEvent = async (req, res) => {
       venue: venue || "",
       description: description || "",
       pointsTable,
-      status: "upcoming"
+      status: "upcoming",
+      category: category || "Other",
+      subCategory: subCategory || "",
+      ageGroup: ageGroup || "Open",
+      organization: organization || "",
+      address: address || { town: "", district: "", city: "", province: "", country: "Pakistan" }
     });
 
     await event.save();

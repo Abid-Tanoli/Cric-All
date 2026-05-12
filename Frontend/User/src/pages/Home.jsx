@@ -10,6 +10,7 @@ import { fetchMatches } from "../store/slices/matchesSlice";
 import { initAuthFromStorage, logout as doLogout, getStoredUser } from "../pages/auth/auth";
 import BlogGallery from "../components/BlogGallery";
 import { api } from "../services/api";
+import GlobalSearch from "../components/GlobalSearch";
 
 export function Home() {
    const dispatch = useDispatch();
@@ -58,10 +59,17 @@ export function Home() {
          {series.length > 0 && (
             <div className="bg-gradient-to-r from-[#031d44] via-[#0a2d5e] to-[#031d44] border-b border-white/10">
                <div className="max-w-7xl mx-auto px-4 py-8">
-                  <div className="flex items-center justify-between mb-6">
+                  <div className="flex flex-col md:flex-row md:items-center justify-between mb-6 gap-4">
                      <h2 className="text-white font-black uppercase tracking-widest text-sm flex items-center gap-2">
                         <span className="text-2xl">🏆</span> Series & Tournaments
                      </h2>
+                     <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
+                        {["All", "School", "College", "University", "Organization", "Business", "Industry"].map(cat => (
+                           <button key={cat} className="px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-full text-[10px] font-black text-blue-300 uppercase whitespace-nowrap transition-all">
+                              {cat}
+                           </button>
+                        ))}
+                     </div>
                      <Link to="/series" className="text-blue-300 text-xs font-black uppercase hover:text-white transition-colors">View All →</Link>
                   </div>
                   <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
@@ -94,9 +102,15 @@ export function Home() {
                      <div className="w-2 h-4 bg-red-600 rounded-full animate-pulse" />
                      Live & Upcoming Matches
                   </h2>
+                  <div className="flex-1 max-w-xl mx-8 hidden md:block">
+                     <GlobalSearch />
+                  </div>
                   <button className="text-blue-300 text-xs font-black uppercase hover:text-white transition-colors">
                      View All Matches →
                   </button>
+               </div>
+               <div className="md:hidden mb-6">
+                  <GlobalSearch />
                </div>
 
                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">

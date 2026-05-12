@@ -15,10 +15,24 @@ const teamSchema = new mongoose.Schema(
     },
     category: {
       type: String,
-      default: ""
-      // For international: country name (e.g., "Pakistan")
-      // For league: league name (e.g., "PSL", "IPL")
-      // For incubation: group name (e.g., "AL-Khidmat BanoQabil Incubation")
+      enum: ["School", "College", "University", "Organization", "Business", "Industry", "Club", "International", "Other"],
+      default: "Other"
+    },
+    subCategory: { type: String, default: "" },
+    ageGroup: { 
+      type: String, 
+      enum: ["U-10", "U-13", "U-15", "U-17", "U-19", "Open"],
+      default: "Open"
+    },
+    organization: { type: String, default: "" },
+    
+    // Detailed Address
+    address: {
+      town: { type: String, default: "" },
+      district: { type: String, default: "" },
+      city: { type: String, default: "" },
+      province: { type: String, default: "" },
+      country: { type: String, default: "Pakistan" }
     },
     ownername: {
       type: String,

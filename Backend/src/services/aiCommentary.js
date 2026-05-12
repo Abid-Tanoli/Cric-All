@@ -103,11 +103,17 @@ Variation Note: Use diverse vocabulary. Ensure the tone fits the match tempo. Ne
 
     // fallback logic
     if (!result.short) {
-      if (isWide) result.short = `${bowlerName} to ${batsmanName}, Wide ball.`;
-      else if (isNoBall) result.short = `${bowlerName} to ${batsmanName}, No Ball!`;
-      else if (isWicket) result.short = `${bowlerName} to ${batsmanName}, OUT!`;
-      else if (runs >= 4) result.short = `${bowlerName} to ${batsmanName}, ${runs} runs!`;
-      else result.short = `${bowlerName} to ${batsmanName}, no run.`;
+      const getRunLabel = () => {
+        if (isWicket) return "out!";
+        if (isWide) return "wide";
+        if (isNoBall) return "no ball";
+        if (runs === 0) return "no run";
+        if (runs === 1) return "1 run";
+        if (runs === 4) return "4 runs (FOUR)";
+        if (runs === 6) return "6 runs (SIX)";
+        return `${runs} runs`;
+      };
+      result.short = `${bowlerName} to ${batsmanName}, ${getRunLabel()}`;
     }
 
     if (!result.vivid) {

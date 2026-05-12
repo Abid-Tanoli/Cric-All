@@ -74,7 +74,11 @@ export const getMatch = async (req, res) => {
 
 export const createMatch = async (req, res) => {
   try {
-    const { title, venue, matchType, matchCategory, matchSubcategory, startAt, teams, powerplayConfig, series, seriesMatchNumber } = req.body;
+    const { 
+      title, venue, matchType, matchCategory, matchSubcategory, startAt, teams, 
+      powerplayConfig, series, seriesMatchNumber,
+      category, subCategory, ageGroup, organization, address
+    } = req.body;
 
     if (!teams || teams.length !== 2) {
       return res.status(400).json({
@@ -126,8 +130,12 @@ export const createMatch = async (req, res) => {
       title: title || `${team1.name} vs ${team2.name}`,
       venue: venue || "",
       matchType: matchType || "T20",
-      matchCategory: matchCategory || "local-club",
-      matchSubcategory: matchSubcategory || "",
+      matchCategory: matchCategory || category || "Other",
+      category: category || matchCategory || "Other",
+      subCategory: subCategory || "",
+      ageGroup: ageGroup || "Open",
+      organization: organization || "",
+      address: address || { town: "", district: "", city: "", province: "", country: "Pakistan" },
       tournament: req.body.tournamentId || null,
       startAt,
       teams,
@@ -138,7 +146,7 @@ export const createMatch = async (req, res) => {
       seriesMatchNumber: seriesMatchNumber || null
     });
 
-    await match.save();
+    await match.save({ validateModifiedOnly: true });
 
     // Link match to tournament if provided
     if (req.body.tournamentId) {
@@ -214,7 +222,7 @@ export const updateMatch = async (req, res) => {
     if (series !== undefined) match.series = series;
     if (seriesMatchNumber !== undefined) match.seriesMatchNumber = seriesMatchNumber;
 
-    await match.save();
+    await match.save({ validateModifiedOnly: true });
 
     await match.populate("teams", "name shortName logo");
     await match.populate("innings.team", "name shortName");
@@ -278,7 +286,7 @@ export const setMOM = async (req, res) => {
     }
 
     match.manOfMatch = playerId;
-    await match.save();
+    await match.save({ validateModifiedOnly: true });
 
     await match.populate("manOfMatch", "name role");
     await match.populate("teams", "name shortName logo");
@@ -375,7 +383,7 @@ export const updateMatchStatus = async (req, res) => {
     }
 
     match.status = status;
-    await match.save();
+    await match.save({ validateModifiedOnly: true });
 
     await match.populate("teams", "name shortName logo");
 
@@ -439,7 +447,7 @@ export const setPlayingXI = async (req, res) => {
       match.playingXI.push({ team: teamId, players });
     }
 
-    await match.save();
+    await match.save({ validateModifiedOnly: true });
     const updatedMatch = await populateMatch(Match.findById(matchId));
 
     try {
@@ -489,7 +497,7 @@ export const setOpeners = async (req, res) => {
       innings.battingOrder.push(batsman2Id);
     }
 
-    await match.save();
+    await match.save({ validateModifiedOnly: true });
     const updatedMatch = await populateMatch(Match.findById(matchId));
 
     try {
@@ -554,7 +562,7 @@ export const updateToss = async (req, res) => {
       match.innings[1].team = bowlingFirst;
     }
 
-    await match.save();
+    await match.save({ validateModifiedOnly: true });
     const updatedMatch = await populateMatch(Match.findById(matchId));
 
     try {
@@ -635,7 +643,7 @@ export const setSquad15 = async (req, res) => {
       match.squad15.push({ team: teamId, players, captain, viceCaptain, wicketKeepers });
     }
 
-    await match.save();
+    await match.save({ validateModifiedOnly: true });
     await match.populate("squad15.team", "name shortName logo");
     await match.populate("squad15.players", "name role playingRole");
 
@@ -689,7 +697,7 @@ export const setTwelfthMan = async (req, res) => {
       match.twelfthMan.push({ team: teamId, player: playerId });
     }
 
-    await match.save();
+    await match.save({ validateModifiedOnly: true });
     await match.populate("twelfthMan.team", "name shortName logo");
     await match.populate("twelfthMan.player", "name role playingRole");
 
@@ -749,7 +757,7 @@ export const setBowlingXI = async (req, res) => {
       match.bowlingXI.push({ team: teamId, players });
     }
 
-    await match.save();
+    await match.save({ validateModifiedOnly: true });
     await match.populate("bowlingXI.team", "name shortName logo");
     await match.populate("bowlingXI.players", "name role playingRole");
 
@@ -826,7 +834,7 @@ export const setTeamRoles = async (req, res) => {
       match.teamRoles.push({ team: teamId, captain, viceCaptain, wicketKeepers });
     }
 
-    await match.save();
+    await match.save({ validateModifiedOnly: true });
     await match.populate("teamRoles.team", "name shortName logo");
     await match.populate("teamRoles.captain", "name role playingRole");
     await match.populate("teamRoles.viceCaptain", "name role playingRole");

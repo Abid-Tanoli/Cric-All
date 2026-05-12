@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import { useSelector } from 'react-redux';
+import { useParams, useNavigate, NavLink } from 'react-router-dom';
 import BallByBallFeed from '../components/BallByBallFeed';
 import CricketGround from '../components/CricketGround';
 import MatchSetupWizard from '../components/ScoreManagement/MatchSetupWizard';
@@ -10,6 +11,35 @@ import Scorecard from '../components/Scorecard';
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
 const API_KEY = import.meta.env.VITE_ANTHROPIC_API_KEY || '';
+
+const TAB_ROUTE_BY_ID = {
+    live: '',
+    scorecard: 'scorecard',
+    commentary: 'commentary',
+    stats: 'live-stats',
+    overs: 'overs',
+    xi: 'playing-xi',
+    table: 'table',
+    photos: 'photos',
+    videos: 'videos',
+    blogs: 'blogs'
+};
+
+const TAB_ID_BY_ROUTE = Object.entries(TAB_ROUTE_BY_ID).reduce((acc, [id, route]) => {
+    if (route) acc[route] = id;
+    return acc;
+}, {});
+
+const getScoreTabPath = (matchId, tabId) => {
+    const route = TAB_ROUTE_BY_ID[tabId] || '';
+    return `/admin/score/${matchId}${route ? `/${route}` : ''}`;
+};
+
+const getTabIdFromRoute = (tabId) => {
+    if (!tabId) return 'live';
+    if (TAB_ROUTE_BY_ID[tabId] !== undefined) return tabId;
+    return TAB_ID_BY_ROUTE[tabId] || 'live';
+};
 
 const FIELD_POSITIONS = [
     // Close Infield (radius 50-80px from center)
@@ -62,6 +92,14 @@ const WICKET_TYPES = ['bowled', 'caught', 'lbw', 'run out', 'stumped', 'hit wick
 
 export default function ManageScore() {
     const { token } = useSelector((state) => state.auth);
+    const { matchId, tabId } = useParams();
+    const navigate = useNavigate();
+    const activeTab = getTabIdFromRoute(tabId);
+    const setActiveTab = (tab) => {
+        const targetMatchId = selectedMatch?._id || matchId;
+        if (targetMatchId) navigate(getScoreTabPath(targetMatchId, tab));
+    };
+
     const [matches, setMatches] = useState([]);
     const [selectedMatch, setSelectedMatch] = useState(null);
     const [loading, setLoading] = useState(false);
@@ -77,7 +115,6 @@ export default function ManageScore() {
     const [isDRSModalOpen, setIsDRSModalOpen] = useState(false);
     const [drsData, setDrsData] = useState({ result: 'upheld', type: 'lbw' });
 
-    const [activeTab, setActiveTab] = useState('live');
     const [showSelectionModal, setShowSelectionModal] = useState('');
     const [useAICommentary, setUseAICommentary] = useState(true);
     const [activeGroundZone, setActiveGroundZone] = useState(null); // { x, y, zone, direction, shotName, autoRuns }
@@ -107,8 +144,8 @@ export default function ManageScore() {
 
     const formatOvers = (balls) => {
         if (!balls) return "0.0";
-        const overs = Math.floor((balls - 1) / 6);
-        const rem = ((balls - 1) % 6) + 1;
+        const overs = Math.floor(balls / 6);
+        const rem = balls % 6;
         return `${overs}.${rem}`;
     };
 
@@ -201,6 +238,8 @@ export default function ManageScore() {
     // Use squad for batting/bowling player lists (larger pool than just XI)
     const battingXI = useMemo(() => getSquad(battingTeamId), [selectedMatch, battingTeamId]);
     const bowlingXI = useMemo(() => getSquad(bowlingTeamTeam?._id), [selectedMatch, bowlingTeamTeam]);
+    const battingPlayingXI = useMemo(() => getPlayingXI(battingTeamId), [selectedMatch, battingTeamId]);
+    const bowlingPlayingXI = useMemo(() => getPlayingXI(bowlingTeamTeam?._id), [selectedMatch, bowlingTeamTeam]);
 
     // Derived current match state
     const strikerId = curInn?.onStrikeBatsman?._id || curInn?.onStrikeBatsman;
@@ -242,6 +281,12 @@ export default function ManageScore() {
     useEffect(() => {
         fetchMatches();
     }, []);
+
+    useEffect(() => {
+        if (matchId && (!selectedMatch || selectedMatch._id !== matchId)) {
+            handleSelectMatch(matchId);
+        }
+    }, [matchId]);
 
     const fetchMatches = async () => {
         try {
@@ -693,7 +738,7 @@ export default function ManageScore() {
                 <h1 className="text-3xl font-black text-cric-text mb-8 uppercase tracking-tight">Select Match to Score</h1>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     {matches.map(m => (
-                        <div key={m._id} onClick={() => handleSelectMatch(m._id)} className="bg-cric-card p-8 rounded-3xl shadow-sm border border-cric-border hover:border-cric-accent cursor-pointer transition-all relative group overflow-hidden">
+                        <div key={m._id} onClick={() => navigate(`/admin/score/${m._id}`)} className="bg-cric-card p-8 rounded-3xl shadow-sm border border-cric-border hover:border-cric-accent cursor-pointer transition-all relative group overflow-hidden">
                             <div className="absolute top-0 left-0 w-2 h-full bg-cric-blue"></div>
                             <button
                                 onClick={(e) => handleDeleteMatch(m._id, e)}
@@ -767,16 +812,17 @@ export default function ManageScore() {
                 {/* Tab Navigation */}
                 <div className="flex bg-cric-card rounded-full p-1 border border-cric-border mb-6 overflow-x-auto no-scrollbar">
                     {tabs.map(tab => (
-                        <button
+                        <NavLink
                             key={tab.id}
-                            onClick={() => setActiveTab(tab.id)}
-                            className={`flex-1 flex items-center justify-center gap-2 py-4 px-6 rounded-full transition-all whitespace-nowrap ${activeTab === tab.id ? 'bg-cric-accent text-white shadow-lg shadow-cric-accent/20' : 'text-cric-muted hover:text-cric-text hover:bg-black/5 dark:hover:bg-white/5'}`}
+                            to={getScoreTabPath(selectedMatch._id, tab.id)}
+                            end={tab.id === 'live'}
+                            className={() => `flex-1 flex items-center justify-center gap-2 py-4 px-6 rounded-full transition-all whitespace-nowrap ${activeTab === tab.id ? 'bg-cric-accent text-white shadow-lg shadow-cric-accent/20' : 'text-cric-muted hover:text-cric-text hover:bg-black/5 dark:hover:bg-white/5'}`}
                         >
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d={tab.icon} />
                             </svg>
                             <span className="text-[10px] font-black tracking-widest uppercase">{tab.label}</span>
-                        </button>
+                        </NavLink>
                     ))}
                 </div>
 
@@ -825,8 +871,8 @@ export default function ManageScore() {
                             curInn={curInn}
                             battingTeamName={battingTeamTeam?.name || 'Batting Team'}
                             bowlingTeamName={bowlingTeamTeam?.name || 'Bowling Team'}
-                            battingXI={battingXI}
-                            bowlingXI={bowlingXI}
+                            battingXI={battingPlayingXI}
+                            bowlingXI={bowlingPlayingXI}
                             allPlayers={[...battingXI, ...bowlingXI]}
                             formatOvers={formatOvers}
                             selectedMatch={selectedMatch}
@@ -1012,7 +1058,7 @@ export default function ManageScore() {
                                         {getPlayingXI(team?._id).map((p, pIdx) => (
                                             <div key={pIdx} className="bg-black/[0.03] dark:bg-white/[0.03] p-4 rounded-2xl border border-cric-border/50 flex justify-between items-center group hover:border-cric-accent/30 transition-all">
                                                 <span className="font-bold text-cric-text group-hover:text-cric-accent transition-all">{p.name}</span>
-                                                <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Player</span>
+                                                <span className="text-[10px] font-black text-cric-accent uppercase tracking-widest">{p.playingRole || 'Player'}</span>
                                             </div>
                                         ))}
                                     </div>
@@ -1177,13 +1223,51 @@ export default function ManageScore() {
                             )}
 
                             {showSelectionModal === 'bowler' && (
-                                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                                    {bowlingXI.map(p => (
-                                        <button key={p._id} onClick={() => setRole(p._id, 'bowler')} className="p-8 rounded-[2rem] bg-black/5 dark:bg-white/5 border border-cric-border hover:border-blue-500 hover:bg-blue-500/5 transition-all text-left">
-                                            <div className="text-xl font-black text-cric-text">{p.name}</div>
-                                            <div className="text-[9px] font-black text-slate-500 uppercase tracking-widest mt-2 select-none">Select Bowler</div>
-                                        </button>
-                                    ))}
+                                <div className="space-y-8">
+                                    {(() => {
+                                        const mainBowlers = bowlingXI.filter(p => 
+                                            ['Bowler', 'All-Rounder', 'Bowling-All-Rounder'].includes(p.playingRole)
+                                        );
+                                        const partTimers = bowlingXI.filter(p => 
+                                            !['Bowler', 'All-Rounder', 'Bowling-All-Rounder'].includes(p.playingRole)
+                                        );
+
+                                        return (
+                                            <>
+                                                {mainBowlers.length > 0 && (
+                                                    <div>
+                                                        <h4 className="text-[10px] font-black uppercase text-slate-500 tracking-widest mb-4 pl-2">Main Bowlers</h4>
+                                                        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                                                            {mainBowlers.map(p => (
+                                                                <button key={p._id} onClick={() => setRole(p._id, 'bowler')} className="p-6 rounded-[2rem] bg-black/5 dark:bg-white/5 border border-cric-border hover:border-blue-500 hover:bg-blue-500/5 transition-all text-left">
+                                                                    <div className="text-lg font-black text-cric-text">{p.name}</div>
+                                                                    <div className="text-[9px] font-black text-slate-500 uppercase tracking-widest mt-2 select-none">
+                                                                        {p.bowlingStyle && p.bowlingStyle !== 'Not Applicable' ? p.bowlingStyle : 'BOWLER'}
+                                                                    </div>
+                                                                </button>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                )}
+
+                                                {partTimers.length > 0 && (
+                                                    <div className="pt-4 border-t border-cric-border/30">
+                                                        <h4 className="text-[10px] font-black uppercase text-slate-500 tracking-widest mb-4 pl-2">Part-timer Bowlers</h4>
+                                                        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                                                            {partTimers.map(p => (
+                                                                <button key={p._id} onClick={() => setRole(p._id, 'bowler')} className="p-6 rounded-[2rem] bg-black/5 dark:bg-white/5 border border-cric-border hover:border-blue-500 hover:bg-blue-500/5 transition-all text-left">
+                                                                    <div className="text-lg font-black text-cric-text">{p.name}</div>
+                                                                    <div className="text-[9px] font-black text-slate-500 uppercase tracking-widest mt-2 select-none">
+                                                                        {p.bowlingStyle && p.bowlingStyle !== 'Not Applicable' ? p.bowlingStyle : 'PART-TIMER'}
+                                                                    </div>
+                                                                </button>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </>
+                                        );
+                                    })()}
                                 </div>
                             )}
                         </div>

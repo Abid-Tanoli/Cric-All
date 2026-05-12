@@ -160,17 +160,43 @@ const matchSchema = new mongoose.Schema(
     matchCategory: {
       type: String,
       enum: [
+        "School",
+        "College",
+        "University",
+        "Organization",
+        "Business",
+        "Industry",
+        "Club",
+        "International",
         "international",
-        "league",
-        "domestic",
-        "local-club",
-        "incubation"
+        "Other"
       ],
-      default: "local-club"
+      default: "Other"
     },
-    matchSubcategory: {
+    category: {
+      type: String,
+      enum: ["School", "College", "University", "Organization", "Business", "Industry", "Club", "International", "international", "Other"],
+      default: "Other"
+    },
+    subCategory: {
       type: String,
       default: ""
+    },
+    ageGroup: {
+      type: String,
+      enum: ["U-10", "U-13", "U-15", "U-17", "U-19", "Open"],
+      default: "Open"
+    },
+    organization: {
+      type: String,
+      default: ""
+    },
+    address: {
+      town: String,
+      district: String,
+      city: String,
+      province: String,
+      country: { type: String, default: "Pakistan" }
     },
     tournament: {
       type: mongoose.Schema.Types.ObjectId,

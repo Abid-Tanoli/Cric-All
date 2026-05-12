@@ -52,8 +52,13 @@ const Teams = () => {
         setCurrentTeam(team);
         setValue('name', team.name);
         setValue('shortName', team.shortName);
-        setValue('owner', team.owner);
+        setValue('ownername', team.ownername);
         setValue('logo', team.logo);
+        setValue('category', team.category);
+        setValue('subCategory', team.subCategory);
+        setValue('ageGroup', team.ageGroup);
+        setValue('organization', team.organization);
+        setValue('address', team.address || { town: "", district: "", city: "", province: "", country: "Pakistan" });
     };
 
     const handleDelete = async (id) => {
@@ -102,44 +107,72 @@ const Teams = () => {
                 <h2 className="text-2xl font-bold text-[#031d44] mb-4">
                     {editMode ? 'Edit Team' : 'Create New Team'}
                 </h2>
-                <form onSubmit={handleSubmit(onSubmit)} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                    <input
-                        {...register('name', { required: true })}
-                        placeholder="Team Name"
-                        className="border border-slate-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-[#031d44]"
-                    />
-                    <input
-                        {...register('shortName', { required: true })}
-                        placeholder="Short Name"
-                        className="border border-slate-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-[#031d44]"
-                    />
-                    <input
-                        {...register('owner')}
-                        placeholder="Owner"
-                        className="border border-slate-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-[#031d44]"
-                    />
-                    <input
-                        {...register('logo')}
-                        placeholder="Logo URL"
-                        className="border border-slate-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-[#031d44]"
-                    />
-                    <div className="flex gap-2 col-span-full">
-                        <button
-                            type="submit"
-                            className="bg-[#031d44] hover:bg-slate-800 text-white font-black text-xs uppercase tracking-widest rounded-xl px-6 py-3"
-                        >
-                            {editMode ? 'Update Team' : 'Create Team'}
+                <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                        <div>
+                            <label className="text-[10px] font-black uppercase text-slate-400 block mb-1">Team Name *</label>
+                            <input {...register('name', { required: true })} placeholder="Team Name" className="w-full border border-slate-300 rounded-xl px-4 py-3 focus:ring-2 focus:ring-[#031d44]" />
+                        </div>
+                        <div>
+                            <label className="text-[10px] font-black uppercase text-slate-400 block mb-1">Short Name *</label>
+                            <input {...register('shortName', { required: true })} placeholder="Short Name" className="w-full border border-slate-300 rounded-xl px-4 py-3 focus:ring-2 focus:ring-[#031d44]" />
+                        </div>
+                        <div>
+                            <label className="text-[10px] font-black uppercase text-slate-400 block mb-1">Owner Name</label>
+                            <input {...register('ownername')} placeholder="Owner" className="w-full border border-slate-300 rounded-xl px-4 py-3 focus:ring-2 focus:ring-[#031d44]" />
+                        </div>
+                        <div>
+                            <label className="text-[10px] font-black uppercase text-slate-400 block mb-1">Logo URL</label>
+                            <input {...register('logo')} placeholder="Logo URL" className="w-full border border-slate-300 rounded-xl px-4 py-3 focus:ring-2 focus:ring-[#031d44]" />
+                        </div>
+                    </div>
+
+                    <div className="bg-blue-50/50 p-6 rounded-2xl border border-blue-100 space-y-4">
+                        <h4 className="text-xs font-black text-[#031d44] uppercase tracking-widest flex items-center gap-2">
+                            <span className="text-lg">🏷️</span> Team Categorization
+                        </h4>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div>
+                                <label className="text-[10px] font-black uppercase text-slate-400 block mb-1">Category</label>
+                                <select {...register("category")} className="w-full p-3 bg-white border border-slate-200 rounded-xl font-bold text-slate-800">
+                                    {["School", "College", "University", "Organization", "Business", "Industry", "Club", "International", "Other"].map(c => <option key={c} value={c}>{c}</option>)}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="text-[10px] font-black uppercase text-slate-400 block mb-1">Sub-Category / Faculty</label>
+                                <input {...register("subCategory")} placeholder="e.g., Pre-Medical, Engineering" className="w-full p-3 bg-white border border-slate-200 rounded-xl font-bold text-slate-800" />
+                            </div>
+                            <div>
+                                <label className="text-[10px] font-black uppercase text-slate-400 block mb-1">Age Group</label>
+                                <select {...register("ageGroup")} className="w-full p-3 bg-white border border-slate-200 rounded-xl font-bold text-slate-800">
+                                    {["U-10", "U-13", "U-15", "U-17", "U-19", "Open"].map(a => <option key={a} value={a}>{a}</option>)}
+                                </select>
+                            </div>
+                        </div>
+                        <div>
+                            <label className="text-[10px] font-black uppercase text-slate-400 block mb-1">Institution / Organization Name</label>
+                            <input {...register("organization")} placeholder="e.g., BanoQabil, Al-Khidmat Incubations" className="w-full p-3 bg-white border border-slate-200 rounded-xl font-bold text-slate-800" />
+                        </div>
+                    </div>
+
+                    <div className="bg-slate-50 p-6 rounded-2xl border border-slate-200 space-y-4">
+                        <h4 className="text-xs font-black text-[#031d44] uppercase tracking-widest flex items-center gap-2">
+                            <span className="text-lg">📍</span> Address / Location
+                        </h4>
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                            <input {...register("address.town")} placeholder="Town / Area" className="w-full p-3 bg-white border border-slate-200 rounded-xl font-bold text-slate-800" />
+                            <input {...register("address.district")} placeholder="District" className="w-full p-3 bg-white border border-slate-200 rounded-xl font-bold text-slate-800" />
+                            <input {...register("address.city")} placeholder="City" className="w-full p-3 bg-white border border-slate-200 rounded-xl font-bold text-slate-800" />
+                            <input {...register("address.province")} placeholder="Province" className="w-full p-3 bg-white border border-slate-200 rounded-xl font-bold text-slate-800" />
+                        </div>
+                    </div>
+
+                    <div className="flex gap-2 pt-4 border-t">
+                        <button type="submit" className="bg-[#031d44] hover:bg-slate-800 text-white font-black text-xs uppercase tracking-widest rounded-xl px-8 py-4 shadow-lg transition-all">
+                            {editMode ? 'Update Team Details' : 'Register New Team'}
                         </button>
                         {editMode && (
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    reset();
-                                    setEditMode(false);
-                                    setCurrentTeam(null);
-                                }}
-                                className="bg-slate-200 hover:bg-slate-300 text-[#031d44] font-black text-xs uppercase tracking-widest rounded-xl px-6 py-3"
-                            >
+                            <button type="button" onClick={() => { reset(); setEditMode(false); setCurrentTeam(null); }} className="bg-slate-200 hover:bg-slate-300 text-[#031d44] font-black text-xs uppercase tracking-widest rounded-xl px-8 py-4 transition-all">
                                 Cancel
                             </button>
                         )}

@@ -518,7 +518,7 @@ export const createTournamentMatch = async (req, res) => {
       status: "upcoming"
     });
 
-    await match.save();
+    await match.save({ validateModifiedOnly: true });
     await match.populate("teams", "name shortName logo");
 
     // Add match to tournament

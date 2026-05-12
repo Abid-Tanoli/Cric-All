@@ -32,6 +32,8 @@ export default function App() {
       <Route path="/admin/teams" element={<ProtectedRoute><Layout><Teams /></Layout></ProtectedRoute>} />
       <Route path="/admin/players" element={<ProtectedRoute><Layout><ManagePlayers /></Layout></ProtectedRoute>} />
       <Route path="/admin/score" element={<ProtectedRoute><Layout><ManageScore /></Layout></ProtectedRoute>} />
+      <Route path="/admin/score/:matchId" element={<ProtectedRoute><Layout><ManageScore /></Layout></ProtectedRoute>} />
+      <Route path="/admin/score/:matchId/:tabId" element={<ProtectedRoute><Layout><ManageScore /></Layout></ProtectedRoute>} />
       <Route path="/admin/bulk-import" element={<ProtectedRoute><Layout><BulkImport /></Layout></ProtectedRoute>} />
       <Route path="/admin/blogs" element={<ProtectedRoute><Layout><Blogs /></Layout></ProtectedRoute>} />
       <Route path="/admin/rankings" element={<ProtectedRoute><Layout><Rankings /></Layout></ProtectedRoute>} />

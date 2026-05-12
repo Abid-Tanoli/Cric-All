@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef } from 'react';
 
 const LiveScoringPanel = ({
     battingXI,
@@ -13,8 +13,36 @@ const LiveScoringPanel = ({
     selectedMatch,
     formattedHistory,
     formatOvers,
-    onRetire
 }) => {
+    const scrollRef = useRef(null);
+
+    const scrollToOver = (direction) => {
+        if (!scrollRef.current) return;
+        const container = scrollRef.current;
+        const markers = Array.from(container.querySelectorAll('[data-type="over"]'));
+        if (markers.length === 0) return;
+
+        const currentScroll = container.scrollLeft;
+        let target = null;
+
+        if (direction === 'next') { // Older history (Right)
+            target = markers.find(m => m.offsetLeft > currentScroll + 50);
+        } else { // Newer history (Left)
+            target = [...markers].reverse().find(m => m.offsetLeft < currentScroll - 50);
+        }
+
+        if (target) {
+            container.scrollTo({
+                left: target.offsetLeft - 12,
+                behavior: 'smooth'
+            });
+        } else if (direction === 'prev') {
+            container.scrollTo({ left: 0, behavior: 'smooth' });
+        } else {
+            container.scrollTo({ left: container.scrollWidth, behavior: 'smooth' });
+        }
+    };
+
     const isStrikerOut = strikerStats?.isOut || strikerStats?.isRetiredHurt || strikerStats?.isRetired;
     const isNonStrikerOut = nonStrikerStats?.isOut || nonStrikerStats?.isRetiredHurt || nonStrikerStats?.isRetired;
 
@@ -123,7 +151,29 @@ const LiveScoringPanel = ({
                         </div>
                     </div>
                 </div>
-                <div className="flex items-center gap-3 overflow-x-auto pb-4 no-scrollbar">
+                
+                <div className="relative group -mx-8 px-8">
+                    {/* Navigation Arrows */}
+                    <button 
+                        onClick={() => scrollToOver('prev')}
+                        className="absolute left-2 top-1/2 -translate-y-1/2 z-10 w-9 h-9 flex items-center justify-center bg-white/10 hover:bg-cric-accent text-white rounded-full border border-white/20 opacity-0 group-hover:opacity-100 transition-all shadow-xl backdrop-blur-md"
+                        title="Newer Overs"
+                    >
+                        <span className="text-xl font-bold">‹</span>
+                    </button>
+
+                    <button 
+                        onClick={() => scrollToOver('next')}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 z-10 w-9 h-9 flex items-center justify-center bg-white/10 hover:bg-cric-accent text-white rounded-full border border-white/20 opacity-0 group-hover:opacity-100 transition-all shadow-xl backdrop-blur-md"
+                        title="Previous Overs"
+                    >
+                        <span className="text-xl font-bold">›</span>
+                    </button>
+
+                    <div 
+                        ref={scrollRef}
+                        className="flex items-center gap-3 overflow-x-auto pb-4 no-scrollbar scroll-smooth"
+                    >
                     {(() => {
                         const getOrdinal = (n) => {
                             const s = ["th", "st", "nd", "rd"];
@@ -131,14 +181,27 @@ const LiveScoringPanel = ({
                             return (s[(v - 20) % 10] || s[v] || s[0]);
                         };
 
-                        const history = [...formattedHistory].slice(-24);
+                        // Calculate runs per over
+                        const overRuns = formattedHistory.reduce((acc, ball) => {
+                            const ov = ball.overNumber;
+                            if (acc[ov] === undefined) acc[ov] = 0;
+                            acc[ov] += (ball.runs || 0) + (ball.isWide || ball.isNoBall ? 1 : 0);
+                            return acc;
+                        }, {});
+
+                        // Show more history to allow scrolling
+                        const history = [...formattedHistory].slice(-60);
                         const elements = [];
                         let currentOver = -1;
 
                         history.forEach((ball, i) => {
                             if (ball.overNumber !== currentOver) {
                                 if (currentOver !== -1) {
-                                    elements.push({ type: 'over', label: `${currentOver + 1}${getOrdinal(currentOver + 1)}` });
+                                    elements.push({ 
+                                        type: 'over', 
+                                        label: `${currentOver + 1}${getOrdinal(currentOver + 1)}`,
+                                        runs: overRuns[currentOver] || 0
+                                    });
                                 }
                                 currentOver = ball.overNumber;
                             }
@@ -146,14 +209,25 @@ const LiveScoringPanel = ({
                         });
                         
                         if (currentOver !== -1) {
-                            elements.push({ type: 'over', label: `${currentOver + 1}${getOrdinal(currentOver + 1)}` });
+                            elements.push({ 
+                                type: 'over', 
+                                label: `${currentOver + 1}${getOrdinal(currentOver + 1)}`,
+                                runs: overRuns[currentOver] || 0
+                            });
                         }
 
                         return elements.reverse().map((el, idx) => (
                             el.type === 'over' ? (
-                                <div key={`ov-${idx}`} className="flex flex-col items-center justify-center min-w-[60px] h-12 bg-black/20 rounded-2xl border border-white/5 shrink-0 mx-2">
+                                <div 
+                                    key={`ov-${idx}`} 
+                                    data-type="over"
+                                    className="flex items-center justify-center min-w-[90px] h-9 bg-cric-accent/10 rounded-full border border-cric-accent/30 shrink-0 mx-2 px-4 shadow-sm backdrop-blur-sm"
+                                >
                                     <span className="text-[10px] font-black text-cric-accent uppercase tracking-tighter">{el.label}</span>
-                                    <span className="text-[7px] font-bold text-slate-500 uppercase">Over</span>
+                                    <span className="mx-1.5 text-[10px] text-cric-accent/40 font-bold">•</span>
+                                    <span className="text-[12px] font-black text-white/90 tabular-nums">
+                                        {el.runs}
+                                    </span>
                                 </div>
                             ) : (
                                 <div key={`ball-${idx}`} className={`w-12 h-12 rounded-full flex items-center justify-center font-black text-sm border-2 shrink-0 transition-all hover:scale-110 cursor-default ${el.isWicket ? 'bg-red-600 border-red-400 text-white shadow-lg shadow-red-600/20 animate-pulse' : el.runs === 4 ? 'bg-blue-600 border-blue-400 text-white shadow-lg shadow-blue-600/20' : el.runs === 6 ? 'bg-purple-600 border-purple-400 text-white shadow-lg shadow-purple-600/20' : 'bg-white/5 border-white/10 text-slate-300'}`}>
@@ -163,6 +237,7 @@ const LiveScoringPanel = ({
                         ));
                     })()}
                 </div>
+            </div>
             </div>
 
             {/* Last Ball Analysis */}
@@ -174,7 +249,23 @@ const LiveScoringPanel = ({
                             <div className="text-xl font-black text-cric-accent whitespace-nowrap">{formatOvers(formattedHistory[formattedHistory.length - 1].ballNumber)}</div>
                             <div className="space-y-2">
                                 <div className="text-lg font-bold text-slate-900 leading-tight mb-3">
-                                    {formattedHistory[formattedHistory.length - 1].commentary || `${formattedHistory[formattedHistory.length - 1].bowlerName} to ${formattedHistory[formattedHistory.length - 1].batsmanName}, ${formattedHistory[formattedHistory.length - 1].notation || 'no run'}`}
+                                    {(() => {
+                                        const lastBall = formattedHistory[formattedHistory.length - 1];
+                                        if (lastBall.commentary) return lastBall.commentary;
+                                        
+                                        const runs = lastBall.runs || 0;
+                                        const getRunLabel = () => {
+                                            if (lastBall.isWicket) return "out!";
+                                            if (lastBall.isWide) return "wide";
+                                            if (lastBall.isNoBall) return "no ball";
+                                            if (runs === 0) return "no run";
+                                            if (runs === 1) return "1 run";
+                                            if (lastBall.runs === 4) return "4 runs (FOUR)";
+                                            if (lastBall.runs === 6) return "6 runs (SIX)";
+                                            return `${runs} runs`;
+                                        };
+                                        return `${lastBall.bowlerName || 'Bowler'} to ${lastBall.batsmanName || 'Batsman'}, ${getRunLabel()}`;
+                                    })()}
                                 </div>
                                 {formattedHistory[formattedHistory.length - 1].vividCommentary && formattedHistory[formattedHistory.length - 1].vividCommentary !== formattedHistory[formattedHistory.length - 1].commentary && (
                                     <div className="bg-black/2 p-4 rounded-2xl border border-black/5 space-y-2">

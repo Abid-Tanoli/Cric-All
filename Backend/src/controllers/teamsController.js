@@ -4,11 +4,25 @@ import { getIO } from "../socket/socket.js";
 
 export const listTeams = async (req, res) => {
   try {
-    const { type, category } = req.query;
+    const { type, category, subCategory, ageGroup, organization, city, search } = req.query;
 
     const filter = {};
     if (type) filter.type = type;
     if (category) filter.category = category;
+    if (subCategory) filter.subCategory = { $regex: subCategory, $options: "i" };
+    if (ageGroup) filter.ageGroup = ageGroup;
+    if (organization) filter.organization = { $regex: organization, $options: "i" };
+    if (city) filter["address.city"] = { $regex: city, $options: "i" };
+
+    if (search) {
+      filter.$or = [
+        { name: { $regex: search, $options: "i" } },
+        { shortName: { $regex: search, $options: "i" } },
+        { ownername: { $regex: search, $options: "i" } },
+        { organization: { $regex: search, $options: "i" } },
+        { "address.city": { $regex: search, $options: "i" } }
+      ];
+    }
 
     const teams = await Team.find(filter).populate("players");
     res.status(200).json(teams);
@@ -36,7 +50,10 @@ export const getTeam = async (req, res) => {
 
 export const createTeam = async (req, res) => {
   try {
-    const { name, ownername, logo, shortName, players, type, category, isInternal, tags } = req.body;
+    const { 
+      name, ownername, logo, shortName, players, type, category, isInternal, tags,
+      subCategory, ageGroup, organization, address
+    } = req.body;
 
     // Check if team with same name already exists
     const existingTeam = await Team.findOne({ name });
@@ -50,7 +67,11 @@ export const createTeam = async (req, res) => {
       logo: logo || "",
       shortName: shortName || name.substring(0, 3).toUpperCase(),
       type: type || "league_team",
-      category: category || "",
+      category: category || "Other",
+      subCategory: subCategory || "",
+      ageGroup: ageGroup || "Open",
+      organization: organization || "",
+      address: address || { town: "", district: "", city: "", province: "", country: "Pakistan" },
       isInternal: isInternal || false,
       tags: tags || [],
       players: players || []
@@ -122,6 +143,11 @@ export const updateTeam = async (req, res) => {
     if (logo !== undefined) updateData.logo = logo;
     if (shortName !== undefined) updateData.shortName = shortName;
     if (players !== undefined) updateData.players = players;
+    if (req.body.category !== undefined) updateData.category = req.body.category;
+    if (req.body.subCategory !== undefined) updateData.subCategory = req.body.subCategory;
+    if (req.body.ageGroup !== undefined) updateData.ageGroup = req.body.ageGroup;
+    if (req.body.organization !== undefined) updateData.organization = req.body.organization;
+    if (req.body.address !== undefined) updateData.address = req.body.address;
     if (req.body.media !== undefined) updateData.media = req.body.media;
 
     const updatedTeam = await Team.findByIdAndUpdate(

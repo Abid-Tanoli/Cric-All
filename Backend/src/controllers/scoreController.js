@@ -57,22 +57,22 @@ const populateFullMatch = async (match) => {
     {
       path: "teams",
       select: "name shortName logo players",
-      populate: { path: "players", select: "name playingRole role" }
+      populate: { path: "players", select: "name playingRole role bowlingStyle" }
     },
     { path: "innings.team", select: "name shortName" },
-    { path: "innings.batting.player", select: "name role playingRole" },
-    { path: "innings.bowling.player", select: "name role playingRole" },
-    { path: "innings.currentBatsman1", select: "name role playingRole" },
-    { path: "innings.currentBatsman2", select: "name role playingRole" },
-    { path: "innings.onStrikeBatsman", select: "name role playingRole" },
-    { path: "innings.currentBowler", select: "name role playingRole" },
+    { path: "innings.batting.player", select: "name role playingRole bowlingStyle" },
+    { path: "innings.bowling.player", select: "name role playingRole bowlingStyle" },
+    { path: "innings.currentBatsman1", select: "name role playingRole bowlingStyle" },
+    { path: "innings.currentBatsman2", select: "name role playingRole bowlingStyle" },
+    { path: "innings.onStrikeBatsman", select: "name role playingRole bowlingStyle" },
+    { path: "innings.currentBowler", select: "name role playingRole bowlingStyle" },
     { path: "innings.oversHistory.balls.batsmanOnStrike", select: "name" },
     { path: "innings.oversHistory.balls.batsmanNonStrike", select: "name" },
     { path: "innings.oversHistory.balls.bowler", select: "name" },
     { path: "innings.oversHistory.bowler", select: "name" },
-    { path: "playingXI.players", select: "name role playingRole" },
+    { path: "playingXI.players", select: "name role playingRole bowlingStyle" },
     { path: "playingXI.team", select: "name shortName logo" },
-    { path: "squad15.players", select: "name role playingRole" },
+    { path: "squad15.players", select: "name role playingRole bowlingStyle" },
     { path: "result.winner", select: "name shortName logo" },
     { path: "tossWinner", select: "name shortName" }
   ]);
@@ -420,9 +420,9 @@ export const updateScore = async (req, res) => {
           });
         }
 
-        // If no dismissedPlayerId provided, assume striker is out (except for run outs)
+        // If no dismissedPlayerId provided, assume striker is out.
         actualDismissedId = dismissedPlayerId;
-        if (!actualDismissedId && wicketType !== "run out") {
+        if (!actualDismissedId) {
           actualDismissedId = batsmanOnStrikeId;
         }
 
@@ -542,7 +542,7 @@ export const updateScore = async (req, res) => {
       isLegBye,
       isWicket,
       wicketType: isWicket ? wicketType : "",
-      dismissedPlayer: dismissedPlayerId,
+      dismissedPlayer: actualDismissedId || dismissedPlayerId,
       fielder: fielderId,
       commentary,
       vividCommentary: (aiGeneratedCommentary && typeof aiGeneratedCommentary === 'object') ? aiGeneratedCommentary.vivid : vividCommentary,
@@ -676,7 +676,7 @@ export const updateScore = async (req, res) => {
 
     match.markModified('innings');
     match.markModified('winProbabilityHistory');
-    await match.save();
+    await match.save({ validateModifiedOnly: true });
 
     await populateFullMatch(match);
 
@@ -880,7 +880,7 @@ export const endInnings = async (req, res) => {
       }
     }
 
-    await match.save();
+    await match.save({ validateModifiedOnly: true });
 
     await populateFullMatch(match);
 
@@ -953,7 +953,7 @@ export const reduceOvers = async (req, res) => {
         : 0;
     }
 
-    await match.save();
+    await match.save({ validateModifiedOnly: true });
     await populateFullMatch(match);
 
     try {
@@ -999,7 +999,7 @@ export const startNextInnings = async (req, res) => {
       nextInnings.status = "live";
       match.status = "live";
 
-      await match.save();
+      await match.save({ validateModifiedOnly: true });
       await populateFullMatch(match);
 
       try {
@@ -1164,7 +1164,19 @@ function generateDetailedCommentary({
   };
 
   const comments = runCommentaries[runs] || [`${runs} runs scored.`];
-  const summary = `${bowlerName} to ${batsmanName}, ${comments[Math.floor(Math.random() * comments.length)]}`;
+
+  const getRunLabel = () => {
+    if (isWicket) return "out!";
+    if (isWide) return "wide";
+    if (isNoBall) return "no ball";
+    if (runs === 0) return "no run";
+    if (runs === 1) return "1 run";
+    if (runs === 4) return "4 runs (FOUR)";
+    if (runs === 6) return "6 runs (SIX)";
+    return `${runs} runs`;
+  };
+
+  const summary = `${bowlerName} to ${batsmanName}, ${getRunLabel()}`;
   return summary;
 }
 
@@ -1208,12 +1220,12 @@ export const resolveTie = async (req, res) => {
       match.status = "completed";
       match.tieResolution = "declared_tie";
       match.result.description = "Match ended in a tie";
-      await match.save();
+      await match.save({ validateModifiedOnly: true });
       await populateFullMatch(match);
     } else if (resolution === "super_over") {
       match.tieResolution = "super_over";
       // We don't change match status yet, it stays pending until players are selected or startSuperOver is called
-      await match.save();
+      await match.save({ validateModifiedOnly: true });
       await populateFullMatch(match);
     } else {
       return res.status(400).json({ message: "Invalid resolution type" });
@@ -1295,7 +1307,7 @@ export const startSuperOverInnings = async (req, res) => {
       match.innings[match.currentInnings].target = match.innings[2].runs + 1;
     }
 
-    await match.save();
+    await match.save({ validateModifiedOnly: true });
     await populateFullMatch(match);
 
     try {
@@ -1340,7 +1352,7 @@ export const editCommentary = async (req, res) => {
     }
 
     ball.commentary = newCommentary;
-    await match.save();
+    await match.save({ validateModifiedOnly: true });
     await populateFullMatch(match);
 
     try {
@@ -1615,7 +1627,7 @@ export const revertLastBall = async (req, res) => {
       innings.requiredRunRate = remainingOvers > 0 ? (remainingRuns / remainingOvers).toFixed(2) : 0;
     }
 
-    await match.save();
+    await match.save({ validateModifiedOnly: true });
     await populateFullMatch(match);
 
     try {
@@ -1643,7 +1655,7 @@ export const setBowler = async (req, res) => {
     if (!innings) return res.status(400).json({ message: "Invalid innings index" });
 
     innings.currentBowler = bowlerId;
-    await match.save();
+    await match.save({ validateModifiedOnly: true });
 
     await populateFullMatch(match);
 
@@ -1739,7 +1751,7 @@ export const useStrategicTimeout = async (req, res) => {
       timestamp: new Date()
     });
 
-    await match.save();
+    await match.save({ validateModifiedOnly: true });
 
     try {
       const io = getIO();
@@ -1777,7 +1789,7 @@ export const recordDRSReview = async (req, res) => {
       timestamp: new Date()
     });
 
-    await match.save();
+    await match.save({ validateModifiedOnly: true });
 
     try {
       const io = getIO();
@@ -1822,7 +1834,7 @@ export const resetInnings = async (req, res) => {
     innings.currentBatsman2 = null;
     innings.currentBowler = null;
 
-    await match.save();
+    await match.save({ validateModifiedOnly: true });
     await populateFullMatch(match);
 
     try {
@@ -1873,7 +1885,7 @@ export const retireBatsman = async (req, res) => {
       innings.onStrikeBatsman = null;
     }
 
-    await match.save();
+    await match.save({ validateModifiedOnly: true });
     await populateFullMatch(match);
 
     try {
@@ -1923,7 +1935,7 @@ export const resetMatch = async (req, res) => {
     match.highlights = [];
     match.winProbabilityHistory = [];
 
-    await match.save();
+    await match.save({ validateModifiedOnly: true });
     await populateFullMatch(match);
 
     try {
@@ -2008,7 +2020,7 @@ export const editBall = async (req, res) => {
     innings.balls = totalLegal; innings.overs = Math.floor(totalLegal / 6);
     const totOvFloat = innings.overs + (innings.balls % 6) / 6;
     innings.runRate = totOvFloat > 0 ? (innings.runs / totOvFloat).toFixed(2) : 0;
-    await match.save();
+    await match.save({ validateModifiedOnly: true });
     await populateFullMatch(match);
 
     try { const io = getIO(); io.to(matchId).emit('match:ballEdited', { matchId, inningsIndex, overNumber, ballNumber }); io.emit('match:updated', match); } catch (err) { }

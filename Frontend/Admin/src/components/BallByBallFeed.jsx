@@ -64,7 +64,20 @@ function BallHeader({ ball, overNum, ballNum, onEdit }) {
                         </span>
                     )}
                     <span className="text-slate-900 font-bold text-sm leading-tight">
-                        {ball.commentary || `${ball.bowlerName || 'Bowler'} to ${ball.batsmanName || 'Batsman'}`}
+                        {ball.commentary || (() => {
+                            const runs = ball.runs || 0;
+                            const getRunLabel = () => {
+                                if (ball.isWicket) return "out!";
+                                if (ball.isWide) return "wide";
+                                if (ball.isNoBall) return "no ball";
+                                if (runs === 0) return "no run";
+                                if (runs === 1) return "1 run";
+                                if (runs === 4) return "4 runs (FOUR)";
+                                if (runs === 6) return "6 runs (SIX)";
+                                return `${runs} runs`;
+                            };
+                            return `${ball.bowlerName || 'Bowler'} to ${ball.batsmanName || 'Batsman'}, ${getRunLabel()}`;
+                        })()}
                         {ball.isWicket && (
                             <span className="text-red-600 font-black"> — OUT!</span>
                         )}

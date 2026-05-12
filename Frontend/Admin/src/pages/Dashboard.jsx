@@ -4,6 +4,7 @@ import { fetchMatches } from "../store/slices/matchesSlice";
 import { fetchPlayers } from "../store/slices/playersSlice";
 import { fetchTeams } from "../store/slices/teamSlice";
 import { Link } from "react-router-dom";
+import GlobalSearch from "../components/GlobalSearch";
 
 export default function Dashboard() {
     const dispatch = useDispatch();
@@ -51,6 +52,11 @@ export default function Dashboard() {
                 <p className="text-slate-500 mt-2 font-medium">
                     Here's what's happening with your cricket management system today.
                 </p>
+            </div>
+
+            {/* Global Search Bar */}
+            <div className="mb-12">
+                <GlobalSearch />
             </div>
 
             {/* Stats Grid */}

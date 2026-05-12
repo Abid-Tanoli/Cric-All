@@ -27,6 +27,28 @@ const eventSchema = new mongoose.Schema({
     enum: ["upcoming", "live", "completed"],
     default: "upcoming"
   },
+  // Deep categorization
+  category: {
+    type: String,
+    enum: ["School", "College", "University", "Organization", "Business", "Industry", "Club", "International", "Other"],
+    default: "Other"
+  },
+  subCategory: { type: String, default: "" }, // e.g., "Primary", "Secondary", "Pre-Medical", "Engineering", "CS"
+  ageGroup: { 
+    type: String, 
+    enum: ["U-10", "U-13", "U-15", "U-17", "U-19", "Open"],
+    default: "Open"
+  },
+  organization: { type: String, default: "" }, // Parent body like "Al-Khidmat", "Board of Education"
+  
+  // Detailed Address
+  address: {
+    town: { type: String, default: "" },
+    district: { type: String, default: "" },
+    city: { type: String, default: "" },
+    province: { type: String, default: "" },
+    country: { type: String, default: "Pakistan" }
+  },
   // Teams participating in this event
   teams: [{ type: mongoose.Schema.Types.ObjectId, ref: "Team" }],
   // Matches within this event (for series/tournaments)

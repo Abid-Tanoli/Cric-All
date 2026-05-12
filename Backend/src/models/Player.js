@@ -36,6 +36,28 @@ const playerSchema = new mongoose.Schema(
       default: "Not Applicable"
     },
     Campus: { type: String },
+    // Deep categorization
+    category: {
+      type: String,
+      enum: ["School", "College", "University", "Organization", "Business", "Industry", "Club", "International", "Other"],
+      default: "Other"
+    },
+    subCategory: { type: String, default: "" },
+    ageGroup: { 
+      type: String, 
+      enum: ["U-10", "U-13", "U-15", "U-17", "U-19", "Open"],
+      default: "Open"
+    },
+    organization: { type: String, default: "" },
+    
+    // Detailed Address
+    address: {
+      town: { type: String, default: "" },
+      district: { type: String, default: "" },
+      city: { type: String, default: "" },
+      province: { type: String, default: "" },
+      country: { type: String, default: "Pakistan" }
+    },
     imageUrl: { type: String, default: "" },
     team: { type: mongoose.Schema.Types.ObjectId, ref: "Team" },
     birthInfo: {

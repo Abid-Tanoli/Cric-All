@@ -3,18 +3,23 @@ import Team from "../models/Team.js";
 import { getIO } from "../socket/socket.js";
 
 export const getPlayers = async (req, res) => {
-  const { page = 1, limit = 10, search = "", team = "", Campus = "" } = req.query;
+  const { page = 1, limit = 10, search = "", team = "", Campus = "", category, subCategory, ageGroup, organization, city } = req.query;
   const query = {};
 
   if (search) {
-    query.name = { $regex: search, $options: "i" };
+    query.$or = [
+      { name: { $regex: search, $options: "i" } },
+      { role: { $regex: search, $options: "i" } },
+      { organization: { $regex: search, $options: "i" } }
+    ];
   }
-  if (team) {
-    query.team = team;
-  }
-  if (Campus) {
-    query.Campus = { $regex: Campus, $options: "i" };
-  }
+  if (team) query.team = team;
+  if (Campus) query.Campus = { $regex: Campus, $options: "i" };
+  if (category) query.category = category;
+  if (subCategory) query.subCategory = { $regex: subCategory, $options: "i" };
+  if (ageGroup) query.ageGroup = ageGroup;
+  if (organization) query.organization = { $regex: organization, $options: "i" };
+  if (city) query["address.city"] = { $regex: city, $options: "i" };
 
   const skip = (page - 1) * limit;
   const totalPlayers = await Player.countDocuments(query);

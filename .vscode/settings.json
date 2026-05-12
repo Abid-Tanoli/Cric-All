@@ -1,8 +1,6 @@
 {
-    "terminal.integrated.env.windows": {
-        "OPENAI_API_KEY": "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",
-        "OPENAI_BASE_URL": "https://openrouter.ai/api/v1"
-    },
-    "qwenCode.apiKey": "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",
-    "css.lint.unknownAtRules": "ignore"
+  "terminal.integrated.env.windows": {
+    "OPENAI_BASE_URL": "https://api.groq.com/openai/v1"
+  },
+  "css.lint.unknownAtRules": "ignore"
 }
