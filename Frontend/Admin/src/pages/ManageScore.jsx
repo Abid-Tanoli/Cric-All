@@ -8,6 +8,8 @@ import MatchSetupWizard from '../components/ScoreManagement/MatchSetupWizard';
 import RightSidebarControls from '../components/ScoreManagement/RightSidebarControls';
 import LiveScoringPanel from '../components/ScoreManagement/LiveScoringPanel';
 import Scorecard from '../components/Scorecard';
+import TieResolutionModal from '../components/ScoreManagement/TieResolutionModal';
+import SuperOverSetupModal from '../components/ScoreManagement/SuperOverSetupModal';
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
 const API_KEY = import.meta.env.VITE_ANTHROPIC_API_KEY || '';
@@ -719,6 +721,37 @@ export default function ManageScore() {
         }
     };
 
+    const handleResolveTie = async (resolution) => {
+        try {
+            const res = await axios.post(`${API_URL}/matches/${selectedMatch._id}/resolve-tie`, {
+                resolution
+            }, { headers: { Authorization: `Bearer ${token}` } });
+            setSelectedMatch(res.data.match);
+            if (resolution === 'super_over') {
+                setShowSelectionModal('super_over_setup');
+            } else {
+                setToast("Match Tied - Declared");
+            }
+        } catch (err) {
+            alert(err.response?.data?.message || err.message);
+        }
+    };
+
+    const handleStartSuperOver = async ({ batsmenIds, bowlerId }) => {
+        try {
+            const res = await axios.post(`${API_URL}/matches/${selectedMatch._id}/start-super-over`, {
+                batsmenIds,
+                bowlerId
+            }, { headers: { Authorization: `Bearer ${token}` } });
+            setSelectedMatch(res.data.match);
+            setShowSelectionModal('');
+            setToast("Super Over Started!");
+            checkRoles(res.data.match);
+        } catch (err) {
+            alert(err.response?.data?.message || err.message);
+        }
+    };
+
     const handleDeleteMatch = async (matchId, e) => {
         e.stopPropagation();
         if (!window.confirm("Delete this match permanently?")) return;
@@ -1133,6 +1166,38 @@ export default function ManageScore() {
                 setPitchMapClickPos={setPitchMapClickPos}
                 pitchMapViewMode={pitchMapViewMode}
                 setPitchMapViewMode={setPitchMapViewMode}
+            />
+
+            {/* MODALS */}
+            <TieResolutionModal 
+                isOpen={selectedMatch.status === 'pending_tie_resolution' && selectedMatch.tieResolution !== 'super_over'}
+                onResolve={handleResolveTie}
+            />
+
+            <SuperOverSetupModal
+                isOpen={showSelectionModal === 'super_over_setup' || (selectedMatch.status === 'pending_tie_resolution' && selectedMatch.tieResolution === 'super_over')}
+                selectedMatch={selectedMatch}
+                battingTeam={(() => {
+                    const totalInnings = selectedMatch.innings.length;
+                    const isFirstInnOfSO = totalInnings % 2 === 0;
+                    return isFirstInnOfSO ? selectedMatch.teams[1] : selectedMatch.teams[0];
+                })()}
+                bowlingTeam={(() => {
+                    const totalInnings = selectedMatch.innings.length;
+                    const isFirstInnOfSO = totalInnings % 2 === 0;
+                    return isFirstInnOfSO ? selectedMatch.teams[0] : selectedMatch.teams[1];
+                })()}
+                battingXI={getSquad(
+                    (selectedMatch.innings.length % 2 === 0) 
+                        ? (selectedMatch.teams[1]?._id || selectedMatch.teams[1])
+                        : (selectedMatch.teams[0]?._id || selectedMatch.teams[0])
+                )}
+                bowlingXI={getSquad(
+                    (selectedMatch.innings.length % 2 === 0) 
+                        ? (selectedMatch.teams[0]?._id || selectedMatch.teams[0])
+                        : (selectedMatch.teams[1]?._id || selectedMatch.teams[1])
+                )}
+                onStart={handleStartSuperOver}
             />
 
             {/* Selection Modals */}

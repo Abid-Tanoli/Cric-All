@@ -823,26 +823,44 @@ export const endInnings = async (req, res) => {
       match.currentInnings = inningsIndex + 1;
     } else if (match.result.resultType === "super_over") {
       // Handle Super Over phased endings
-      if (inningsIndex === 2) {
+      const isFirstInnOfSO = inningsIndex % 2 === 0;
+      const superOverNumber = Math.floor((inningsIndex - 2) / 2) + 1;
+
+      if (isFirstInnOfSO) {
         // First innings of Super Over ended
         match.status = "pending_tie_resolution";
-        match.result.description = "Super Over: First innings complete";
-      } else if (inningsIndex === 3) {
+        match.result.description = `Super Over ${superOverNumber}: First innings complete`;
+      } else {
         // Second innings of Super Over ended
-        match.status = "completed";
-        const innSO1 = match.innings[2];
-        const innSO2 = match.innings[3];
+        const innSO1 = match.innings[inningsIndex - 1];
+        const innSO2 = match.innings[inningsIndex];
+
+        let currentSO = match.superOvers.find(so => so.superOverNumber === superOverNumber);
 
         if (innSO1.runs > innSO2.runs) {
+          match.status = "completed";
           match.result.winner = innSO1.team;
-          match.result.description = `${innSO1.team.name} won the Super Over`;
+          match.result.margin = `${innSO1.runs - innSO2.runs} runs`;
+          match.result.description = `${innSO1.team.name} won the Super Over by ${match.result.margin}`;
+
+          if (currentSO) {
+            currentSO.result = { winner: innSO1.team, margin: match.result.margin };
+          }
         } else if (innSO2.runs > innSO1.runs) {
+          match.status = "completed";
           match.result.winner = innSO2.team;
-          match.result.description = `${innSO2.team.name} won the Super Over`;
+          const wicketsLeft = 2 - innSO2.wickets;
+          match.result.margin = `${wicketsLeft} wicket${wicketsLeft !== 1 ? 's' : ''}`;
+          match.result.description = `${innSO2.team.name} won the Super Over by ${match.result.margin}`;
+
+          if (currentSO) {
+            currentSO.result = { winner: innSO2.team, margin: match.result.margin };
+          }
         } else {
-          // Double Super Over? For now, just declared tie or user can start another?
-          // Cricket rules usually say most boundaries, but let's keep it simple.
-          match.result.description = "Super Over ended in a tie";
+          // Tied again!
+          match.status = "pending_tie_resolution";
+          match.tieResolution = "pending";
+          match.result.description = `Super Over ${superOverNumber} ended in a tie! Another Super Over required.`;
         }
       }
     } else {
@@ -1255,24 +1273,43 @@ export const startSuperOverInnings = async (req, res) => {
       return res.status(400).json({ message: "Match is not ready for Super Over selection" });
     }
 
-    // Determine which SO innings this is (1st or 2nd)
-    const isFirstSO = match.innings.length === 2;
-    const isSecondSO = match.innings.length === 3;
+    // Determine which SO number and innings this is
+    const totalInnings = match.innings.length;
+    const isFirstInnOfSO = totalInnings % 2 === 0;
+    const superOverNumber = Math.floor((totalInnings - 2) / 2) + 1;
 
-    if (!isFirstSO && !isSecondSO) {
-      return res.status(400).json({ message: "Invalid state for starting Super Over innings" });
-    }
+    // The team that batted second in the main match bats FIRST in every super over
+    const team1Id = match.innings[0].team;
+    const team2Id = match.innings[1].team;
 
     let battingTeamId, bowlingTeamId;
-
-    if (isFirstSO) {
-      // 2nd innings team from full match bats first in SO
-      battingTeamId = match.innings[1].team;
-      bowlingTeamId = match.innings[0].team;
+    if (isFirstInnOfSO) {
+      battingTeamId = team2Id; // Team that batted second in main match
+      bowlingTeamId = team1Id;
     } else {
-      // 1st innings team from full match bats second in SO
-      battingTeamId = match.innings[0].team;
-      bowlingTeamId = match.innings[1].team;
+      battingTeamId = team1Id; // Team that batted first in main match
+      bowlingTeamId = team2Id;
+    }
+
+    // Check bowler restriction for repeat Super Overs
+    if (superOverNumber > 1 && isFirstInnOfSO) {
+      const prevSO = match.superOvers.find(so => so.superOverNumber === superOverNumber - 1);
+      if (prevSO) {
+        const prevBowler = prevSO.bowlers.find(b => b.team.toString() === bowlingTeamId.toString());
+        if (prevBowler && prevBowler.bowler.toString() === bowlerId.toString()) {
+          return res.status(400).json({ message: "This bowler cannot bowl consecutive Super Overs" });
+        }
+      }
+    }
+    // If it's the second innings of the current SO, we also need to check the bowler for the bowling team
+    if (!isFirstInnOfSO) {
+       const prevSO = match.superOvers.find(so => so.superOverNumber === superOverNumber - 1);
+       if (prevSO) {
+         const prevBowler = prevSO.bowlers.find(b => b.team.toString() === bowlingTeamId.toString());
+         if (prevBowler && prevBowler.bowler.toString() === bowlerId.toString()) {
+           return res.status(400).json({ message: "This bowler cannot bowl consecutive Super Overs" });
+         }
+       }
     }
 
     // Initialize the new SO innings
@@ -1299,12 +1336,30 @@ export const startSuperOverInnings = async (req, res) => {
     match.totalOvers = 1;
     match.result.resultType = "super_over";
 
-    if (isFirstSO) {
-      match.result.description = "Super Over: 1st Innings in progress";
+    // Track super over data
+    let currentSO = match.superOvers.find(so => so.superOverNumber === superOverNumber);
+    if (!currentSO) {
+      currentSO = {
+        superOverNumber,
+        battingFirst: team2Id,
+        battingSecond: team1Id,
+        innings: [],
+        bowlers: [],
+        batsmen: []
+      };
+      match.superOvers.push(currentSO);
+      currentSO = match.superOvers[match.superOvers.length - 1];
+    }
+
+    currentSO.bowlers.push({ team: bowlingTeamId, bowler: bowlerId });
+    currentSO.batsmen.push({ team: battingTeamId, players: batsmenIds });
+
+    if (isFirstInnOfSO) {
+      match.result.description = `Super Over ${superOverNumber}: 1st Innings in progress`;
     } else {
-      match.result.description = "Super Over: 2nd Innings in progress";
-      // Set target for 2nd SO innings
-      match.innings[match.currentInnings].target = match.innings[2].runs + 1;
+      match.result.description = `Super Over ${superOverNumber}: 2nd Innings in progress`;
+      // Set target for 2nd SO innings (the innings immediately before this one)
+      match.innings[match.currentInnings].target = match.innings[match.currentInnings - 1].runs + 1;
     }
 
     await match.save({ validateModifiedOnly: true });
@@ -1312,12 +1367,13 @@ export const startSuperOverInnings = async (req, res) => {
 
     try {
       const io = getIO();
-      io.to(matchId).emit("match:superOverStarted", { matchId, inningsIndex: match.currentInnings });
+      io.to(matchId).emit("match:superOverStarted", { matchId, inningsIndex: match.currentInnings, superOverNumber });
       io.emit("match:updated", match);
     } catch (err) { }
 
-    res.status(200).json({ match, message: `Super Over Innings ${isFirstSO ? 1 : 2} started` });
+    res.status(200).json({ match, message: `Super Over ${superOverNumber} Innings ${isFirstInnOfSO ? 1 : 2} started` });
   } catch (error) {
+    console.error("Error starting Super Over innings:", error);
     res.status(400).json({ message: "Failed to start Super Over innings", error: error.message });
   }
 };
@@ -1511,6 +1567,11 @@ export const revertLastBall = async (req, res) => {
     const ball = lastOver.balls.pop();
     if (!ball) return res.status(400).json({ message: "No ball found to revert" });
 
+    const getSafeId = (p) => {
+        if (!p) return null;
+        return (p._id || p).toString();
+    };
+
     // 1. Revert totals
     const batsmanRuns = ball.runs || 0;
     let extraRuns = 0;
@@ -1534,7 +1595,8 @@ export const revertLastBall = async (req, res) => {
     innings.extras.total = (innings.extras.wides || 0) + (innings.extras.noBalls || 0) + (innings.extras.byes || 0) + (innings.extras.legByes || 0);
 
     // 3. Revert Batsman stats
-    const batsmanStats = innings.batting.find(b => (b.player?._id || b.player).toString() === ball.batsmanOnStrike.toString());
+    const strikerId = getSafeId(ball.batsmanOnStrike);
+    const batsmanStats = innings.batting.find(b => getSafeId(b.player) === strikerId);
     if (batsmanStats) {
       if (!ball.isWide) {
         batsmanStats.balls = Math.max(0, (batsmanStats.balls || 0) - 1);
@@ -1550,7 +1612,8 @@ export const revertLastBall = async (req, res) => {
     }
 
     // 4. Revert Bowler stats
-    const bowlerStats = innings.bowling.find(b => (b.player?._id || b.player).toString() === ball.bowler.toString());
+    const bowlerId = getSafeId(ball.bowler);
+    const bowlerStats = innings.bowling.find(b => getSafeId(b.player) === bowlerId);
     if (bowlerStats) {
       bowlerStats.runs = Math.max(0, (bowlerStats.runs || 0) - (batsmanRuns + extraRuns));
       if (ball.isWide) bowlerStats.wides = Math.max(0, (bowlerStats.wides || 0) - 1);
@@ -1572,11 +1635,12 @@ export const revertLastBall = async (req, res) => {
       lastOver.wickets -= 1;
       if (bowlerStats) bowlerStats.wickets -= 1;
 
-      const dismissedId = ball.dismissedPlayer || ball.batsmanOnStrike;
-      const dismissedBatsman = innings.batting.find(b => (b.player?._id || b.player).toString() === dismissedId.toString());
+      const dismissedId = getSafeId(ball.dismissedPlayer || ball.batsmanOnStrike);
+      const dismissedBatsman = innings.batting.find(b => getSafeId(b.player) === dismissedId);
       if (dismissedBatsman) {
         dismissedBatsman.isOut = false;
         dismissedBatsman.dismissalType = "";
+        dismissedBatsman.dismissedBy = null;
       }
       innings.fallOfWickets.pop();
       if (innings.partnerships.length > 1) {
@@ -1588,6 +1652,15 @@ export const revertLastBall = async (req, res) => {
           restoredPartnership.wicket = 0; // Remove the wicket marker
         }
       }
+
+      // Remove any batting entries that were added as the "next batsman" after this wicket
+      const restoredNonStrikerId = getSafeId(ball.batsmanNonStrike);
+      innings.batting = innings.batting.filter(b => {
+        const pid = getSafeId(b.player);
+        const isRestoredBatsman = pid === strikerId || pid === restoredNonStrikerId;
+        const hasNoStats = (b.balls || 0) === 0 && (b.runs || 0) === 0 && !b.isOut && !b.isRetiredHurt && !b.isRetired;
+        return isRestoredBatsman || !hasNoStats;
+      });
     }
 
     // 6. Update global innings balls/overs
@@ -1612,6 +1685,17 @@ export const revertLastBall = async (req, res) => {
     }
 
     // 8. Restore Strike
+    const stuckIds = [getSafeId(innings.currentBatsman1), getSafeId(innings.currentBatsman2), getSafeId(innings.onStrikeBatsman)].filter(Boolean);
+    const restoredIds = [getSafeId(ball.batsmanOnStrike), getSafeId(ball.batsmanNonStrike)].filter(Boolean);
+    
+    [...stuckIds, ...restoredIds].forEach(pid => {
+      const bs = innings.batting.find(b => getSafeId(b.player) === pid);
+      if (bs) {
+        bs.isRetiredHurt = false;
+        bs.isRetired = false;
+      }
+    });
+
     innings.onStrikeBatsman = ball.batsmanOnStrike;
     innings.currentBatsman1 = ball.batsmanOnStrike;
     innings.currentBatsman2 = ball.batsmanNonStrike;
@@ -1627,6 +1711,7 @@ export const revertLastBall = async (req, res) => {
       innings.requiredRunRate = remainingOvers > 0 ? (remainingRuns / remainingOvers).toFixed(2) : 0;
     }
 
+    match.markModified('innings');
     await match.save({ validateModifiedOnly: true });
     await populateFullMatch(match);
 

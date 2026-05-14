@@ -6,6 +6,11 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: {
     port: 3000,
+    strictPort: true,
+    hmr: {
+      host: 'localhost',
+      protocol: 'ws',
+    },
     proxy: {
       '/api': {
         target: 'http://localhost:5000',

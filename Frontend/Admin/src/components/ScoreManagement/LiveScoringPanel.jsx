@@ -48,6 +48,19 @@ const LiveScoringPanel = ({
 
     return (
         <div className="space-y-8 animate-fadeIn">
+            {selectedMatch?.result?.resultType === 'super_over' && (
+                <div className="flex items-center gap-3 bg-amber-500/10 border border-amber-500/20 p-4 rounded-3xl">
+                    <div className="w-10 h-10 bg-amber-500 rounded-2xl flex items-center justify-center text-white text-xl">⚡</div>
+                    <div>
+                        <h3 className="text-sm font-black text-amber-600 uppercase tracking-tighter">
+                            Super Over {Math.floor((selectedMatch.innings.length - 2) / 2) + 1}
+                        </h3>
+                        <p className="text-[10px] font-bold text-amber-600/70 uppercase tracking-widest">
+                            {selectedMatch.innings.length % 2 === 0 ? '1st Innings' : '2nd Innings'} • Target: {selectedMatch.innings[selectedMatch.currentInnings]?.target || 'N/A'}
+                        </p>
+                    </div>
+                </div>
+            )}
             {/* Score Overlays, Batsmen, Bowlers */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {/* Batsmen Card */}

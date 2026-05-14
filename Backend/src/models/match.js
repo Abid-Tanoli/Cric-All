@@ -222,7 +222,7 @@ const matchSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ["upcoming", "live", "innings-break", "completed", "abandoned", "pending_tie_resolution"],
+      enum: ["upcoming", "live", "innings-break", "completed", "abandoned", "pending_tie_resolution", "super_over"],
       default: "upcoming"
     },
     result: {
@@ -315,6 +315,24 @@ const matchSchema = new mongoose.Schema(
       over: { type: Number },
       type: { type: String, default: "strategic" },
       timestamp: { type: Date, default: Date.now }
+    }],
+    superOvers: [{
+      superOverNumber: { type: Number, required: true },
+      battingFirst: { type: mongoose.Schema.Types.ObjectId, ref: "Team" },
+      battingSecond: { type: mongoose.Schema.Types.ObjectId, ref: "Team" },
+      innings: [inningsSchema],
+      result: {
+        winner: { type: mongoose.Schema.Types.ObjectId, ref: "Team" },
+        margin: { type: String }
+      },
+      bowlers: [{
+        team: { type: mongoose.Schema.Types.ObjectId, ref: "Team" },
+        bowler: { type: mongoose.Schema.Types.ObjectId, ref: "Player" }
+      }],
+      batsmen: [{
+        team: { type: mongoose.Schema.Types.ObjectId, ref: "Team" },
+        players: [{ type: mongoose.Schema.Types.ObjectId, ref: "Player" }]
+      }]
     }]
   },
   {
