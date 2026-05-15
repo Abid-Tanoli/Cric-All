@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { api } from "../services/api";
 import EnhancedMatchTabs from "../components/EnhancedMatchTabs";
@@ -9,46 +9,78 @@ const Match = () => {
   const [match, setMatch] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  const loadMatch = useCallback(async () => {
+    try {
+      const res = await api.get(`/matches/${matchId}`);
+      setMatch(res.data);
+    } catch (err) {
+      console.error("Failed to load match:", err);
+    } finally {
+      setLoading(false);
+    }
+  }, [matchId]);
+
   useEffect(() => {
     let mounted = true;
     const socket = initSocket();
 
-    const loadMatch = async () => {
-      try {
-        const res = await api.get(`/matches/${matchId}`);
-        if (mounted) setMatch(res.data);
-      } catch (err) {
-        console.error("Failed to load match:", err);
-      } finally {
-        if (mounted) setLoading(false);
-      }
-    };
     loadMatch();
 
-    const onMatchUpdated = (updatedMatch) => {
+    const applyIncomingMatch = (payload) => {
       if (!mounted) return;
-      if (updatedMatch._id === matchId) {
+      const updatedMatch = payload?.match || payload;
+      const updatedId = updatedMatch?.matchId || updatedMatch?._id || payload?.matchId;
+
+      if (updatedMatch?._id && updatedMatch._id === matchId) {
         setMatch(updatedMatch);
+        return;
+      }
+
+      if (updatedId === matchId) {
+        loadMatch();
       }
     };
 
-    const onScoreUpdate = () => loadMatch();
-    const onBallUpdate = () => loadMatch();
+    const refreshMatch = (payload) => {
+      if (!mounted) return;
+      const payloadMatchId = payload?.matchId || payload?.match?._id || payload?._id;
+      if (!payloadMatchId || payloadMatchId === matchId) loadMatch();
+    };
 
-    socket.on("match:updated", onMatchUpdated);
-    socket.on("match:scoreUpdate", onScoreUpdate);
-    socket.on("match:ballUpdate", onBallUpdate);
+    const joinRoom = () => joinMatchRoom(matchId);
+
+    socket.on("connect", joinRoom);
+    socket.on("match:updated", applyIncomingMatch);
+    socket.on("match:update", applyIncomingMatch);
+    socket.on("match:scoreUpdate", refreshMatch);
+    socket.on("match:ballUpdate", refreshMatch);
+    socket.on("match:ballWithCommentary", refreshMatch);
+    socket.on("match:ballReverted", refreshMatch);
+    socket.on("match:bowlerSet", refreshMatch);
+    socket.on("scoreUpdate", refreshMatch);
+    socket.on("ballRecorded", refreshMatch);
+    socket.on("inningsComplete", refreshMatch);
+    socket.on("matchComplete", refreshMatch);
 
     joinMatchRoom(matchId);
 
     return () => {
       mounted = false;
       leaveMatchRoom(matchId);
-      socket.off("match:updated", onMatchUpdated);
-      socket.off("match:scoreUpdate", onScoreUpdate);
-      socket.off("match:ballUpdate", onBallUpdate);
+      socket.off("connect", joinRoom);
+      socket.off("match:updated", applyIncomingMatch);
+      socket.off("match:update", applyIncomingMatch);
+      socket.off("match:scoreUpdate", refreshMatch);
+      socket.off("match:ballUpdate", refreshMatch);
+      socket.off("match:ballWithCommentary", refreshMatch);
+      socket.off("match:ballReverted", refreshMatch);
+      socket.off("match:bowlerSet", refreshMatch);
+      socket.off("scoreUpdate", refreshMatch);
+      socket.off("ballRecorded", refreshMatch);
+      socket.off("inningsComplete", refreshMatch);
+      socket.off("matchComplete", refreshMatch);
     };
-  }, [matchId]);
+  }, [loadMatch, matchId]);
 
   if (loading) {
     return (

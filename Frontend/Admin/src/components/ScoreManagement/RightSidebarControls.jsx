@@ -134,6 +134,14 @@ const RightSidebarControls = ({
                         bowlerName={bowlingXI.find(p => String(p._id) === String(bowlerId))?.name || ''}
                         batsmanName={battingXI.find(p => String(p._id) === String(strikerId))?.name || ''}
                         viewMode={pitchMapViewMode || 'this_over'}
+                        selectedLine={pitchMapLine}
+                        onLineChange={setPitchMapLine}
+                        selectedLength={pitchMapLength}
+                        onLengthChange={setPitchMapLength}
+                        selectedShot={pitchMapShot}
+                        onShotChange={setPitchMapShot}
+                        clickPosition={pitchMapClickPos}
+                        onClickPositionChange={setPitchMapClickPos}
                     />
                 </div>
 

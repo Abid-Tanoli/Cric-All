@@ -117,6 +117,11 @@ export const updateScore = async (req, res) => {
       shotPlacement = null,
       fieldingZone = "",
       shotType = "",
+      pitchLine = "",
+      pitchLength = "",
+      pitchShotType = "",
+      pitchX = null,
+      pitchY = null,
       nextBatsmanId = null
     } = req.body;
 
@@ -477,6 +482,9 @@ export const updateScore = async (req, res) => {
           zone: zone.name || "",
           direction: shotPlacement?.position || fieldingZone || "",
           shotName: shotType || "",
+          pitchLine,
+          pitchLength,
+          pitchShotType,
           side: shotPlacement?.side || "",
           nearestPosition: shotPlacement?.nearestPosition || "",
           distanceCategory,
@@ -554,7 +562,12 @@ export const updateScore = async (req, res) => {
       // Shot placement data
       shotPlacement: shotPlacement || { angle: 0, distance: 50, position: "" },
       fieldingZone,
-      shotType
+      shotType,
+      pitchLine,
+      pitchLength,
+      pitchShotType,
+      pitchX,
+      pitchY
     };
 
     // Update Free Hit state

@@ -39,6 +39,7 @@
     align-items: stretch;
     gap: 0;
     width: 100%;
+    justify-content: center;
 }
 
 .pitchmap-svg {
@@ -47,8 +48,14 @@
     user-select: none;
     border-radius: 12px;
     overflow: hidden;
-    max-height: 480px;
-    min-height: 320px;
+    max-height: 620px;
+    min-height: 420px;
+    width: 100%;
+}
+
+.pitchmap-svg-reference {
+    aspect-ratio: 31 / 36;
+    background: #2c7a17;
 }
 
 /* ─── Labels ────────────────────────────────────────────────────────────────── */
@@ -180,9 +187,9 @@
 .pitchmap-legend {
     display: flex;
     flex-wrap: wrap;
-    gap: 10px;
+    gap: 12px;
     justify-content: center;
-    padding: 6px 0;
+    padding: 10px 0 4px;
 }
 
 .pitchmap-legend-item {
@@ -192,15 +199,15 @@
 }
 
 .pitchmap-legend-dot {
-    width: 10px;
-    height: 10px;
+    width: 16px;
+    height: 16px;
     border-radius: 50%;
     border: 1.5px solid;
     flex-shrink: 0;
 }
 
 .pitchmap-legend-text {
-    font-size: 8px;
+    font-size: 13px;
     font-weight: 800;
     text-transform: uppercase;
     letter-spacing: 0.1em;

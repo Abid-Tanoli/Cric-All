@@ -4,6 +4,42 @@
 
 import fetch from "node-fetch";
 
+const LINE_LABELS = {
+  wide_outside_off: "wide outside off",
+  outside_off: "outside off",
+  off_stump: "on an off-stump line",
+  middle_stump: "on middle stump",
+  leg_stump: "on leg stump",
+  outside_leg: "outside leg",
+  wide_outside_leg: "wide outside leg"
+};
+
+const LENGTH_LABELS = {
+  full_toss: "full toss",
+  yorker: "yorker length",
+  full: "full length",
+  good_length: "good length",
+  hard_length: "hard length",
+  bouncer: "short bouncer length"
+};
+
+const SHOT_LABELS = {
+  defended: "defended",
+  driven: "driven",
+  cut: "cut",
+  pull: "pulled",
+  flick_glance: "flicked or glanced",
+  sweep: "swept",
+  reverse_sweep: "reverse swept",
+  lofted_slog: "lofted",
+  left_padded_away: "left alone or padded away",
+  missed_beaten: "beaten",
+  edged: "edged",
+  no_shot_offered: "no shot offered"
+};
+
+const labelFrom = (map, value, fallback = "") => map[value] || value?.replace(/_/g, " ") || fallback;
+
 class AICommentaryService {
   constructor() {
     this.apiKey = process.env.ANTHROPIC_API_KEY;
@@ -19,6 +55,7 @@ class AICommentaryService {
       isWicket = false, wicketType = "",
       batsmanName = "Batsman", bowlerName = "Bowler",
       zone = "", direction = "", shotName = "", side = "", nearestPosition = "",
+      pitchLine = "", pitchLength = "", pitchShotType = "",
       distanceCategory = "",
       overNumber = 0, ballNumber = 1,
       currentScore = 0, currentWickets = 0,
@@ -26,6 +63,10 @@ class AICommentaryService {
     } = data;
 
     const deliveryType = isWide ? "wide" : isNoBall ? "no_ball" : isBye ? "bye" : isLegBye ? "leg_bye" : "normal";
+    const lineText = labelFrom(LINE_LABELS, pitchLine, "around the stumps");
+    const lengthText = labelFrom(LENGTH_LABELS, pitchLength, "a testing length");
+    const shotText = labelFrom(SHOT_LABELS, pitchShotType || shotName, shotName || "played");
+    const pitchDetail = `${lengthText}, ${lineText}`;
     const boundaryNote = runs === 4
       ? `FOUR — ground shot bounced to boundary toward ${direction || nearestPosition || zone}`
       : runs === 6
@@ -45,7 +86,9 @@ Ball Info:
 - Delivery Type: ${deliveryType}
 - Bowler: ${bowlerName}
 - Batter: ${batsmanName}
+- Pitch Map: ${pitchDetail}
 - Runs This Ball: ${runs}${isWide ? ` (Wide +${runs})` : ""}${isNoBall ? " (No Ball)" : ""}
+- Shot: ${shotText}
 - Shot Direction: ${direction || zone || "unknown area"}${side ? ` (${side})` : ""}${nearestPosition ? ` near ${nearestPosition}` : ""}
 - Distance: ${distanceCategory || "standard"}
 ${boundaryNote ? `- Boundary Detail: ${boundaryNote}` : ""}
@@ -54,7 +97,7 @@ ${isWicket ? `- WICKET: ${wicketType}` : ""}
 
 Task: Generate two specific lines of commentary.
 1. SHORT: A punchy, traditional scorecard-style summary. Format: '[Bowler] to [Batter], [Result]'.
-2. VIVID: A rich, technical paragraph (2-3 sentences). Use evocative verbs, describe the movement of the ball, the sound off the willow, and the fielders' scramble. Avoid repetitive structures.
+2. VIVID: A rich, technical paragraph (2-3 sentences). Mention the exact pitch length/line when useful, the shot type, and the fielding area. Avoid repetitive structures.
 
 FORMAT EXACTLY:
 SHORT: [broadcast summary]
@@ -119,39 +162,38 @@ Variation Note: Use diverse vocabulary. Ensure the tone fits the match tempo. Ne
     if (!result.vivid) {
       const actions = {
         dot: [
-          "defended solidly back to the bowler, no run",
-          "pushed into the off-side, finds the fielder",
-          "beaten by the movement, through to the keeper",
-          "left alone as it angled across the off stump",
-          "tucked away to mid-wicket but no gap found"
+          `kept it out with a compact ${shotText}`,
+          `could only check the ${shotText} straight to the ring`,
+          `was beaten as the ball held its line`,
+          `left it alone with the keeper gathering cleanly`,
+          `turned it to the leg side but found no gap`
         ],
         runs: [
-          "nudged into the gap for a quick single",
-          "punched off the back foot through the covers for a couple",
-          "flicked away to the leg side, easy runs taken",
-          "driven straight down the ground to keep the score moving"
+          `worked it into the gap with a controlled ${shotText}`,
+          `used soft hands and ran hard`,
+          `picked the line early and rotated the strike`,
+          `met it under the eyes and placed it neatly`
         ],
         four: [
-          "lashed through the covers, a magnificent boundary",
-          "timed to perfection, the ball races away to the ropes",
-          "a delightful drive that beats the diving fielder for four",
-          "pulled powerfully into the gap, no chance for the deep fielder"
+          `opened the face and sent the ${shotText} skimming away`,
+          `timed it sweetly and beat the infield`,
+          `got into position early and found the rope`,
+          `struck through the line with clean balance`
         ],
         six: [
-          "lofted high and handsome over the ropes for a massive hit",
-          "cleared the boundary with ease, a spectacular strike",
-          "picked up from outside off and deposited into the stands",
-          "a towering hit that sails over the long-on boundary"
+          `swung through the line and cleared the boundary`,
+          `picked the length early and launched it high`,
+          `held the shape and sent it over the rope`,
+          `connected cleanly, the ball sailing beyond the fielder`
         ],
         wicket: [
-          "stunned as the stumps are rattled, a perfect delivery",
-          "finds the fielder with a mistimed shot, the catch is taken",
-          "trapped in front, the umpire's finger goes up immediately",
-          "an edge that carries safely to the keeper, big wicket!"
+          `was beaten by the ${pitchDetail} delivery and paid the price`,
+          `misread the ${lengthText} ball and the wicket followed`,
+          `could not control the ${shotText}, and the bowler has the breakthrough`,
+          `was forced into a mistake by the ${lineText} angle`
         ]
       };
 
-      const lengths = ["full and searching", "short and aggressive", "good length", "yorker length", "overpitched"];
       const rand = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
       let category = "runs";
@@ -162,9 +204,8 @@ Variation Note: Use diverse vocabulary. Ensure the tone fits the match tempo. Ne
 
       const action = rand(actions[category]);
       const region = (direction || nearestPosition || zone) ? ` toward ${direction || nearestPosition || zone}` : "";
-      const length = rand(lengths);
 
-      result.vivid = `The bowler delivered a ${length} ball, and ${batsmanName} ${action}${region}.`;
+      result.vivid = `${bowlerName} hit ${pitchDetail}. ${batsmanName} ${action}${region}.`;
     }
 
     return result;

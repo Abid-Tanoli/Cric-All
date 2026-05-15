@@ -28,6 +28,7 @@ function App() {
           <Route path="/series" element={<SeriesList />} />
           <Route path="/series/:seriesId" element={<Series />} />
           <Route path="/match/:matchId" element={<Match />} />
+          <Route path="/matches/:matchId" element={<Match />} />
           <Route path="/summary/:matchId" element={<Summary />} />
           <Route path="/players" element={<Players />} />
           <Route path="/players/:playerId" element={<PlayerProfile />} />

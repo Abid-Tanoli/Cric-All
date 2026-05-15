@@ -1,496 +1,739 @@
-import React, { useState } from 'react';
-import { useTheme } from '../context/ThemeContext';
-import ThemeToggle from './ThemeToggle';
+import React, { useMemo, useState } from "react";
+
+const TABS = [
+  { id: "live", label: "Live Score" },
+  { id: "scorecard", label: "Scorecard" },
+  { id: "commentary", label: "Commentary" },
+  { id: "info", label: "Match Info" },
+];
+
+const idOf = (value) => {
+  if (!value) return "";
+  if (typeof value === "string") return value;
+  if (typeof value === "number") return String(value);
+  return String(value._id || value.id || "");
+};
+
+const sameId = (a, b) => idOf(a) && idOf(a) === idOf(b);
+
+const teamName = (team) => team?.shortName || team?.name || "Team";
+
+const longTeamName = (team) => team?.name || team?.shortName || "Team";
+
+const playerName = (player, players = []) => {
+  if (!player) return "Unknown";
+  if (typeof player === "object" && (player.name || player.fullName)) {
+    return player.name || player.fullName;
+  }
+  const found = players.find((candidate) => sameId(candidate, player));
+  return found?.name || found?.fullName || "Unknown";
+};
+
+const number = (value, fallback = 0) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+const formatOvers = (balls = 0) => `${Math.floor(number(balls) / 6)}.${number(balls) % 6}`;
+
+const formatBowlerOvers = (bowler) => {
+  if (!bowler) return "0.0";
+  if (number(bowler.balls) > 0) return formatOvers(bowler.balls);
+  return `${number(bowler.overs)}.0`;
+};
+
+const strikeRate = (runs, balls) => {
+  if (!balls) return "0.00";
+  return ((number(runs) / number(balls)) * 100).toFixed(2);
+};
+
+const economyRate = (runs, balls) => {
+  const legalOvers = number(balls) / 6;
+  if (!legalOvers) return "0.00";
+  return (number(runs) / legalOvers).toFixed(2);
+};
+
+const formatDate = (value) => {
+  if (!value) return "TBC";
+  return new Date(value).toLocaleString(undefined, {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+};
+
+const getTeamById = (match, teamId) =>
+  (match?.teams || []).find((team) => sameId(team, teamId)) ||
+  (match?.playingXI || []).find((entry) => sameId(entry.team, teamId))?.team ||
+  null;
+
+const collectPlayers = (match) => {
+  const map = new Map();
+  const add = (player) => {
+    if (!player || typeof player !== "object") return;
+    const key = idOf(player);
+    if (key) map.set(key, player);
+  };
+
+  (match?.teams || []).forEach((team) => (team.players || []).forEach(add));
+  (match?.playingXI || []).forEach((entry) => (entry.players || []).forEach(add));
+  (match?.squad15 || []).forEach((entry) => (entry.players || []).forEach(add));
+  (match?.innings || []).forEach((innings) => {
+    add(innings.currentBatsman1);
+    add(innings.currentBatsman2);
+    add(innings.onStrikeBatsman);
+    add(innings.currentBowler);
+    (innings.batting || []).forEach((row) => add(row.player));
+    (innings.bowling || []).forEach((row) => add(row.player));
+    (innings.oversHistory || []).forEach((over) => {
+      add(over.bowler);
+      (over.balls || []).forEach((ball) => {
+        add(ball.batsmanOnStrike);
+        add(ball.batsmanNonStrike);
+        add(ball.bowler);
+      });
+    });
+  });
+
+  return Array.from(map.values());
+};
+
+const getPlayingXI = (match, teamId) =>
+  (match?.playingXI || []).find((entry) => sameId(entry.team, teamId))?.players || [];
+
+const currentInningsOf = (match) => {
+  const index = Math.min(number(match?.currentInnings), Math.max((match?.innings || []).length - 1, 0));
+  return match?.innings?.[index] || match?.innings?.[0] || null;
+};
+
+const statusLabel = (status) => {
+  if (status === "innings-break") return "Innings Break";
+  if (status === "pending_tie_resolution") return "Tie Break";
+  return status ? status.charAt(0).toUpperCase() + status.slice(1) : "Upcoming";
+};
+
+const overValue = (balls) => number(balls) / 6;
+
+const getCrr = (innings) => {
+  if (!innings) return "0.00";
+  if (innings.runRate) return number(innings.runRate).toFixed(2);
+  const overs = overValue(innings.balls);
+  return overs ? (number(innings.runs) / overs).toFixed(2) : "0.00";
+};
+
+const getTarget = (match) => {
+  const currentIndex = number(match?.currentInnings);
+  const current = match?.innings?.[currentIndex];
+  if (current?.target) return number(current.target);
+  if (currentIndex > 0 && match?.innings?.[0]) return number(match.innings[0].runs) + 1;
+  return 0;
+};
+
+const getRrr = (match, innings) => {
+  const target = getTarget(match);
+  if (!target || number(match?.currentInnings) === 0) return null;
+  const remainingRuns = Math.max(target - number(innings?.runs), 0);
+  const remainingBalls = Math.max(number(match?.totalOvers) * 6 - number(innings?.balls), 0);
+  if (!remainingBalls) return "0.00";
+  return ((remainingRuns / remainingBalls) * 6).toFixed(2);
+};
+
+const getResultLine = (match) => {
+  if (match?.result?.description) return match.result.description;
+  if (match?.status === "completed" && match?.result?.winner) {
+    return `${longTeamName(match.result.winner)} won${match.result.margin ? ` by ${match.result.margin}` : ""}`;
+  }
+  return "";
+};
+
+const getTossLine = (match) => {
+  if (!match?.tossWinner) return "Toss not updated";
+  const decision = match.tossDecision === "bowl" ? "bowl" : "bat";
+  return `${longTeamName(match.tossWinner)} chose to ${decision}`;
+};
+
+const ballRuns = (ball) => number(ball.runs);
+
+const ballLabel = (ball) => {
+  if (ball?.isWicket) return "W";
+  if (ball?.isWide) return "Wd";
+  if (ball?.isNoBall) return "Nb";
+  if (ballRuns(ball) === 0) return "•";
+  return String(ballRuns(ball));
+};
+
+const ballClass = (ball) => {
+  if (ball?.isWicket) return "bg-red-600 text-white";
+  if (ball?.isWide || ball?.isNoBall) return "bg-orange-100 text-orange-700 ring-1 ring-orange-200";
+  if (ballRuns(ball) === 4) return "bg-blue-600 text-white";
+  if (ballRuns(ball) === 6) return "bg-purple-600 text-white";
+  if (ballRuns(ball) === 0) return "bg-slate-200 text-slate-600";
+  return "bg-slate-700 text-white";
+};
+
+const ballResultText = (ball) => {
+  if (ball?.isWicket) return "wicket";
+  if (ball?.isWide) return `${ballRuns(ball)} wide`;
+  if (ball?.isNoBall) return `${ballRuns(ball)} no ball`;
+  if (ballRuns(ball) === 0) return "no run";
+  if (ballRuns(ball) === 1) return "1 run";
+  return `${ballRuns(ball)} runs`;
+};
+
+const dismissalParts = (row, players) => {
+  if (!row?.isOut) {
+    if (row?.isRetiredHurt) return { how: "retired hurt", bowler: "" };
+    return { how: "not out", bowler: "" };
+  }
+
+  const type = (row.dismissalType || row.wicketType || "out").toLowerCase();
+  const bowler = playerName(row.dismissedBy, players);
+  const fielder = playerName(row.fielder, players);
+
+  if (type === "bowled") return { how: "b", bowler };
+  if (type === "caught") return { how: `c ${fielder}`, bowler };
+  if (type === "lbw") return { how: "lbw", bowler };
+  if (type === "run out") return { how: `run out (${fielder})`, bowler: "" };
+  if (type === "stumped") return { how: `st ${fielder}`, bowler };
+  if (type === "hit wicket") return { how: "hit wicket", bowler };
+  return { how: type, bowler };
+};
+
+const flattenCommentary = (innings) =>
+  (innings?.oversHistory || [])
+    .map((over) => ({
+      ...over,
+      balls: [...(over.balls || [])].map((ball, index) => ({
+        ...ball,
+        displayBall: ball.ballNumber || index + 1,
+      })),
+    }))
+    .reverse();
 
 const EnhancedMatchTabs = ({ match }) => {
-    const [activeTab, setActiveTab] = useState('live');
-    const { theme } = useTheme();
+  const [activeTab, setActiveTab] = useState("live");
+  const [selectedInnings, setSelectedInnings] = useState(0);
+  const [visibleOvers, setVisibleOvers] = useState(5);
 
-    if (!match) return null;
+  const players = useMemo(() => collectPlayers(match), [match]);
+  const currentInnings = currentInningsOf(match);
+  const currentIndex = Math.min(number(match?.currentInnings), Math.max((match?.innings || []).length - 1, 0));
+  const battingTeam = getTeamById(match, currentInnings?.team);
+  const bowlingTeam = (match?.teams || []).find((team) => !sameId(team, currentInnings?.team));
+  const target = getTarget(match);
+  const rrr = getRrr(match, currentInnings);
+  const selectedInningsData = match?.innings?.[selectedInnings] || currentInnings;
+  const selectedBattingTeam = getTeamById(match, selectedInningsData?.team);
+  const isLive = match?.status === "live";
 
-    const tabs = [
-        { id: 'live', label: 'Live Score' },
-        { id: 'scorecard', label: 'Scorecard' },
-        { id: 'commentary', label: 'Commentary' },
-        { id: 'stats', label: 'Stats' },
-        { id: 'overs', label: 'Overs' },
-        { id: 'xi', label: 'Playing XI' },
-        { id: 'table', label: 'Points Table' },
-        { id: 'photos', label: 'Photos' },
-        { id: 'videos', label: 'Videos' },
-        { id: 'blogs', label: 'Blogs' }
-    ];
+  if (!match) return null;
 
-    const currentInnings = match.currentInnings || 0;
-    const curInn = match.innings?.[currentInnings];
-    const battingTeamId = curInn?.battingTeam?._id || curInn?.battingTeam;
-    const bowlingTeamId = curInn?.bowlingTeam?._id || curInn?.bowlingTeam;
+  const strikerId = idOf(currentInnings?.onStrikeBatsman || currentInnings?.currentBatsman1);
+  const batterRows = currentInnings?.batting || [];
+  const striker = batterRows.find((row) => sameId(row.player, strikerId));
+  const partner = batterRows.find(
+    (row) =>
+      sameId(row.player, currentInnings?.currentBatsman1) ||
+      sameId(row.player, currentInnings?.currentBatsman2)
+  );
+  const nonStriker = batterRows.find(
+    (row) =>
+      !sameId(row.player, strikerId) &&
+      (sameId(row.player, currentInnings?.currentBatsman1) || sameId(row.player, currentInnings?.currentBatsman2))
+  ) || (partner && !sameId(partner.player, strikerId) ? partner : null);
+  const bowler = (currentInnings?.bowling || []).find((row) => sameId(row.player, currentInnings?.currentBowler));
+  const recentOvers = (currentInnings?.oversHistory || []).slice(-3);
+  const commentaryOvers = flattenCommentary(currentInnings);
 
-    const battingTeamObj = match.teams?.find(t => t._id === battingTeamId);
-    const bowlingTeamObj = match.teams?.find(t => t._id === bowlingTeamId);
-
-    const getSquad = (teamId) => {
-        const squad = match.squad15?.find(s => (s.team?._id || s.team) === teamId);
-        return squad?.players || [];
-    };
-
-    const getSquadMeta = (teamId) => {
-        return match.squad15?.find(s => (s.team?._id || s.team) === teamId);
-    };
-
-    const formatOvers = (balls) => {
-        if (!balls) return "0.0";
-        return `${Math.floor(balls / 6)}.${balls % 6}`;
-    };
-
-    const strikerId = curInn?.onStrikeBatsman?._id || curInn?.onStrikeBatsman;
-    const nonStrikerId = (curInn?.currentBatsman1?._id === strikerId ? curInn?.currentBatsman2?._id : curInn?.currentBatsman1?._id) || curInn?.currentBatsman1;
-    const bowlerId = curInn?.currentBowler?._id || curInn?.currentBowler;
-
-    const strikerStats = curInn?.batting?.find(b => (b.player?._id || b.player) === strikerId);
-    const nonStrikerStats = curInn?.batting?.find(b => (b.player?._id || b.player) === nonStrikerId);
-    const activeBowlerStats = curInn?.bowling?.find(b => (b.player?._id || b.player) === bowlerId);
-
-    const playingXI = (teamId) => match.playingXI?.find(xi => (xi.team?._id || xi.team) === teamId)?.players || [];
-
-    return (
-        <div className="min-h-screen bg-slate-50 dark:bg-[#0a0e14] text-slate-900 dark:text-slate-300 transition-colors duration-500">
-            {/* Professional Header Navigation */}
-            <div className="sticky top-0 z-[60] bg-white/80 dark:bg-[#0a0e14]/80 backdrop-blur-xl border-b border-slate-200 dark:border-white/5">
-                <div className="max-w-[1600px] mx-auto px-10 h-24 flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                        <div className="w-12 h-12 bg-[#ff6b35] rounded-2xl flex items-center justify-center font-black text-white shadow-lg rotate-3">BQ</div>
-                        <div>
-                            <h1 className="text-xl font-black tracking-tighter dark:text-white uppercase italic">Live <span className="text-[#ff6b35]">Match</span></h1>
-                            <div className="text-[10px] font-black text-slate-500 uppercase tracking-[0.3em]">Official Broadcast Feed</div>
-                        </div>
-                    </div>
-
-                    <div className="flex items-center gap-8">
-                        <div className="hidden lg:flex items-center gap-8">
-                            {tabs.map(tab => (
-                                <button 
-                                    key={tab.id} 
-                                    onClick={() => setActiveTab(tab.id)}
-                                    className={`text-[10px] font-black uppercase tracking-[0.2em] transition-all hover:text-[#ff6b35] relative py-2 ${activeTab === tab.id ? 'text-[#ff6b35]' : 'text-slate-400'}`}
-                                >
-                                    {tab.label}
-                                    {activeTab === tab.id && <div className="absolute bottom-0 left-0 w-full h-1 bg-[#ff6b35] rounded-full shadow-[0_0_10px_rgba(255,107,53,0.5)]" />}
-                                </button>
-                            ))}
-                        </div>
-                        <div className="h-10 w-px bg-slate-200 dark:bg-white/5 mx-4" />
-                        <ThemeToggle />
-                    </div>
-                </div>
-                
-                {/* Mobile Tab Scroll */}
-                <div className="lg:hidden flex overflow-x-auto no-scrollbar border-t border-slate-200 dark:border-white/5 px-6 gap-6 py-4 bg-white dark:bg-[#0d1b2a]">
-                    {tabs.map(tab => (
-                        <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`text-[9px] font-black uppercase tracking-widest whitespace-nowrap px-4 py-2 rounded-full transition-all ${activeTab === tab.id ? 'bg-[#ff6b35] text-white shadow-lg' : 'text-slate-500 bg-slate-100 dark:bg-white/5'}`}>
-                            {tab.label}
-                        </button>
-                    ))}
-                </div>
+  return (
+    <main className="min-h-screen bg-[#eef2f6] text-slate-900">
+      <section className="bg-[#07172f] text-white">
+        <div className="mx-auto max-w-6xl px-4 py-5 sm:px-6 lg:px-8">
+          <div className="flex flex-wrap items-center justify-between gap-3 text-xs font-bold uppercase tracking-[0.2em] text-slate-300">
+            <span>BQ-PLAY Live Centre</span>
+            <span className="flex items-center gap-2">
+              {isLive && <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-red-500" />}
+              {statusLabel(match.status)}
+            </span>
+          </div>
+          <div className="mt-5 grid gap-5 lg:grid-cols-[1fr_auto] lg:items-end">
+            <div>
+              <h1 className="text-2xl font-black tracking-tight sm:text-4xl">
+                {longTeamName(match.teams?.[0])} vs {longTeamName(match.teams?.[1])}
+              </h1>
+              <p className="mt-2 text-sm text-slate-300">{getTossLine(match)}</p>
+              {getResultLine(match) && <p className="mt-1 text-sm font-semibold text-amber-300">{getResultLine(match)}</p>}
             </div>
-
-            <div className="pt-12 px-10 max-w-[1600px] mx-auto pb-24">
-                {/* Score Header */}
-                <div className="flex flex-col md:flex-row justify-between items-center md:items-end mb-16 gap-8 text-center md:text-left">
-                    <div className="space-y-4">
-                        <div className="text-[10px] font-black text-[#ff6b35] uppercase tracking-[0.5em] flex items-center justify-center md:justify-start gap-3">
-                            <span className="w-2 h-2 bg-[#ff6b35] rounded-full animate-pulse" />
-                            Live Match scoring
-                        </div>
-                        <h2 className="text-4xl md:text-7xl font-black font-raj tracking-tighter text-slate-900 dark:text-white uppercase italic leading-[0.8]">
-                            {match.teams?.[0]?.name} <span className="text-slate-300 dark:text-slate-700 mx-4 opacity-50 font-normal not-italic text-2xl md:text-4xl">vs</span> {match.teams?.[1]?.name}
-                        </h2>
-                    </div>
-                    <div className="md:text-right">
-                        <div className="text-6xl md:text-8xl font-black font-raj tracking-tighter text-slate-900 dark:text-white leading-[0.8]">
-                            {curInn?.runs}/{curInn?.wickets} 
-                            <span className="text-2xl font-black text-[#ffb400] ml-6 italic tracking-tight">{curInn?.runRate || '0.00'} <span className="text-[10px] uppercase not-italic text-slate-500 tracking-widest ml-1">CRR</span></span>
-                        </div>
-                        <div className="text-xl font-black text-slate-400 dark:text-slate-500 mt-6 uppercase tracking-widest italic">{formatOvers(curInn?.balls)} <span className="opacity-30">Overs Completed</span></div>
-                    </div>
-                </div>
-
-                {/* Tab Content Render */}
-                <div className="animate-in fade-in duration-700">
-                    {activeTab === 'live' && (
-                        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-                            <div className="lg:col-span-8 space-y-8">
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                    {/* Striker Card */}
-                                    <div className="bg-white dark:bg-[#141b24] p-8 rounded-[2.5rem] border border-slate-200 dark:border-[#ff6b35] shadow-xl">
-                                        <div className="text-[10px] uppercase font-black text-[#ff6b35] tracking-[0.3em] mb-6">Striker</div>
-                                        <div className="flex justify-between items-end">
-                                            <div>
-                                                <div className="text-3xl font-black font-raj text-slate-900 dark:text-white italic uppercase tracking-tighter">{match.playingXI?.flatMap(xi => xi.players).find(p => p._id === strikerId)?.name || 'Unknown'}*</div>
-                                                <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-2">Currently at Crease</div>
-                                            </div>
-                                            <div className="text-right">
-                                                <div className="text-5xl font-black font-raj text-slate-900 dark:text-white">{strikerStats?.runs || 0}</div>
-                                                <div className="text-sm font-bold text-slate-500">{strikerStats?.balls || 0} balls • {strikerStats?.fours || 0}x4 {strikerStats?.sixes || 0}x6</div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    {/* Non-Striker Card */}
-                                    <div className="bg-white dark:bg-[#141b24] p-8 rounded-[2.5rem] border border-slate-200 dark:border-white/5 opacity-80">
-                                        <div className="text-[10px] uppercase font-black text-slate-400 tracking-[0.3em] mb-6">Non-Striker</div>
-                                        <div className="flex justify-between items-end">
-                                            <div>
-                                                <div className="text-3xl font-black font-raj text-slate-900 dark:text-white italic uppercase tracking-tighter">{match.playingXI?.flatMap(xi => xi.players).find(p => p._id === nonStrikerId)?.name || 'Unknown'}</div>
-                                                <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-2">At Other End</div>
-                                            </div>
-                                            <div className="text-right">
-                                                <div className="text-5xl font-black font-raj text-slate-900 dark:text-white">{nonStrikerStats?.runs || 0}</div>
-                                                <div className="text-sm font-bold text-slate-500">{nonStrikerStats?.balls || 0} balls • {nonStrikerStats?.fours || 0}x4 {nonStrikerStats?.sixes || 0}x6</div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                                {/* Bowler Card */}
-                                <div className="bg-white dark:bg-[#141b24] p-10 rounded-[3rem] border border-slate-200 dark:border-blue-500/30 shadow-2xl relative overflow-hidden">
-                                    <div className="absolute top-0 right-0 p-10 opacity-5 dark:opacity-10 text-blue-500">
-                                        <svg width="120" height="120" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/></svg>
-                                    </div>
-                                    <div className="text-[10px] uppercase font-black text-blue-500 tracking-[0.3em] mb-8">Active Bowler</div>
-                                    <div className="flex flex-col md:flex-row justify-between items-center gap-8">
-                                        <div className="flex items-center gap-6">
-                                            <div className="w-20 h-20 bg-blue-500/10 rounded-[2rem] flex items-center justify-center text-3xl text-blue-500">🎾</div>
-                                            <div>
-                                                <div className="text-4xl font-black font-raj text-slate-900 dark:text-white italic uppercase tracking-tighter">{match.playingXI?.flatMap(xi => xi.players).find(p => p._id === bowlerId)?.name || 'Unknown'}</div>
-                                                <div className="text-[11px] font-black text-slate-500 uppercase tracking-widest mt-2 italic">Current Spell: {activeBowlerStats?.overs || 0}.{activeBowlerStats?.balls % 6 || 0} Overs</div>
-                                            </div>
-                                        </div>
-                                        <div className="flex gap-12">
-                                            <div className="text-center">
-                                                <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Wickets</div>
-                                                <div className="text-5xl font-black font-raj text-red-500">{activeBowlerStats?.wickets || 0}</div>
-                                            </div>
-                                            <div className="text-center border-l border-slate-200 dark:border-white/5 pl-12">
-                                                <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Runs</div>
-                                                <div className="text-5xl font-black font-raj text-slate-900 dark:text-white">{activeBowlerStats?.runs || 0}</div>
-                                            </div>
-                                            <div className="text-center border-l border-slate-200 dark:border-white/5 pl-12">
-                                                <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Econ</div>
-                                                <div className="text-5xl font-black font-raj text-blue-500">{activeBowlerStats?.economy || '0.0'}</div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                            <div className="lg:col-span-4 space-y-8">
-                                <div className="bg-white dark:bg-[#141b24] p-10 rounded-[3rem] border border-slate-200 dark:border-white/5 shadow-xl">
-                                    <h3 className="text-[10px] font-black uppercase text-[#ff6b35] tracking-[0.3em] mb-10">Win Probability</h3>
-                                    <div className="flex items-center gap-6 mb-8">
-                                        <div className="flex-1 h-3 bg-white/5 rounded-full overflow-hidden flex">
-                                            <div className="h-full bg-[#ff6b35] transition-all duration-1000" style={{ width: '65%' }} />
-                                            <div className="h-full bg-blue-500 transition-all duration-1000" style={{ width: '35%' }} />
-                                        </div>
-                                    </div>
-                                    <div className="flex justify-between font-black font-raj text-xl italic uppercase tracking-tighter">
-                                        <span className="text-[#ff6b35]">{match.teams?.[0]?.shortName} 65%</span>
-                                        <span className="text-blue-500">{match.teams?.[1]?.shortName} 35%</span>
-                                    </div>
-                                </div>
-                                <div className="bg-white dark:bg-[#141b24] p-10 rounded-[3rem] border border-slate-200 dark:border-white/5 shadow-xl">
-                                    <h3 className="text-[10px] font-black uppercase text-slate-500 tracking-[0.3em] mb-8">Partnership</h3>
-                                    <div className="text-center space-y-4">
-                                        <div className="text-6xl font-black font-raj text-slate-900 dark:text-white">48<span className="text-xl text-slate-500 ml-2">runs</span></div>
-                                        <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Off 32 deliveries</div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {activeTab === 'scorecard' && (
-                        <div className="space-y-12 animate-in slide-in-from-bottom-8 duration-700">
-                            {/* Batting Scorecard */}
-                            <div className="bg-white dark:bg-[#141b24] rounded-[2.5rem] border border-slate-200 dark:border-white/5 overflow-hidden shadow-2xl">
-                                <div className="p-8 border-b border-slate-200 dark:border-white/5 bg-slate-50 dark:bg-white/2 flex justify-between items-center">
-                                    <h3 className="text-lg font-black font-raj tracking-[0.2em] uppercase italic text-[#ff6b35]">{battingTeamObj?.name} Batting</h3>
-                                    <div className="text-2xl font-black font-raj text-slate-900 dark:text-white">{curInn?.runs}/{curInn?.wickets} <span className="text-sm font-bold text-slate-500">({formatOvers(curInn?.balls)} Ov)</span></div>
-                                </div>
-                                <div className="overflow-x-auto no-scrollbar">
-                                    <table className="w-full text-left min-w-[800px]">
-                                        <thead>
-                                            <tr className="text-[10px] uppercase font-black tracking-widest text-slate-500 bg-slate-50 dark:bg-white/2 pb-4">
-                                                <th className="pl-10 py-6 w-1/3">Batter</th>
-                                                <th className="px-4 py-6">Dismissal</th>
-                                                <th className="px-4 py-6 text-center">R</th>
-                                                <th className="px-4 py-6 text-center">B</th>
-                                                <th className="px-4 py-6 text-center">4s</th>
-                                                <th className="px-4 py-6 text-center">6s</th>
-                                                <th className="pr-10 py-6 text-right">SR</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody className="divide-y divide-slate-100 dark:divide-white/5">
-                                            {curInn?.batting?.map((b, idx) => {
-                                                const pName = match.playingXI?.flatMap(xi => xi.players).find(p => p._id === (b.player?._id || b.player))?.name || "Unknown";
-                                                return (
-                                                    <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-white/2 transition-all">
-                                                        <td className="pl-10 py-6">
-                                                            <div className="font-black font-raj text-lg tracking-tight uppercase italic text-slate-900 dark:text-white">{pName}</div>
-                                                        </td>
-                                                        <td className="px-4 py-6 text-xs font-bold text-slate-400 italic uppercase">
-                                                            {b.isOut ? (b.wicketType || 'Out') : 'not out'}
-                                                        </td>
-                                                        <td className="px-4 py-6 text-center font-black font-raj text-xl text-slate-900 dark:text-white">{b.runs}</td>
-                                                        <td className="px-4 py-6 text-center text-sm font-bold text-slate-500">{b.balls}</td>
-                                                        <td className="px-4 py-6 text-center text-sm font-bold text-slate-500">{b.fours}</td>
-                                                        <td className="px-4 py-6 text-center text-sm font-bold text-slate-500">{b.sixes}</td>
-                                                        <td className="pr-10 py-6 text-right font-black font-raj text-lg text-[#ffb400]">{b.strikeRate || '0.0'}</td>
-                                                    </tr>
-                                                );
-                                            })}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
-
-                            {/* Bowling Scorecard */}
-                            <div className="bg-white dark:bg-[#141b24] rounded-[2.5rem] border border-slate-200 dark:border-white/5 overflow-hidden shadow-2xl">
-                                <div className="p-8 border-b border-slate-200 dark:border-white/5 bg-slate-50 dark:bg-white/2">
-                                    <h3 className="text-lg font-black font-raj tracking-[0.2em] uppercase italic text-blue-500">{bowlingTeamObj?.name} Bowling</h3>
-                                </div>
-                                <div className="overflow-x-auto no-scrollbar">
-                                    <table className="w-full text-left min-w-[800px]">
-                                        <thead>
-                                            <tr className="text-[10px] uppercase font-black tracking-widest text-slate-500 bg-slate-50 dark:bg-white/2 pb-4">
-                                                <th className="pl-10 py-6 w-1/3">Bowler</th>
-                                                <th className="px-4 py-6 text-center">O</th>
-                                                <th className="px-4 py-6 text-center">M</th>
-                                                <th className="px-4 py-6 text-center">R</th>
-                                                <th className="px-4 py-6 text-center">W</th>
-                                                <th className="px-4 py-6 text-center">ECON</th>
-                                                <th className="pr-10 py-6 text-right">0s</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody className="divide-y divide-slate-100 dark:divide-white/5">
-                                            {curInn?.bowling?.map((bw, idx) => {
-                                                const pName = match.playingXI?.flatMap(xi => xi.players).find(p => p._id === (bw.player?._id || bw.player))?.name || "Unknown";
-                                                return (
-                                                    <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-white/2 transition-all">
-                                                        <td className="pl-10 py-6">
-                                                            <div className="font-black font-raj text-lg tracking-tight uppercase italic text-slate-900 dark:text-white">{pName}</div>
-                                                        </td>
-                                                        <td className="px-4 py-6 text-center font-black font-raj text-xl text-slate-900 dark:text-white">{bw.overs}.{bw.balls % 6}</td>
-                                                        <td className="px-4 py-6 text-center text-sm font-bold text-slate-500">{bw.maidens || 0}</td>
-                                                        <td className="px-4 py-6 text-center font-black font-raj text-xl text-slate-900 dark:text-white">{bw.runs}</td>
-                                                        <td className="px-4 py-6 text-center font-black font-raj text-2xl text-red-500">{bw.wickets}</td>
-                                                        <td className="px-4 py-6 text-center font-black font-raj text-lg text-blue-500">{bw.economy || '0.00'}</td>
-                                                        <td className="pr-10 py-6 text-right text-sm font-bold text-slate-500">{bw.dotBalls || 0}</td>
-                                                    </tr>
-                                                );
-                                            })}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {activeTab === 'commentary' && (
-                        <div className="max-w-4xl mx-auto space-y-8 pb-20">
-                            {curInn?.oversHistory?.slice().reverse().map((over, idx) => (
-                                <div key={idx} className="space-y-6">
-                                    <div className="flex items-center gap-6 py-4 px-8 bg-slate-100 dark:bg-white/2 rounded-3xl border border-slate-200 dark:border-white/5">
-                                        <div className="text-[10px] font-black uppercase text-slate-500 tracking-widest whitespace-nowrap">End of Over {over.overNumber + 1}</div>
-                                        <div className="h-px flex-1 bg-slate-200 dark:bg-white/5" />
-                                        <div className="text-xl font-black font-raj text-[#ff6b35]">{over.runsScored} Runs • {over.wickets} Wkts</div>
-                                    </div>
-                                    <div className="space-y-4">
-                                        {over.balls?.slice().reverse().map((ball, bIdx) => (
-                                            <div key={bIdx} className="flex gap-8 items-start group">
-                                                <div className="w-16 pt-2">
-                                                    <div className="text-[14px] font-black font-raj text-slate-400 tabular-nums tracking-tighter">{over.overNumber}.{over.balls.length - bIdx}</div>
-                                                    <div className={`mt-3 w-10 h-10 rounded-xl flex items-center justify-center text-white font-black text-sm shadow-lg ${ball.isWicket ? 'bg-red-500' : ball.runs >= 4 ? 'bg-blue-600' : 'bg-slate-400'}`}>
-                                                        {ball.isWicket ? 'W' : ball.runs}
-                                                    </div>
-                                                </div>
-                                                <div className="flex-1 p-6 bg-white dark:bg-[#141b24] rounded-3xl border border-slate-200 dark:border-white/5 hover:border-[#ff6b35]/20 transition-all shadow-md">
-                                                    <p className="text-slate-700 dark:text-white font-bold leading-relaxed">
-                                                        {ball.commentary || "Good length delivery, pushed toward the field."}
-                                                    </p>
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    )}
-
-                    {activeTab === 'stats' && (
-                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 pb-20">
-                            <div className="space-y-8">
-                                <div className="bg-white dark:bg-[#141b24] p-10 rounded-[3rem] border border-slate-200 dark:border-white/5 shadow-xl space-y-10">
-                                    <h3 className="text-[10px] font-black uppercase text-[#ff6b35] tracking-[0.3em]">Top Run Scorers</h3>
-                                    <div className="space-y-6">
-                                        {curInn?.batting?.filter(b => b.runs > 0).sort((a,b)=>b.runs-a.runs).slice(0, 3).map((b, idx) => {
-                                            const pName = match.playingXI?.flatMap(xi => xi.players).find(p => p._id === (b.player?._id || b.player))?.name || "Unknown";
-                                            return (
-                                                <div key={idx} className="space-y-2">
-                                                    <div className="flex justify-between text-[11px] font-black uppercase tracking-widest">
-                                                        <span className="text-slate-700 dark:text-white">{pName}</span>
-                                                        <span className="text-[#ffb400]">{b.runs} ({b.balls})</span>
-                                                    </div>
-                                                    <div className="h-2 w-full bg-slate-100 dark:bg-white/5 rounded-full overflow-hidden">
-                                                        <div style={{ width: `${(b.runs / Math.max(...curInn.batting.map(x=>x.runs), 1)) * 100}%` }} className="h-full bg-gradient-to-r from-[#ff6b35] to-[#ffb400] rounded-full" />
-                                                    </div>
-                                                </div>
-                                            )
-                                        })}
-                                    </div>
-                                </div>
-                                <div className="bg-white dark:bg-[#141b24] p-10 rounded-[3rem] border border-slate-200 dark:border-white/5 shadow-xl">
-                                    <h3 className="text-[10px] font-black uppercase text-[#ffb400] tracking-[0.3em] mb-10">Manhattan (Runs Per Over)</h3>
-                                    <div className="aspect-[21/9] relative px-4 flex items-end gap-1">
-                                        {curInn?.oversHistory?.map((ov, i) => (
-                                            <div key={i} className="flex-1 flex flex-col justify-end group relative h-full">
-                                                <div style={{ height: `${(ov.runsScored / Math.max(...curInn.oversHistory.map(h => h.runsScored), 10)) * 100}%` }} className="w-full bg-[#ffb400]/40 rounded-t-sm group-hover:bg-[#ffb400] transition-all" />
-                                                <div className="opacity-0 group-hover:opacity-100 absolute -top-8 left-1/2 -translate-x-1/2 bg-slate-900 text-white text-[10px] font-black px-2 py-1 rounded transition-all">{ov.runsScored}</div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                            </div>
-                            <div className="bg-white dark:bg-[#141b24] p-10 rounded-[3rem] border border-slate-200 dark:border-white/5 shadow-xl">
-                                <h3 className="text-[10px] font-black uppercase text-[#009cff] tracking-[0.3em] mb-10">Worm Graph (Cumulative)</h3>
-                                <div className="aspect-[21/9] relative px-4">
-                                    <svg width="100%" height="100%" viewBox="0 0 400 200" preserveAspectRatio="none">
-                                        {(() => {
-                                            const inn1 = match.innings?.[0]?.oversHistory || [];
-                                            const inn2 = match.innings?.[1]?.oversHistory || [];
-                                            const maxScore = Math.max(match.innings?.[0]?.runs || 10, match.innings?.[1]?.runs || 10, 50);
-                                            const maxOvers = match.totalOvers || 20;
-
-                                            const getPoints = (hist) => {
-                                                let p = "0,200 ";
-                                                let curr = 0;
-                                                hist.forEach((ov, i) => {
-                                                    curr += ov.runsScored;
-                                                    p += `${((i + 1) / maxOvers) * 400},${200 - (curr / maxScore) * 200} `;
-                                                });
-                                                return p;
-                                            };
-
-                                            return (
-                                                <>
-                                                    <path d={`M ${getPoints(inn1)}`} fill="none" stroke="#ff6b35" strokeWidth="3" className="animate-draw-path" />
-                                                    <path d={`M ${getPoints(inn2)}`} fill="none" stroke="#009cff" strokeWidth="3" className="animate-draw-path" />
-                                                </>
-                                            );
-                                        })()}
-                                    </svg>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {activeTab === 'overs' && (
-                        <div className="bg-white dark:bg-[#141b24] rounded-[2.5rem] border border-slate-200 dark:border-white/5 overflow-hidden shadow-2xl mb-20">
-                            <table className="w-full text-left">
-                                <thead className="bg-slate-50 dark:bg-white/5 border-b border-slate-200 dark:border-white/5">
-                                    <tr className="text-[10px] uppercase font-black tracking-widest text-slate-500">
-                                        <th className="px-10 py-6">Over</th>
-                                        <th className="px-6 py-6 text-center">Score</th>
-                                        <th className="px-6 py-6 text-center">Runs</th>
-                                        <th className="pr-10 py-6 text-right">Summary</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-slate-100 dark:divide-white/5">
-                                    {curInn?.oversHistory?.slice().reverse().map((over, idx) => (
-                                        <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-white/2 transition-all">
-                                            <td className="px-10 py-6 text-xl font-black font-raj text-slate-900 dark:text-white">{over.overNumber + 1}</td>
-                                            <td className="px-6 py-6 text-center font-black font-raj text-lg opacity-40">...</td>
-                                            <td className="px-6 py-6 text-center font-black font-raj text-xl text-[#ff6b35]">{over.runsScored}</td>
-                                            <td className="pr-10 py-6 flex justify-end gap-2">
-                                                {over.balls?.map((b, bi) => (
-                                                    <div key={bi} className={`w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-black ${b.isWicket ? 'bg-red-500 text-white' : b.runs >= 4 ? 'bg-blue-600 text-white' : 'bg-slate-100 dark:bg-white/5 text-slate-500'}`}>
-                                                        {b.isWicket ? 'W' : b.runs}
-                                                    </div>
-                                                ))}
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                    )}
-
-                    {activeTab === 'xi' && (
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-12 pb-20">
-                            {match.teams?.map((team, tIdx) => {
-                                const players = playingXI(team._id);
-                                return (
-                                    <div key={team._id} className="space-y-8">
-                                        <div className="flex items-center gap-4 border-l-4 border-[#ff6b35] pl-6">
-                                            <h3 className="text-3xl font-black font-raj tracking-tighter uppercase italic text-slate-900 dark:text-white">{team.name}</h3>
-                                        </div>
-                                        <div className="grid grid-cols-1 gap-3">
-                                            {players.map((p, pIdx) => (
-                                                <div key={p._id} className="bg-white dark:bg-[#141b24] p-5 rounded-3xl border border-slate-200 dark:border-white/5 flex justify-between items-center shadow-sm">
-                                                    <div className="flex items-center gap-4">
-                                                        <div className="w-8 h-8 rounded-full bg-slate-100 dark:bg-white/2 flex items-center justify-center text-[10px] font-black text-slate-500">{pIdx+1}</div>
-                                                        <div>
-                                                            <div className="text-sm font-black text-slate-900 dark:text-white italic uppercase tracking-tight">{p.name}</div>
-                                                            <div className="text-[9px] font-bold text-slate-500 uppercase tracking-widest mt-0.5">{p.playingRole || 'Player'}</div>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    )}
-
-                    {/* Placeholder content for Photos, Videos, Blogs */}
-                    {(activeTab === 'photos' || activeTab === 'videos') && (
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 mb-20">
-                            {[1, 2, 3, 4, 5, 6].map(i => (
-                                <div key={i} className="group relative bg-slate-200 dark:bg-[#141b24] rounded-[2rem] border border-slate-200 dark:border-white/5 overflow-hidden aspect-video shadow-lg">
-                                    <div className="absolute inset-0 bg-slate-300 dark:bg-slate-800 animate-pulse" />
-                                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent opacity-0 group-hover:opacity-100 transition-opacity p-6 flex flex-col justify-end">
-                                        <div className="text-[10px] font-black uppercase text-[#ff6b35] tracking-widest">Match Gallery</div>
-                                        <div className="text-sm font-black text-white uppercase italic">Broadcast Moment {i}</div>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    )}
-
-                    {activeTab === 'blogs' && (
-                        <div className="max-w-4xl mx-auto space-y-6 pb-20">
-                            {[1, 2, 3].map(i => (
-                                <div key={i} className="bg-white dark:bg-[#141b24] p-10 rounded-[3rem] border border-slate-200 dark:border-white/5 shadow-xl flex gap-10">
-                                    <div className="text-3xl font-black font-raj text-slate-200 dark:text-slate-800">#0{i}</div>
-                                    <div className="space-y-2">
-                                        <h4 className="text-2xl font-black font-raj text-slate-900 dark:text-white uppercase italic">Crucial Match Update</h4>
-                                        <p className="text-slate-500 dark:text-slate-400 leading-relaxed">Live match analysis and expert commentary on the current situation...</p>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    )}
-                    
-                    {activeTab === 'table' && (
-                        <div className="bg-white dark:bg-[#141b24] rounded-[3rem] border border-slate-200 dark:border-white/5 overflow-hidden shadow-2xl mb-20">
-                             <div className="p-20 text-center space-y-4">
-                                <div className="text-4xl">📊</div>
-                                <div className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-600 tracking-[0.4em]">Tournament Standings Updating...</div>
-                            </div>
-                        </div>
-                    )}
-                </div>
+            <div className="rounded-xl bg-white px-5 py-4 text-right text-slate-950 shadow-lg">
+              <div className="text-sm font-black uppercase text-slate-500">{longTeamName(battingTeam)}</div>
+              <div className="text-4xl font-black tabular-nums">
+                {number(currentInnings?.runs)}/{number(currentInnings?.wickets)}
+              </div>
+              <div className="text-sm font-bold text-slate-500">
+                {formatOvers(currentInnings?.balls)} ov
+                {target > 0 && <span className="ml-2 text-orange-600">Target {target}</span>}
+              </div>
             </div>
+          </div>
         </div>
-    );
+      </section>
+
+      <nav className="sticky top-0 z-30 border-b border-slate-200 bg-white/95 backdrop-blur">
+        <div className="mx-auto flex max-w-6xl gap-2 overflow-x-auto px-4 py-2 sm:px-6 lg:px-8">
+          {TABS.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveTab(tab.id)}
+              className={`whitespace-nowrap rounded-lg px-4 py-2 text-sm font-black transition ${
+                activeTab === tab.id ? "bg-[#ff6b35] text-white shadow" : "text-slate-600 hover:bg-slate-100"
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      </nav>
+
+      <div className="mx-auto max-w-6xl px-4 py-5 sm:px-6 lg:px-8">
+        {activeTab === "live" && (
+          <div className="grid gap-4 lg:grid-cols-[1fr_360px]">
+            <section className="space-y-4">
+              <ScoreSummary
+                innings={currentInnings}
+                battingTeam={battingTeam}
+                bowlingTeam={bowlingTeam}
+                crr={getCrr(currentInnings)}
+                rrr={rrr}
+                target={target}
+                totalOvers={match.totalOvers}
+              />
+              <CurrentPlayers
+                striker={striker}
+                nonStriker={nonStriker}
+                bowler={bowler}
+                strikerId={strikerId}
+                players={players}
+              />
+              <RecentBalls overs={recentOvers} />
+            </section>
+            <aside className="space-y-4">
+              <MiniInfo match={match} />
+              <CommentaryPreview overs={commentaryOvers} players={players} />
+            </aside>
+          </div>
+        )}
+
+        {activeTab === "scorecard" && (
+          <ScorecardTab
+            match={match}
+            innings={selectedInningsData}
+            selectedInnings={selectedInnings}
+            setSelectedInnings={setSelectedInnings}
+            battingTeam={selectedBattingTeam}
+            players={players}
+          />
+        )}
+
+        {activeTab === "commentary" && (
+          <CommentaryTab
+            overs={commentaryOvers}
+            players={players}
+            visibleOvers={visibleOvers}
+            onLoadMore={() => setVisibleOvers((value) => value + 5)}
+          />
+        )}
+
+        {activeTab === "info" && <MatchInfoTab match={match} />}
+      </div>
+    </main>
+  );
 };
+
+function ScoreSummary({ innings, battingTeam, bowlingTeam, crr, rrr, target, totalOvers }) {
+  const required = target ? Math.max(target - number(innings?.runs), 0) : 0;
+
+  return (
+    <div className="rounded-xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <div className="text-xs font-black uppercase tracking-[0.18em] text-orange-600">Live Score</div>
+          <h2 className="mt-2 text-xl font-black">{longTeamName(battingTeam)}</h2>
+          <p className="text-sm text-slate-500">Batting against {longTeamName(bowlingTeam)}</p>
+        </div>
+        <div className="text-right">
+          <div className="text-4xl font-black tabular-nums">{number(innings?.runs)}/{number(innings?.wickets)}</div>
+          <div className="text-sm font-bold text-slate-500">{formatOvers(innings?.balls)} / {totalOvers || 0} ov</div>
+        </div>
+      </div>
+      <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <Metric label="CRR" value={crr} />
+        <Metric label="RRR" value={rrr || "-"} />
+        <Metric label="Target" value={target || "-"} />
+        <Metric label="Need" value={target ? `${required}` : "-"} />
+      </div>
+    </div>
+  );
+}
+
+function Metric({ label, value }) {
+  return (
+    <div className="rounded-lg bg-slate-50 p-3">
+      <div className="text-[10px] font-black uppercase tracking-widest text-slate-500">{label}</div>
+      <div className="mt-1 text-xl font-black tabular-nums">{value}</div>
+    </div>
+  );
+}
+
+function PlayerLine({ row, label, players, active }) {
+  const name = playerName(row?.player, players);
+  return (
+    <div className={`rounded-lg border p-3 ${active ? "border-orange-300 bg-orange-50" : "border-slate-200 bg-white"}`}>
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <div className="text-[10px] font-black uppercase tracking-widest text-slate-500">{label}</div>
+          <div className="font-black">{name}{active ? " *" : ""}</div>
+        </div>
+        <div className="text-right font-black tabular-nums">{number(row?.runs)} ({number(row?.balls)})</div>
+      </div>
+      <div className="mt-2 grid grid-cols-4 gap-2 text-center text-xs font-bold text-slate-500">
+        <span>4s {number(row?.fours)}</span>
+        <span>6s {number(row?.sixes)}</span>
+        <span className="col-span-2">SR {strikeRate(row?.runs, row?.balls)}</span>
+      </div>
+    </div>
+  );
+}
+
+function CurrentPlayers({ striker, nonStriker, bowler, strikerId, players }) {
+  return (
+    <div className="grid gap-4 md:grid-cols-2">
+      <div className="rounded-xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
+        <h3 className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">Current Batsmen</h3>
+        <div className="mt-3 space-y-3">
+          <PlayerLine row={striker} label="On strike" players={players} active={sameId(striker?.player, strikerId)} />
+          <PlayerLine row={nonStriker} label="Non-striker" players={players} />
+        </div>
+      </div>
+      <div className="rounded-xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
+        <h3 className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">Current Bowler</h3>
+        <div className="mt-3 rounded-lg bg-slate-50 p-3">
+          <div className="font-black">{playerName(bowler?.player, players)}</div>
+          <div className="mt-3 grid grid-cols-5 gap-2 text-center text-sm">
+            <MetricSmall label="O" value={formatBowlerOvers(bowler)} />
+            <MetricSmall label="M" value={number(bowler?.maidens)} />
+            <MetricSmall label="R" value={number(bowler?.runs)} />
+            <MetricSmall label="W" value={number(bowler?.wickets)} />
+            <MetricSmall label="Econ" value={bowler?.economy || economyRate(bowler?.runs, bowler?.balls)} />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MetricSmall({ label, value }) {
+  return (
+    <div>
+      <div className="text-[10px] font-black uppercase text-slate-400">{label}</div>
+      <div className="font-black tabular-nums">{value}</div>
+    </div>
+  );
+}
+
+function RecentBalls({ overs }) {
+  return (
+    <div className="rounded-xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
+      <h3 className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">Recent Balls</h3>
+      <div className="mt-4 space-y-3">
+        {overs.length ? (
+          overs.map((over) => (
+            <div key={over._id || over.overNumber} className="flex flex-wrap items-center gap-2">
+              <span className="mr-2 rounded bg-slate-100 px-2 py-1 text-[11px] font-black text-slate-600">
+                Ov {number(over.overNumber) + 1} - {number(over.runsScored)} runs
+              </span>
+              {(over.balls || []).map((ball, index) => (
+                <span
+                  key={ball._id || `${over.overNumber}-${index}`}
+                  className={`flex h-9 min-w-9 items-center justify-center rounded-full px-2 text-xs font-black ${ballClass(ball)}`}
+                >
+                  {ballLabel(ball)}
+                </span>
+              ))}
+            </div>
+          ))
+        ) : (
+          <p className="text-sm text-slate-500">No balls recorded yet.</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function CommentaryPreview({ overs, players }) {
+  const firstBall = overs.flatMap((over) => over.balls.map((ball) => ({ ball, over })))[0];
+  return (
+    <div className="rounded-xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
+      <h3 className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">Latest Commentary</h3>
+      {firstBall ? (
+        <CommentaryBall over={firstBall.over} ball={firstBall.ball} players={players} compact />
+      ) : (
+        <p className="mt-3 text-sm text-slate-500">Commentary will appear here after the first ball.</p>
+      )}
+    </div>
+  );
+}
+
+function MiniInfo({ match }) {
+  return (
+    <div className="rounded-xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
+      <h3 className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">Match Info</h3>
+      <dl className="mt-3 space-y-2 text-sm">
+        <InfoRow label="Venue" value={match.venue || "TBC"} />
+        <InfoRow label="Date" value={formatDate(match.startAt)} />
+        <InfoRow label="Type" value={match.matchType || "T20"} />
+        <InfoRow label="Toss" value={getTossLine(match)} />
+      </dl>
+    </div>
+  );
+}
+
+function ScorecardTab({ match, innings, selectedInnings, setSelectedInnings, battingTeam, players }) {
+  const extras = innings?.extras || {};
+  const totalExtras = number(extras.total) || number(extras.wides) + number(extras.noBalls) + number(extras.byes) + number(extras.legByes) + number(extras.penalties);
+
+  return (
+    <section className="space-y-4">
+      <div className="flex gap-2 overflow-x-auto">
+        {(match.innings || []).map((inn, index) => {
+          const team = getTeamById(match, inn.team);
+          return (
+            <button
+              type="button"
+              key={inn._id || index}
+              onClick={() => setSelectedInnings(index)}
+              className={`rounded-lg px-4 py-2 text-sm font-black ${
+                selectedInnings === index ? "bg-[#07172f] text-white" : "bg-white text-slate-600 ring-1 ring-slate-200"
+              }`}
+            >
+              {teamName(team)} innings
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-slate-200">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-slate-50 px-4 py-3">
+          <h2 className="font-black">{longTeamName(battingTeam)}</h2>
+          <div className="font-black tabular-nums">{number(innings?.runs)}/{number(innings?.wickets)} ({formatOvers(innings?.balls)} ov)</div>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[780px] text-left text-sm">
+            <thead className="bg-slate-50 text-[11px] uppercase tracking-widest text-slate-500">
+              <tr>
+                <th className="px-4 py-3">Batter</th>
+                <th className="px-4 py-3">How Out</th>
+                <th className="px-4 py-3">Bowler</th>
+                <th className="px-3 py-3 text-right">R</th>
+                <th className="px-3 py-3 text-right">B</th>
+                <th className="px-3 py-3 text-right">4s</th>
+                <th className="px-3 py-3 text-right">6s</th>
+                <th className="px-4 py-3 text-right">SR</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {(innings?.batting || []).map((row) => {
+                const dismissal = dismissalParts(row, players);
+                return (
+                  <tr key={idOf(row.player)} className={!row.isOut ? "border-l-4 border-l-emerald-500" : ""}>
+                    <td className="px-4 py-3 font-black">{playerName(row.player, players)}</td>
+                    <td className="px-4 py-3 text-slate-500">{dismissal.how}</td>
+                    <td className="px-4 py-3 text-slate-500">{dismissal.bowler}</td>
+                    <td className="px-3 py-3 text-right font-black">{number(row.runs)}</td>
+                    <td className="px-3 py-3 text-right">{number(row.balls)}</td>
+                    <td className="px-3 py-3 text-right">{number(row.fours)}</td>
+                    <td className="px-3 py-3 text-right">{number(row.sixes)}</td>
+                    <td className="px-4 py-3 text-right">{row.strikeRate ? number(row.strikeRate).toFixed(2) : strikeRate(row.runs, row.balls)}</td>
+                  </tr>
+                );
+              })}
+              <tr className="bg-slate-50 font-bold">
+                <td className="px-4 py-3">Extras</td>
+                <td className="px-4 py-3 text-slate-500" colSpan={2}>
+                  w {number(extras.wides)}, nb {number(extras.noBalls)}, b {number(extras.byes)}, lb {number(extras.legByes)}
+                </td>
+                <td className="px-3 py-3 text-right font-black">{totalExtras}</td>
+                <td colSpan={4} />
+              </tr>
+              <tr className="bg-slate-100 font-black">
+                <td className="px-4 py-3">Total</td>
+                <td className="px-4 py-3" colSpan={2}>{formatOvers(innings?.balls)} Ov (RR: {getCrr(innings)})</td>
+                <td className="px-3 py-3 text-right">{number(innings?.runs)}/{number(innings?.wickets)}</td>
+                <td colSpan={4} />
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <InfoBlock title="Fall of Wickets">
+        {(innings?.fallOfWickets || []).length
+          ? innings.fallOfWickets.map((wicket) => `${wicket.wickets}-${wicket.runs} (${playerName(wicket.player, players)}, ${number(wicket.overs).toFixed(1)} ov)`).join(", ")
+          : "No wickets yet"}
+      </InfoBlock>
+
+      <div className="overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-slate-200">
+        <div className="border-b border-slate-200 bg-slate-50 px-4 py-3 font-black">Bowling</div>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[680px] text-left text-sm">
+            <thead className="bg-slate-50 text-[11px] uppercase tracking-widest text-slate-500">
+              <tr>
+                <th className="px-4 py-3">Bowler</th>
+                <th className="px-3 py-3 text-right">O</th>
+                <th className="px-3 py-3 text-right">M</th>
+                <th className="px-3 py-3 text-right">R</th>
+                <th className="px-3 py-3 text-right">W</th>
+                <th className="px-3 py-3 text-right">Econ</th>
+                <th className="px-3 py-3 text-right">WD</th>
+                <th className="px-4 py-3 text-right">NB</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {(innings?.bowling || []).map((row) => (
+                <tr key={idOf(row.player)}>
+                  <td className="px-4 py-3 font-black">{playerName(row.player, players)}</td>
+                  <td className="px-3 py-3 text-right">{formatBowlerOvers(row)}</td>
+                  <td className="px-3 py-3 text-right">{number(row.maidens)}</td>
+                  <td className="px-3 py-3 text-right">{number(row.runs)}</td>
+                  <td className="px-3 py-3 text-right font-black">{number(row.wickets)}</td>
+                  <td className="px-3 py-3 text-right">{row.economy || economyRate(row.runs, row.balls)}</td>
+                  <td className="px-3 py-3 text-right">{number(row.wides)}</td>
+                  <td className="px-4 py-3 text-right">{number(row.noBalls)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function CommentaryTab({ overs, players, visibleOvers, onLoadMore }) {
+  const visible = overs.slice(0, visibleOvers);
+  return (
+    <section className="space-y-4">
+      {visible.length ? visible.map((over) => (
+        <div key={over._id || over.overNumber} className="overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-slate-200">
+          <div className="flex flex-wrap items-center justify-between gap-2 bg-slate-50 px-4 py-3">
+            <div className="text-xs font-black uppercase tracking-widest text-slate-500">Over {number(over.overNumber) + 1}</div>
+            <div className="font-black text-orange-600">{number(over.runsScored)} runs, {number(over.wickets)} wkts</div>
+          </div>
+          <div className="divide-y divide-slate-100">
+            {(over.balls || []).slice().reverse().map((ball, index) => (
+              <CommentaryBall key={ball._id || index} over={over} ball={ball} players={players} />
+            ))}
+          </div>
+        </div>
+      )) : <div className="rounded-xl bg-white p-6 text-slate-500 shadow-sm ring-1 ring-slate-200">No commentary yet.</div>}
+
+      {overs.length > visibleOvers && (
+        <button
+          type="button"
+          onClick={onLoadMore}
+          className="w-full rounded-xl bg-[#07172f] px-4 py-3 font-black text-white"
+        >
+          Load more commentary
+        </button>
+      )}
+    </section>
+  );
+}
+
+function CommentaryBall({ over, ball, players, compact = false }) {
+  const overText = `${number(over.overNumber)}.${ball.displayBall || ball.ballNumber || 1}`;
+  const bowler = ball.bowlerName || playerName(ball.bowler || over.bowler, players);
+  const batsman = ball.batsmanName || playerName(ball.batsmanOnStrike, players);
+  const text = ball.vividCommentary || ball.commentary || "Played into the field.";
+  return (
+    <div className={`flex gap-3 ${compact ? "mt-3" : "p-4"}`}>
+      <div className="w-12 shrink-0 text-sm font-black tabular-nums text-slate-500">{overText}</div>
+      <div className={`flex h-9 min-w-9 shrink-0 items-center justify-center rounded-full px-2 text-xs font-black ${ballClass(ball)}`}>
+        {ballLabel(ball)}
+      </div>
+      <div className="min-w-0">
+        <p className="text-sm font-bold">
+          {overText} {bowler} to {batsman}, {ballResultText(ball)}.
+        </p>
+        <p className="mt-1 text-sm leading-6 text-slate-600">{text}</p>
+      </div>
+    </div>
+  );
+}
+
+function MatchInfoTab({ match }) {
+  const weather = match.weather?.condition
+    ? `${match.weather.condition}${match.weather.temperature ? `, ${match.weather.temperature}C` : ""}`
+    : "Not available";
+  const umpires = (match.umpires || []).map((umpire) => `${umpire.name}${umpire.role ? ` (${umpire.role})` : ""}`).join(", ");
+  const address = match.address
+    ? [match.address.town, match.address.district, match.address.city, match.address.province, match.address.country].filter(Boolean).join(", ")
+    : "";
+
+  return (
+    <section className="grid gap-4 md:grid-cols-2">
+      <InfoCard title="Match Details">
+        <InfoRow label="Venue" value={match.venue || "TBC"} />
+        <InfoRow label="Address" value={address || "Not available"} />
+        <InfoRow label="Date" value={formatDate(match.startAt)} />
+        <InfoRow label="Match Type" value={match.matchType || "T20"} />
+        <InfoRow label="Category" value={[match.matchCategory || match.category, match.subCategory, match.ageGroup].filter(Boolean).join(" - ")} />
+      </InfoCard>
+      <InfoCard title="Officials & Conditions">
+        <InfoRow label="Toss" value={getTossLine(match)} />
+        <InfoRow label="Umpires" value={umpires || "Not available"} />
+        <InfoRow label="Series" value={match.series || "Not available"} />
+        <InfoRow label="Weather" value={weather} />
+        <InfoRow label="Status" value={statusLabel(match.status)} />
+      </InfoCard>
+      {(match.teams || []).map((team) => (
+        <InfoCard key={idOf(team)} title={`${longTeamName(team)} Playing XI`}>
+          <p className="text-sm leading-7 text-slate-700">
+            {getPlayingXI(match, team).map((player) => playerName(player)).join(", ") || "Playing XI not announced"}
+          </p>
+        </InfoCard>
+      ))}
+    </section>
+  );
+}
+
+function InfoCard({ title, children }) {
+  return (
+    <div className="rounded-xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
+      <h2 className="mb-3 text-xs font-black uppercase tracking-[0.18em] text-slate-500">{title}</h2>
+      <dl className="space-y-2">{children}</dl>
+    </div>
+  );
+}
+
+function InfoRow({ label, value }) {
+  return (
+    <div className="grid grid-cols-[120px_1fr] gap-3 text-sm">
+      <dt className="font-bold text-slate-500">{label}</dt>
+      <dd className="font-semibold text-slate-800">{value || "Not available"}</dd>
+    </div>
+  );
+}
+
+function InfoBlock({ title, children }) {
+  return (
+    <div className="rounded-xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
+      <h3 className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">{title}</h3>
+      <p className="mt-2 text-sm leading-6 text-slate-700">{children}</p>
+    </div>
+  );
+}
 
 export default EnhancedMatchTabs;

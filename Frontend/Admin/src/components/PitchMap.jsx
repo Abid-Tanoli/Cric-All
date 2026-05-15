@@ -1,33 +1,30 @@
-import React, { useRef, useState, useCallback } from "react";
+import React, { useCallback, useRef, useState } from "react";
 import "./PitchMap.css";
 
-// ─── CONSTANTS ─────────────────────────────────────────────────────────────────
-const SVG_W = 260;
-const SVG_H = 520;
-const PITCH_X = 60;
-const PITCH_Y = 40;
-const PITCH_W = 140;
-const PITCH_H = 440;
+const SVG_W = 620;
+const SVG_H = 720;
+const PITCH_X = 255;
+const PITCH_Y = 42;
+const PITCH_W = 110;
+const PITCH_H = 602;
 
-// Line zones (X positions across the pitch width)
 const LINE_ZONES = [
     { id: "wide_outside_off", label: "Wide Outside Off", xMin: 0, xMax: 0.10 },
     { id: "outside_off", label: "Outside Off", xMin: 0.10, xMax: 0.25 },
-    { id: "off_stump", label: "Off Stump", xMin: 0.25, xMax: 0.40, corridor: true },
-    { id: "middle_stump", label: "Middle Stump", xMin: 0.40, xMax: 0.60, corridor: true },
-    { id: "leg_stump", label: "Leg Stump", xMin: 0.60, xMax: 0.75, corridor: true },
+    { id: "off_stump", label: "Off Stump", xMin: 0.25, xMax: 0.40 },
+    { id: "middle_stump", label: "Middle Stump", xMin: 0.40, xMax: 0.60 },
+    { id: "leg_stump", label: "Leg Stump", xMin: 0.60, xMax: 0.75 },
     { id: "outside_leg", label: "Outside Leg", xMin: 0.75, xMax: 0.90 },
     { id: "wide_outside_leg", label: "Wide Outside Leg", xMin: 0.90, xMax: 1.0 },
 ];
 
-// Length zones (Y positions - top=batsman end, bottom=bowler end)
 const LENGTH_ZONES = [
-    { id: "full_toss", label: "Full Toss", yMin: 0, yMax: 0.08, dist: "0m" },
-    { id: "yorker", label: "Yorker", yMin: 0.08, yMax: 0.18, dist: "2m" },
-    { id: "full", label: "Full", yMin: 0.18, yMax: 0.35, dist: "3-4m" },
-    { id: "good_length", label: "Good Length", yMin: 0.35, yMax: 0.55, dist: "5-6m" },
-    { id: "hard_length", label: "Hard Length", yMin: 0.55, yMax: 0.72, dist: "7-8m" },
-    { id: "bouncer", label: "Bouncer", yMin: 0.72, yMax: 1.0, dist: "9m+" },
+    { id: "full_toss", label: "Full toss", yMin: 0, yMax: 0.12, dist: "0m" },
+    { id: "yorker", label: "Yorker", yMin: 0.12, yMax: 0.29, dist: "2m" },
+    { id: "full", label: "Full", yMin: 0.29, yMax: 0.52, dist: "4m" },
+    { id: "good_length", label: "Good", yMin: 0.52, yMax: 0.67, dist: "6m" },
+    { id: "hard_length", label: "Hard", yMin: 0.67, yMax: 0.82, dist: "8m" },
+    { id: "bouncer", label: "Bouncer", yMin: 0.82, yMax: 1.0, dist: "Halfway" },
 ];
 
 const SHOT_TYPES = [
@@ -36,95 +33,121 @@ const SHOT_TYPES = [
     "Missed / Beaten", "Edged", "No Shot Offered"
 ];
 
-// Dot color based on outcome
+const shotToId = (shot) => shot.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+
 function getDotColor(outcome) {
-    if (outcome.wicket) return "#ff2d78";       // hot pink
-    if (outcome.runs === 6) return "#3b82f6";   // blue
-    if (outcome.runs === 4) return "#84cc16";    // green-gold
-    if (outcome.runs >= 1) return "#cbd5e1";     // slightly darker grey
-    return "#f1f5f9";                             // light grey (dot ball)
-}
-function getDotStroke(outcome) {
-    if (outcome.wicket) return "#be185d";
-    if (outcome.runs === 6) return "#1d4ed8";
-    if (outcome.runs === 4) return "#4d7c0f";
-    return "#94a3b8";
+    if (outcome.wicket) return "#f71963";
+    if (outcome.runs === 6) return "#4b5563";
+    if (outcome.runs === 4) return "#6b7280";
+    if (outcome.runs >= 1) return "#a8adb7";
+    return "#f4f4f5";
 }
 
-// Map line/length IDs to pixel coordinates
+function getDotStroke(outcome) {
+    if (outcome.wicket) return "#f71963";
+    if (outcome.runs === 6) return "#111827";
+    if (outcome.runs === 4) return "#374151";
+    return "#e5e7eb";
+}
+
 function lineToX(lineId) {
     const zone = LINE_ZONES.find(z => z.id === lineId);
     if (!zone) return PITCH_X + PITCH_W / 2;
-    const mid = (zone.xMin + zone.xMax) / 2;
-    return PITCH_X + mid * PITCH_W;
+    return PITCH_X + ((zone.xMin + zone.xMax) / 2) * PITCH_W;
 }
+
 function lengthToY(lengthId) {
     const zone = LENGTH_ZONES.find(z => z.id === lengthId);
     if (!zone) return PITCH_Y + PITCH_H / 2;
-    const mid = (zone.yMin + zone.yMax) / 2;
-    return PITCH_Y + mid * PITCH_H;
+    return PITCH_Y + ((zone.yMin + zone.yMax) / 2) * PITCH_H;
 }
 
-// Pixel position to zone IDs
 function xToLine(px) {
     const rel = (px - PITCH_X) / PITCH_W;
-    for (const z of LINE_ZONES) {
-        if (rel >= z.xMin && rel <= z.xMax) return z.id;
+    for (const zone of LINE_ZONES) {
+        if (rel >= zone.xMin && rel <= zone.xMax) return zone.id;
     }
     return rel < 0.5 ? "wide_outside_off" : "wide_outside_leg";
 }
+
 function yToLength(py) {
     const rel = (py - PITCH_Y) / PITCH_H;
-    for (const z of LENGTH_ZONES) {
-        if (rel >= z.yMin && rel <= z.yMax) return z.id;
+    for (const zone of LENGTH_ZONES) {
+        if (rel >= zone.yMin && rel <= zone.yMax) return zone.id;
     }
     return rel < 0.5 ? "full_toss" : "bouncer";
 }
 
-// ─── COMPONENT ─────────────────────────────────────────────────────────────────
 export default function PitchMap({
-    balls = [],           // Array of ball data objects for the current over
+    balls = [],
     currentOver = 0,
-    onBallSubmit,         // callback(ballData)
     bowlerName = "",
     batsmanName = "",
-    viewMode = "this_over", // "this_over" | "full_innings"
+    viewMode = "this_over",
+    selectedLine: controlledLine,
+    onLineChange,
+    selectedLength: controlledLength,
+    onLengthChange,
+    selectedShot: controlledShot,
+    onShotChange,
+    clickPosition: controlledClickPos,
+    onClickPositionChange,
 }) {
     const svgRef = useRef(null);
-    const [selectedLine, setSelectedLine] = useState("");
-    const [selectedLength, setSelectedLength] = useState("");
-    const [selectedShot, setSelectedShot] = useState("");
-    const [clickPos, setClickPos] = useState(null); // {x, y} raw SVG coords
+    const [internalLine, setInternalLine] = useState("");
+    const [internalLength, setInternalLength] = useState("");
+    const [internalShot, setInternalShot] = useState("");
+    const [internalClickPos, setInternalClickPos] = useState(null);
     const [hoverPos, setHoverPos] = useState(null);
     const [ripple, setRipple] = useState(null);
 
-    // Click handler on pitch SVG
-    const handlePitchClick = useCallback((e) => {
+    const selectedLine = controlledLine ?? internalLine;
+    const selectedLength = controlledLength ?? internalLength;
+    const selectedShot = controlledShot ?? internalShot;
+    const clickPos = controlledClickPos ?? internalClickPos;
+
+    const updateLine = (value) => {
+        setInternalLine(value);
+        onLineChange?.(value);
+    };
+
+    const updateLength = (value) => {
+        setInternalLength(value);
+        onLengthChange?.(value);
+    };
+
+    const updateShot = (value) => {
+        setInternalShot(value);
+        onShotChange?.(value);
+    };
+
+    const updateClickPos = (value) => {
+        setInternalClickPos(value);
+        onClickPositionChange?.(value);
+    };
+
+    const handlePitchClick = useCallback((event) => {
         const svg = svgRef.current;
         if (!svg) return;
         const rect = svg.getBoundingClientRect();
-        const sx = (e.clientX - rect.left) * (SVG_W / rect.width);
-        const sy = (e.clientY - rect.top) * (SVG_H / rect.height);
-
-        // Clamp within pitch area
+        const sx = (event.clientX - rect.left) * (SVG_W / rect.width);
+        const sy = (event.clientY - rect.top) * (SVG_H / rect.height);
         const cx = Math.max(PITCH_X, Math.min(PITCH_X + PITCH_W, sx));
         const cy = Math.max(PITCH_Y, Math.min(PITCH_Y + PITCH_H, sy));
 
-        setClickPos({ x: cx, y: cy });
-        setSelectedLine(xToLine(cx));
-        setSelectedLength(yToLength(cy));
-
-        // Ripple animation
+        updateClickPos({ x: cx, y: cy });
+        updateLine(xToLine(cx));
+        updateLength(yToLength(cy));
         setRipple({ x: cx, y: cy, key: Date.now() });
-        setTimeout(() => setRipple(null), 600);
+        setTimeout(() => setRipple(null), 500);
     }, []);
 
-    const handleMouseMove = useCallback((e) => {
+    const handleMouseMove = useCallback((event) => {
         const svg = svgRef.current;
         if (!svg) return;
         const rect = svg.getBoundingClientRect();
-        const sx = (e.clientX - rect.left) * (SVG_W / rect.width);
-        const sy = (e.clientY - rect.top) * (SVG_H / rect.height);
+        const sx = (event.clientX - rect.left) * (SVG_W / rect.width);
+        const sy = (event.clientY - rect.top) * (SVG_H / rect.height);
         if (sx >= PITCH_X && sx <= PITCH_X + PITCH_W && sy >= PITCH_Y && sy <= PITCH_Y + PITCH_H) {
             setHoverPos({ x: sx, y: sy, line: xToLine(sx), length: yToLength(sy) });
         } else {
@@ -132,315 +155,180 @@ export default function PitchMap({
         }
     }, []);
 
-    // When line/length dropdowns change, update click position
-    const handleLineChange = (val) => {
-        setSelectedLine(val);
-        if (val && selectedLength) {
-            setClickPos({ x: lineToX(val), y: lengthToY(selectedLength) });
-        }
-    };
-    const handleLengthChange = (val) => {
-        setSelectedLength(val);
-        if (selectedLine && val) {
-            setClickPos({ x: lineToX(selectedLine), y: lengthToY(val) });
-        }
+    const handleLineChange = (value) => {
+        updateLine(value);
+        if (value && selectedLength) updateClickPos({ x: lineToX(value), y: lengthToY(selectedLength) });
     };
 
-    // Compute the pitch-relative % for data
-    const getPitchPercent = () => {
-        if (!clickPos) return { pitchX: 50, pitchY: 50 };
-        return {
-            pitchX: Math.round(((clickPos.x - PITCH_X) / PITCH_W) * 100),
-            pitchY: Math.round(((clickPos.y - PITCH_Y) / PITCH_H) * 100),
-        };
+    const handleLengthChange = (value) => {
+        updateLength(value);
+        if (selectedLine && value) updateClickPos({ x: lineToX(selectedLine), y: lengthToY(value) });
     };
 
-    // Filter balls based on viewMode
     const displayBalls = viewMode === "this_over"
-        ? balls.filter(b => {
-            const ballOver = parseInt(String(b.ballId).split(".")[0]);
-            return ballOver === currentOver;
-        })
+        ? balls.filter(ball => parseInt(String(ball.ballId).split(".")[0], 10) === currentOver)
         : balls;
 
-    // ─── Hover info label ──────────────────────────────────────────────────
     const hoverLineLabel = hoverPos ? LINE_ZONES.find(z => z.id === hoverPos.line)?.label : "";
     const hoverLengthLabel = hoverPos ? LENGTH_ZONES.find(z => z.id === hoverPos.length)?.label : "";
 
     return (
         <div className="pitchmap-root">
             <div className="pitchmap-header">
-                <h4 className="pitchmap-title">PITCH MAP</h4>
-                <span className="pitchmap-subtitle">Ball-by-Ball Tracking</span>
+                <h4 className="pitchmap-title">Pitch Map</h4>
+                <span className="pitchmap-subtitle">{bowlerName && batsmanName ? `${bowlerName} to ${batsmanName}` : "Bowling Length Map"}</span>
             </div>
 
-            {/* SVG Pitch View */}
             <div className="pitchmap-svg-wrap">
-                {/* Left labels (length zones) */}
-                <div className="pitchmap-labels-left">
-                    {LENGTH_ZONES.map(z => (
-                        <div key={z.id} className="pitchmap-len-label" style={{
-                            top: `${(z.yMin + z.yMax) / 2 * 100}%`,
-                        }}>
-                            <span className="pitchmap-len-name">{z.label}</span>
-                        </div>
-                    ))}
-                </div>
-
-                {/* SVG */}
                 <svg
                     ref={svgRef}
                     viewBox={`0 0 ${SVG_W} ${SVG_H}`}
-                    className="pitchmap-svg"
+                    className="pitchmap-svg pitchmap-svg-reference"
                     onClick={handlePitchClick}
                     onMouseMove={handleMouseMove}
                     onMouseLeave={() => setHoverPos(null)}
                 >
                     <defs>
-                        <linearGradient id="pm-pitch-grad" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="0%" stopColor="#2d5a27" />
-                            <stop offset="50%" stopColor="#1e4620" />
-                            <stop offset="100%" stopColor="#2d5a27" />
-                        </linearGradient>
-                        <linearGradient id="pm-corridor" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="0%" stopColor="rgba(234,179,8,0.25)" />
-                            <stop offset="100%" stopColor="rgba(234,179,8,0.15)" />
-                        </linearGradient>
                         <filter id="pm-dot-shadow">
-                            <feDropShadow dx="0" dy="1" stdDeviation="2" floodOpacity="0.5" />
+                            <feDropShadow dx="0" dy="2" stdDeviation="2" floodOpacity="0.22" />
                         </filter>
                     </defs>
 
-                    {/* Outfield background */}
-                    <rect x="0" y="0" width={SVG_W} height={SVG_H} fill="#1a3a16" rx="12" />
+                    <rect x="0" y="0" width={SVG_W} height={SVG_H} rx="8" fill="#2c7a17" />
 
-                    {/* Pitch strip */}
-                    <rect x={PITCH_X} y={PITCH_Y} width={PITCH_W} height={PITCH_H}
-                        fill="url(#pm-pitch-grad)" rx="4" stroke="rgba(255,255,255,0.15)" strokeWidth="1" />
+                    <rect x={PITCH_X} y={PITCH_Y} width={PITCH_W} height={PITCH_H} fill="#ffd333" />
+                    <rect x={PITCH_X + PITCH_W * 0.41} y={PITCH_Y} width={PITCH_W * 0.18} height={PITCH_H} fill="#f3c927" />
+                    <rect x={PITCH_X} y={PITCH_Y} width={PITCH_W * 0.065} height={PITCH_H} fill="#ffe35c" />
+                    <rect x={PITCH_X + PITCH_W * 0.935} y={PITCH_Y} width={PITCH_W * 0.065} height={PITCH_H} fill="#ffe35c" />
 
-                    {/* Corridor of uncertainty (off/middle/leg stump zone) */}
-                    {LINE_ZONES.filter(z => z.corridor).map(z => (
-                        <rect key={z.id}
-                            x={PITCH_X + z.xMin * PITCH_W}
-                            y={PITCH_Y}
-                            width={(z.xMax - z.xMin) * PITCH_W}
-                            height={PITCH_H}
-                            fill="url(#pm-corridor)"
-                        />
-                    ))}
-
-                    {/* Horizontal length zone lines */}
-                    {LENGTH_ZONES.slice(1).map(z => (
-                        <line key={z.id}
-                            x1={PITCH_X} y1={PITCH_Y + z.yMin * PITCH_H}
-                            x2={PITCH_X + PITCH_W} y2={PITCH_Y + z.yMin * PITCH_H}
-                            stroke="rgba(255,255,255,0.12)" strokeWidth="0.8" strokeDasharray="4 3"
-                        />
-                    ))}
-
-                    {/* Vertical line zone dividers */}
-                    {LINE_ZONES.slice(1).map(z => (
-                        <line key={`v-${z.id}`}
-                            x1={PITCH_X + z.xMin * PITCH_W} y1={PITCH_Y}
-                            x2={PITCH_X + z.xMin * PITCH_W} y2={PITCH_Y + PITCH_H}
-                            stroke="rgba(255,255,255,0.06)" strokeWidth="0.5"
-                        />
-                    ))}
-
-                    {/* Stumps & Crease at batsman's end (TOP) */}
-                    {/* Crease line */}
-                    <line x1={PITCH_X + 20} y1={PITCH_Y + 24} x2={PITCH_X + PITCH_W - 20} y2={PITCH_Y + 24}
-                        stroke="white" strokeWidth="1.5" />
-                    {/* Stumps */}
-                    {[-6, 0, 6].map((ox, i) => (
-                        <rect key={`st-${i}`}
-                            x={PITCH_X + PITCH_W / 2 + ox - 1.5} y={PITCH_Y + 10}
-                            width="3" height="14" fill="white" rx="1"
-                        />
-                    ))}
-                    {/* Bails */}
-                    <rect x={PITCH_X + PITCH_W / 2 - 9} y={PITCH_Y + 9} width="18" height="2.5" fill="#f5f5f5" rx="1" />
-
-                    {/* Bowler's end crease (BOTTOM) */}
-                    <line x1={PITCH_X + 20} y1={PITCH_Y + PITCH_H - 24}
-                        x2={PITCH_X + PITCH_W - 20} y2={PITCH_Y + PITCH_H - 24}
-                        stroke="rgba(255,255,255,0.4)" strokeWidth="1" />
-                    {[-6, 0, 6].map((ox, i) => (
-                        <rect key={`sb-${i}`}
-                            x={PITCH_X + PITCH_W / 2 + ox - 1} y={PITCH_Y + PITCH_H - 22}
-                            width="2" height="10" fill="rgba(255,255,255,0.4)" rx="0.5"
-                        />
-                    ))}
-
-                    {/* Line zone labels at bottom */}
-                    {LINE_ZONES.map(z => {
-                        const cx = PITCH_X + ((z.xMin + z.xMax) / 2) * PITCH_W;
+                    {LENGTH_ZONES.slice(1).map(zone => {
+                        const y = PITCH_Y + zone.yMin * PITCH_H;
                         return (
-                            <text key={`ll-${z.id}`} x={cx} y={PITCH_Y + PITCH_H + 14}
-                                textAnchor="middle" fill="rgba(255,255,255,0.4)"
-                                fontSize="6" fontWeight="700" fontFamily="Inter, sans-serif"
-                                className="pitchmap-zone-text"
-                            >
-                                {z.id === "off_stump" ? "OFF" :
-                                    z.id === "middle_stump" ? "MID" :
-                                        z.id === "leg_stump" ? "LEG" :
-                                            z.id === "outside_off" ? "O.Off" :
-                                                z.id === "outside_leg" ? "O.Leg" :
-                                                    z.id === "wide_outside_off" ? "W" :
-                                                        z.id === "wide_outside_leg" ? "W" : ""}
-                            </text>
+                            <line key={zone.id} x1="0" y1={y} x2={PITCH_X + PITCH_W + 42} y2={y}
+                                stroke="rgba(255,255,255,0.88)" strokeWidth="1.4" />
                         );
                     })}
 
-                    {/* Hover crosshair */}
-                    {hoverPos && (
-                        <g className="pitchmap-crosshair">
-                            <line x1={hoverPos.x} y1={PITCH_Y} x2={hoverPos.x} y2={PITCH_Y + PITCH_H}
-                                stroke="rgba(255,255,255,0.15)" strokeWidth="0.5" />
-                            <line x1={PITCH_X} y1={hoverPos.y} x2={PITCH_X + PITCH_W} y2={hoverPos.y}
-                                stroke="rgba(255,255,255,0.15)" strokeWidth="0.5" />
-                        </g>
-                    )}
-
-                    {/* Previous ball dots */}
-                    {displayBalls.map((b, i) => {
-                        const bx = b.pitchX != null ? PITCH_X + (b.pitchX / 100) * PITCH_W : lineToX(b.line);
-                        const by = b.pitchY != null ? PITCH_Y + (b.pitchY / 100) * PITCH_H : lengthToY(b.length);
-                        const color = getDotColor(b.outcome || { runs: b.runs || 0, wicket: b.isWicket });
-                        const stroke = getDotStroke(b.outcome || { runs: b.runs || 0, wicket: b.isWicket });
+                    {LENGTH_ZONES.map(zone => {
+                        const centerY = PITCH_Y + ((zone.yMin + zone.yMax) / 2) * PITCH_H;
+                        const boundaryY = PITCH_Y + zone.yMin * PITCH_H;
                         return (
-                            <g key={b.ballId || i} filter="url(#pm-dot-shadow)">
-                                <circle cx={bx} cy={by} r={7} fill={color} stroke={stroke}
-                                    strokeWidth="1.5" opacity="0.92" className="pitchmap-dot" />
-                                <text x={bx} y={by + 0.5} textAnchor="middle" dominantBaseline="central"
-                                    fill={b.outcome?.wicket || b.isWicket ? "white" : "#1e293b"}
-                                    fontSize="7" fontWeight="900" fontFamily="Inter, sans-serif"
-                                >
-                                    {b.outcome?.wicket || b.isWicket ? "W" :
-                                        (b.outcome?.runs ?? b.runs) === 0 ? "•" :
-                                            String(b.outcome?.runs ?? b.runs)}
+                            <g key={zone.id}>
+                                <text x={PITCH_X - 40} y={centerY + 8} textAnchor="end"
+                                    fill="#f8fafc" fontSize="28" fontWeight="900" fontFamily="Inter, sans-serif">
+                                    {zone.label}
+                                </text>
+                                <line x1={PITCH_X + PITCH_W} y1={boundaryY} x2={PITCH_X + PITCH_W + 42} y2={boundaryY}
+                                    stroke="#f8fafc" strokeWidth="1.8" />
+                                <text x={PITCH_X + PITCH_W + 62} y={boundaryY + 8}
+                                    fill="#f8fafc" fontSize="28" fontWeight="900" fontFamily="Inter, sans-serif">
+                                    {zone.dist}
                                 </text>
                             </g>
                         );
                     })}
 
-                    {/* Current selection marker */}
-                    {clickPos && (
-                        <g filter="url(#pm-dot-shadow)">
-                            <circle cx={clickPos.x} cy={clickPos.y} r={9}
-                                fill="#ff6b35" stroke="white" strokeWidth="2" opacity="0.95"
-                                className="pitchmap-active-dot"
-                            />
-                            <circle cx={clickPos.x} cy={clickPos.y} r={14}
-                                fill="none" stroke="#ff6b35" strokeWidth="1.5" opacity="0.4"
-                                className="pitchmap-active-ring"
-                            />
+                    <line x1={PITCH_X + 8} y1={PITCH_Y + 50} x2={PITCH_X + PITCH_W - 8} y2={PITCH_Y + 50}
+                        stroke="white" strokeWidth="2.6" />
+                    <line x1={PITCH_X - 14} y1={PITCH_Y + 112} x2={PITCH_X + PITCH_W + 14} y2={PITCH_Y + 112}
+                        stroke="white" strokeWidth="4" />
+                    {[-8, 0, 8].map((offset, index) => (
+                        <circle key={index} cx={PITCH_X + PITCH_W / 2 + offset} cy={PITCH_Y + 42} r="2.2" fill="#0f172a" />
+                    ))}
+
+                    {hoverPos && (
+                        <g>
+                            <line x1={hoverPos.x} y1={PITCH_Y} x2={hoverPos.x} y2={PITCH_Y + PITCH_H}
+                                stroke="rgba(255,255,255,0.45)" strokeWidth="0.8" />
+                            <line x1={PITCH_X} y1={hoverPos.y} x2={PITCH_X + PITCH_W} y2={hoverPos.y}
+                                stroke="rgba(255,255,255,0.55)" strokeWidth="0.8" />
                         </g>
                     )}
 
-                    {/* Click ripple */}
+                    {displayBalls.map((ball, index) => {
+                        const bx = ball.pitchX != null ? PITCH_X + (ball.pitchX / 100) * PITCH_W : lineToX(ball.line);
+                        const by = ball.pitchY != null ? PITCH_Y + (ball.pitchY / 100) * PITCH_H : lengthToY(ball.length);
+                        const outcome = ball.outcome || { runs: ball.runs || 0, wicket: ball.isWicket };
+                        return (
+                            <circle key={ball.ballId || index} cx={bx} cy={by} r="7"
+                                fill={getDotColor(outcome)} stroke={getDotStroke(outcome)} strokeWidth="1.5"
+                                filter="url(#pm-dot-shadow)" />
+                        );
+                    })}
+
+                    {clickPos && (
+                        <g>
+                            <circle cx={clickPos.x} cy={clickPos.y} r="8"
+                                fill="#f71963" stroke="white" strokeWidth="2" className="pitchmap-active-dot" />
+                            <circle cx={clickPos.x} cy={clickPos.y} r="14"
+                                fill="none" stroke="#f71963" strokeWidth="1.5" opacity="0.4" className="pitchmap-active-ring" />
+                        </g>
+                    )}
+
                     {ripple && (
                         <circle key={ripple.key} cx={ripple.x} cy={ripple.y} r="5"
-                            fill="rgba(255,107,53,0.5)" className="pitchmap-ripple"
-                        >
-                            <animate attributeName="r" from="5" to="30" dur="0.5s" fill="freeze" />
-                            <animate attributeName="opacity" from="0.5" to="0" dur="0.5s" fill="freeze" />
+                            fill="rgba(247,25,99,0.45)" className="pitchmap-ripple">
+                            <animate attributeName="r" from="5" to="28" dur="0.45s" fill="freeze" />
+                            <animate attributeName="opacity" from="0.45" to="0" dur="0.45s" fill="freeze" />
                         </circle>
                     )}
                 </svg>
-
-                {/* Right labels (distance markers) */}
-                <div className="pitchmap-labels-right">
-                    {LENGTH_ZONES.map(z => (
-                        <div key={z.id} className="pitchmap-dist-label" style={{
-                            top: `${(z.yMin + z.yMax) / 2 * 100}%`,
-                        }}>
-                            <span className="pitchmap-dist-val">{z.dist}</span>
-                        </div>
-                    ))}
-                </div>
             </div>
 
-            {/* Hover tooltip */}
             {hoverPos && (
                 <div className="pitchmap-hover-tip">
-                    {hoverLengthLabel} · {hoverLineLabel}
+                    {hoverLengthLabel} | {hoverLineLabel}
                 </div>
             )}
 
-            {/* Dropdowns: Line / Length / Shot Type */}
             <div className="pitchmap-controls">
                 <div className="pitchmap-dropdown-row">
                     <div className="pitchmap-dropdown-group">
-                        <label className="pitchmap-label">LINE</label>
-                        <select value={selectedLine} onChange={e => handleLineChange(e.target.value)}
-                            className="pitchmap-select">
+                        <label className="pitchmap-label">Line</label>
+                        <select value={selectedLine} onChange={event => handleLineChange(event.target.value)} className="pitchmap-select">
                             <option value="">Select Line</option>
-                            {LINE_ZONES.map(z => (
-                                <option key={z.id} value={z.id}>{z.label}</option>
-                            ))}
+                            {LINE_ZONES.map(zone => <option key={zone.id} value={zone.id}>{zone.label}</option>)}
                         </select>
                     </div>
                     <div className="pitchmap-dropdown-group">
-                        <label className="pitchmap-label">LENGTH</label>
-                        <select value={selectedLength} onChange={e => handleLengthChange(e.target.value)}
-                            className="pitchmap-select">
+                        <label className="pitchmap-label">Length</label>
+                        <select value={selectedLength} onChange={event => handleLengthChange(event.target.value)} className="pitchmap-select">
                             <option value="">Select Length</option>
-                            {LENGTH_ZONES.map(z => (
-                                <option key={z.id} value={z.id}>{z.label}</option>
-                            ))}
+                            {LENGTH_ZONES.map(zone => <option key={zone.id} value={zone.id}>{zone.label}</option>)}
                         </select>
                     </div>
                 </div>
 
                 <div className="pitchmap-dropdown-group pitchmap-shot-group">
-                    <label className="pitchmap-label">SHOT TYPE</label>
-                    <select value={selectedShot} onChange={e => setSelectedShot(e.target.value)}
-                        className="pitchmap-select">
+                    <label className="pitchmap-label">Shot Type</label>
+                    <select value={selectedShot} onChange={event => updateShot(event.target.value)} className="pitchmap-select">
                         <option value="">Select Shot</option>
-                        {SHOT_TYPES.map(s => (
-                            <option key={s} value={s.toLowerCase().replace(/[\s\/]/g, '_')}>{s}</option>
-                        ))}
+                        {SHOT_TYPES.map(shot => <option key={shot} value={shotToId(shot)}>{shot}</option>)}
                     </select>
                 </div>
             </div>
 
-            {/* Legend */}
-            <div className="pitchmap-legend">
+            <div className="pitchmap-legend pitchmap-reference-legend">
                 {[
-                    { color: "#f1f5f9", border: "#94a3b8", label: "Dot" },
-                    { color: "#cbd5e1", border: "#94a3b8", label: "1-3 Runs" },
-                    { color: "#84cc16", border: "#4d7c0f", label: "FOUR" },
-                    { color: "#3b82f6", border: "#1d4ed8", label: "SIX" },
-                    { color: "#ff2d78", border: "#be185d", label: "Wicket" },
+                    { color: "#f4f4f5", border: "#e5e7eb", label: "0" },
+                    { color: "#a8adb7", border: "#e5e7eb", label: "1+" },
+                    { color: "#6b7280", border: "#374151", label: "4" },
+                    { color: "#4b5563", border: "#111827", label: "6" },
+                    { color: "#f71963", border: "#f71963", label: "W" },
                 ].map(item => (
                     <div key={item.label} className="pitchmap-legend-item">
-                        <span className="pitchmap-legend-dot"
-                            style={{ background: item.color, borderColor: item.border }} />
+                        <span className="pitchmap-legend-dot" style={{ background: item.color, borderColor: item.border }} />
                         <span className="pitchmap-legend-text">{item.label}</span>
                     </div>
                 ))}
             </div>
 
-            {/* Selected info bar */}
-            {(selectedLine || selectedLength) && (
+            {(selectedLine || selectedLength || selectedShot) && (
                 <div className="pitchmap-info-bar">
                     <div className="pitchmap-info-row">
-                        {selectedLine && (
-                            <span className="pitchmap-info-tag pitchmap-info-line">
-                                {LINE_ZONES.find(z => z.id === selectedLine)?.label}
-                            </span>
-                        )}
-                        {selectedLength && (
-                            <span className="pitchmap-info-tag pitchmap-info-length">
-                                {LENGTH_ZONES.find(z => z.id === selectedLength)?.label}
-                            </span>
-                        )}
-                        {selectedShot && (
-                            <span className="pitchmap-info-tag pitchmap-info-shot">
-                                {SHOT_TYPES.find(s => s.toLowerCase().replace(/[\s\/]/g, '_') === selectedShot) || selectedShot}
-                            </span>
-                        )}
+                        {selectedLine && <span className="pitchmap-info-tag pitchmap-info-line">{LINE_ZONES.find(z => z.id === selectedLine)?.label}</span>}
+                        {selectedLength && <span className="pitchmap-info-tag pitchmap-info-length">{LENGTH_ZONES.find(z => z.id === selectedLength)?.label}</span>}
+                        {selectedShot && <span className="pitchmap-info-tag pitchmap-info-shot">{SHOT_TYPES.find(shot => shotToId(shot) === selectedShot) || selectedShot}</span>}
                     </div>
                 </div>
             )}
@@ -448,5 +336,4 @@ export default function PitchMap({
     );
 }
 
-// Export helpers for parent components
 export { LINE_ZONES, LENGTH_ZONES, SHOT_TYPES, getDotColor, lineToX, lengthToY };

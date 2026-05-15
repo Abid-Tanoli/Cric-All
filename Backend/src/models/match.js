@@ -30,7 +30,12 @@ const ballSchema = new mongoose.Schema({
   },
   // Fielding position where ball was fielded
   fieldingZone: { type: String, default: "" },
-  shotType: { type: String, default: "" }
+  shotType: { type: String, default: "" },
+  pitchLine: { type: String, default: "" },
+  pitchLength: { type: String, default: "" },
+  pitchShotType: { type: String, default: "" },
+  pitchX: { type: Number, default: null },
+  pitchY: { type: Number, default: null }
 });
 
 const overSchema = new mongoose.Schema({
