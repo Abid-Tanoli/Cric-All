@@ -1,6 +1,7 @@
 import Match from "../models/match.js";
 import Team from "../models/Team.js";
 import Event from "../models/Event.js";
+import Tournament from "../models/Tournament.js";
 import { getIO } from "../socket/socket.js";
 
 const populateMatch = (query) => {
@@ -39,12 +40,45 @@ const populateMatch = (query) => {
     .populate("teamRoles.wicketKeepers", "name playingRole role");
 };
 
+const matchRoom = (matchId) => `match-${matchId}`;
+
+const getBallRunText = (ball = {}) => {
+  const runs = Number(ball.runs || 0);
+  if (ball.isWicket) return "OUT!";
+  if (ball.isWide) return "wide";
+  if (ball.isNoBall) return "no ball";
+  if (runs === 0) return "no run";
+  if (runs === 1) return "1 run";
+  if (runs === 4) return "FOUR";
+  if (runs === 6) return "SIX";
+  return `${runs} runs`;
+};
+
+const normalizeBallRunText = (matchOrMatches) => {
+  const matches = Array.isArray(matchOrMatches) ? matchOrMatches : [matchOrMatches];
+
+  matches.forEach((match) => {
+    match?.innings?.forEach((innings) => {
+      innings?.oversHistory?.forEach((over) => {
+        over?.balls?.forEach((ball) => {
+          ball.runs = Number(ball.runs || 0);
+          if (!ball.runText) {
+            ball.runText = getBallRunText(ball);
+          }
+        });
+      });
+    });
+  });
+
+  return matchOrMatches;
+};
+
 export const getMatches = async (req, res) => {
   try {
     const matches = await populateMatch(Match.find())
       .sort({ startAt: -1 });
 
-    res.status(200).json(matches);
+    res.status(200).json(normalizeBallRunText(matches));
   } catch (error) {
     console.error("Error fetching matches:", error);
     res.status(500).json({
@@ -62,7 +96,7 @@ export const getMatch = async (req, res) => {
       return res.status(404).json({ message: "Match not found" });
     }
 
-    res.status(200).json(match);
+    res.status(200).json(normalizeBallRunText(match));
   } catch (error) {
     console.error("Error fetching match:", error);
     res.status(500).json({
@@ -452,7 +486,7 @@ export const setPlayingXI = async (req, res) => {
 
     try {
       const io = getIO();
-      io.to(matchId).emit("match:playingXIUpdated", updatedMatch);
+      io.to(matchRoom(matchId)).emit("match:playingXIUpdated", updatedMatch);
     } catch (socketError) {
       console.log("Socket not available:", socketError.message);
     }
@@ -502,8 +536,8 @@ export const setOpeners = async (req, res) => {
 
     try {
       const io = getIO();
-      io.to(matchId).emit("match:openersSet", { matchId, inningsIndex });
-      io.to(matchId).emit("match:updated", updatedMatch);
+      io.to(matchRoom(matchId)).emit("match:openersSet", { matchId, inningsIndex });
+      io.to(matchRoom(matchId)).emit("match:updated", updatedMatch);
     } catch (socketError) {
       console.log("Socket not available:", socketError.message);
     }
@@ -649,7 +683,7 @@ export const setSquad15 = async (req, res) => {
 
     try {
       const io = getIO();
-      io.to(matchId).emit("match:squadUpdated", match);
+      io.to(matchRoom(matchId)).emit("match:squadUpdated", match);
     } catch (socketError) {
       console.log("Socket not available:", socketError.message);
     }
@@ -703,7 +737,7 @@ export const setTwelfthMan = async (req, res) => {
 
     try {
       const io = getIO();
-      io.to(matchId).emit("match:twelfthManUpdated", match);
+      io.to(matchRoom(matchId)).emit("match:twelfthManUpdated", match);
     } catch (socketError) {
       console.log("Socket not available:", socketError.message);
     }
@@ -763,7 +797,7 @@ export const setBowlingXI = async (req, res) => {
 
     try {
       const io = getIO();
-      io.to(matchId).emit("match:bowlingXIUpdated", match);
+      io.to(matchRoom(matchId)).emit("match:bowlingXIUpdated", match);
     } catch (socketError) {
       console.log("Socket not available:", socketError.message);
     }
@@ -842,7 +876,7 @@ export const setTeamRoles = async (req, res) => {
 
     try {
       const io = getIO();
-      io.to(matchId).emit("match:teamRolesUpdated", match);
+      io.to(matchRoom(matchId)).emit("match:teamRolesUpdated", match);
     } catch (socketError) {
       console.log("Socket not available:", socketError.message);
     }

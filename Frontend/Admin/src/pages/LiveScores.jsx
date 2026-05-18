@@ -79,6 +79,7 @@ export default function LiveScores() {
 
     const handleSelectMatch = async (match) => {
         setSelectedMatch(match);
+        setScoreMode(true);
         setLoading(true);
         try {
             const res = await api.get(`/matches/${match._id}`);

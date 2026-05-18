@@ -3,7 +3,8 @@ import React, { useRef, useEffect, useState } from "react";
 // Ball notation badge
 function BallBadge({ ball, small = false }) {
     const isWicket = ball.isWicket;
-    const notation = ball.notation || (ball.isWicket ? "W" : ball.runs === 0 ? "•" : String(ball.runs));
+    const notation = ball.isWicket ? "W" : (ball.runs === 0 && !ball.isWide && !ball.isNoBall) ? "•" : String(ball.runs || 0);
+
     const isFour = ball.runs === 4 && !ball.isWide && !ball.isNoBall && !ball.isWicket;
     const isSix = ball.runs === 6 && !ball.isWide && !ball.isNoBall && !ball.isWicket;
     const isWide = ball.isWide;
@@ -50,37 +51,20 @@ function BallHeader({ ball, overNum, ballNum, onEdit }) {
             <BallBadge ball={ball} />
             <div className="flex-1 min-w-0">
                 <div className="flex items-baseline gap-2 flex-wrap">
-                    <span className="text-slate-500 font-black text-[11px] tabular-nums shrink-0">
-                        {overNum}.{ballNum}
-                    </span>
-                    {!ball.commentary && (
-                        <span className={`text-[10px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider shrink-0 ${ball.isWicket ? "bg-red-500/20 text-red-400" :
-                            ball.runs === 6 ? "bg-purple-500/20 text-purple-400" :
-                                ball.runs === 4 ? "bg-blue-500/20 text-blue-400" :
-                                    (ball.isWide || ball.isNoBall) ? "bg-amber-500/20 text-amber-400" :
-                                        "bg-white/5 text-slate-500"
-                            }`}>
-                            {typeLabel}
-                        </span>
-                    )}
                     <span className="text-slate-900 font-bold text-sm leading-tight">
-                        {ball.commentary || (() => {
+                        {overNum}.{ballNum} {ball.bowlerName || 'Bowler'} to {ball.batsmanName || 'Batsman'}, {(() => {
                             const runs = ball.runs || 0;
-                            const getRunLabel = () => {
-                                if (ball.isWicket) return "out!";
-                                if (ball.isWide) return "wide";
-                                if (ball.isNoBall) return "no ball";
-                                if (runs === 0) return "no run";
-                                if (runs === 1) return "1 run";
-                                if (runs === 4) return "4 runs (FOUR)";
-                                if (runs === 6) return "6 runs (SIX)";
-                                return `${runs} runs`;
-                            };
-                            return `${ball.bowlerName || 'Bowler'} to ${ball.batsmanName || 'Batsman'}, ${getRunLabel()}`;
+                            if (ball.isWicket) return "OUT!";
+                            if (ball.isWide) return "wide";
+                            if (ball.isNoBall) return "no ball";
+                            if (runs === 0) return "no run";
+                            if (runs === 1) return "1 run";
+                            if (runs === 2) return "2 runs";
+                            if (runs === 3) return "3 runs";
+                            if (runs === 4) return "FOUR";
+                            if (runs === 6) return "SIX";
+                            return `${runs} runs`;
                         })()}
-                        {ball.isWicket && (
-                            <span className="text-red-600 font-black"> — OUT!</span>
-                        )}
                     </span>
                 </div>
             </div>
@@ -164,11 +148,10 @@ function OverBlock({ over, balls, onEdit, showReadMore, onReadMore, allPlayers }
                             ballNum={ball.ballNumber}
                             onEdit={onEdit}
                         />
-                        {ball.vividCommentary && ball.vividCommentary !== ball.commentary && (
-                            <div className="ml-12 mt-3 p-3 bg-black/[0.03] rounded-xl border-l-2 border-cric-accent/40">
-                                <span className="text-[9px] font-black uppercase text-cric-accent tracking-[0.2em] block mb-1 opacity-80">Detailed Analysis</span>
+                        {(ball.vividCommentary || ball.commentary) && (
+                            <div className="ml-12 mt-2">
                                 <p className="text-[12px] text-slate-600 italic leading-relaxed">
-                                    {ball.vividCommentary}
+                                    {ball.vividCommentary || ball.commentary}
                                 </p>
                             </div>
                         )}

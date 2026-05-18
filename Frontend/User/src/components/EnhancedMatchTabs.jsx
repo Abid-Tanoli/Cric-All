@@ -174,11 +174,14 @@ const ballClass = (ball) => {
 };
 
 const ballResultText = (ball) => {
-  if (ball?.isWicket) return "wicket";
-  if (ball?.isWide) return `${ballRuns(ball)} wide`;
-  if (ball?.isNoBall) return `${ballRuns(ball)} no ball`;
+  if (ball?.runText) return ball.runText;
+  if (ball?.isWicket) return "OUT!";
+  if (ball?.isWide) return "wide";
+  if (ball?.isNoBall) return "no ball";
   if (ballRuns(ball) === 0) return "no run";
   if (ballRuns(ball) === 1) return "1 run";
+  if (ballRuns(ball) === 4) return "FOUR";
+  if (ballRuns(ball) === 6) return "SIX";
   return `${ballRuns(ball)} runs`;
 };
 
@@ -244,8 +247,9 @@ const EnhancedMatchTabs = ({ match }) => {
       (sameId(row.player, currentInnings?.currentBatsman1) || sameId(row.player, currentInnings?.currentBatsman2))
   ) || (partner && !sameId(partner.player, strikerId) ? partner : null);
   const bowler = (currentInnings?.bowling || []).find((row) => sameId(row.player, currentInnings?.currentBowler));
-  const recentOvers = (currentInnings?.oversHistory || []).slice(-3);
+  const recentOvers = currentInnings?.oversHistory || [];
   const commentaryOvers = flattenCommentary(currentInnings);
+  const currentPartnership = (currentInnings?.partnerships || [])[(currentInnings?.partnerships || []).length - 1] || { runs: 0, balls: 0 };
 
   return (
     <main className="min-h-screen bg-[#eef2f6] text-slate-900">
@@ -309,6 +313,7 @@ const EnhancedMatchTabs = ({ match }) => {
                 rrr={rrr}
                 target={target}
                 totalOvers={match.totalOvers}
+                partnership={currentPartnership}
               />
               <CurrentPlayers
                 striker={striker}
@@ -352,7 +357,7 @@ const EnhancedMatchTabs = ({ match }) => {
   );
 };
 
-function ScoreSummary({ innings, battingTeam, bowlingTeam, crr, rrr, target, totalOvers }) {
+function ScoreSummary({ innings, battingTeam, bowlingTeam, crr, rrr, target, totalOvers, partnership }) {
   const required = target ? Math.max(target - number(innings?.runs), 0) : 0;
 
   return (
@@ -368,11 +373,12 @@ function ScoreSummary({ innings, battingTeam, bowlingTeam, crr, rrr, target, tot
           <div className="text-sm font-bold text-slate-500">{formatOvers(innings?.balls)} / {totalOvers || 0} ov</div>
         </div>
       </div>
-      <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-5">
         <Metric label="CRR" value={crr} />
         <Metric label="RRR" value={rrr || "-"} />
         <Metric label="Target" value={target || "-"} />
         <Metric label="Need" value={target ? `${required}` : "-"} />
+        <Metric label="Partnership" value={`${number(partnership?.runs)} (${number(partnership?.balls)}b)`} />
       </div>
     </div>
   );
@@ -394,7 +400,7 @@ function PlayerLine({ row, label, players, active }) {
       <div className="flex items-center justify-between gap-3">
         <div>
           <div className="text-[10px] font-black uppercase tracking-widest text-slate-500">{label}</div>
-          <div className="font-black">{name}{active ? " *" : ""}</div>
+          <div className="font-black">{name}{active ? " ✦" : ""}</div>
         </div>
         <div className="text-right font-black tabular-nums">{number(row?.runs)} ({number(row?.balls)})</div>
       </div>
@@ -444,26 +450,42 @@ function MetricSmall({ label, value }) {
 }
 
 function RecentBalls({ overs }) {
+  const [overOffset, setOverOffset] = useState(0);
+  const safeOvers = overs || [];
+  const maxOffset = Math.max(safeOvers.length - 1, 0);
+  const windowEnd = Math.max(safeOvers.length - overOffset, 0);
+  const windowStart = Math.max(windowEnd - 4, 0);
+  const visibleOvers = safeOvers.slice(windowStart, windowEnd);
+  const visibleBalls = visibleOvers
+    .flatMap((over) => (over.balls || []).map((ball) => ({ ...ball, overNumber: over.overNumber, overRuns: over.runsScored })))
+    .slice(-18);
+
   return (
     <div className="rounded-xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
-      <h3 className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">Recent Balls</h3>
-      <div className="mt-4 space-y-3">
-        {overs.length ? (
-          overs.map((over) => (
-            <div key={over._id || over.overNumber} className="flex flex-wrap items-center gap-2">
-              <span className="mr-2 rounded bg-slate-100 px-2 py-1 text-[11px] font-black text-slate-600">
-                Ov {number(over.overNumber) + 1} - {number(over.runsScored)} runs
-              </span>
-              {(over.balls || []).map((ball, index) => (
-                <span
-                  key={ball._id || `${over.overNumber}-${index}`}
-                  className={`flex h-9 min-w-9 items-center justify-center rounded-full px-2 text-xs font-black ${ballClass(ball)}`}
-                >
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">Recent Balls</h3>
+        <div className="flex gap-2">
+          <button type="button" onClick={() => setOverOffset((value) => Math.min(value + 1, maxOffset))} className="rounded bg-slate-100 px-2 py-1 text-xs font-black text-slate-600">&lt;</button>
+          <button type="button" onClick={() => setOverOffset((value) => Math.max(value - 1, 0))} className="rounded bg-slate-100 px-2 py-1 text-xs font-black text-slate-600">&gt;</button>
+        </div>
+      </div>
+      <div className="mt-4 flex gap-2 overflow-x-auto pb-2">
+        {visibleBalls.length ? (
+          visibleBalls.map((ball, index) => {
+            const showSeparator = index === 0 || visibleBalls[index - 1]?.overNumber !== ball.overNumber;
+            return (
+              <React.Fragment key={ball._id || `${ball.overNumber}-${index}`}>
+                {showSeparator && (
+                  <span className="flex min-w-fit items-center rounded bg-slate-100 px-2 py-1 text-[11px] font-black text-slate-600">
+                    {number(ball.overNumber) + 1} ({number(ball.overRuns)})
+                  </span>
+                )}
+                <span className={`flex h-9 min-w-9 items-center justify-center rounded-full px-2 text-xs font-black ${ballClass(ball)}`}>
                   {ballLabel(ball)}
                 </span>
-              ))}
-            </div>
-          ))
+              </React.Fragment>
+            );
+          })
         ) : (
           <p className="text-sm text-slate-500">No balls recorded yet.</p>
         )}
@@ -503,6 +525,8 @@ function MiniInfo({ match }) {
 function ScorecardTab({ match, innings, selectedInnings, setSelectedInnings, battingTeam, players }) {
   const extras = innings?.extras || {};
   const totalExtras = number(extras.total) || number(extras.wides) + number(extras.noBalls) + number(extras.byes) + number(extras.legByes) + number(extras.penalties);
+  const battingIds = new Set((innings?.batting || []).map((row) => idOf(row.player)));
+  const dnb = getPlayingXI(match, innings?.team).filter((player) => !battingIds.has(idOf(player)));
 
   return (
     <section className="space-y-4">
@@ -584,6 +608,10 @@ function ScorecardTab({ match, innings, selectedInnings, setSelectedInnings, bat
           : "No wickets yet"}
       </InfoBlock>
 
+      <InfoBlock title="Did Not Bat">
+        {dnb.length ? dnb.map((player) => playerName(player, players)).join(", ") : "All listed batters have appeared"}
+      </InfoBlock>
+
       <div className="overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-slate-200">
         <div className="border-b border-slate-200 bg-slate-50 px-4 py-3 font-black">Bowling</div>
         <div className="overflow-x-auto">
@@ -628,7 +656,9 @@ function CommentaryTab({ overs, players, visibleOvers, onLoadMore }) {
       {visible.length ? visible.map((over) => (
         <div key={over._id || over.overNumber} className="overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-slate-200">
           <div className="flex flex-wrap items-center justify-between gap-2 bg-slate-50 px-4 py-3">
-            <div className="text-xs font-black uppercase tracking-widest text-slate-500">Over {number(over.overNumber) + 1}</div>
+            <div className="text-xs font-black uppercase tracking-widest text-slate-500">
+              Over {number(over.overNumber) + 1} - {playerName(over.bowler, players)}
+            </div>
             <div className="font-black text-orange-600">{number(over.runsScored)} runs, {number(over.wickets)} wkts</div>
           </div>
           <div className="divide-y divide-slate-100">

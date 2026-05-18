@@ -43,7 +43,7 @@ async function seed() {
     status: 'upcoming'
   });
 
-  await match.save();
+  await match.save({ validateModifiedOnly: true });
 
   console.log('Seed completed');
   process.exit(0);

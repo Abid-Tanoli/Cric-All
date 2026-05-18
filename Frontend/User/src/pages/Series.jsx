@@ -3,13 +3,14 @@ import { useParams, Link } from "react-router-dom";
 import { api } from "../services/api";
 import Header from "../components/Header";
 import BlogGallery from "../components/BlogGallery";
+import BoundaryMeter from "../components/BoundaryMeter";
 
 export default function Series() {
   const { seriesId } = useParams();
   const [series, setSeries] = useState(null);
   const [matches, setMatches] = useState([]);
   const [squads, setSquads] = useState([]);
-  const [stats, setStats] = useState({ topRunScorers: [], topWicketTakers: [] });
+  const [stats, setStats] = useState({ topRunScorers: [], topWicketTakers: [], boundaryMeter: { sixes: 0, fours: 0, mostSixes: [], mostFours: [] } });
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("matches");
 
@@ -133,8 +134,23 @@ export default function Series() {
 
     const topRunScorers = Object.values(battingStats).sort((a, b) => b.runs - a.runs).slice(0, 20);
     const topWicketTakers = Object.values(bowlingStats).sort((a, b) => b.wickets - a.wickets).slice(0, 20);
+    const boundaryPlayers = Object.values(battingStats);
+    const boundaryMeter = {
+      sixes: boundaryPlayers.reduce((sum, player) => sum + (player.sixes || 0), 0),
+      fours: boundaryPlayers.reduce((sum, player) => sum + (player.fours || 0), 0),
+      mostSixes: boundaryPlayers
+        .filter(player => player.sixes > 0)
+        .sort((a, b) => b.sixes - a.sixes)
+        .slice(0, 5)
+        .map(player => ({ playerId: player.playerId, name: player.name, team: player.team, count: player.sixes })),
+      mostFours: boundaryPlayers
+        .filter(player => player.fours > 0)
+        .sort((a, b) => b.fours - a.fours)
+        .slice(0, 5)
+        .map(player => ({ playerId: player.playerId, name: player.name, team: player.team, count: player.fours }))
+    };
 
-    return { topRunScorers, topWicketTakers };
+    return { topRunScorers, topWicketTakers, boundaryMeter };
   };
 
   if (loading) {
@@ -402,6 +418,8 @@ export default function Series() {
         {/* Stats Tab */}
         {activeTab === "stats" && (
           <div className="space-y-8">
+            <BoundaryMeter stats={stats.boundaryMeter || {}} />
+
             {/* Most Runs */}
             <div className="bg-white rounded-2xl shadow-xl overflow-hidden border border-slate-200">
               <div className="p-6 border-b border-slate-200 bg-gradient-to-r from-blue-600 to-blue-700 text-white">

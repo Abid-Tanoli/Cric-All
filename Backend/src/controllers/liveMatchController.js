@@ -16,7 +16,7 @@ export const addBall = async (req, res) => {
     match.score.overs = data.over + data.ball / 6;
     await match.save({ validateModifiedOnly: true });
 
-    req.io.to(matchId).emit("ball-update", {
+    req.io.to(`match-${matchId}`).emit("ball-update", {
       ball,
       score: match.score
     });

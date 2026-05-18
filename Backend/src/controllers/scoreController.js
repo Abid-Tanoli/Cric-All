@@ -87,11 +87,27 @@ const populateFullMatch = async (match) => {
         if (!ball.bowlerName && ball.bowler) {
           ball.bowlerName = ball.bowler.name || "Bowler";
         }
+        ball.runs = Number(ball.runs || 0);
+        if (!ball.runText) {
+          ball.runText = getBallRunText(ball);
+        }
       });
     });
   });
 
   return match;
+};
+
+const getBallRunText = (ball = {}) => {
+  const runs = Number(ball.runs || 0);
+  if (ball.isWicket) return "OUT!";
+  if (ball.isWide) return "wide";
+  if (ball.isNoBall) return "no ball";
+  if (runs === 0) return "no run";
+  if (runs === 1) return "1 run";
+  if (runs === 4) return "FOUR";
+  if (runs === 6) return "SIX";
+  return `${runs} runs`;
 };
 
 export const updateScore = async (req, res) => {
@@ -117,6 +133,9 @@ export const updateScore = async (req, res) => {
       shotPlacement = null,
       fieldingZone = "",
       shotType = "",
+      pitchZone = "",
+      ballMovement = "none",
+      ballOutcome = "played",
       pitchLine = "",
       pitchLength = "",
       pitchShotType = "",
@@ -480,8 +499,12 @@ export const updateScore = async (req, res) => {
           batsmanName: batsmanOnStrike?.name || "Batsman",
           bowlerName: bowlerPlayer?.name || "Bowler",
           zone: zone.name || "",
+          fieldingZone: fieldingZone || zone.name || "",
           direction: shotPlacement?.position || fieldingZone || "",
           shotName: shotType || "",
+          pitchZone,
+          ballMovement,
+          ballOutcome,
           pitchLine,
           pitchLength,
           pitchShotType,
@@ -538,6 +561,8 @@ export const updateScore = async (req, res) => {
     else if (isLegBye) ballNotation = `${runs}lb`;
     else ballNotation = runs === 0 ? "•" : runs.toString();
 
+    const computedRunText = getBallRunText({ runs: batsmanRuns, isWide, isNoBall, isWicket });
+
     const ball = {
       ballNumber: ballNumberInOver,
       batsmanOnStrike: batsmanOnStrikeId,
@@ -554,6 +579,7 @@ export const updateScore = async (req, res) => {
       fielder: fielderId,
       commentary,
       vividCommentary: (aiGeneratedCommentary && typeof aiGeneratedCommentary === 'object') ? aiGeneratedCommentary.vivid : vividCommentary,
+      runText: computedRunText,
       batsmanName: batsmanOnStrike?.name || "Batsman",
       bowlerName: bowlerPlayer?.name || "Bowler",
       notation: ballNotation,
@@ -563,6 +589,9 @@ export const updateScore = async (req, res) => {
       shotPlacement: shotPlacement || { angle: 0, distance: 50, position: "" },
       fieldingZone,
       shotType,
+      pitchZone,
+      ballMovement,
+      ballOutcome,
       pitchLine,
       pitchLength,
       pitchShotType,
@@ -697,7 +726,7 @@ export const updateScore = async (req, res) => {
       const io = getIO();
 
       // Emit ball update with AI commentary
-      io.to(matchId).emit("match:ballUpdate", {
+      io.to(`match-${matchId}`).emit("match:ballUpdate", {
         matchId,
         inningsIndex,
         ball,
@@ -722,7 +751,7 @@ export const updateScore = async (req, res) => {
         });
       }
 
-      io.to(matchId).emit("match:scoreUpdate", {
+      io.to(`match-${matchId}`).emit("match:scoreUpdate", {
         matchId,
         runs: innings.runs,
         wickets: innings.wickets,
@@ -764,7 +793,7 @@ export const updateScore = async (req, res) => {
           .exec()
           .catch(err => console.error("Error updating over summary:", err));
 
-        io.to(matchId).emit("match:overComplete", {
+        io.to(`match-${matchId}`).emit("match:overComplete", {
           matchId,
           inningsIndex,
           over: currentOver,
@@ -776,7 +805,7 @@ export const updateScore = async (req, res) => {
       io.emit("match:updateList");
 
       if (shouldEndInnings) {
-        io.to(matchId).emit("match:inningsEnd", {
+        io.to(`match-${matchId}`).emit("match:inningsEnd", {
           matchId,
           inningsIndex,
           suggestion: "End innings?"
@@ -918,7 +947,7 @@ export const endInnings = async (req, res) => {
     try {
       const io = getIO();
 
-      io.to(matchId).emit("innings:ended", {
+      io.to(`match-${matchId}`).emit("innings:ended", {
         matchId,
         inningsIndex,
         matchStatus: match.status,
@@ -989,7 +1018,7 @@ export const reduceOvers = async (req, res) => {
 
     try {
       const io = getIO();
-      io.to(matchId).emit("match:oversReduced", {
+      io.to(`match-${matchId}`).emit("match:oversReduced", {
         matchId,
         newTotalOvers,
         newTarget: match.innings[1]?.target
@@ -1035,7 +1064,7 @@ export const startNextInnings = async (req, res) => {
 
       try {
         const io = getIO();
-        io.to(matchId).emit("innings:started", {
+        io.to(`match-${matchId}`).emit("innings:started", {
           matchId,
           inningsIndex: match.currentInnings
         });
@@ -1264,7 +1293,7 @@ export const resolveTie = async (req, res) => {
 
     try {
       const io = getIO();
-      io.to(matchId).emit("match:tieResolved", { matchId, resolution });
+      io.to(`match-${matchId}`).emit("match:tieResolved", { matchId, resolution });
       io.emit("match:updated", match);
     } catch (err) { }
 
@@ -1380,7 +1409,7 @@ export const startSuperOverInnings = async (req, res) => {
 
     try {
       const io = getIO();
-      io.to(matchId).emit("match:superOverStarted", { matchId, inningsIndex: match.currentInnings, superOverNumber });
+      io.to(`match-${matchId}`).emit("match:superOverStarted", { matchId, inningsIndex: match.currentInnings, superOverNumber });
       io.emit("match:updated", match);
     } catch (err) { }
 
@@ -1426,7 +1455,7 @@ export const editCommentary = async (req, res) => {
 
     try {
       const io = getIO();
-      io.to(matchId).emit("match:commentaryUpdated", {
+      io.to(`match-${matchId}`).emit("match:commentaryUpdated", {
         matchId,
         inningsIndex,
         overNumber,
@@ -1730,7 +1759,7 @@ export const revertLastBall = async (req, res) => {
 
     try {
       const io = getIO();
-      io.to(matchId).emit("match:ballReverted", { matchId, inningsIndex });
+      io.to(`match-${matchId}`).emit("match:ballReverted", { matchId, inningsIndex });
       io.emit("match:updated", match);
     } catch (err) { }
 
@@ -1759,7 +1788,7 @@ export const setBowler = async (req, res) => {
 
     try {
       const io = getIO();
-      io.to(matchId).emit("match:bowlerSet", { matchId, inningsIndex, bowlerId });
+      io.to(`match-${matchId}`).emit("match:bowlerSet", { matchId, inningsIndex, bowlerId });
     } catch (err) { }
 
     res.status(200).json({ match, message: "Bowler set successfully" });
@@ -1853,7 +1882,7 @@ export const useStrategicTimeout = async (req, res) => {
 
     try {
       const io = getIO();
-      io.to(matchId).emit("match:timeout", { matchId, teamId, over: overNumber });
+      io.to(`match-${matchId}`).emit("match:timeout", { matchId, teamId, over: overNumber });
       io.emit("match:updated", match);
     } catch (err) { }
 
@@ -1891,7 +1920,7 @@ export const recordDRSReview = async (req, res) => {
 
     try {
       const io = getIO();
-      io.to(matchId).emit("match:drsUpdate", { matchId, drs: match.drsReviews[match.drsReviews.length - 1] });
+      io.to(`match-${matchId}`).emit("match:drsUpdate", { matchId, drs: match.drsReviews[match.drsReviews.length - 1] });
       io.emit("match:updated", match);
     } catch (err) { }
 
@@ -1937,7 +1966,7 @@ export const resetInnings = async (req, res) => {
 
     try {
       const io = getIO();
-      io.to(matchId).emit("match:reset", { matchId, inningsIndex });
+      io.to(`match-${matchId}`).emit("match:reset", { matchId, inningsIndex });
       io.emit("match:updated", match);
     } catch (err) { }
 
@@ -2038,7 +2067,7 @@ export const resetMatch = async (req, res) => {
 
     try {
       const io = getIO();
-      io.to(matchId).emit("match:reset", { matchId, isMatchReset: true });
+      io.to(`match-${matchId}`).emit("match:reset", { matchId, isMatchReset: true });
       io.emit("match:updated", match);
     } catch (err) { }
 
@@ -2121,7 +2150,7 @@ export const editBall = async (req, res) => {
     await match.save({ validateModifiedOnly: true });
     await populateFullMatch(match);
 
-    try { const io = getIO(); io.to(matchId).emit('match:ballEdited', { matchId, inningsIndex, overNumber, ballNumber }); io.emit('match:updated', match); } catch (err) { }
+    try { const io = getIO(); io.to(`match-${matchId}`).emit('match:ballEdited', { matchId, inningsIndex, overNumber, ballNumber }); io.emit('match:updated', match); } catch (err) { }
     res.status(200).json({ match, message: 'Ball updated successfully' });
 
     // Fire off async task to regenerate commentary for the edited ball ONLY if not manually provided
@@ -2157,10 +2186,10 @@ export const editBall = async (req, res) => {
           if (aiComm && aiComm.short) {
             b.commentary = aiComm.short;
             b.vividCommentary = aiComm.vivid || "";
-            await m.save();
+            await m.save({ validateModifiedOnly: true });
             try {
               const io = getIO();
-              io.to(matchId).emit("match:ballEdited", {
+              io.to(`match-${matchId}`).emit("match:ballEdited", {
                 matchId, inningsIndex, overNumber, ballNumber,
                 newCommentary: aiComm.short,
                 newVividCommentary: aiComm.vivid

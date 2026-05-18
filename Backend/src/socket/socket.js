@@ -2,6 +2,8 @@ import { Server } from "socket.io";
 
 let io;
 
+const matchRoom = (matchId) => `match-${matchId}`;
+
 export const initSocket = (server) => {
   io = new Server(server, {
     cors: {
@@ -28,11 +30,13 @@ export const initSocket = (server) => {
     });
 
     socket.on("join-match", (matchId) => {
+      socket.join(matchRoom(matchId));
       socket.join(matchId);
       console.log(`🏏 Socket ${socket.id} joined match: ${matchId}`);
     });
 
     socket.on("leave-match", (matchId) => {
+      socket.leave(matchRoom(matchId));
       socket.leave(matchId);
       console.log(`🏏 Socket ${socket.id} left match: ${matchId}`);
     });
@@ -102,7 +106,7 @@ export const emitPlayerUpdate = (player) => {
 
 export const emitMatchUpdate = (matchId, data) => {
   if (io) {
-    io.to(matchId).emit("match:update", data);
+    io.to(matchRoom(matchId)).emit("match:update", data);
     io.emit("match:update", data);
   }
 };
@@ -116,21 +120,21 @@ export const emitCricketLiveUpdate = (data) => {
 
 export const emitFieldClick = (matchId, data) => {
   if (io) {
-    io.to(matchId).emit("match:fieldClick", data);
+    io.to(matchRoom(matchId)).emit("match:fieldClick", data);
     io.emit("match:fieldClick", data);
   }
 };
 
 export const emitAICommentary = (matchId, data) => {
   if (io) {
-    io.to(matchId).emit("match:aiCommentary", data);
+    io.to(matchRoom(matchId)).emit("match:aiCommentary", data);
     io.emit("match:aiCommentary", data);
   }
 };
 
 export const emitBallWithCommentary = (matchId, data) => {
   if (io) {
-    io.to(matchId).emit("match:ballWithCommentary", data);
+    io.to(matchRoom(matchId)).emit("match:ballWithCommentary", data);
     io.emit("match:ballWithCommentary", data);
   }
 };

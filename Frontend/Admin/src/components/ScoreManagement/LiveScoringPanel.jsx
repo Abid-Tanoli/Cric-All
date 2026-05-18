@@ -244,7 +244,7 @@ const LiveScoringPanel = ({
                                 </div>
                             ) : (
                                 <div key={`ball-${idx}`} className={`w-12 h-12 rounded-full flex items-center justify-center font-black text-sm border-2 shrink-0 transition-all hover:scale-110 cursor-default ${el.isWicket ? 'bg-red-600 border-red-400 text-white shadow-lg shadow-red-600/20 animate-pulse' : el.runs === 4 ? 'bg-blue-600 border-blue-400 text-white shadow-lg shadow-blue-600/20' : el.runs === 6 ? 'bg-purple-600 border-purple-400 text-white shadow-lg shadow-purple-600/20' : 'bg-white/5 border-white/10 text-slate-300'}`}>
-                                    {el.isWicket ? 'W' : (el.runs === 0 && !el.isWide && !el.isNoBall) ? '•' : el.notation || el.runs}
+                                    {el.isWicket ? 'W' : (el.runs === 0 && !el.isWide && !el.isNoBall) ? '•' : String(el.runs || 0)}
                                 </div>
                             )
                         ));
@@ -264,27 +264,26 @@ const LiveScoringPanel = ({
                                 <div className="text-lg font-bold text-slate-900 leading-tight mb-3">
                                     {(() => {
                                         const lastBall = formattedHistory[formattedHistory.length - 1];
-                                        if (lastBall.commentary) return lastBall.commentary;
-                                        
                                         const runs = lastBall.runs || 0;
                                         const getRunLabel = () => {
-                                            if (lastBall.isWicket) return "out!";
+                                            if (lastBall.isWicket) return "OUT!";
                                             if (lastBall.isWide) return "wide";
                                             if (lastBall.isNoBall) return "no ball";
                                             if (runs === 0) return "no run";
                                             if (runs === 1) return "1 run";
-                                            if (lastBall.runs === 4) return "4 runs (FOUR)";
-                                            if (lastBall.runs === 6) return "6 runs (SIX)";
+                                            if (runs === 2) return "2 runs";
+                                            if (runs === 3) return "3 runs";
+                                            if (runs === 4) return "FOUR";
+                                            if (runs === 6) return "SIX";
                                             return `${runs} runs`;
                                         };
                                         return `${lastBall.bowlerName || 'Bowler'} to ${lastBall.batsmanName || 'Batsman'}, ${getRunLabel()}`;
                                     })()}
                                 </div>
-                                {formattedHistory[formattedHistory.length - 1].vividCommentary && formattedHistory[formattedHistory.length - 1].vividCommentary !== formattedHistory[formattedHistory.length - 1].commentary && (
+                                {(formattedHistory[formattedHistory.length - 1].vividCommentary || formattedHistory[formattedHistory.length - 1].commentary) && (
                                     <div className="bg-black/2 p-4 rounded-2xl border border-black/5 space-y-2">
-                                        <div className="text-cric-accent text-[9px] font-black uppercase tracking-widest opacity-80">AI Detailed Analysis</div>
                                         <p className="text-slate-600 text-sm italic font-medium leading-relaxed">
-                                            {formattedHistory[formattedHistory.length - 1].vividCommentary}
+                                            {formattedHistory[formattedHistory.length - 1].vividCommentary || formattedHistory[formattedHistory.length - 1].commentary}
                                         </p>
                                     </div>
                                 )}

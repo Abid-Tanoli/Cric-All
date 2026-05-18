@@ -1,9 +1,9 @@
 import React, { useCallback, useRef, useState } from "react";
 import "./PitchMap.css";
 
-const SVG_W = 620;
+const SVG_W = 420;
 const SVG_H = 720;
-const PITCH_X = 255;
+const PITCH_X = 155;
 const PITCH_Y = 42;
 const PITCH_W = 110;
 const PITCH_H = 602;
@@ -19,12 +19,12 @@ const LINE_ZONES = [
 ];
 
 const LENGTH_ZONES = [
-    { id: "full_toss", label: "Full toss", yMin: 0, yMax: 0.12, dist: "0m" },
-    { id: "yorker", label: "Yorker", yMin: 0.12, yMax: 0.29, dist: "2m" },
-    { id: "full", label: "Full", yMin: 0.29, yMax: 0.52, dist: "4m" },
-    { id: "good_length", label: "Good", yMin: 0.52, yMax: 0.67, dist: "6m" },
-    { id: "hard_length", label: "Hard", yMin: 0.67, yMax: 0.82, dist: "8m" },
-    { id: "bouncer", label: "Bouncer", yMin: 0.82, yMax: 1.0, dist: "Halfway" },
+    { id: "full_toss",   label: "Full toss", yMin: 0,    yMax: 0.08, dist: "0m"      },
+    { id: "yorker",      label: "Yorker",    yMin: 0.08, yMax: 0.20, dist: "2m"      },
+    { id: "full",        label: "Full",      yMin: 0.20, yMax: 0.40, dist: "4m"      },
+    { id: "good_length", label: "Good",      yMin: 0.40, yMax: 0.58, dist: "6m"      },
+    { id: "hard_length", label: "Hard",      yMin: 0.58, yMax: 0.75, dist: "8m"      },
+    { id: "bouncer",     label: "Bouncer",   yMin: 0.75, yMax: 1.0,  dist: "Halfway" },
 ];
 
 const SHOT_TYPES = [
@@ -204,7 +204,7 @@ export default function PitchMap({
                     {LENGTH_ZONES.slice(1).map(zone => {
                         const y = PITCH_Y + zone.yMin * PITCH_H;
                         return (
-                            <line key={zone.id} x1="0" y1={y} x2={PITCH_X + PITCH_W + 42} y2={y}
+                            <line key={zone.id} x1={0} y1={y} x2={PITCH_X} y2={y}
                                 stroke="rgba(255,255,255,0.88)" strokeWidth="1.4" />
                         );
                     })}
@@ -215,13 +215,13 @@ export default function PitchMap({
                         return (
                             <g key={zone.id}>
                                 <text x={PITCH_X - 40} y={centerY + 8} textAnchor="end"
-                                    fill="#f8fafc" fontSize="28" fontWeight="900" fontFamily="Inter, sans-serif">
+                                    fill="#f8fafc" fontSize="16" fontWeight="800" fontFamily="Inter, sans-serif">
                                     {zone.label}
                                 </text>
-                                <line x1={PITCH_X + PITCH_W} y1={boundaryY} x2={PITCH_X + PITCH_W + 42} y2={boundaryY}
+                                <line x1={PITCH_X + PITCH_W} y1={boundaryY} x2={PITCH_X + PITCH_W + 30} y2={boundaryY}
                                     stroke="#f8fafc" strokeWidth="1.8" />
-                                <text x={PITCH_X + PITCH_W + 62} y={boundaryY + 8}
-                                    fill="#f8fafc" fontSize="28" fontWeight="900" fontFamily="Inter, sans-serif">
+                                <text x={PITCH_X + PITCH_W + 36} y={boundaryY + 8}
+                                    fill="#f8fafc" fontSize="15" fontWeight="700" fontFamily="Inter, sans-serif">
                                     {zone.dist}
                                 </text>
                             </g>
@@ -232,9 +232,20 @@ export default function PitchMap({
                         stroke="white" strokeWidth="2.6" />
                     <line x1={PITCH_X - 14} y1={PITCH_Y + 112} x2={PITCH_X + PITCH_W + 14} y2={PITCH_Y + 112}
                         stroke="white" strokeWidth="4" />
-                    {[-8, 0, 8].map((offset, index) => (
-                        <circle key={index} cx={PITCH_X + PITCH_W / 2 + offset} cy={PITCH_Y + 42} r="2.2" fill="#0f172a" />
+                    {/* 3 stump lines */}
+                    {[-10, 0, 10].map((offset, i) => (
+                        <line key={i}
+                            x1={PITCH_X + PITCH_W / 2 + offset} y1={PITCH_Y + 8}
+                            x2={PITCH_X + PITCH_W / 2 + offset} y2={PITCH_Y + 42}
+                            stroke="white" strokeWidth="3.5" strokeLinecap="round"
+                        />
                     ))}
+                    {/* Bail across top */}
+                    <line
+                        x1={PITCH_X + PITCH_W / 2 - 14} y1={PITCH_Y + 8}
+                        x2={PITCH_X + PITCH_W / 2 + 14} y2={PITCH_Y + 8}
+                        stroke="white" strokeWidth="2"
+                    />
 
                     {hoverPos && (
                         <g>
@@ -281,32 +292,7 @@ export default function PitchMap({
                 </div>
             )}
 
-            <div className="pitchmap-controls">
-                <div className="pitchmap-dropdown-row">
-                    <div className="pitchmap-dropdown-group">
-                        <label className="pitchmap-label">Line</label>
-                        <select value={selectedLine} onChange={event => handleLineChange(event.target.value)} className="pitchmap-select">
-                            <option value="">Select Line</option>
-                            {LINE_ZONES.map(zone => <option key={zone.id} value={zone.id}>{zone.label}</option>)}
-                        </select>
-                    </div>
-                    <div className="pitchmap-dropdown-group">
-                        <label className="pitchmap-label">Length</label>
-                        <select value={selectedLength} onChange={event => handleLengthChange(event.target.value)} className="pitchmap-select">
-                            <option value="">Select Length</option>
-                            {LENGTH_ZONES.map(zone => <option key={zone.id} value={zone.id}>{zone.label}</option>)}
-                        </select>
-                    </div>
-                </div>
 
-                <div className="pitchmap-dropdown-group pitchmap-shot-group">
-                    <label className="pitchmap-label">Shot Type</label>
-                    <select value={selectedShot} onChange={event => updateShot(event.target.value)} className="pitchmap-select">
-                        <option value="">Select Shot</option>
-                        {SHOT_TYPES.map(shot => <option key={shot} value={shotToId(shot)}>{shot}</option>)}
-                    </select>
-                </div>
-            </div>
 
             <div className="pitchmap-legend pitchmap-reference-legend">
                 {[

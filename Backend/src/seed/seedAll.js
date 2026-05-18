@@ -64,7 +64,7 @@ async function seed() {
       status: 'upcoming'
     });
 
-    await match.save();
+    await match.save({ validateModifiedOnly: true });
     console.log(`✅ Match created: ${match.title}`);
 
     console.log('\n🎉 Seed completed successfully!');

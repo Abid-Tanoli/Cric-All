@@ -57,6 +57,8 @@ const Match = () => {
     socket.on("match:ballWithCommentary", refreshMatch);
     socket.on("match:ballReverted", refreshMatch);
     socket.on("match:bowlerSet", refreshMatch);
+    socket.on("match:overComplete", refreshMatch);
+    socket.on("match:aiCommentary", refreshMatch);
     socket.on("scoreUpdate", refreshMatch);
     socket.on("ballRecorded", refreshMatch);
     socket.on("inningsComplete", refreshMatch);
@@ -75,6 +77,8 @@ const Match = () => {
       socket.off("match:ballWithCommentary", refreshMatch);
       socket.off("match:ballReverted", refreshMatch);
       socket.off("match:bowlerSet", refreshMatch);
+      socket.off("match:overComplete", refreshMatch);
+      socket.off("match:aiCommentary", refreshMatch);
       socket.off("scoreUpdate", refreshMatch);
       socket.off("ballRecorded", refreshMatch);
       socket.off("inningsComplete", refreshMatch);

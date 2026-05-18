@@ -26,6 +26,9 @@ export default function Commentary({ matchId }) {
                 over: `${over.overNumber}.${ball.ballNumber}`,
                 text: ball.commentary,
                 runs: ball.runs,
+                runText: ball.runText,
+                bowlerName: ball.bowlerName || ball.bowler?.name || "Bowler",
+                batsmanName: ball.batsmanName || ball.batsmanOnStrike?.name || "Batsman",
                 isWicket: ball.isWicket,
                 isWide: ball.isWide,
                 isNoBall: ball.isNoBall,
@@ -50,12 +53,15 @@ export default function Commentary({ matchId }) {
       }
     }).catch(console.error);
 
-    socket.on("match:ball-update", (data) => {
+    const handleBallUpdate = (data) => {
       if (data.matchId === matchId && data.ball?.commentary) {
         const newCommentary = {
           over: `${data.currentOver}.${data.ballNumber}`,
           text: data.ball.commentary,
           runs: data.ball.runs,
+          runText: data.ball.runText,
+          bowlerName: data.ball.bowlerName || "Bowler",
+          batsmanName: data.ball.batsmanName || "Batsman",
           isWicket: data.ball.isWicket,
           isWide: data.ball.isWide,
           isNoBall: data.ball.isNoBall,
@@ -75,10 +81,14 @@ export default function Commentary({ matchId }) {
           }
         }
       }
-    });
+    };
+
+    socket.on("match:ballUpdate", handleBallUpdate);
+    socket.on("match:ball-update", handleBallUpdate);
 
     return () => {
-      socket.off("match:ball-update");
+      socket.off("match:ballUpdate", handleBallUpdate);
+      socket.off("match:ball-update", handleBallUpdate);
     };
   }, [matchId]);
 
@@ -109,6 +119,18 @@ export default function Commentary({ matchId }) {
     if (commentaryItem.isWide) return "Wd";
     if (commentaryItem.isNoBall) return "Nb";
     return commentaryItem.runs;
+  };
+
+  const getRunText = (commentaryItem) => {
+    if (commentaryItem.runText) return commentaryItem.runText;
+    if (commentaryItem.isWicket) return "OUT!";
+    if (commentaryItem.isWide) return "wide";
+    if (commentaryItem.isNoBall) return "no ball";
+    if (commentaryItem.runs === 0) return "no run";
+    if (commentaryItem.runs === 1) return "1 run";
+    if (commentaryItem.runs === 4) return "FOUR";
+    if (commentaryItem.runs === 6) return "SIX";
+    return `${commentaryItem.runs} runs`;
   };
 
   const safeCommentary = Array.isArray(commentary) ? commentary : [];
@@ -175,7 +197,7 @@ export default function Commentary({ matchId }) {
                   <div className="bg-white rounded-lg p-3 border border-slate-200 group-hover:border-blue-300 transition-colors">
                     {/* First line - Cricinfo format */}
                     <p className="text-sm font-bold text-[#031d44] leading-snug font-mono">
-                      {c.text.split('\n')[0]}
+                      {c.over} {c.bowlerName || "Bowler"} to {c.batsmanName || "Batsman"}, {getRunText(c)}.
                     </p>
                     {/* Second line - Commentary description */}
                     {c.text.split('\n')[1] && (

@@ -127,6 +127,8 @@ export default function ManageScore() {
     const [pitchMapShot, setPitchMapShot] = useState('');
     const [pitchMapClickPos, setPitchMapClickPos] = useState(null);
     const [pitchMapViewMode, setPitchMapViewMode] = useState('this_over');
+    const [ballMovement, setBallMovement] = useState('none');
+    const [ballOutcome, setBallOutcome] = useState('played');
 
     const [setupState, setSetupState] = useState({
         team1XI: [],
@@ -416,6 +418,9 @@ export default function ManageScore() {
             fieldingZone: activeGroundZone?.direction || FIELD_POSITIONS.find(p => p.id === fieldPos)?.name || fieldPos,
             shotPlacement: activeGroundZone ? { x: activeGroundZone.x, y: activeGroundZone.y, angle: activeGroundZone.angle, distance: activeGroundZone.distance, position: activeGroundZone.direction } : null,
             shotType: pitchMapShot || activeGroundZone?.shotName || '',
+            pitchZone: (pitchMapLength || '').replace(/_/g, '-'),
+            ballMovement,
+            ballOutcome,
             pitchLine: pitchMapLine || '',
             pitchLength: pitchMapLength || '',
             pitchShotType: pitchMapShot || '',
@@ -443,6 +448,8 @@ export default function ManageScore() {
             setPitchMapLength('');
             setPitchMapShot('');
             setPitchMapClickPos(null);
+            setBallMovement('none');
+            setBallOutcome('played');
 
             if (res.data.shouldEndInnings) {
                 setToast("Innings should be ended!");
@@ -1166,6 +1173,10 @@ export default function ManageScore() {
                 setPitchMapClickPos={setPitchMapClickPos}
                 pitchMapViewMode={pitchMapViewMode}
                 setPitchMapViewMode={setPitchMapViewMode}
+                ballMovement={ballMovement}
+                setBallMovement={setBallMovement}
+                ballOutcome={ballOutcome}
+                setBallOutcome={setBallOutcome}
             />
 
             {/* MODALS */}

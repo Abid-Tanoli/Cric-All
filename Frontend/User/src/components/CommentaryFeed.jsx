@@ -57,20 +57,22 @@ const CommentaryFeed = ({ match, live = true }) => {
   // Format ball notation
   const getBallNotation = (ball) => {
     if (ball.isWicket) return 'W';
-    if (ball.isWide) return `${1 + (ball.runs || 0)}wd`;
-    if (ball.isNoBall) return ball.runs > 0 ? `nb+${ball.runs}` : 'nb';
-    if (ball.runs === 0) return '•';
-    return ball.runs.toString();
+    if (ball.runs === 0 && !ball.isWide && !ball.isNoBall) return '•';
+    return String(ball.runs || 0);
   };
 
-  // Parse commentary into first line and description
-  const parseCommentary = (commentary) => {
-    if (!commentary) return { firstLine: '', description: '' };
-    const lines = commentary.split('\n');
-    return {
-      firstLine: lines[0] || '',
-      description: lines.slice(1).join('\n')
-    };
+  const getRunText = (ball) => {
+    const runs = ball.runs || 0;
+    if (ball.isWicket) return 'OUT!';
+    if (ball.isWide) return 'wide';
+    if (ball.isNoBall) return 'no ball';
+    if (runs === 0) return 'no run';
+    if (runs === 1) return '1 run';
+    if (runs === 2) return '2 runs';
+    if (runs === 3) return '3 runs';
+    if (runs === 4) return 'FOUR';
+    if (runs === 6) return 'SIX';
+    return `${runs} runs`;
   };
 
   // Group balls by over for over summaries
@@ -140,7 +142,9 @@ const CommentaryFeed = ({ match, live = true }) => {
             {/* Balls in Over */}
             <div className="divide-y dark:divide-slate-700">
               {[...over.balls].reverse().map((ball, ballIdx) => {
-                const { firstLine, description } = parseCommentary(ball.commentary);
+                const bowlerName = ball.bowlerName || ball.bowler?.name || over.balls[0]?.bowler?.name || 'Bowler';
+                const batsmanName = ball.batsmanName || ball.batsmanOnStrike?.name || 'Batsman';
+                const summaryLine = `${over.overNumber}.${ball.ballNumber || ball.ballIndex + 1} ${bowlerName} to ${batsmanName}, ${getRunText(ball)}`;
                 return (
                   <div
                     key={ballIdx}
@@ -158,18 +162,13 @@ const CommentaryFeed = ({ match, live = true }) => {
 
                       {/* Commentary Text */}
                       <div className="flex-1 min-w-0">
-                        {firstLine && (
-                          <p className="font-bold text-sm text-slate-900 dark:text-white mb-1">
-                            {firstLine}
+                        <p className="font-bold text-sm text-slate-900 dark:text-white mb-1">
+                          {summaryLine}
+                        </p>
+                        {(ball.vividCommentary || ball.commentary) && (
+                          <p className="text-sm text-slate-600 dark:text-slate-300 mt-1 leading-relaxed">
+                            {ball.vividCommentary || ball.commentary}
                           </p>
-                        )}
-                        {description && (
-                          <p className="text-sm text-slate-600 dark:text-slate-300">
-                            {description}
-                          </p>
-                        )}
-                        {!firstLine && !description && (
-                          <p className="text-sm text-slate-400 italic">No commentary</p>
                         )}
                       </div>
                     </div>

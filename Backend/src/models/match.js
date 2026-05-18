@@ -19,6 +19,7 @@ const ballSchema = new mongoose.Schema({
   fielder: { type: mongoose.Schema.Types.ObjectId, ref: "Player" },
   commentary: { type: String, default: "" },
   vividCommentary: { type: String, default: "" },
+  runText: { type: String, default: "" },
   batsmanName: { type: String, default: "" },
   bowlerName: { type: String, default: "" },
   timestamp: { type: Date, default: Date.now },
@@ -31,6 +32,9 @@ const ballSchema = new mongoose.Schema({
   // Fielding position where ball was fielded
   fieldingZone: { type: String, default: "" },
   shotType: { type: String, default: "" },
+  pitchZone: { type: String, default: "" },
+  ballMovement: { type: String, default: "none" },
+  ballOutcome: { type: String, default: "played" },
   pitchLine: { type: String, default: "" },
   pitchLength: { type: String, default: "" },
   pitchShotType: { type: String, default: "" },
