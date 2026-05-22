@@ -138,3 +138,58 @@ export const emitBallWithCommentary = (matchId, data) => {
     io.emit("match:ballWithCommentary", data);
   }
 };
+
+export const emitBallUpdate = (matchId, data) => {
+  if (io) {
+    io.to(matchRoom(matchId)).emit("BALL_UPDATE", data);
+  }
+};
+
+export const emitMatchStatusChange = (matchId, data) => {
+  if (io) {
+    io.to(matchRoom(matchId)).emit("MATCH_STATUS_CHANGE", data);
+  }
+};
+
+export const emitWicketAlert = (matchId, data) => {
+  if (io) {
+    io.to(matchRoom(matchId)).emit("WICKET_ALERT", data);
+  }
+};
+
+export const emitMilestoneAlert = (matchId, data) => {
+  if (io) {
+    io.to(matchRoom(matchId)).emit("MILESTONE_ALERT", data);
+  }
+};
+
+export const emitInningsComplete = (matchId, data) => {
+  if (io) {
+    io.to(matchRoom(matchId)).emit("INNINGS_COMPLETE", data);
+  }
+};
+
+export const emitMatchResult = (matchId, data) => {
+  if (io) {
+    io.to(matchRoom(matchId)).emit("MATCH_RESULT", data);
+    io.emit("MATCH_RESULT", data);
+  }
+};
+
+export const emitDRSUpdate = (matchId, data) => {
+  if (io) {
+    io.to(matchRoom(matchId)).emit("DRS_UPDATE", data);
+  }
+};
+
+export const emitReviewDecision = (matchId, data) => {
+  if (io) {
+    io.to(matchRoom(matchId)).emit("REVIEW_DECISION", data);
+  }
+};
+
+export const emitUmpireSignal = (matchId, signal) => {
+  if (io) {
+    io.to(matchRoom(matchId)).emit("UMPIRE_SIGNAL", { signal, timestamp: new Date() });
+  }
+};

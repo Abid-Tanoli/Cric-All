@@ -20,7 +20,10 @@ import rankingsRoutes from "./routes/rankingsRoutes.js";
 import blogRoutes from "./routes/blogRoutes.js";
 import cricketApiRoutes from "./routes/cricketApiRoutes.js";
 import categoryRoutes from "./routes/categoryRoutes.js";
+import seriesRoutes from "./routes/seriesRoutes.js";
 import cricketPolling from "./services/cricketPolling.js";
+import internationalRoutes from "./routes/international.js";
+import { startPoller as startInternationalPoller } from "./services/internationalPoller.js";
 
 dotenv.config();
 
@@ -69,6 +72,8 @@ app.use("/api/rankings", rankingsRoutes);
 app.use("/api/blogs", blogRoutes);
 app.use("/api/cricket", cricketApiRoutes);
 app.use("/api/categories", categoryRoutes);
+app.use("/api/series", seriesRoutes);
+app.use("/api/international", internationalRoutes);
 
 app.get("/api/health", (req, res) => {
   res.json({
@@ -109,13 +114,18 @@ server.listen(PORT, () => {
   console.log(`📡 Socket.IO ready for connections`);
   console.log(`🌐 CORS enabled for all origins (development mode)`);
 
-  // Start cricket polling if API key is configured
-  if (process.env.CRICKET_API_KEY && process.env.CRICKET_API_KEY !== 'your_api_key_here') {
+  // Start cricket polling if API key is configured (OPTIONAL)
+  if (process.env.CRICKET_API_KEY && process.env.CRICKET_API_KEY !== 'your_api_key_here' && process.env.CRICKET_API_KEY.trim() !== '') {
     cricketPolling.start();
-    console.log(`🏏 Cricket API polling started (interval: ${cricketPolling.pollingInterval}ms)`);
-  } else {
-    console.log(`⚠️  Cricket API not configured - set CRICKET_API_KEY in .env to enable live scores`);
+    console.log(`🏏 External Cricket API polling started (OPTIONAL FEATURE)`);
   }
+
+  // Start international live score poller
+  if (process.env.CRICKET_API_KEY && process.env.CRICKET_API_KEY !== 'your_api_key_here' && process.env.CRICKET_API_KEY.trim() !== '') {
+    startInternationalPoller(io);
+    console.log(`🌍 International live score poller started`);
+  }
+  // No warning - external API is completely optional
 });
 
 server.on("error", (error) => {

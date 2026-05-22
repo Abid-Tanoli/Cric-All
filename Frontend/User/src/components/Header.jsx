@@ -7,9 +7,11 @@ export default function Header({ user, onShowLogin, onShowRegister, onLogout }) 
 
   const navItems = [
     { name: "Matches", path: "/" },
+    { name: "International", path: "/international" },
     { name: "Teams", path: "/teams" },
     { name: "Players", path: "/players" },
-    { name: "News", path: "/news" },
+    { name: "Highlights", path: "/highlights" },
+    { name: "News", path: "/cricket-news" },
     { name: "Videos", path: "/videos" },
     { name: "Rankings", path: "/rankings" },
     { name: "Standings", path: "/points-table" },

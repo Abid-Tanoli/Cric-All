@@ -2,11 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import axios from 'axios';
 import { useSelector } from 'react-redux';
+import WagonWheel from '../components/ScoreManagement/WagonWheel';
+import PartnershipBuilder from '../components/ScoreManagement/PartnershipBuilder';
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
-const TABS = ['Live', 'Scorecard', 'Commentary', 'Live Stats', 'Overs', 'Playing XI', 'Table', 'Photos', 'Videos', 'Blogs'];
+const TABS = ['Live', 'Scorecard', 'Commentary', 'Stats', 'Overs', 'Playing XI', 'Wagon Wheel', 'Partnerships', 'Photos', 'Videos', 'Blogs'];
 
-export default function Livematchview() {
+export default function LiveMatchView() {
   const { id } = useParams();
   const { token } = useSelector((state) => state.auth);
   
@@ -502,8 +504,53 @@ export default function Livematchview() {
             );
           })()}
 
+          {activeTab === 'Wagon Wheel' && (
+            <WagonWheel battingData={currentInnings.batting} innings={currentInnings} />
+          )}
+
+          {activeTab === 'Partnerships' && (
+            <PartnershipBuilder batting={currentInnings.batting} ballByBall={currentInnings.ballByBall || currentInnings.balls || []} />
+          )}
+
+          {activeTab === 'Stats' && (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div className="bg-[#1e293b] rounded-xl border border-[#334155] p-6">
+                <h3 className="text-[#94a3b8] text-xs font-bold uppercase tracking-widest mb-4">Batting Stats - {battingTeam?.name}</h3>
+                <div className="space-y-4">
+                  {currentInnings.batting?.map(b => (
+                    <div key={b.player?._id} className="flex justify-between items-center bg-[#0f172a] p-3 rounded">
+                      <div className="flex items-center gap-3">
+                        <span className="font-bold text-white">{b.player?.name}</span>
+                        {b.isOut && <span className="text-xs text-[#ef4444]">({b.dismissalType})</span>}
+                      </div>
+                      <div className="text-right">
+                        <span className="font-rajdhani font-bold text-lg text-white">{b.runs}</span>
+                        <span className="text-xs text-[#94a3b8]"> ({b.balls}b)</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              
+              <div className="bg-[#1e293b] rounded-xl border border-[#334155] p-6">
+                <h3 className="text-[#94a3b8] text-xs font-bold uppercase tracking-widest mb-4">Bowling Stats - {bowlingTeam?.name}</h3>
+                <div className="space-y-4">
+                  {currentInnings.bowling?.map(b => (
+                    <div key={b.player?._id} className="flex justify-between items-center bg-[#0f172a] p-3 rounded">
+                      <span className="font-bold text-white">{b.player?.name}</span>
+                      <div className="text-right">
+                        <span className="font-rajdhani font-bold text-lg text-white">{b.wickets}/{b.runs}</span>
+                        <span className="text-xs text-[#94a3b8]"> (ER: {b.economy})</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Placeholders for unused tabs designed by prompt */}
-          {['Table', 'Photos', 'Videos', 'Blogs', 'Live Stats', 'Commentary'].includes(activeTab) && (
+          {['Table', 'Photos', 'Videos', 'Blogs', 'Commentary'].includes(activeTab) && (
             <div className="bg-[#1e293b] p-20 text-center rounded-xl border border-[#334155] shadow border-dashed">
               <h2 className="text-2xl font-bold font-rajdhani text-white mb-2">{activeTab}</h2>
               <p className="text-[#94a3b8]">Live dynamic matching for this tab is under construction.</p>

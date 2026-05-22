@@ -1,5 +1,5 @@
 import Player from '../models/Player.js';
-import Match from '../models/match.js';
+import Match from '../models/Match.js';
 
 export const getBattingRankings = async (req, res) => {
   try {

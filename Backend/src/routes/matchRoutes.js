@@ -35,12 +35,35 @@ import {
   editBall,
   retireBatsman
 } from "../controllers/scoreController.js";
+import {
+  getMatchPartnerships,
+  getActivePartnership,
+  getWagonWheelData,
+  getMatchAnalytics,
+  getMatchBoundaries,
+  getMatchReviews,
+  getMatchCommentary,
+  assignMatchOfficial,
+  getMatchOfficials,
+  updateMatchOfficial,
+  triggerUmpireSignal,
+  updateMatchStatusOfficial
+} from "../controllers/analyticsController.js";
 
 const router = express.Router();
 
 router.get("/", getMatches);
 router.get("/:id", getMatch);
 router.get("/:id/stats", getMatchStats);
+router.get("/:id/partnerships/:inning", getMatchPartnerships);
+router.get("/:id/partnerships/:inning/active", getActivePartnership);
+router.get("/:id/wagon-wheel/:inning", getWagonWheelData);
+router.get("/:id/wagon-wheel/:inning/:batsmanId", getWagonWheelData);
+router.get("/:id/analytics", getMatchAnalytics);
+router.get("/:id/boundaries", getMatchBoundaries);
+router.get("/:id/drs", getMatchReviews);
+router.get("/:id/commentary", getMatchCommentary);
+router.get("/:id/officials", getMatchOfficials);
 
 router.post("/", createMatch);
 router.post("/:matchId/score", updateScore);
@@ -60,6 +83,10 @@ router.post("/:matchId/reset-innings", resetInnings);
 router.post("/:matchId/reset-match", resetMatch);
 router.post("/:matchId/retire-batsman", retireBatsman);
 router.put("/:matchId/edit-ball", editBall);
+router.post("/:matchId/officials", assignMatchOfficial);
+router.put("/:matchId/officials/:userId", updateMatchOfficial);
+router.post("/:matchId/umpire-signal", triggerUmpireSignal);
+router.put("/:matchId/official-status", updateMatchStatusOfficial);
 
 router.put("/:id", updateMatch);
 router.put("/:id/status", updateMatchStatus);

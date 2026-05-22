@@ -177,14 +177,13 @@ const matchSchema = new mongoose.Schema(
         "Industry",
         "Club",
         "International",
-        "international",
         "Other"
       ],
       default: "Other"
     },
     category: {
       type: String,
-      enum: ["School", "College", "University", "Organization", "Business", "Industry", "Club", "International", "international", "Other"],
+      enum: ["School", "College", "University", "Organization", "Business", "Industry", "Club", "International", "Other"],
       default: "Other"
     },
     subCategory: {

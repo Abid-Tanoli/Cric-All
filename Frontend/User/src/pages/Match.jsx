@@ -2,12 +2,14 @@ import React, { useCallback, useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { api } from "../services/api";
 import EnhancedMatchTabs from "../components/EnhancedMatchTabs";
+import ToastNotifications from "../components/ToastNotifications";
 import { initSocket, joinMatchRoom, leaveMatchRoom } from "../services/socket";
 
 const Match = () => {
   const { matchId } = useParams();
   const [match, setMatch] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [events, setEvents] = useState([]);
 
   const loadMatch = useCallback(async () => {
     try {
@@ -19,6 +21,10 @@ const Match = () => {
       setLoading(false);
     }
   }, [matchId]);
+
+  const addEvent = (event) => {
+    setEvents(prev => [...prev, event]);
+  };
 
   useEffect(() => {
     let mounted = true;
@@ -47,6 +53,42 @@ const Match = () => {
       if (!payloadMatchId || payloadMatchId === matchId) loadMatch();
     };
 
+    const handleBallUpdate = (payload) => {
+      if (!mounted) return;
+      if (payload?.match?._id === matchId) {
+        setMatch(payload.match);
+      }
+      if (payload?.delivery?.isWicket) {
+        addEvent({ type: 'wicket', message: 'WICKET!', player: payload.delivery?.commentary });
+      }
+      if (payload?.delivery?.runs === 4) {
+        addEvent({ type: 'four', message: 'FOUR!', player: payload.delivery?.commentary });
+      }
+      if (payload?.delivery?.runs === 6) {
+        addEvent({ type: 'six', message: 'SIX!', player: payload.delivery?.commentary });
+      }
+    };
+
+    const handleWicketAlert = (payload) => {
+      if (!mounted) return;
+      addEvent({ type: 'wicket', message: `WICKET - ${payload.wicketType}`, player: payload.batsman });
+    };
+
+    const handleMilestone = (payload) => {
+      if (!mounted) return;
+      addEvent({ type: payload.type, message: `${payload.type}!`, player: payload.player });
+    };
+
+    const handleInningsComplete = (payload) => {
+      if (!mounted) return;
+      addEvent({ type: 'innings', message: 'Innings Complete', player: `${payload.total} runs` });
+    };
+
+    const handleMatchResult = (payload) => {
+      if (!mounted) return;
+      addEvent({ type: 'result', message: 'Match Result', player: payload.description });
+    };
+
     const joinRoom = () => joinMatchRoom(matchId);
 
     socket.on("connect", joinRoom);
@@ -63,6 +105,12 @@ const Match = () => {
     socket.on("ballRecorded", refreshMatch);
     socket.on("inningsComplete", refreshMatch);
     socket.on("matchComplete", refreshMatch);
+    
+    socket.on("BALL_UPDATE", handleBallUpdate);
+    socket.on("WICKET_ALERT", handleWicketAlert);
+    socket.on("MILESTONE_ALERT", handleMilestone);
+    socket.on("INNINGS_COMPLETE", handleInningsComplete);
+    socket.on("MATCH_RESULT", handleMatchResult);
 
     joinMatchRoom(matchId);
 
@@ -83,6 +131,11 @@ const Match = () => {
       socket.off("ballRecorded", refreshMatch);
       socket.off("inningsComplete", refreshMatch);
       socket.off("matchComplete", refreshMatch);
+      socket.off("BALL_UPDATE", handleBallUpdate);
+      socket.off("WICKET_ALERT", handleWicketAlert);
+      socket.off("MILESTONE_ALERT", handleMilestone);
+      socket.off("INNINGS_COMPLETE", handleInningsComplete);
+      socket.off("MATCH_RESULT", handleMatchResult);
     };
   }, [loadMatch, matchId]);
 
@@ -102,7 +155,12 @@ const Match = () => {
     );
   }
 
-  return <EnhancedMatchTabs matchId={matchId} match={match} />;
+  return (
+    <>
+      <ToastNotifications events={events} />
+      <EnhancedMatchTabs matchId={matchId} match={match} />
+    </>
+  );
 };
 
 export default Match;

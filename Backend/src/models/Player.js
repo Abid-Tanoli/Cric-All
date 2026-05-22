@@ -35,7 +35,7 @@ const playerSchema = new mongoose.Schema(
       ],
       default: "Not Applicable"
     },
-    Campus: { type: String },
+    campus: { type: String },
     // Deep categorization
     category: {
       type: String,

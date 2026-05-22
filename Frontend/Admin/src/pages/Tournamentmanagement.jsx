@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import api from '../services/api';
 
-const Tournamentmanagement = () => {
+const TournamentManagement = () => {
     const { register, handleSubmit, reset, setValue } = useForm();
     const [tournaments, setTournaments] = useState([]);
     const [loading, setLoading] = useState(false);
@@ -369,4 +369,4 @@ const Tournamentmanagement = () => {
     );
 };
 
-export default Tournamentmanagement;
+export default TournamentManagement;

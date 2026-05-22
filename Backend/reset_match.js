@@ -1,6 +1,6 @@
 
 import mongoose from 'mongoose';
-import Match from './src/models/match.js';
+import Match from './src/models/Match.js';
 import dotenv from 'dotenv';
 dotenv.config();
 

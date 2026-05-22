@@ -12,7 +12,7 @@ import {
   getTournamentSquad,
   deleteTournamentSquad,
   createTournamentMatch
-} from '../controllers/Tournamentcontroller.js';
+} from '../controllers/TournamentController.js';
 
 const router = express.Router();
 

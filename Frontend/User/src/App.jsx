@@ -17,6 +17,11 @@ import News from "./pages/News";
 import Videos from "./pages/Videos";
 import Series from "./pages/Series";
 import SeriesList from "./pages/SeriesList";
+import International from "./pages/International";
+import InternationalMatchDetail from "./pages/InternationalMatchDetail";
+import InternationalSeriesDetail from "./pages/InternationalSeriesDetail";
+import Highlights from "./pages/Highlights";
+import CricketNews from "./pages/CricketNews";
 
 function App() {
   return (
@@ -41,6 +46,11 @@ function App() {
           <Route path="/points-table" element={<PointsTable />} />
           <Route path="/news" element={<News />} />
           <Route path="/videos" element={<Videos />} />
+          <Route path="/international" element={<International />} />
+          <Route path="/international/match/:matchId" element={<InternationalMatchDetail />} />
+          <Route path="/international/series/:seriesId" element={<InternationalSeriesDetail />} />
+          <Route path="/highlights" element={<Highlights />} />
+          <Route path="/cricket-news" element={<CricketNews />} />
         </Routes>
       </Router>
     </ThemeProvider>

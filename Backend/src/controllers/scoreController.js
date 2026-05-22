@@ -1,10 +1,15 @@
-import Match from "../models/match.js";
+import Match from "../models/Match.js";
 import Player from "../models/Player.js";
 import fetch from "node-fetch";
-import { getIO, emitBallWithCommentary } from "../socket/socket.js";
+import { getIO, emitBallWithCommentary, emitBallUpdate, emitWicketAlert, emitMilestoneAlert, emitInningsComplete } from "../socket/socket.js";
 import { updateTournamentPoints } from "../services/tournamentService.js";
 import fieldPositionMapper from "../services/fieldPositionMapper.js";
 import aiCommentary from "../services/aiCommentary.js";
+import Delivery from "../models/Delivery.js";
+import Partnership from "../models/Partnership.js";
+import MatchAnalytics from "../models/MatchAnalytics.js";
+import { computeProjectedScore, computeWinProbability, updateMatchAnalytics } from "../services/analyticsService.js";
+import { getBallRunText } from "../utils/cricketHelpers.js";
 
 const calculateWinProbability = (match) => {
   if (!match || !match.innings || match.innings.length === 0) return { team1: 50, team2: 50 };
@@ -96,18 +101,6 @@ const populateFullMatch = async (match) => {
   });
 
   return match;
-};
-
-const getBallRunText = (ball = {}) => {
-  const runs = Number(ball.runs || 0);
-  if (ball.isWicket) return "OUT!";
-  if (ball.isWide) return "wide";
-  if (ball.isNoBall) return "no ball";
-  if (runs === 0) return "no run";
-  if (runs === 1) return "1 run";
-  if (runs === 4) return "FOUR";
-  if (runs === 6) return "SIX";
-  return `${runs} runs`;
 };
 
 export const updateScore = async (req, res) => {
@@ -818,6 +811,113 @@ export const updateScore = async (req, res) => {
     if (shouldEndInnings && match.tournament) {
       updateTournamentPoints(match.tournament);
     }
+
+    // Create Delivery record for wagon wheel
+    try {
+      const delivery = new Delivery({
+        matchId: match._id,
+        inning: inningsIndex + 1,
+        overNumber: currentOverNumber,
+        ballNumber: ballNumberInOver,
+        rawBall: innings.balls + 1,
+        batsmanId: batsmanOnStrikeId,
+        bowlerId: bowlerId,
+        nonStrikerId: batsmanNonStrikeId,
+        runsOffBat: batsmanRuns,
+        extras: extraRuns,
+        extraType: isWide ? 'wide' : isNoBall ? 'no_ball' : isBye ? 'bye' : isLegBye ? 'leg_bye' : null,
+        isWicket: isWicket,
+        wicketType: wicketType || null,
+        fielderId: fielderId,
+        shotType: shotType || null,
+        shotDirection: shotPlacement?.angle || 0,
+        shotDistance: shotPlacement?.distance > 80 ? 'boundary' : shotPlacement?.distance > 50 ? 'outfield' : 'infield',
+        isFour: batsmanRuns === 4 && !isWide && !isNoBall,
+        isSix: batsmanRuns === 6 && !isWide && !isNoBall,
+        commentary: ball?.commentary || "",
+        drsInvolved: false
+      });
+      await delivery.save();
+    } catch (e) { console.log("Delivery save error:", e.message); }
+
+    // Update/manage partnerships
+    try {
+      const activePartnership = await Partnership.findOne({ matchId: match._id, inning: inningsIndex + 1, isActive: true });
+      if (isWicket) {
+        if (activePartnership) {
+          activePartnership.isActive = false;
+          activePartnership.endScore = innings.runs;
+          await activePartnership.save();
+        }
+      } else {
+        if (!activePartnership) {
+          const newPartnership = new Partnership({
+            matchId: match._id,
+            inning: inningsIndex + 1,
+            wicketNumber: innings.wickets + 1,
+            batsman1Id: batsmanOnStrikeId,
+            batsman2Id: batsmanNonStrikeId,
+            runs: 0,
+            balls: 0,
+            startScore: innings.runs - batsmanRuns - extraRuns
+          });
+          await newPartnership.save();
+        } else {
+          activePartnership.runs += batsmanRuns + extraRuns;
+          if (!isWide) activePartnership.balls += 1;
+          if (batsmanRuns === 4) activePartnership.fours += 1;
+          if (batsmanRuns === 6) activePartnership.sixes += 1;
+          await activePartnership.save();
+        }
+      }
+    } catch (e) { console.log("Partnership update error:", e.message); }
+
+    // Update analytics
+    try {
+      await updateMatchAnalytics(match, inningsIndex, { isFour: batsmanRuns === 4 && !isWide && !isNoBall, isSix: batsmanRuns === 6 && !isWide && !isNoBall });
+    } catch (e) { console.log("Analytics update error:", e.message); }
+
+    // Broadcast BALL_UPDATE via WebSocket
+    try {
+      const io = getIO();
+      const analytics = await MatchAnalytics.findOne({ matchId: match._id });
+      
+      const partnerships = await Partnership.find({ matchId: match._id, inning: inningsIndex + 1 });
+      const activePartnership = partnerships.find(p => p.isActive);
+      
+      io.to(`match-${matchId}`).emit("BALL_UPDATE", {
+        delivery: ball,
+        match: await populateFullMatch(match),
+        scorecard: { team1: match.innings[0], team2: match.innings[1] },
+        currentBatsmen: { striker: batsmanOnStrikeStats, nonStriker: innings.batting.find(b => String(b.player?._id || b.player) === String(batsmanNonStrikeId)) },
+        currentBowler: innings.bowling.find(b => String(b.player?._id || b.player) === String(bowlerId)),
+        partnerships,
+        activePartnership,
+        analytics,
+        last5Overs: innings.oversHistory.slice(-5).map(o => o.runsScored),
+        requiredRate: innings.requiredRunRate,
+        matchStatus: match.status
+      });
+
+      // Emit Wicket Alert
+      if (isWicket) {
+        io.to(`match-${matchId}`).emit("WICKET_ALERT", {
+          batsman: batsmanOnStrike?.name,
+          wicketType,
+          score: `${innings.runs}/${innings.wickets}`
+        });
+      }
+
+      // Emit Milestone Alert
+      if (batsmanOnStrikeStats) {
+        if (batsmanOnStrikeStats.runs >= 50 && (batsmanOnStrikeStats.runs - batsmanRuns) < 50) {
+          io.to(`match-${matchId}`).emit("MILESTONE_ALERT", { type: '50', player: batsmanOnStrike?.name, runs: batsmanOnStrikeStats.runs });
+        }
+        if (batsmanOnStrikeStats.runs >= 100 && (batsmanOnStrikeStats.runs - batsmanRuns) < 100) {
+          io.to(`match-${matchId}`).emit("MILESTONE_ALERT", { type: '100', player: batsmanOnStrike?.name, runs: batsmanOnStrikeStats.runs });
+        }
+      }
+    } catch (e) { console.log("WebSocket broadcast error:", e.message); }
 
     res.status(200).json({
       match,

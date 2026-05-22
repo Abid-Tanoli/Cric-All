@@ -1,32 +1,48 @@
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo, useCallback } from "react";
 import { api } from "../services/api";
 import { Link } from "react-router-dom";
 import LiveNavbar from "../components/LiveNavbar";
+import { initSocket } from "../services/socket";
 
 export default function Live() {
   const [matches, setMatches] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("all"); // all, results, live, upcoming
 
+  const loadMatches = useCallback(async () => {
+    try {
+      const res = await api.get("/matches");
+      // Handle different response formats
+      const data = res.data?.matches || res.data || [];
+      setMatches(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error("Failed to load matches", err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     let mounted = true;
-    const load = async () => {
-      try {
-        const res = await api.get("/matches");
-        if (mounted) setMatches(res.data.matches || res.data || []);
-      } catch (err) {
-        console.error("Failed to load matches", err);
-      } finally {
-        if (mounted) setLoading(false);
-      }
-    };
-    load();
-    const id = setInterval(load, 10000); // refresh every 10s
+    loadMatches();
+    
+    // Socket connection for real-time updates
+    const socket = initSocket();
+    socket.on("match:updated", () => {
+      if (mounted) loadMatches();
+    });
+    socket.on("match:scoreUpdate", () => {
+      if (mounted) loadMatches();
+    });
+    
+    const id = setInterval(loadMatches, 15000); // refresh every 15s
     return () => {
       mounted = false;
       clearInterval(id);
+      socket.off("match:updated");
+      socket.off("match:scoreUpdate");
     };
-  }, []);
+  }, [loadMatches]);
 
   // Group matches by series/event
   const groupedMatches = useMemo(() => {
@@ -171,14 +187,14 @@ export default function Live() {
         )}
 
         {/* TODAY - LIVE MATCHES */}
-        {(activeTab === 'all' || activeTab === 'live') && todayMatches.filter(m => m.status === 'live').length > 0 && (
+        {(activeTab === 'all' || activeTab === 'live') && todayMatches.filter(m => m.status === 'live' || m.status === 'in_progress').length > 0 && (
           <div className="mb-10">
             <h2 className="text-xl font-black text-[#031d44] uppercase tracking-tight mb-4 flex items-center gap-2">
               <span className="w-2 h-6 bg-red-600 rounded-full animate-pulse"></span>
               Live Now
             </h2>
             <div className="space-y-4">
-              {todayMatches.filter(m => m.status === 'live').map(match => (
+              {todayMatches.filter(m => m.status === 'live' || m.status === 'in_progress').map(match => (
                 <Link
                   key={match._id}
                   to={`/match/${match._id}`}

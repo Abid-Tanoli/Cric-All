@@ -41,7 +41,6 @@ export const getTeam = async (req, res) => {
     }
 
     res.status(200).json(team);
-    console.log(team);
   } catch (error) {
     console.error("Error fetching team:", error);
     res.status(500).json({ message: "Failed to fetch team", error: error.message });

@@ -1,9 +1,17 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect } from "react";
+import { api } from "../services/api";
+import WinProbabilityChart from "./WinProbabilityChart";
+import ProjectedScoreWidget from "./ProjectedScoreWidget";
+import BoundariesTracker from "./BoundariesTracker";
+import PartnershipWheel from "./PartnershipWheel";
+import WagonWheel from "./WagonWheel";
 
 const TABS = [
   { id: "live", label: "Live Score" },
   { id: "scorecard", label: "Scorecard" },
   { id: "commentary", label: "Commentary" },
+  { id: "stats", label: "Stats" },
+  { id: "wagon", label: "Wagon Wheel" },
   { id: "info", label: "Match Info" },
 ];
 
@@ -326,7 +334,7 @@ const EnhancedMatchTabs = ({ match }) => {
             </section>
             <aside className="space-y-4">
               <MiniInfo match={match} />
-              <CommentaryPreview overs={commentaryOvers} players={players} />
+              <CommentaryPreview overs={commentaryOvers} players={players} onSwitchTab={setActiveTab} />
             </aside>
           </div>
         )}
@@ -352,6 +360,10 @@ const EnhancedMatchTabs = ({ match }) => {
         )}
 
         {activeTab === "info" && <MatchInfoTab match={match} />}
+
+        {activeTab === "stats" && <StatsTab match={match} players={players} />}
+
+        {activeTab === "wagon" && <WagonWheelTab match={match} players={players} />}
       </div>
     </main>
   );
@@ -494,13 +506,30 @@ function RecentBalls({ overs }) {
   );
 }
 
-function CommentaryPreview({ overs, players }) {
-  const firstBall = overs.flatMap((over) => over.balls.map((ball) => ({ ball, over })))[0];
+function CommentaryPreview({ overs, players, onSwitchTab }) {
+  const allBalls = overs.flatMap((over) => over.balls.map((ball) => ({ ball, over })));
+  const latestBall = allBalls[0];
+  const recentBalls = allBalls.slice(0, 3);
   return (
     <div className="rounded-xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
-      <h3 className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">Latest Commentary</h3>
-      {firstBall ? (
-        <CommentaryBall over={firstBall.over} ball={firstBall.ball} players={players} compact />
+      <div className="flex items-center justify-between">
+        <h3 className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">Latest Commentary</h3>
+        {onSwitchTab && (
+          <button
+            type="button"
+            onClick={() => onSwitchTab("commentary")}
+            className="text-[10px] font-black uppercase tracking-widest text-orange-600 hover:underline"
+          >
+            View All
+          </button>
+        )}
+      </div>
+      {latestBall ? (
+        <div className="mt-3 space-y-3">
+          {recentBalls.map(({ ball, over }, idx) => (
+            <CommentaryBall key={ball._id || `${over.overNumber}-${idx}`} over={over} ball={ball} players={players} compact />
+          ))}
+        </div>
       ) : (
         <p className="mt-3 text-sm text-slate-500">Commentary will appear here after the first ball.</p>
       )}
@@ -762,6 +791,155 @@ function InfoBlock({ title, children }) {
     <div className="rounded-xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
       <h3 className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">{title}</h3>
       <p className="mt-2 text-sm leading-6 text-slate-700">{children}</p>
+    </div>
+  );
+}
+
+function StatsTab({ match, players }) {
+  const [analytics, setAnalytics] = useState(null);
+  const [partnerships, setPartnerships] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const [analyticsRes, partnershipsRes] = await Promise.all([
+          api.get(`/matches/${match._id}/analytics`),
+          api.get(`/matches/${match._id}/partnerships/${match.currentInnings + 1}`)
+        ]);
+        setAnalytics(analyticsRes.data);
+        setPartnerships(partnershipsRes.data || []);
+      } catch (err) {
+        console.error("Failed to load stats:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchData();
+  }, [match._id, match.currentInnings]);
+
+  const inning1 = match.innings?.[0];
+  const inning2 = match.innings?.[1];
+  const isSecondInnings = match.currentInnings === 1;
+
+  if (loading) {
+    return <div className="p-8 text-center text-slate-500">Loading stats...</div>;
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="grid gap-6 md:grid-cols-2">
+        {isSecondInnings && analytics?.inning2WinProbBattingTeam ? (
+          <WinProbabilityChart
+            winProbHistory={analytics?.winProbHistory || []}
+            currentBattingProb={analytics.inning2WinProbBattingTeam}
+            currentBowlingProb={analytics.inning2WinProbBowlingTeam}
+            battingTeamName={inning2?.team?.name || "Batting"}
+            bowlingTeamName={inning1?.team?.name || "Bowling"}
+          />
+        ) : (
+          analytics && (
+            <ProjectedScoreWidget
+              currentScore={inning1?.runs || 0}
+              currentWickets={inning1?.wickets || 0}
+              currentOvers={(inning1?.overs || 0) + (inning1?.balls || 0) / 6}
+              projectedScore={analytics?.inning1ProjectedScore || 0}
+              rangeLow={analytics?.inning1ProjectedRangeLow || 0}
+              rangeHigh={analytics?.inning1ProjectedRangeHigh || 0}
+              projectionHistory={analytics?.inning1ProjectionHistory || []}
+            />
+          )
+        )}
+        <BoundariesTracker
+          inning1={{
+            fours: analytics?.totalFoursInning1 || 0,
+            sixes: analytics?.totalSixesInning1 || 0,
+            boundaryRuns: analytics?.boundaryRunsInning1 || 0,
+            totalRuns: inning1?.runs || 0
+          }}
+          inning2={{
+            fours: analytics?.totalFoursInning2 || 0,
+            sixes: analytics?.totalSixesInning2 || 0,
+            boundaryRuns: analytics?.boundaryRunsInning2 || 0,
+            totalRuns: inning2?.runs || 0
+          }}
+          total={{
+            fours: (analytics?.totalFoursInning1 || 0) + (analytics?.totalFoursInning2 || 0),
+            sixes: (analytics?.totalSixesInning1 || 0) + (analytics?.totalSixesInning2 || 0),
+            boundaryRuns: (analytics?.boundaryRunsInning1 || 0) + (analytics?.boundaryRunsInning2 || 0)
+          }}
+        />
+      </div>
+
+      <PartnershipWheel
+        partnerships={partnerships}
+        totalScore={inning1?.runs || 0}
+      />
+    </div>
+  );
+}
+
+function WagonWheelTab({ match, players }) {
+  const [shots, setShots] = useState([]);
+  const [selectedBatsman, setSelectedBatsman] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  const currentInnings = match.innings?.[match.currentInnings];
+  const battingPlayers = currentInnings?.batting || [];
+
+  useEffect(() => {
+    const fetchShots = async () => {
+      try {
+        const url = selectedBatsman
+          ? `/matches/${match._id}/wagon-wheel/${match.currentInnings + 1}/${selectedBatsman}`
+          : `/matches/${match._id}/wagon-wheel/${match.currentInnings + 1}`;
+        const res = await api.get(url);
+        setShots(res.data || []);
+      } catch (err) {
+        console.error("Failed to load wagon wheel:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchShots();
+  }, [match._id, match.currentInnings, selectedBatsman]);
+
+  if (loading) {
+    return <div className="p-8 text-center text-slate-500">Loading wagon wheel...</div>;
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center gap-4">
+        <label className="text-sm font-medium text-slate-600">Filter by Batsman:</label>
+        <select
+          value={selectedBatsman || ""}
+          onChange={(e) => setSelectedBatsman(e.target.value || null)}
+          className="px-4 py-2 rounded-lg border border-slate-300 text-sm"
+        >
+          <option value="">All Batsmen</option>
+          {battingPlayers.map((b) => (
+            <option key={b.player?._id || b.player} value={b.player?._id || b.player}>
+              {playerName(b.player, players)}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <WagonWheel 
+        shots={shots.map(s => {
+          const distVal = typeof s.distance === 'number' ? s.distance :
+            s.distance === 'boundary' || s.distance === 'six' ? 90 :
+            s.distance === 'outfield' ? 60 : 30;
+          return {
+            runs: s.runs,
+            angle: s.direction,
+            distance: distVal,
+            position: s.position
+          };
+        })}
+        playerName={selectedBatsman ? battingPlayers.find(p => (p.player?._id || p.player) === selectedBatsman)?.player?.name : "All Shots"}
+      />
     </div>
   );
 }

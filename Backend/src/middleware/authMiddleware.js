@@ -1,5 +1,6 @@
 import jwt from "jsonwebtoken";
 import Admin from "../models/Admin.js";
+import User from "../models/User.js";
 
 export const protect = async (req, res, next) => {
   try {
@@ -10,17 +11,24 @@ export const protect = async (req, res, next) => {
 
     const token = authHeader.split(" ")[1];
 
+    if (!process.env.JWT_SECRET) {
+      return res.status(500).json({ message: "Server configuration error" });
+    }
+
     let decoded;
     try {
-      decoded = jwt.verify(token, process.env.JWT_SECRET || "secret123");
+      decoded = jwt.verify(token, process.env.JWT_SECRET);
     } catch {
       return res.status(401).json({ message: "Invalid or expired token" });
     }
 
-    const admin = await Admin.findById(decoded.id).select("-password");
-    if (!admin) return res.status(401).json({ message: "Admin not found" });
+    let user = await Admin.findById(decoded.id).select("-password");
+    if (!user) {
+      user = await User.findById(decoded.id).select("-password");
+    }
+    if (!user) return res.status(401).json({ message: "User not found" });
 
-    req.user = admin;
+    req.user = user;
     next();
   } catch (err) {
     res.status(401).json({ message: "Not authorized" });

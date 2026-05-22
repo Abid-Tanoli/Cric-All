@@ -3,7 +3,7 @@ import dotenv from 'dotenv';
 import Admin from '../models/Admin.js';
 import Team from '../models/Team.js';
 import Player from '../models/Player.js';
-import Match from '../models/match.js';
+import Match from '../models/Match.js';
 import connectDB from '../utils/db.js';
 
 dotenv.config();

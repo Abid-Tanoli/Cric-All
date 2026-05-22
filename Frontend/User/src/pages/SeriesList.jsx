@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../services/api";
 import Header from "../components/Header";
@@ -6,16 +6,43 @@ import Header from "../components/Header";
 export default function SeriesList() {
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [filter, setFilter] = useState("");
 
-  useEffect(() => { loadEvents(); }, []);
-
-  const loadEvents = async () => {
+  const loadEvents = useCallback(async () => {
     try {
+      setLoading(true);
+      setError(null);
       const res = await api.get("/events");
-      setEvents(res.data);
-    } catch (err) { console.error(err); } finally { setLoading(false); }
-  };
+      let eventsData = Array.isArray(res.data) ? res.data : (res.data?.events || []);
+      setEvents(eventsData);
+      
+      // If no events, try tournaments
+      if (eventsData.length === 0) {
+        try {
+          const res2 = await api.get("/tournaments");
+          const tourneyData = Array.isArray(res2.data) ? res2.data : (res2.data?.tournaments || []);
+          setEvents(tourneyData);
+        } catch (e2) {
+          console.log("No tournaments found either");
+        }
+      }
+    } catch (err) {
+      console.error("Failed to load events:", err.message);
+      // Fallback to tournaments
+      try {
+        const res = await api.get("/tournaments");
+        const tourneyData = Array.isArray(res.data) ? res.data : (res.data?.tournaments || []);
+        setEvents(tourneyData);
+      } catch (e2) {
+        setError(err.message || "Failed to load events");
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { loadEvents(); }, [loadEvents]);
 
   const filtered = filter ? events.filter(e => e.eventType === filter) : events;
   const types = ["single-match", "series", "tri-series", "tournament", "world-cup", "champions-trophy", "league"];
@@ -44,6 +71,11 @@ export default function SeriesList() {
         {/* Grid */}
         {loading ? (
           <div className="flex justify-center py-20"><div className="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" /></div>
+        ) : error ? (
+          <div className="bg-red-50 border border-red-200 rounded-2xl p-8 text-center">
+            <p className="text-red-600 font-medium">{error}</p>
+            <button onClick={loadEvents} className="mt-4 px-4 py-2 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700">Retry</button>
+          </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
             {filtered.map(ev => (

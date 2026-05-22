@@ -3,7 +3,7 @@ import Team from "../models/Team.js";
 import { getIO } from "../socket/socket.js";
 
 export const getPlayers = async (req, res) => {
-  const { page = 1, limit = 10, search = "", team = "", Campus = "", category, subCategory, ageGroup, organization, city } = req.query;
+  const { page = 1, limit = 10, search = "", team = "", campus = "", category, subCategory, ageGroup, organization, city } = req.query;
   const query = {};
 
   if (search) {
@@ -14,7 +14,7 @@ export const getPlayers = async (req, res) => {
     ];
   }
   if (team) query.team = team;
-  if (Campus) query.Campus = { $regex: Campus, $options: "i" };
+  if (campus) query.campus = { $regex: campus, $options: "i" };
   if (category) query.category = category;
   if (subCategory) query.subCategory = { $regex: subCategory, $options: "i" };
   if (ageGroup) query.ageGroup = ageGroup;
@@ -42,7 +42,6 @@ export const getPlayer = async (req, res) => {
     const player = await Player.findById(req.params.id).populate("team", "name");
     if (!player) return res.status(404).json({ message: "Player not found" });
     res.json(player);
-    console.log(player);
   } catch (err) {
     res.status(500).json({ message: "Error fetching player" });
   }

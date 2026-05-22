@@ -7,7 +7,7 @@ export const generateToken = (user) => {
       email: user.email,
       role: user?.role || 'viewer'
     },
-    process.env.JWT_SECRET || 'your-secret-key-change-in-production',
+    process.env.JWT_SECRET,
     { expiresIn: "7d" }
   );
 };

@@ -27,14 +27,14 @@ const blogSchema = new mongoose.Schema(
       type: Boolean,
       default: false
     },
-    category: {
+    relatedType: {
       type: String,
       enum: ["General", "Match", "Player", "Tournament", "Venue", "Team"],
       default: "General"
     },
     relatedId: {
       type: mongoose.Schema.Types.ObjectId,
-      refPath: 'category'
+      refPath: 'relatedType'
     },
     tags: [String]
   },

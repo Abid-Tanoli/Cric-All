@@ -1,5 +1,5 @@
 import Tournament from "../models/Tournament.js";
-import Match from "../models/match.js";
+import Match from "../models/Match.js";
 import Team from "../models/Team.js";
 import { getIO } from "../socket/socket.js";
 

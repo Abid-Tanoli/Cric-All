@@ -4,6 +4,7 @@ import { NavLink } from "react-router-dom";
 const menuItems = [
   { to: "/admin", label: "Dashboard", icon: "📊" },
   { to: "/admin/live", label: "Live Scores", icon: "🏏" },
+  { to: "/admin/international", label: "International", icon: "🌍" },
   { to: "/admin/score", label: "Live Scoring", icon: "🎯" },
   { to: "/admin/events", label: "Manage Events", icon: "📅" },
   { to: "/admin/teams", label: "Manage Teams", icon: "👥" },

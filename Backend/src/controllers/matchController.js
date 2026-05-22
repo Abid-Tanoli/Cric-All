@@ -1,8 +1,9 @@
-import Match from "../models/match.js";
+import Match from "../models/Match.js";
 import Team from "../models/Team.js";
 import Event from "../models/Event.js";
 import Tournament from "../models/Tournament.js";
 import { getIO } from "../socket/socket.js";
+import { getBallRunText, normalizeBallRunText } from "../utils/cricketHelpers.js";
 
 const populateMatch = (query) => {
   return query
@@ -41,37 +42,6 @@ const populateMatch = (query) => {
 };
 
 const matchRoom = (matchId) => `match-${matchId}`;
-
-const getBallRunText = (ball = {}) => {
-  const runs = Number(ball.runs || 0);
-  if (ball.isWicket) return "OUT!";
-  if (ball.isWide) return "wide";
-  if (ball.isNoBall) return "no ball";
-  if (runs === 0) return "no run";
-  if (runs === 1) return "1 run";
-  if (runs === 4) return "FOUR";
-  if (runs === 6) return "SIX";
-  return `${runs} runs`;
-};
-
-const normalizeBallRunText = (matchOrMatches) => {
-  const matches = Array.isArray(matchOrMatches) ? matchOrMatches : [matchOrMatches];
-
-  matches.forEach((match) => {
-    match?.innings?.forEach((innings) => {
-      innings?.oversHistory?.forEach((over) => {
-        over?.balls?.forEach((ball) => {
-          ball.runs = Number(ball.runs || 0);
-          if (!ball.runText) {
-            ball.runText = getBallRunText(ball);
-          }
-        });
-      });
-    });
-  });
-
-  return matchOrMatches;
-};
 
 export const getMatches = async (req, res) => {
   try {

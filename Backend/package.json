@@ -7,34 +7,29 @@
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
     "import:old": "node scripts/importOldData.js",
-    "seed": "node src/seed/seedAll.js",
-    "migrate": "knex migrate:latest",
-    "migrate:rollback": "knex migrate:down",
-    "migrate:make": "knex migrate:make",
-    "seed:make": "knex seed:make"
+    "seed": "node src/seed/seedAll.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "module",
   "dependencies": {
-    "bcrypt": "^6.0.0",
+    "@anthropic-ai/sdk": "^0.97.1",
     "bcryptjs": "^3.0.3",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",
     "dotenv": "^17.2.3",
     "express": "^5.2.1",
     "jsonwebtoken": "^9.0.3",
-    "knex": "^3.2.7",
     "mongoose": "^9.1.5",
-    "pg": "^8.20.0",
+    "multer": "^1.4.5-lts.1",
+    "node-fetch": "^3.3.2",
     "socket.io": "^4.8.3",
-    "zod": "^4.3.5",
-    "node-fetch": "^3.3.2"
+    "xlsx": "^0.18.5",
+    "xml2js": "^0.6.2",
+    "zod": "^4.3.5"
   },
   "devDependencies": {
-    "multer": "^1.4.5-lts.1",
-    "nodemon": "^3.1.11",
-    "xlsx": "^0.18.5"
+    "nodemon": "^3.1.11"
   }
 }

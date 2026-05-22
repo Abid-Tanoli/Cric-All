@@ -18,37 +18,68 @@ export default function Series() {
 
   const loadData = async () => {
     try {
-      let seriesData, matchesData, squadData;
-      try {
-        const res = await api.get(`/events/${seriesId}`);
-        seriesData = res.data;
-        matchesData = seriesData.matches || [];
-        squadData = seriesData.eventSquads || [];
-      } catch {
-        const [seriesRes, matchesRes, squadRes] = await Promise.all([
-          api.get(`/tournaments/${seriesId}`),
-          api.get(`/tournaments/${seriesId}/fixtures`),
-          api.get(`/tournaments/${seriesId}/squad`).catch(() => ({ data: [] }))
-        ]);
-        seriesData = seriesRes.data;
-        matchesData = matchesRes.data;
-        squadData = squadRes.data;
+      setLoading(true);
+      let seriesData = null;
+      let matchesData = [];
+      let squadData = [];
+
+      const endpoints = [
+        { url: `/events/${seriesId}`, matchesField: 'matches', squadsField: 'eventSquads' },
+        { url: `/tournaments/${seriesId}`, matchesField: 'matches', squadsField: 'tournamentSquads' },
+        { url: `/series/${seriesId}`, matchesField: 'matches', squadsField: null }
+      ];
+
+      for (const ep of endpoints) {
+        try {
+          const res = await api.get(ep.url);
+          seriesData = res.data;
+          matchesData = seriesData.matches || [];
+          if (ep.squadsField) {
+            squadData = seriesData[ep.squadsField] || [];
+          }
+          break;
+        } catch (e) {
+          console.log(`Failed ${ep.url}:`, e.message);
+        }
       }
 
-      // Fetch detailed stats for each completed match
-      const completedMatches = matchesData.filter(m => m.status === "completed");
+      if (!seriesData) {
+        try {
+          const matchRes = await api.get(`/matches/${seriesId}`);
+          seriesData = {
+            _id: matchRes.data._id,
+            name: matchRes.data.title || "Match",
+            format: matchRes.data.matchType || "T20",
+            status: matchRes.data.status || "upcoming"
+          };
+          matchesData = [matchRes.data];
+        } catch (e4) {
+          console.log("Not a match either");
+        }
+        
+        if (!seriesData) {
+          setSeries(null);
+          setLoading(false);
+          return;
+        }
+      }
+
+      // Resolve match IDs or populate matches if they come as references
+      const matchIds = matchesData.map(m => m._id || m).filter(Boolean);
+      const allMatches = await Promise.all(
+        matchIds.map(id => api.get(`/matches/${id}`).catch(() => null))
+      );
+      const validMatches = allMatches.filter(r => r?.data).map(r => r.data);
+
+      setSeries(seriesData);
+      setMatches(validMatches);
+      setSquads(squadData);
+
+      // Calculate stats from completed matches
+      const completedMatches = validMatches.filter(m => m?.status === "completed");
       const matchDetails = await Promise.all(
         completedMatches.map(m => api.get(`/matches/${m._id}`).catch(() => ({ data: m })))
       );
-      const allMatches = await Promise.all(
-        matchesData.map(m => api.get(`/matches/${m._id}`).catch(() => ({ data: m })))
-      );
-
-      setSeries(seriesData);
-      setMatches(allMatches.map(r => r.data));
-      setSquads(squadData);
-
-      // Calculate stats from match details
       const playerStats = calculateStats(matchDetails.map(r => r.data));
       setStats(playerStats);
     } catch (err) {

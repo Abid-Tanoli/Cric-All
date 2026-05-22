@@ -1,7 +1,7 @@
-import React from "react";
+import React, { memo } from "react";
 import { Link } from "react-router-dom";
 
-export default function MatchList({ matches, selected, onSelect }) {
+const MatchListComponent = function MatchList({ matches, selected, onSelect }) {
   const matchesArray = Array.isArray(matches) ? matches : [];
 
   if (!matchesArray.length) return <div className="text-gray-500">No matches available</div>;
@@ -22,6 +22,8 @@ export default function MatchList({ matches, selected, onSelect }) {
           </Link>
         </li>
       ))}
-    </ul>
+</ul>
   );
-}
+};
+
+export default memo(MatchListComponent);

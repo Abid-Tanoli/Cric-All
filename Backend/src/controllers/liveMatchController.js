@@ -1,5 +1,5 @@
 import Ball from "../models/Ball.js";
-import Match from "../models/match.js";
+import Match from "../models/Match.js";
 
 export const addBall = async (req, res) => {
   try {

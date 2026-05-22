@@ -7,8 +7,8 @@ export const fetchMatches = createAsyncThunk(
   async (_, { rejectWithValue }) => {
     try {
       const res = await api.get("/matches");
-      // Ensure the response is always an array
-      return Array.isArray(res.data) ? res.data : [];
+      const data = res.data?.matches || res.data;
+      return Array.isArray(data) ? data : [];
     } catch (err) {
       return rejectWithValue(err.response?.data?.message || err.message);
     }
