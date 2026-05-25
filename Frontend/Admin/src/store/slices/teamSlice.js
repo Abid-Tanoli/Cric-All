@@ -65,9 +65,9 @@ export const deleteTeam = createAsyncThunk(
 
 export const addPlayersToTeam = createAsyncThunk(
   "teams/addPlayers",
-  async ({ id, playerIds }, thunkAPI) => {
+  async ({ teamId, playerIds }, thunkAPI) => {
     try {
-      const res = await api.put(`/teams/${id}`, { players: playerIds });
+      const res = await api.post(`/teams/${teamId}/players`, { playerIds });
       return res.data;
     } catch (err) {
       return thunkAPI.rejectWithValue(

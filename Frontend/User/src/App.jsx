@@ -10,6 +10,7 @@ import InternationalTeams from "./pages/InternationalTeams";
 import LeagueTeams from "./pages/LeagueTeams";
 import LeagueDetails from "./pages/LeagueDetails";
 import IncubationTeams from "./pages/IncubationTeams";
+import TeamProfile from "./pages/TeamProfile";
 import Rankings from "./pages/Rankings";
 import PointsTable from "./pages/PointsTable";
 import Live from "./pages/Live";
@@ -42,6 +43,7 @@ function App() {
           <Route path="/teams/leagues" element={<LeagueTeams />} />
           <Route path="/teams/leagues/:leagueId" element={<LeagueDetails />} />
           <Route path="/teams/incubation" element={<IncubationTeams />} />
+          <Route path="/teams/:id" element={<TeamProfile />} />
           <Route path="/rankings" element={<Rankings />} />
           <Route path="/points-table" element={<PointsTable />} />
           <Route path="/news" element={<News />} />

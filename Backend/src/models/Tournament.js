@@ -37,6 +37,10 @@ const tournamentSchema = new mongoose.Schema(
       type: String,
       default: ""
     },
+    slug: { type: String, default: "" },
+    espnSeriesId: { type: String, default: "" },
+    season: { type: String, default: "" },
+    longName: { type: String, default: "" },
     status: {
       type: String,
       enum: ["upcoming", "live", "completed"],

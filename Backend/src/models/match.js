@@ -103,7 +103,7 @@ const partnershipSchema = new mongoose.Schema({
 });
 
 const inningsSchema = new mongoose.Schema({
-  team: { type: mongoose.Schema.Types.ObjectId, ref: "Team", required: true },
+  team: { type: mongoose.Schema.Types.ObjectId, ref: "Team" },
   battingOrder: [{ type: mongoose.Schema.Types.ObjectId, ref: "Player" }],
   runs: { type: Number, default: 0 },
   wickets: { type: Number, default: 0 },
@@ -215,8 +215,7 @@ const matchSchema = new mongoose.Schema(
       default: 20
     },
     startAt: {
-      type: Date,
-      required: true
+      type: Date
     },
     teams: [{
       type: mongoose.Schema.Types.ObjectId,
@@ -294,6 +293,11 @@ const matchSchema = new mongoose.Schema(
       default: "",
       trim: true
     },
+    espnMatchId: { type: String, default: "" },
+    slug: { type: String, default: "" },
+    resultText: { type: String, default: "" },
+    statusText: { type: String, default: "" },
+    commentary: { type: mongoose.Schema.Types.Mixed },
     seriesMatchNumber: {
       type: Number,
       default: null

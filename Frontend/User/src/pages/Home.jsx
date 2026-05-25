@@ -1,9 +1,7 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useMemo } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { useNavigate, Link } from "react-router-dom";
-
 import Header from "../components/Header";
-import MatchList from "../components/MatchList";
 import Login from "../components/Login";
 import Register from "../components/Register";
 import { fetchMatches } from "../store/slices/matchesSlice";
@@ -11,315 +9,360 @@ import { initAuthFromStorage, logout as doLogout, getStoredUser } from "../pages
 import BlogGallery from "../components/BlogGallery";
 import { api } from "../services/api";
 import GlobalSearch from "../components/GlobalSearch";
-import { initSocket, joinMatchRoom, leaveMatchRoom } from "../services/socket";
+import { initSocket } from "../services/socket";
+
+const statusBadge = (match) => {
+  const s = match.status;
+  if (s === "live" || s === "in_progress")
+    return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-red-600 text-white font-bold text-[10px] uppercase tracking-wider"><span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />Live</span>;
+  if (s === "innings-break")
+    return <span className="px-2 py-0.5 rounded bg-amber-600 text-white font-bold text-[10px] uppercase">Innings Break</span>;
+  if (s === "completed")
+    return <span className="px-2 py-0.5 rounded bg-green-700 text-white font-bold text-[10px] uppercase">RESULT</span>;
+  if (s === "abandoned")
+    return <span className="px-2 py-0.5 rounded bg-slate-500 text-white font-bold text-[10px] uppercase">ABANDONED</span>;
+  return <span className="px-2 py-0.5 rounded bg-blue-600 text-white font-bold text-[10px] uppercase">{s === "upcoming" ? "Today" : s.replace(/_/g, " ")}</span>;
+};
+
+const formatOvers = (balls = 0) => `${Math.floor(balls / 6)}.${balls % 6}`;
 
 export function Home() {
-   const dispatch = useDispatch();
-   const navigate = useNavigate();
+  const dispatch = useDispatch();
+  const navigate = useNavigate();
 
-   const matches = useSelector((state) => Array.isArray(state.matches.list) ? state.matches.list : []);
-   const matchesStatus = useSelector((state) => state.matches.status);
-   
-    // Better filtering - handle various status values
-    const liveOrActiveMatches = matches.filter(m => 
-      m.status === "live" || m.status === "in_progress" || 
-      m.status === "innings-break" || m.status === "super_over" ||
-      m.status === "pending_tie_resolution"
-    );
-    const upcomingMatches = matches.filter(m => m.status === "upcoming" || m.status === "scheduled" || m.status === "pending");
-    const completedMatches = matches.filter(m => m.status === "completed" || m.status === "abandoned");
-    const displayMatches = liveOrActiveMatches.length > 0 ? liveOrActiveMatches : (upcomingMatches.length > 0 ? upcomingMatches : []);
+  const matches = useSelector((state) => Array.isArray(state.matches.list) ? state.matches.list : []);
+  const matchesStatus = useSelector((state) => state.matches.status);
 
-   const [series, setSeries] = useState([]);
-   const [seriesLoading, setSeriesLoading] = useState(true);
-   const [seriesError, setSeriesError] = useState(null);
-   const [authUser, setAuthUser] = useState(null);
-   const [showLogin, setShowLogin] = useState(false);
-   const [showRegister, setShowRegister] = useState(false);
-   const matchesLoading = matchesStatus === "loading";
+  const [series, setSeries] = useState([]);
+  const [seriesLoading, setSeriesLoading] = useState(true);
+  const [authUser, setAuthUser] = useState(null);
+  const [showLogin, setShowLogin] = useState(false);
+  const [showRegister, setShowRegister] = useState(false);
+  const [collapseCompleted, setCollapseCompleted] = useState(false);
 
-const loadSeries = useCallback(async () => {
-       try {
-          setSeriesLoading(true);
-          setSeriesError(null);
-          
-          const res = await api.get("/events");
-          let eventsData = Array.isArray(res.data) ? res.data : (res.data?.events || []);
-          setSeries(eventsData);
-          
-          if (eventsData.length === 0) {
-             const res2 = await api.get("/tournaments");
-             const tourneyData = Array.isArray(res2.data) ? res2.data : (res2.data?.tournaments || []);
-             setSeries(tourneyData);
-          }
-       } catch (err) {
-          try {
-             const res = await api.get("/tournaments");
-             const tourneyData = Array.isArray(res.data) ? res.data : (res.data?.tournaments || []);
-             setSeries(tourneyData);
-          } catch (e2) {
-             setSeriesError(err.message);
-          }
-       } finally {
-          setSeriesLoading(false);
-       }
-    }, []);
+  const matchesLoading = matchesStatus === "loading";
 
-   useEffect(() => {
-      const user = initAuthFromStorage && getStoredUser();
-      setAuthUser(user);
-      dispatch(fetchMatches());
-      loadSeries();
+  const loadSeries = useCallback(async () => {
+    try {
+      setSeriesLoading(true);
+      const res = await api.get("/events");
+      let data = Array.isArray(res.data) ? res.data : (res.data?.events || []);
+      if (data.length === 0) {
+        const res2 = await api.get("/tournaments");
+        data = Array.isArray(res2.data) ? res2.data : (res2.data?.tournaments || []);
+      }
+      setSeries(data);
+    } catch {
+      try {
+        const res = await api.get("/tournaments");
+        setSeries(Array.isArray(res.data) ? res.data : (res.data?.tournaments || []));
+      } catch {}
+    } finally {
+      setSeriesLoading(false);
+    }
+  }, []);
 
-      // Socket connection for real-time updates
-      const socket = initSocket();
-      socket.on("match:updated", () => dispatch(fetchMatches()));
-      socket.on("match:scoreUpdate", () => dispatch(fetchMatches()));
-      socket.on("match:ballUpdate", () => dispatch(fetchMatches()));
-      
-      return () => {
-         socket.off("match:updated");
-         socket.off("match:scoreUpdate");
-         socket.off("match:ballUpdate");
-      };
-   }, [dispatch, loadSeries]);
+  useEffect(() => {
+    const user = getStoredUser();
+    setAuthUser(user);
+    dispatch(fetchMatches());
+    loadSeries();
+    const socket = initSocket();
+    socket.on("match:updated", () => dispatch(fetchMatches()));
+    socket.on("match:scoreUpdate", () => dispatch(fetchMatches()));
+    socket.on("match:ballUpdate", () => dispatch(fetchMatches()));
+    return () => {
+      socket.off("match:updated");
+      socket.off("match:scoreUpdate");
+      socket.off("match:ballUpdate");
+    };
+  }, [dispatch, loadSeries]);
 
-   const handleLoginSuccess = (user) => { setAuthUser(user); setShowLogin(false); dispatch(fetchMatches()); };
-   const handleRegisterSuccess = (user) => { setAuthUser(user); setShowRegister(false); dispatch(fetchMatches()); };
-   const handleLogout = () => { doLogout(); setAuthUser(null); dispatch(fetchMatches()); };
-   const handleMatchSelect = (match) => { navigate(`/match/${match._id}`); };
+  const handleLoginSuccess = (user) => { setAuthUser(user); setShowLogin(false); dispatch(fetchMatches()); };
+  const handleRegisterSuccess = (user) => { setAuthUser(user); setShowRegister(false); dispatch(fetchMatches()); };
+  const handleLogout = () => { doLogout(); setAuthUser(null); dispatch(fetchMatches()); };
 
-   return (
-      <div className="min-h-screen bg-[#f0f2f5] text-slate-900 font-sans">
-         <Header
-            user={authUser}
-            onShowLogin={() => { setShowLogin(true); setShowRegister(false); }}
-            onShowRegister={() => { setShowRegister(true); setShowLogin(false); }}
-            onLogout={handleLogout}
-         />
+  const liveMatches = matches.filter(m => m.status === "live" || m.status === "in_progress" || m.status === "innings-break");
+  const upcomingMatches = matches.filter(m => m.status === "upcoming" || m.status === "scheduled" || m.status === "pending");
+  const completedMatches = matches.filter(m => m.status === "completed").slice(0, 10);
+  const abandonedMatches = matches.filter(m => m.status === "abandoned");
 
-{/* Series/Events Section */}
-          {(seriesLoading || series.length > 0 || seriesError) && (
-             <div className="bg-gradient-to-r from-[#031d44] via-[#0a2d5e] to-[#031d44] border-b border-white/10">
-                <div className="max-w-7xl mx-auto px-4 py-8">
-                   <div className="flex flex-col md:flex-row md:items-center justify-between mb-6 gap-4">
-                      <h2 className="text-white font-black uppercase tracking-widest text-sm flex items-center gap-2">
-                         <span className="text-2xl">🏆</span> Series & Tournaments
-                      </h2>
-                      <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
-                         {["All", "School", "College", "University", "Organization", "Business", "Industry"].map(cat => (
-                            <button key={cat} className="px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-full text-[10px] font-black text-blue-300 uppercase whitespace-nowrap transition-all">
-                               {cat}
-                            </button>
-                         ))}
-                      </div>
-                      <Link to="/series" className="text-blue-300 text-xs font-black uppercase hover:text-white transition-colors">View All →</Link>
-                   </div>
-                   
-                   {seriesLoading && (
-                      <div className="flex justify-center py-8">
-                         <div className="w-8 h-8 border-2 border-blue-400 border-t-transparent rounded-full animate-spin"></div>
-                      </div>
-                   )}
-                   
-                   {seriesError && (
-                      <div className="text-center py-4 text-red-400 text-sm">
-                         Unable to load series. <button onClick={loadSeries} className="underline">Retry</button>
-                      </div>
-                   )}
-                   
-                   {!seriesLoading && !seriesError && series.length > 0 && (
-                      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-                         {series.slice(0, 6).map(ev => (
-                            <Link key={ev._id} to={`/series/${ev.slug || ev._id}`} className="group bg-white/5 hover:bg-white/10 border border-white/10 rounded-2xl overflow-hidden transition-all backdrop-blur-sm">
-                               <div className="aspect-square bg-white/10 flex items-center justify-center p-4">
-                                  {ev.logo ? (
-                                     <img src={ev.logo} alt={ev.name} className="w-full h-full object-contain" />
-                                  ) : (
-                                     <span className="text-4xl font-black text-white/80">{ev.name?.charAt(0)}</span>
-                                  )}
-                               </div>
-                               <div className="p-3">
-                                  <p className="text-[9px] font-bold text-blue-300/60 uppercase truncate">{ev.eventType?.replace('-', ' ')}</p>
-                                  <p className="text-xs font-black text-white uppercase tracking-tight truncate group-hover:text-blue-300 transition-colors">{ev.shortName || ev.name}</p>
-                                  <span className={`inline-block mt-1 px-2 py-0.5 rounded-full text-[8px] font-bold uppercase ${ev.status === "live" ? "bg-red-600 text-white animate-pulse" : ev.status === "completed" ? "bg-green-600 text-white" : "bg-blue-500/20 text-blue-300"}`}>{ev.status}</span>
-                               </div>
-                            </Link>
-                         ))}
-                      </div>
-                   )}
-                   
-                   {!seriesLoading && !seriesError && series.length === 0 && (
-                      <div className="text-center py-8 text-blue-300/60 text-sm">
-                         No series or tournaments available
-                      </div>
-                   )}
+  const groupBySeries = useCallback((matchList) => {
+    const groups = {};
+    matchList.forEach(m => {
+      const key = m.tournament?._id || m.tournament?.name || m.series || "Other";
+      if (!groups[key]) groups[key] = { name: m.tournament?.name || m.series || "Other", matches: [] };
+      groups[key].matches.push(m);
+    });
+    return Object.values(groups);
+  }, []);
+
+  const liveGroups = useMemo(() => groupBySeries(liveMatches), [liveMatches, groupBySeries]);
+  const upcomingGroups = useMemo(() => groupBySeries(upcomingMatches), [upcomingMatches, groupBySeries]);
+  const completedGroups = useMemo(() => groupBySeries(completedMatches), [completedMatches, groupBySeries]);
+
+  const renderMatchCard = (m, isCompact) => (
+    <div
+      key={m._id}
+      onClick={() => navigate(`/match/${m._id}`)}
+      className={`cursor-pointer hover:bg-blue-50/50 transition-all ${isCompact ? "px-3 py-2" : "px-4 py-3"} ${!isCompact ? "border-b border-slate-100 last:border-0" : ""}`}
+    >
+      {!isCompact && (
+        <div className="flex items-center justify-between mb-1.5">
+          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{m.tournament?.name || m.matchType}</span>
+          {statusBadge(m)}
+        </div>
+      )}
+      <div className="space-y-1">
+        {(m.teams || []).map((team, idx) => {
+          const inn = m.innings?.[idx];
+          return (
+            <div key={team?._id || idx} className="flex items-center justify-between">
+              <div className="flex items-center gap-2 min-w-0 flex-1">
+                <div className="w-5 h-5 rounded-full bg-slate-200 flex-shrink-0 flex items-center justify-center text-[9px] font-bold text-slate-600 overflow-hidden">
+                  {team?.logo ? <img src={team.logo} alt="" className="w-full h-full object-cover" /> : (team?.shortName || team?.name || "T")?.charAt(0)}
                 </div>
-             </div>
-          )}
-
-         {/* Hero Live Section - Premium */}
-         <div className="bg-[#031d44] border-b border-white/10 shadow-2xl">
-            <div className="max-w-7xl mx-auto px-4 py-8">
-               <div className="flex items-center justify-between mb-6">
-                  <h2 className="text-white font-black uppercase tracking-widest text-sm flex items-center gap-2">
-                     <div className="w-2 h-4 bg-red-600 rounded-full animate-pulse" />
-                     Live & Upcoming Matches
-                  </h2>
-                  <div className="flex-1 max-w-xl mx-8 hidden md:block">
-                     <GlobalSearch />
-                  </div>
-                  <button className="text-blue-300 text-xs font-black uppercase hover:text-white transition-colors">
-                     View All Matches →
-                  </button>
-               </div>
-               <div className="md:hidden mb-6">
-                  <GlobalSearch />
-               </div>
-
-<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                   {matchesLoading ? (
-                      // Loading skeleton
-                      Array.from({ length: 3 }).map((_, i) => (
-                         <div key={i} className="bg-white/5 rounded-2xl p-6 animate-pulse">
-                            <div className="h-4 bg-white/10 rounded w-24 mb-4"></div>
-                            <div className="space-y-3">
-                               <div className="flex justify-between">
-                                  <div className="h-8 w-24 bg-white/10 rounded"></div>
-                                  <div className="h-8 w-16 bg-white/10 rounded"></div>
-                               </div>
-                               <div className="flex justify-between">
-                                  <div className="h-8 w-24 bg-white/10 rounded"></div>
-                                  <div className="h-8 w-16 bg-white/10 rounded"></div>
-                               </div>
-                            </div>
-                         </div>
-                      ))
-                    ) : liveOrActiveMatches.length > 0 ? (
-                       // Show live/active matches
-                       liveOrActiveMatches.slice(0, 3).map(m => (
-                          <div key={m._id} onClick={() => handleMatchSelect(m)} className="group cursor-pointer bg-white/5 hover:bg-white/10 border border-white/10 rounded-2xl p-6 transition-all backdrop-blur-sm">
-                             <div className="flex justify-between items-start mb-4">
-                                <span className="text-[10px] font-black text-blue-300/60 uppercase tracking-widest">{m.tournament?.name || m.matchType}</span>
-                                <span className={`text-[9px] font-black px-2 py-0.5 rounded uppercase ${m.status === 'live' || m.status === 'in_progress' ? 'bg-red-600 text-white animate-pulse' : m.status === 'innings-break' ? 'bg-amber-600 text-white' : 'bg-purple-600 text-white'}`}>
-                                   {m.status === 'live' || m.status === 'in_progress' ? 'Live' : m.status === 'innings-break' ? 'Innings Break' : m.status.replace(/_/g, ' ')}
-                                </span>
-                            </div>
-                            <div className="space-y-4">
-                               {m.innings?.map((inn, idx) => (
-                                  <div key={idx} className="flex items-center justify-between">
-                                     <div className="flex items-center gap-3">
-                                        <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-xs font-bold border border-white/10">
-                                           {m.teams[idx]?.name?.charAt(0)}
-                                        </div>
-                                        <span className="font-bold text-white uppercase tracking-tight">{m.teams[idx]?.shortName || m.teams[idx]?.name}</span>
-                                     </div>
-                                     <span className="font-black text-white text-lg">{inn?.runs || 0}/{inn?.wickets || 0} <span className="text-xs text-blue-300/40 ml-1">({Math.floor(inn?.balls/6) || 0}.{(inn?.balls || 0) % 6})</span></span>
-                                  </div>
-                               ))}
-                            </div>
-                            <div className="mt-6 pt-4 border-t border-white/10 text-xs font-bold text-blue-300 italic">
-                               {m.result?.description || m.status.replace(/_/g, " ").toUpperCase()}
-                            </div>
-                         </div>
-                      ))
-                   ) : upcomingMatches.length > 0 ? (
-                      // Show upcoming matches
-                      upcomingMatches.slice(0, 3).map(m => (
-                         <div key={m._id} onClick={() => handleMatchSelect(m)} className="group cursor-pointer bg-white/5 hover:bg-white/10 border border-white/10 rounded-2xl p-6 transition-all backdrop-blur-sm">
-                            <div className="flex justify-between items-start mb-4">
-                               <span className="text-[10px] font-black text-blue-300/60 uppercase tracking-widest">{m.tournament?.name || "Scheduled"}</span>
-                               <span className="bg-blue-500/30 text-blue-300 text-[9px] font-black px-2 py-0.5 rounded uppercase">Upcoming</span>
-                            </div>
-                            <div className="flex items-center justify-center gap-4 mb-4">
-                               <div className="text-center flex-1">
-                                  <div className="w-12 h-12 mx-auto rounded-full bg-white/10 border border-white/10 flex items-center justify-center text-xl font-bold text-white mb-2">{m.teams?.[0]?.name?.charAt(0)}</div>
-                                  <p className="text-xs font-black text-white uppercase tracking-tighter truncate">{m.teams?.[0]?.name}</p>
-                               </div>
-                               <div className="text-white/20 font-black text-sm italic">VS</div>
-                               <div className="text-center flex-1">
-                                  <div className="w-12 h-12 mx-auto rounded-full bg-white/10 border border-white/10 flex items-center justify-center text-xl font-bold text-white mb-2">{m.teams?.[1]?.name?.charAt(0)}</div>
-                                  <p className="text-xs font-black text-white uppercase tracking-tighter truncate">{m.teams?.[1]?.name}</p>
-                               </div>
-                            </div>
-                            <p className="text-center text-[10px] font-black text-blue-300 uppercase tracking-widest bg-blue-500/10 py-1.5 rounded-lg">
-                               {m.startAt ? new Date(m.startAt).toLocaleDateString() : 'Scheduled'}
-                            </p>
-                         </div>
-                      ))
-                   ) : (
-                      // No matches available
-                      <div className="col-span-3 text-center py-12 text-blue-300/60">
-                         <p className="text-lg font-bold">No matches available</p>
-                         <p className="text-sm mt-2">Check back later for upcoming matches</p>
-                      </div>
-                   )}
-                </div>
+                <span className="text-sm font-bold text-slate-800 truncate">{team?.shortName || team?.name || "Team"}</span>
+              </div>
+              <span className="text-sm font-black tabular-nums text-slate-800 ml-2">
+                {inn ? `${inn.runs || 0}/${inn.wickets ?? "-"}` : "-"}
+              </span>
             </div>
-         </div>
-
-         <div className="max-w-7xl mx-auto px-4 py-12">
-            <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
-               {/* Main news portal section */}
-               <div className="lg:col-span-3 space-y-12">
-                  <div className="flex items-center justify-between">
-                     <h1 className="text-3xl font-black text-[#031d44] uppercase tracking-tighter italic">Top Stories</h1>
-                     <div className="h-0.5 flex-1 bg-slate-200 mx-8" />
-                  </div>
-
-                  {/* Large centerpiece blog/news */}
-                  <BlogGallery category="General" />
-
-                  {showLogin && <Login onSuccess={handleLoginSuccess} onCancel={() => setShowLogin(false)} />}
-                  {showRegister && <Register onSuccess={handleRegisterSuccess} onCancel={() => setShowRegister(false)} />}
-               </div>
-
-               {/* Sidebars */}
-               <div className="space-y-8">
-<div className="bg-white rounded-2xl shadow-xl overflow-hidden border border-slate-200">
-                      <div className="bg-[#031d44] text-white px-6 py-4">
-                         <h3 className="font-black uppercase tracking-widest text-xs">Recent Results</h3>
-                      </div>
-                      <div className="divide-y divide-slate-100">
-                         {completedMatches.length > 0 ? completedMatches.slice(0, 5).map(m => (
-                            <div key={m._id} onClick={() => handleMatchSelect(m)} className="p-4 hover:bg-slate-50 cursor-pointer transition-colors">
-                               <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">{m.tournament?.name || "Tournament Result"}</p>
-                               <div className="space-y-1 mb-2">
-                                  <div className="flex justify-between items-center text-xs">
-                                     <span className="font-bold uppercase tracking-tight">{m.teams?.[0]?.shortName || m.teams?.[0]?.name || "Team A"}</span>
-                                     <span className="font-black">{m.innings?.[0]?.runs ?? 0}/{m.innings?.[0]?.wickets ?? 0}</span>
-                                  </div>
-                                  <div className="flex justify-between items-center text-xs">
-                                     <span className="font-bold uppercase tracking-tight">{m.teams?.[1]?.shortName || m.teams?.[1]?.name || "Team B"}</span>
-                                     <span className="font-black">{m.innings?.[1]?.runs ?? 0}/{m.innings?.[1]?.wickets ?? 0}</span>
-                                  </div>
-                               </div>
-                               <p className="text-[10px] font-bold text-blue-600 italic line-clamp-1">{m.result?.description || m.status}</p>
-                            </div>
-                         )) : (
-                            <div className="p-4 text-center text-slate-400 text-sm">
-                               No completed matches yet
-                            </div>
-                         )}
-                      </div>
-                   </div>
-
-                  <div className="bg-white rounded-2xl shadow-xl p-6 border border-slate-200">
-                     <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-6 px-1">Trending Topics</h3>
-                     <div className="space-y-4">
-                        {["#CricketWorldCup", "#BCL2025", "#LiveScores", "#MatchHighlights"].map(tag => (
-                           <div key={tag} className="flex items-center gap-3 cursor-pointer group">
-                              <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center group-hover:bg-blue-600 group-hover:text-white transition-all">
-                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14" /></svg>
-                              </div>
-                              <span className="text-sm font-bold text-slate-800 group-hover:text-blue-600 transition-colors uppercase tracking-tight">{tag}</span>
-                           </div>
-                        ))}
-                     </div>
-                  </div>
-               </div>
-            </div>
-         </div>
+          );
+        })}
       </div>
-   );
+      {!isCompact && m.result?.description && (
+        <p className="text-[11px] font-bold text-blue-700 mt-1.5 italic leading-tight">{m.result.description}</p>
+      )}
+      {!isCompact && (m.status === "upcoming" || m.status === "scheduled") && m.startAt && (
+        <p className="text-[11px] font-semibold text-slate-500 mt-1">
+          {new Date(m.startAt).toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+        </p>
+      )}
+    </div>
+  );
+
+  const renderSeriesGroup = (group, compact) => (
+    <div key={group.name} className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+      <div className="flex items-center justify-between px-4 py-2.5 bg-slate-50 border-b border-slate-200">
+        <Link to={`/series/${group.matches[0]?.tournament?.slug || group.matches[0]?.tournament?._id}`} className="text-xs font-black text-slate-700 hover:text-blue-700 uppercase tracking-wider">
+          {group.name}
+        </Link>
+        <Link to={`/series/${group.matches[0]?.tournament?.slug || group.matches[0]?.tournament?._id}`} className="text-[10px] font-bold text-blue-600 hover:text-blue-800">
+          {group.matches.length > 1 ? `See all (${group.matches.length})` : "View"}
+        </Link>
+      </div>
+      <div className={compact ? "" : "divide-y divide-slate-50"}>
+        {group.matches.map(m => renderMatchCard(m, compact))}
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="min-h-screen bg-[#f0f2f5] text-slate-900 font-sans">
+      <Header
+        user={authUser}
+        onShowLogin={() => { setShowLogin(true); setShowRegister(false); }}
+        onShowRegister={() => { setShowRegister(true); setShowLogin(false); }}
+        onLogout={handleLogout}
+      />
+
+      <div className="max-w-7xl mx-auto px-4 py-6">
+        {/* Series/Tournaments bar */}
+        {seriesLoading || series.length > 0 ? (
+          <div className="mb-6">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-xs font-black text-slate-500 uppercase tracking-widest">Featured Series</h2>
+              <Link to="/series" className="text-[10px] font-bold text-blue-600 hover:text-blue-800">All Series →</Link>
+            </div>
+            <div className="flex gap-3 overflow-x-auto pb-2 no-scrollbar">
+              {seriesLoading ? (
+                Array.from({ length: 4 }).map((_, i) => (
+                  <div key={i} className="w-40 h-20 rounded-xl bg-slate-200 animate-pulse flex-shrink-0" />
+                ))
+              ) : (
+                series.slice(0, 8).map(ev => (
+                  <Link key={ev._id} to={`/series/${ev.slug || ev._id}`} className="flex-shrink-0 group">
+                    <div className="w-40 bg-white rounded-xl border border-slate-200 p-3 hover:shadow-md hover:border-blue-300 transition-all">
+                      <div className="flex items-center gap-2">
+                        <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center overflow-hidden flex-shrink-0">
+                          {ev.logo ? <img src={ev.logo} alt="" className="w-full h-full object-cover" /> : <span className="text-lg font-black text-slate-600">{ev.name?.charAt(0)}</span>}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-[10px] font-black text-slate-800 uppercase truncate">{ev.shortName || ev.name}</p>
+                          <p className="text-[8px] font-bold text-slate-400 uppercase">{ev.eventType?.replace(/-/g, " ") || ev.format}</p>
+                        </div>
+                      </div>
+                    </div>
+                  </Link>
+                ))
+              )}
+            </div>
+          </div>
+        ) : null}
+
+        {/* Search bar */}
+        <div className="mb-6">
+          <GlobalSearch />
+        </div>
+
+        {/* Main content: 2-column layout */}
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6">
+
+          {/* Left column: Live/Upcoming/Results */}
+          <div className="space-y-6">
+
+            {/* Live Matches */}
+            {liveGroups.length > 0 && (
+              <section>
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="w-2 h-2 bg-red-600 rounded-full animate-pulse" />
+                  <h2 className="text-sm font-black text-slate-800 uppercase tracking-wider">Live</h2>
+                </div>
+                <div className="space-y-4">
+                  {liveGroups.map(g => renderSeriesGroup(g, false))}
+                </div>
+              </section>
+            )}
+
+            {/* Today's / Upcoming Matches */}
+            {upcomingGroups.length > 0 && (
+              <section>
+                <h2 className="text-sm font-black text-slate-800 uppercase tracking-wider mb-3">Upcoming</h2>
+                <div className="space-y-4">
+                  {upcomingGroups.map(g => renderSeriesGroup(g, false))}
+                </div>
+              </section>
+            )}
+
+            {/* Loading skeleton */}
+            {matchesLoading && liveGroups.length === 0 && upcomingGroups.length === 0 && (
+              <div className="space-y-4">
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <div key={i} className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 animate-pulse">
+                    <div className="h-3 bg-slate-200 rounded w-1/3 mb-4" />
+                    <div className="space-y-3">
+                      <div className="flex justify-between"><div className="h-4 bg-slate-200 rounded w-32" /><div className="h-4 bg-slate-200 rounded w-16" /></div>
+                      <div className="flex justify-between"><div className="h-4 bg-slate-200 rounded w-32" /><div className="h-4 bg-slate-200 rounded w-16" /></div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* No matches state */}
+            {!matchesLoading && liveGroups.length === 0 && upcomingGroups.length === 0 && completedGroups.length === 0 && (
+              <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-12 text-center">
+                <p className="text-4xl mb-4">🏏</p>
+                <p className="text-lg font-bold text-slate-400">No matches available</p>
+                <p className="text-sm text-slate-400 mt-1">Check back later for upcoming matches and live scores</p>
+              </div>
+            )}
+
+            {/* Completed Results */}
+            {completedGroups.length > 0 && (
+              <section>
+                <div className="flex items-center justify-between mb-3">
+                  <h2 className="text-sm font-black text-slate-800 uppercase tracking-wider">Recent Results</h2>
+                  <button onClick={() => setCollapseCompleted(!collapseCompleted)} className="text-[10px] font-bold text-blue-600 hover:text-blue-800">
+                    {collapseCompleted ? "Show" : "Hide"}
+                  </button>
+                </div>
+                {!collapseCompleted && (
+                  <div className="space-y-4">
+                    {completedGroups.map(g => renderSeriesGroup(g, false))}
+                  </div>
+                )}
+              </section>
+            )}
+
+            {/* Top Stories */}
+            <section>
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-sm font-black text-slate-800 uppercase tracking-wider">Top Stories</h2>
+                <Link to="/news" className="text-[10px] font-bold text-blue-600 hover:text-blue-800">More News →</Link>
+              </div>
+              <BlogGallery category="General" />
+            </section>
+
+          </div>
+
+          {/* Right sidebar */}
+          <div className="space-y-6">
+
+            {/* Quick Links */}
+            <div className="bg-white rounded-xl border border-slate-200 p-4">
+              <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Quick Links</h3>
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  { label: "Live Scores", icon: "⚡", path: "/live" },
+                  { label: "Rankings", icon: "🏆", path: "/rankings" },
+                  { label: "Points Table", icon: "📊", path: "/points-table" },
+                  { label: "Teams", icon: "👥", path: "/teams" },
+                  { label: "Players", icon: "🏏", path: "/players" },
+                  { label: "Series", icon: "📅", path: "/series" },
+                ].map(link => (
+                  <Link key={link.path} to={link.path} className="flex items-center gap-2 p-2 rounded-lg hover:bg-slate-100 transition-all">
+                    <span className="text-lg">{link.icon}</span>
+                    <span className="text-[11px] font-bold text-slate-700 uppercase tracking-tight">{link.label}</span>
+                  </Link>
+                ))}
+              </div>
+            </div>
+
+            {/* Trending */}
+            <div className="bg-white rounded-xl border border-slate-200 p-4">
+              <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Trending</h3>
+              <div className="space-y-2">
+                {["#BCL2025", "#LiveScores", "#CricketUpdates", "#BQPlay"].map(tag => (
+                  <div key={tag} className="flex items-center gap-2 p-2 rounded-lg hover:bg-slate-100 cursor-pointer transition-all">
+                    <svg className="w-3.5 h-3.5 text-blue-500" fill="currentColor" viewBox="0 0 24 24"><path d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14"/></svg>
+                    <span className="text-xs font-bold text-slate-700">{tag}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Series sidebar */}
+            {series.length > 0 && (
+              <div className="bg-white rounded-xl border border-slate-200 p-4">
+                <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Series & Tournaments</h3>
+                <div className="space-y-2">
+                  {series.slice(0, 5).map(ev => (
+                    <Link key={ev._id} to={`/series/${ev.slug || ev._id}`} className="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-100 transition-all">
+                      <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center overflow-hidden flex-shrink-0">
+                        {ev.logo ? <img src={ev.logo} alt="" className="w-full h-full object-cover" /> : <span className="text-sm font-black text-slate-600">{ev.name?.charAt(0)}</span>}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-xs font-bold text-slate-800 truncate">{ev.shortName || ev.name}</p>
+                        <p className="text-[9px] font-bold text-slate-400 uppercase">{ev.eventType?.replace(/-/g, " ") || ev.format} • {ev.status}</p>
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Abandoned matches */}
+            {abandonedMatches.length > 0 && (
+              <div className="bg-white rounded-xl border border-slate-200 p-4">
+                <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Abandoned / Postponed</h3>
+                <div className="space-y-2">
+                  {abandonedMatches.slice(0, 3).map(m => (
+                    <div key={m._id} className="text-xs font-semibold text-slate-500 truncate">
+                      {m.teams?.map(t => t.shortName || t.name).join(" vs ")}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+          </div>
+        </div>
+      </div>
+
+      {showLogin && <Login onSuccess={handleLoginSuccess} onCancel={() => setShowLogin(false)} />}
+      {showRegister && <Register onSuccess={handleRegisterSuccess} onCancel={() => setShowRegister(false)} />}
+    </div>
+  );
 }

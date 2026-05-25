@@ -12,6 +12,7 @@ const menuItems = [
   { to: "/admin/bulk-import", label: "Bulk Import", icon: "📥" },
   { to: "/admin/blogs", label: "Manage Blogs", icon: "📝" },
   { to: "/admin/rankings", label: "Rankings", icon: "🎖️" },
+  { to: "/admin/sync", label: "Sync Panel", icon: "🔄" },
 ];
 
 export default function Sidebar({ onClose }) {

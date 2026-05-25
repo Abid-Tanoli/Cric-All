@@ -1,199 +1,74 @@
 import Team from "../models/Team.js";
-import Player from "../models/Player.js";
-import { getIO } from "../socket/socket.js";
+import TeamCategory from "../models/TeamCategory.js";
+import * as teamService from "../services/teamService.js";
+import * as playerService from "../services/playerService.js";
 
 export const listTeams = async (req, res) => {
   try {
-    const { type, category, subCategory, ageGroup, organization, city, search } = req.query;
-
-    const filter = {};
-    if (type) filter.type = type;
-    if (category) filter.category = category;
-    if (subCategory) filter.subCategory = { $regex: subCategory, $options: "i" };
-    if (ageGroup) filter.ageGroup = ageGroup;
-    if (organization) filter.organization = { $regex: organization, $options: "i" };
-    if (city) filter["address.city"] = { $regex: city, $options: "i" };
-
-    if (search) {
-      filter.$or = [
-        { name: { $regex: search, $options: "i" } },
-        { shortName: { $regex: search, $options: "i" } },
-        { ownername: { $regex: search, $options: "i" } },
-        { organization: { $regex: search, $options: "i" } },
-        { "address.city": { $regex: search, $options: "i" } }
-      ];
-    }
-
-    const teams = await Team.find(filter).populate("players");
+    const { category, categoryRef, organizationRef, city, search, type } = req.query;
+    const teams = await teamService.listTeams({ category, categoryRef, organizationRef, city, search, type });
     res.status(200).json(teams);
   } catch (error) {
-    console.error("Error fetching teams:", error);
     res.status(500).json({ message: "Failed to fetch teams", error: error.message });
   }
 };
 
 export const getTeam = async (req, res) => {
   try {
-    const team = await Team.findById(req.params.id).populate("players");
-
-    if (!team) {
-      return res.status(404).json({ message: "Team not found" });
+    const profile = await teamService.getTeamProfile(req.params.id);
+    if (!profile) {
+      return res.status(404).json({ success: false, message: "Team not found" });
     }
-
-    res.status(200).json(team);
+    res.status(200).json({ success: true, data: profile });
   } catch (error) {
-    console.error("Error fetching team:", error);
-    res.status(500).json({ message: "Failed to fetch team", error: error.message });
+    res.status(500).json({ success: false, message: "Failed to fetch team", error: error.message });
   }
 };
 
 export const createTeam = async (req, res) => {
   try {
-    const { 
-      name, ownername, logo, shortName, players, type, category, isInternal, tags,
-      subCategory, ageGroup, organization, address
-    } = req.body;
-
-    // Check if team with same name already exists
-    const existingTeam = await Team.findOne({ name });
-    if (existingTeam) {
-      return res.status(400).json({ message: "Team with this name already exists" });
-    }
-
-    const team = new Team({
-      name,
-      ownername: ownername || "",
-      logo: logo || "",
-      shortName: shortName || name.substring(0, 3).toUpperCase(),
-      type: type || "league_team",
-      category: category || "Other",
-      subCategory: subCategory || "",
-      ageGroup: ageGroup || "Open",
-      organization: organization || "",
-      address: address || { town: "", district: "", city: "", province: "", country: "Pakistan" },
-      isInternal: isInternal || false,
-      tags: tags || [],
-      players: players || []
-    });
-
-    await team.save();
-
-    // Update players to reference this team
-    if (players && players.length > 0) {
-      await Player.updateMany(
-        { _id: { $in: players } },
-        { $set: { team: team._id } }
-      );
-    }
-
-    // Populate players before sending response
-    await team.populate("players");
-
-    try {
-      const io = getIO();
-      io.emit("team:created", team);
-    } catch (socketError) {
-      console.log("Socket not available:", socketError.message);
-    }
-
+    const team = await teamService.createTeam(req.body);
     res.status(201).json({ team, message: "Team created successfully" });
   } catch (error) {
-    console.error("Error creating team:", error);
     res.status(400).json({ message: "Failed to create team", error: error.message });
   }
 };
 
 export const updateTeam = async (req, res) => {
   try {
-    const { name, ownername, logo, shortName, players } = req.body;
-
-    if (name) {
-      const existingTeam = await Team.findOne({
-        name,
-        _id: { $ne: req.params.id }
-      });
-      if (existingTeam) {
-        return res.status(400).json({ message: "Team with this name already exists" });
-      }
-    }
-
-    const team = await Team.findById(req.params.id);
-    if (!team) {
-      return res.status(404).json({ message: "Team not found" });
-    }
-
-    if (players !== undefined) {
-      await Player.updateMany(
-        { team: team._id },
-        { $unset: { team: 1 } }
-      );
-
-      if (players.length > 0) {
-        await Player.updateMany(
-          { _id: { $in: players } },
-          { $set: { team: team._id } }
-        );
-      }
-    }
-
-    const updateData = {};
-    if (name !== undefined) updateData.name = name;
-    if (ownername !== undefined) updateData.ownername = ownername;
-    if (logo !== undefined) updateData.logo = logo;
-    if (shortName !== undefined) updateData.shortName = shortName;
-    if (players !== undefined) updateData.players = players;
-    if (req.body.category !== undefined) updateData.category = req.body.category;
-    if (req.body.subCategory !== undefined) updateData.subCategory = req.body.subCategory;
-    if (req.body.ageGroup !== undefined) updateData.ageGroup = req.body.ageGroup;
-    if (req.body.organization !== undefined) updateData.organization = req.body.organization;
-    if (req.body.address !== undefined) updateData.address = req.body.address;
-    if (req.body.media !== undefined) updateData.media = req.body.media;
-
-    const updatedTeam = await Team.findByIdAndUpdate(
-      req.params.id,
-      updateData,
-      { new: true }
-    ).populate("players");
-
-    try {
-      const io = getIO();
-      io.emit("team:updated", updatedTeam);
-    } catch (socketError) {
-      console.log("Socket not available:", socketError.message);
-    }
-
-    res.status(200).json({ team: updatedTeam, message: "Team updated successfully" });
+    const team = await teamService.updateTeam(req.params.id, req.body);
+    res.status(200).json({ team, message: "Team updated successfully" });
   } catch (error) {
-    console.error("Error updating team:", error);
     res.status(400).json({ message: "Failed to update team", error: error.message });
+  }
+};
+
+export const updateTeamLocation = async (req, res) => {
+  try {
+    const { latitude, longitude, googleMapsUrl, placeId, fullAddress, city, area } = req.body;
+    const team = await Team.findById(req.params.id);
+    if (!team) return res.status(404).json({ message: "Team not found" });
+
+    if (latitude !== undefined) team.latitude = latitude;
+    if (longitude !== undefined) team.longitude = longitude;
+    if (googleMapsUrl !== undefined) team.googleMapsUrl = googleMapsUrl;
+    if (placeId !== undefined) team.placeId = placeId;
+    if (fullAddress !== undefined) team.fullAddress = fullAddress;
+    if (city !== undefined) team.city = city;
+    if (area !== undefined) team.area = area;
+
+    await team.save();
+    res.status(200).json({ team, message: "Location updated successfully" });
+  } catch (error) {
+    res.status(400).json({ message: "Failed to update location", error: error.message });
   }
 };
 
 export const deleteTeam = async (req, res) => {
   try {
-    const team = await Team.findById(req.params.id);
-
-    if (!team) {
-      return res.status(404).json({ message: "Team not found" });
-    }
-
-    await Player.updateMany(
-      { team: team._id },
-      { $unset: { team: 1 } }
-    );
-
-    await Team.findByIdAndDelete(req.params.id);
-
-    try {
-      const io = getIO();
-      io.emit("team:deleted", { id: req.params.id });
-    } catch (socketError) {
-      console.log("Socket not available:", socketError.message);
-    }
-
-    res.status(200).json({ message: "Team deleted successfully" });
+    const result = await teamService.deleteTeam(req.params.id);
+    res.status(200).json({ message: "Team deleted successfully", ...result });
   } catch (error) {
-    console.error("Error deleting team:", error);
     res.status(500).json({ message: "Failed to delete team", error: error.message });
   }
 };
@@ -201,37 +76,19 @@ export const deleteTeam = async (req, res) => {
 export const addPlayersToTeam = async (req, res) => {
   try {
     const { playerIds } = req.body;
-
     if (!playerIds || !Array.isArray(playerIds)) {
       return res.status(400).json({ message: "Player IDs array is required" });
     }
 
-    const team = await Team.findById(req.params.id);
-    if (!team) {
-      return res.status(404).json({ message: "Team not found" });
+    const results = [];
+    for (const playerId of playerIds) {
+      const player = await teamService.assignPlayerToTeam(req.params.id, playerId, "player");
+      results.push(player);
     }
 
-    const uniquePlayerIds = [...new Set([...team.players.map(p => p.toString()), ...playerIds])];
-    team.players = uniquePlayerIds;
-    await team.save();
-
-    await Player.updateMany(
-      { _id: { $in: playerIds } },
-      { $set: { team: team._id } }
-    );
-
-    await team.populate("players");
-
-    try {
-      const io = getIO();
-      io.emit("team:updated", team);
-    } catch (socketError) {
-      console.log("Socket not available:", socketError.message);
-    }
-
-    res.status(200).json({ team, message: "Players added successfully" });
+    const team = await Team.findById(req.params.id).populate("players");
+    res.status(200).json({ team, players: results, message: "Players added successfully" });
   } catch (error) {
-    console.error("Error adding players:", error);
     res.status(400).json({ message: "Failed to add players", error: error.message });
   }
 };
@@ -239,36 +96,63 @@ export const addPlayersToTeam = async (req, res) => {
 export const removePlayersFromTeam = async (req, res) => {
   try {
     const { playerIds } = req.body;
-
     if (!playerIds || !Array.isArray(playerIds)) {
       return res.status(400).json({ message: "Player IDs array is required" });
     }
 
-    const team = await Team.findById(req.params.id);
-    if (!team) {
-      return res.status(404).json({ message: "Team not found" });
+    for (const playerId of playerIds) {
+      await teamService.removePlayerFromTeam(req.params.id, playerId);
     }
 
-    team.players = team.players.filter(p => !playerIds.includes(p.toString()));
-    await team.save();
-
-    await Player.updateMany(
-      { _id: { $in: playerIds } },
-      { $unset: { team: 1 } }
-    );
-
-    await team.populate("players");
-
-    try {
-      const io = getIO();
-      io.emit("team:updated", team);
-    } catch (socketError) {
-      console.log("Socket not available:", socketError.message);
-    }
-
+    const team = await Team.findById(req.params.id).populate("players");
     res.status(200).json({ team, message: "Players removed successfully" });
   } catch (error) {
-    console.error("Error removing players:", error);
     res.status(400).json({ message: "Failed to remove players", error: error.message });
+  }
+};
+
+export const updatePlayerRoleInTeam = async (req, res) => {
+  try {
+    const player = await teamService.updatePlayerRole(req.params.id, req.params.playerId, req.body);
+    res.status(200).json({ player, message: "Player role updated successfully" });
+  } catch (error) {
+    res.status(400).json({ message: "Failed to update player role", error: error.message });
+  }
+};
+
+export const getTeamPlayers = async (req, res) => {
+  try {
+    const { role, search } = req.query;
+    const players = await playerService.getTeamPlayers(req.params.id, { role, search });
+    res.status(200).json(players);
+  } catch (error) {
+    res.status(500).json({ message: "Failed to fetch team players", error: error.message });
+  }
+};
+
+export const getTeamRanking = async (req, res) => {
+  try {
+    const { default: TeamRanking } = await import("../models/TeamRanking.js");
+    const ranking = await TeamRanking.findOne({ team: req.params.id })
+      .populate("team", "name shortName logo");
+    if (!ranking) {
+      return res.status(200).json({ message: "Ranking not yet computed" });
+    }
+    res.status(200).json(ranking);
+  } catch (error) {
+    res.status(500).json({ message: "Failed to fetch ranking", error: error.message });
+  }
+};
+
+export const getTeamMatches = async (req, res) => {
+  try {
+    const { default: Match } = await import("../models/Match.js");
+    const matches = await Match.find({ teams: req.params.id })
+      .populate("teams", "name shortName logo")
+      .sort({ startAt: -1 })
+      .limit(20);
+    res.status(200).json(matches);
+  } catch (error) {
+    res.status(500).json({ message: "Failed to fetch matches", error: error.message });
   }
 };

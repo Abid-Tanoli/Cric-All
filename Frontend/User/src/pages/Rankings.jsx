@@ -1,211 +1,168 @@
 import React, { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import Header from "../components/Header";
 import { getStoredUser, logout as doLogout } from "../pages/auth/auth";
-import { Link } from "react-router-dom";
+import { api } from "../services/api";
+
+const TABS = [
+  { key: "team-overall", label: "🏆 Team Overall" },
+  { key: "batting", label: "🏏 Top Batsmen" },
+  { key: "bowling", label: "⚾ Top Bowlers" },
+  { key: "all-rounder", label: "💪 All-Rounders" },
+];
 
 export default function Rankings() {
-   const [battingPlayers, setBattingPlayers] = useState([]);
-   const [bowlingPlayers, setBowlingPlayers] = useState([]);
-   const [allRounderPlayers, setAllRounderPlayers] = useState([]);
-   const [loading, setLoading] = useState(true);
-   const [activeTab, setActiveTab] = useState("batting"); // batting, bowling, all-rounder
-   const [authUser, setAuthUser] = useState(null);
+  const [data, setData] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState("team-overall");
+  const [authUser, setAuthUser] = useState(null);
 
-   useEffect(() => {
-      const user = getStoredUser();
-      setAuthUser(user);
+  useEffect(() => {
+    setAuthUser(getStoredUser());
+    fetchData();
+  }, [activeTab]);
 
-      // Fetch all three rankings
-      Promise.all([
-         fetch(`${import.meta.env.VITE_API_URL}/players/rankings/batting`).then(res => res.json()),
-         fetch(`${import.meta.env.VITE_API_URL}/players/rankings/bowling`).then(res => res.json()),
-         fetch(`${import.meta.env.VITE_API_URL}/players/rankings/all-rounder`).then(res => res.json())
-      ])
-         .then(([batting, bowling, allRounder]) => {
-            setBattingPlayers(Array.isArray(batting) ? batting : []);
-            setBowlingPlayers(Array.isArray(bowling) ? bowling : []);
-            setAllRounderPlayers(Array.isArray(allRounder) ? allRounder : []);
-            setLoading(false);
-         })
-         .catch(err => {
-            console.error("Failed to fetch rankings:", err);
-            setLoading(false);
-         });
-   }, []);
-
-   const handleLogout = () => { doLogout(); setAuthUser(null); };
-
-   // Get current players based on active tab
-   const getCurrentPlayers = () => {
-      if (activeTab === "batting") return battingPlayers;
-      if (activeTab === "bowling") return bowlingPlayers;
-      if (activeTab === "all-rounder") return allRounderPlayers;
-      return [];
-   };
-
-   const players = getCurrentPlayers();
-   const topThree = players.slice(0, 3);
-   const rest = players.slice(3);
-
-   const getRankColor = (rank) => {
-      if (rank === 1) return "from-amber-400 to-yellow-600";
-      if (rank === 2) return "from-slate-300 to-slate-500";
-      if (rank === 3) return "from-amber-600 to-amber-800";
-      return "from-blue-600 to-blue-800";
-   };
-
-   const getTabColor = (tab) => {
-      if (activeTab === tab) {
-         if (tab === "batting") return "bg-green-600 text-white";
-         if (tab === "bowling") return "bg-red-600 text-white";
-         if (tab === "all-rounder") return "bg-purple-600 text-white";
+  const fetchData = async () => {
+    setLoading(true);
+    try {
+      let res;
+      if (activeTab === "team-overall") {
+        res = await api.get("/rankings-v2/overall");
+      } else if (activeTab === "batting") {
+        res = await api.get("/players/rankings/batting");
+      } else if (activeTab === "bowling") {
+        res = await api.get("/players/rankings/bowling");
+      } else if (activeTab === "all-rounder") {
+        res = await api.get("/players/rankings/all-rounder");
       }
-      return "bg-white text-slate-600 hover:bg-slate-50";
-   };
+      setData(Array.isArray(res?.data) ? res.data : []);
+    } catch (e) {
+      console.error(e);
+      setData([]);
+    }
+    setLoading(false);
+  };
 
-   return (
-      <div className="min-h-screen bg-[#f8fafc] text-slate-900 font-sans">
-         <Header
-            user={authUser}
-            onShowLogin={() => { }}
-            onShowRegister={() => { }}
-            onLogout={handleLogout}
-         />
+  const handleLogout = () => { doLogout(); setAuthUser(null); };
 
-         {/* Hero Section */}
-         <div className="bg-[#031d44] text-white py-16 relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-96 h-96 bg-blue-600/10 rounded-full -mr-48 -mt-48 blur-3xl" />
-            <div className="max-w-7xl mx-auto px-4 relative">
-               <h1 className="text-5xl font-black uppercase tracking-tighter italic mb-4">Elite Leaderboard</h1>
-               <p className="text-blue-200/60 font-black uppercase tracking-widest text-sm">Real-time Global Rankings based on Career Performance</p>
+  const isTeamView = activeTab === "team-overall";
+  const items = Array.isArray(data) ? data : [];
 
-               {/* Tab Buttons */}
-               <div className="flex gap-4 mt-8">
-                  <button
-                     onClick={() => setActiveTab("batting")}
-                     className={`px-6 py-3 rounded-xl font-black uppercase tracking-widest text-xs transition-all ${getTabColor("batting")}`}
-                  >
-                     Batting Rankings
-                  </button>
-                  <button
-                     onClick={() => setActiveTab("bowling")}
-                     className={`px-6 py-3 rounded-xl font-black uppercase tracking-widest text-xs transition-all ${getTabColor("bowling")}`}
-                  >
-                     Bowling Rankings
-                  </button>
-                  <button
-                     onClick={() => setActiveTab("all-rounder")}
-                     className={`px-6 py-3 rounded-xl font-black uppercase tracking-widest text-xs transition-all ${getTabColor("all-rounder")}`}
-                  >
-                     All-Rounder Rankings
-                  </button>
-               </div>
-            </div>
-         </div>
+  const getMedal = (rank) => {
+    if (rank === 1) return "🥇";
+    if (rank === 2) return "🥈";
+    if (rank === 3) return "🥉";
+    return `#${rank}`;
+  };
 
-         <div className="max-w-7xl mx-auto px-4 py-12">
-            {loading ? (
-               <div className="flex flex-col items-center justify-center py-24">
-                  <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-4" />
-                  <p className="text-slate-400 font-black uppercase tracking-widest text-xs">Calibrating Standings...</p>
-               </div>
-            ) : (
-               <div className="space-y-12">
-                  {/* Podium for Top 3 */}
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-8 items-end">
-                     {topThree[1] && (
-                        <div className="order-2 md:order-1 bg-white rounded-[2.5rem] p-8 shadow-xl border border-slate-100 text-center relative overflow-hidden group hover:shadow-2xl transition-all duration-500">
-                           <div className={`absolute top-0 inset-x-0 h-2 bg-gradient-to-r ${getRankColor(2)}`} />
-                           <div className="text-4xl font-black text-slate-200 mb-4 italic">#2</div>
-                           <div className="w-24 h-24 mx-auto rounded-3xl bg-slate-50 border border-slate-100 p-2 mb-4 group-hover:scale-110 transition-transform">
-                              {topThree[1].imageUrl ? <img src={topThree[1].imageUrl} className="w-full h-full object-cover rounded-2xl" /> : <div className="w-full h-full bg-slate-200 rounded-2xl flex items-center justify-center font-black text-slate-400">{topThree[1].name?.charAt(0)}</div>}
-                           </div>
-                           <h3 className="text-xl font-black text-[#031d44] uppercase tracking-tighter italic mb-1">{topThree[1].name}</h3>
-                           <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">{topThree[1].role || "Player"}</p>
-                           <div className="bg-slate-50 rounded-2xl py-3 px-6 inline-block border border-slate-100">
-                              <span className="text-2xl font-black text-slate-800">{topThree[1].rankingPoints?.toFixed(1)}</span>
-                              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2 italic">Pts</span>
-                           </div>
-                        </div>
-                     )}
+  return (
+    <div className="min-h-screen bg-[#f8fafc] text-slate-900 font-sans">
+      <Header user={authUser} onShowLogin={() => {}} onShowRegister={() => {}} onLogout={handleLogout} />
 
-                     {topThree[0] && (
-                        <div className="order-1 md:order-2 bg-white rounded-[3rem] p-10 shadow-2xl border-2 border-amber-400/20 text-center relative overflow-hidden transform md:scale-110 z-10 group hover:shadow-amber-400/10 transition-all duration-500">
-                           <div className={`absolute top-0 inset-x-0 h-3 bg-gradient-to-r ${getRankColor(1)}`} />
-                           <div className="absolute top-4 right-4 animate-bounce">👑</div>
-                           <div className="text-6xl font-black text-amber-100 mb-4 italic">#1</div>
-                           <div className="w-32 h-32 mx-auto rounded-[2rem] bg-amber-50 border-2 border-amber-100 p-2 mb-6 group-hover:rotate-3 transition-transform">
-                              {topThree[0].imageUrl ? <img src={topThree[0].imageUrl} className="w-full h-full object-cover rounded-[1.5rem]" /> : <div className="w-full h-full bg-amber-200 rounded-[1.5rem] flex items-center justify-center font-black text-amber-600 text-2xl">{topThree[0].name?.charAt(0)}</div>}
-                           </div>
-                           <h3 className="text-2xl font-black text-[#031d44] uppercase tracking-tighter italic mb-1">{topThree[0].name}</h3>
-                           <p className="text-[10px] font-black text-amber-600 uppercase tracking-widest mb-6 px-4 py-1 bg-amber-50 rounded-full inline-block">World Leader</p>
-                           <div className="bg-amber-50 rounded-2xl py-4 px-8 inline-block border border-amber-100">
-                              <span className="text-3xl font-black text-amber-600">{topThree[0].rankingPoints?.toFixed(1)}</span>
-                              <span className="text-xs font-black text-amber-400 uppercase tracking-widest ml-2 italic">Pts</span>
-                           </div>
-                        </div>
-                     )}
-
-                     {topThree[2] && (
-                        <div className="order-3 md:order-3 bg-white rounded-[2.5rem] p-8 shadow-xl border border-slate-100 text-center relative overflow-hidden group hover:shadow-2xl transition-all duration-500">
-                           <div className={`absolute top-0 inset-x-0 h-2 bg-gradient-to-r ${getRankColor(3)}`} />
-                           <div className="text-4xl font-black text-slate-200 mb-4 italic">#3</div>
-                           <div className="w-24 h-24 mx-auto rounded-3xl bg-slate-50 border border-slate-100 p-2 mb-4 group-hover:scale-110 transition-transform">
-                              {topThree[2].imageUrl ? <img src={topThree[2].imageUrl} className="w-full h-full object-cover rounded-2xl" /> : <div className="w-full h-full bg-slate-200 rounded-2xl flex items-center justify-center font-black text-slate-400">{topThree[2].name?.charAt(0)}</div>}
-                           </div>
-                           <h3 className="text-xl font-black text-[#031d44] uppercase tracking-tighter italic mb-1">{topThree[2].name}</h3>
-                           <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">{topThree[2].role || "Player"}</p>
-                           <div className="bg-slate-50 rounded-2xl py-3 px-6 inline-block border border-slate-100">
-                              <span className="text-2xl font-black text-slate-800">{topThree[2].rankingPoints?.toFixed(1)}</span>
-                              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2 italic">Pts</span>
-                           </div>
-                        </div>
-                     )}
-                  </div>
-
-                  {/* List for the rest */}
-                  <div className="bg-white rounded-[2.5rem] shadow-xl border border-slate-100 overflow-hidden">
-                     <div className="bg-[#031d44] px-8 py-6 flex justify-between items-center text-white">
-                        <h3 className="font-black uppercase tracking-widest text-xs">Global Registry • 4-100</h3>
-                        <div className="flex gap-4 text-[10px] font-black uppercase tracking-widest text-blue-300/40">
-                           <span>Rank</span>
-                           <span className="w-48">Personnel</span>
-                           <span className="w-24 text-right">Rating</span>
-                        </div>
-                     </div>
-
-                     <div className="divide-y divide-slate-50">
-                        {rest.map((p, i) => (
-                           <div key={p._id} className="p-6 hover:bg-slate-50 flex items-center justify-between transition-colors group cursor-pointer">
-                              <div className="flex items-center gap-8 flex-1">
-                                 <span className="text-xl font-black text-slate-200 italic min-w-[30px] group-hover:text-blue-600 transition-colors">#{i + 4}</span>
-                                 <div className="flex items-center gap-4">
-                                    <div className="w-10 h-10 rounded-xl bg-slate-100 border border-slate-200 flex items-center justify-center font-black text-slate-400 text-xs italic">
-                                       {p.name?.charAt(0)}
-                                    </div>
-                                    <div>
-                                       <h4 className="font-black text-slate-800 uppercase tracking-tighter italic leading-tight">{p.name}</h4>
-                                       <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{p.role || "Prospect"}</p>
-                                    </div>
-                                 </div>
-                              </div>
-
-                              <div className="text-right">
-                                 <span className="text-lg font-black text-[#031d44]">{p.rankingPoints?.toFixed(1)}</span>
-                                 <span className="text-[9px] font-black text-slate-300 uppercase tracking-widest ml-2 italic">Pts</span>
-                              </div>
-                           </div>
-                        ))}
-                        {rest.length === 0 && (
-                           <div className="p-12 text-center text-slate-400 font-black uppercase tracking-widest text-[10px]">
-                              Top 3 dominates the leaderboard. No further personnel recorded.
-                           </div>
-                        )}
-                     </div>
-                  </div>
-               </div>
-            )}
-         </div>
+      <div className="bg-[#031d44] text-white py-16 relative overflow-hidden">
+        <div className="absolute top-0 right-0 w-96 h-96 bg-blue-600/10 rounded-full -mr-48 -mt-48 blur-3xl" />
+        <div className="max-w-7xl mx-auto px-4 relative">
+          <h1 className="text-5xl font-black uppercase tracking-tighter italic mb-4">Elite Leaderboard</h1>
+          <p className="text-blue-200/60 font-black uppercase tracking-widest text-sm">
+            {isTeamView ? "Team Rankings based on Match Performance" : "Player Rankings based on Career Performance"}
+          </p>
+          <div className="flex flex-wrap gap-3 mt-8">
+            {TABS.map(tab => (
+              <button
+                key={tab.key}
+                onClick={() => setActiveTab(tab.key)}
+                className={`px-6 py-3 rounded-xl font-black uppercase tracking-widest text-xs transition-all ${
+                  activeTab === tab.key
+                    ? "bg-white text-[#031d44]"
+                    : "bg-white/10 text-white/80 hover:bg-white/20"
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
-   );
+
+      <div className="max-w-7xl mx-auto px-4 py-12">
+        {loading ? (
+          <div className="flex flex-col items-center justify-center py-24">
+            <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-4" />
+            <p className="text-slate-400 font-black uppercase tracking-widest text-xs">Loading Rankings...</p>
+          </div>
+        ) : items.length === 0 ? (
+          <div className="text-center py-24">
+            <p className="text-4xl mb-4">📊</p>
+            <p className="text-xl font-black text-slate-400">No rankings data yet</p>
+            <p className="text-slate-400 text-sm mt-2">Complete matches to generate rankings.</p>
+          </div>
+        ) : (
+          <div className="bg-white rounded-[2.5rem] shadow-xl border border-slate-100 overflow-hidden">
+            {/* Header */}
+            <div className="bg-[#031d44] px-8 py-6">
+              <div className={`grid ${isTeamView ? 'grid-cols-7' : 'grid-cols-5'} gap-4 text-white text-[10px] font-black uppercase tracking-widest`}>
+                <span>Rank</span>
+                <span className={isTeamView ? 'col-span-2' : 'col-span-2'}>{isTeamView ? 'Team' : 'Player'}</span>
+                {isTeamView && <span className="text-center">P</span>}
+                {isTeamView && <span className="text-center">W</span>}
+                {isTeamView && <span className="text-center">Pts</span>}
+                {!isTeamView && <span className="text-center">{activeTab === 'batting' ? 'Runs' : activeTab === 'bowling' ? 'Wkts' : 'Pts'}</span>}
+                <span className="text-center">{isTeamView ? 'NRR' : 'Mat'}</span>
+                <span className="text-center">Rating</span>
+              </div>
+            </div>
+
+            {/* Rows */}
+            <div className="divide-y divide-slate-100">
+              {items.map((item, idx) => {
+                const rank = item.overallRank || item.rank || item.categoryRank || idx + 1;
+                const name = isTeamView ? (item.team?.name || '-') : item.name;
+                const linkTo = isTeamView ? `/teams/${item.team?._id}` : `/players/${item._id}`;
+                return (
+                  <Link
+                    key={item._id || idx}
+                    to={linkTo}
+                    className={`grid ${isTeamView ? 'grid-cols-7' : 'grid-cols-5'} gap-4 px-8 py-5 hover:bg-slate-50 transition-all items-center`}
+                  >
+                    <span className="text-xl font-black text-slate-300">{getMedal(rank)}</span>
+                    <div className={`${isTeamView ? 'col-span-2' : 'col-span-2'} flex items-center gap-3`}>
+                      {isTeamView && item.team?.logo && (
+                        <img src={item.team.logo} alt="" className="w-8 h-8 rounded-lg object-cover" />
+                      )}
+                      <div>
+                        <span className="font-bold text-slate-800">{name}</span>
+                        {isTeamView && item.team?.branchName && (
+                          <p className="text-[10px] text-slate-400">{item.team.branchName}</p>
+                        )}
+                      </div>
+                    </div>
+                    {isTeamView && (
+                      <>
+                        <span className="text-center font-bold text-slate-700">{item.matchesPlayed || 0}</span>
+                        <span className="text-center font-bold text-green-600">{item.matchesWon || 0}</span>
+                        <span className="text-center font-bold text-amber-600">{item.points || 0}</span>
+                      </>
+                    )}
+                    {!isTeamView && (
+                      <span className="text-center font-bold text-slate-700">
+                        {activeTab === 'batting' ? item.runs || 0 :
+                         activeTab === 'bowling' ? item.wickets || 0 :
+                         item.rankingPoints?.toFixed(0) || 0}
+                      </span>
+                    )}
+                    <span className="text-center text-slate-500">
+                      {isTeamView ? item.netRunRate?.toFixed(2) || '0.00' : item.matches || item.stats?.matches || 0}
+                    </span>
+                    <span className="text-center font-bold text-purple-600">
+                      {item.rating?.toFixed(2) || item.rankingPoints?.toFixed(1) || '-'}
+                    </span>
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
