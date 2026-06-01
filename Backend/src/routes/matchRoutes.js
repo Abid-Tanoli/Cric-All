@@ -40,6 +40,7 @@ import {
   getActivePartnership,
   getWagonWheelData,
   getMatchAnalytics,
+  getMatchGraphData,
   getMatchBoundaries,
   getMatchReviews,
   getMatchCommentary,
@@ -60,6 +61,7 @@ router.get("/:id/partnerships/:inning/active", getActivePartnership);
 router.get("/:id/wagon-wheel/:inning", getWagonWheelData);
 router.get("/:id/wagon-wheel/:inning/:batsmanId", getWagonWheelData);
 router.get("/:id/analytics", getMatchAnalytics);
+router.get("/:id/graph-data", getMatchGraphData);
 router.get("/:id/boundaries", getMatchBoundaries);
 router.get("/:id/drs", getMatchReviews);
 router.get("/:id/commentary", getMatchCommentary);

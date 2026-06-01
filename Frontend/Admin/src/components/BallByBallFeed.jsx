@@ -3,10 +3,15 @@ import React, { useRef, useEffect, useState } from "react";
 // Ball notation badge
 function BallBadge({ ball, small = false }) {
     const isWicket = ball.isWicket;
-    const notation = ball.isWicket ? "W" : (ball.runs === 0 && !ball.isWide && !ball.isNoBall) ? "•" : String(ball.runs || 0);
+    const isLegBye = ball.isLegBye;
+    const isBye = ball.isBye;
+    const notation = isWicket ? "W"
+        : isLegBye ? "LB"
+            : isBye ? "B"
+                : (ball.runs === 0 && !ball.isWide && !ball.isNoBall) ? "•" : String(ball.runs || 0);
 
-    const isFour = ball.runs === 4 && !ball.isWide && !ball.isNoBall && !ball.isWicket;
-    const isSix = ball.runs === 6 && !ball.isWide && !ball.isNoBall && !ball.isWicket;
+    const isFour = ball.runs === 4 && !ball.isWide && !ball.isNoBall && !ball.isWicket && !isLegBye && !isBye;
+    const isSix = ball.runs === 6 && !ball.isWide && !ball.isNoBall && !ball.isWicket && !isLegBye && !isBye;
     const isWide = ball.isWide;
     const isNoBall = ball.isNoBall;
 
@@ -15,7 +20,7 @@ function BallBadge({ ball, small = false }) {
         ? "bg-red-600 text-white shadow-red-500/40"
         : isSix ? "bg-purple-600 text-white shadow-purple-500/40"
             : isFour ? "bg-blue-600 text-white shadow-blue-500/40"
-                : (isWide || isNoBall) ? "bg-amber-500 text-white shadow-amber-500/40"
+                : (isWide || isNoBall || isLegBye || isBye) ? "bg-amber-500 text-white shadow-amber-500/40"
                     : "bg-white/10 text-slate-300 shadow-white/5";
 
     return (
@@ -39,8 +44,8 @@ function BallHeader({ ball, overNum, ballNum, onEdit }) {
         ? ball.wicketType?.toUpperCase() || "WICKET"
         : ball.isWide ? `${ball.runs + 1} WIDE`
             : ball.isNoBall ? `NB+${ball.runs}`
-                : ball.isBye ? `${ball.runs} BYE`
-                    : ball.isLegBye ? `${ball.runs} LEG BYE`
+                : ball.isBye ? "BYE"
+                    : ball.isLegBye ? "LEG BYE"
                         : ball.runs === 4 ? "FOUR"
                             : ball.runs === 6 ? "SIX"
                                 : ball.runs === 0 ? "DOT"
@@ -57,6 +62,8 @@ function BallHeader({ ball, overNum, ballNum, onEdit }) {
                             if (ball.isWicket) return "OUT!";
                             if (ball.isWide) return "wide";
                             if (ball.isNoBall) return "no ball";
+                            if (ball.isLegBye) return "leg bye";
+                            if (ball.isBye) return "bye";
                             if (runs === 0) return "no run";
                             if (runs === 1) return "1 run";
                             if (runs === 2) return "2 runs";

@@ -45,8 +45,7 @@ const MatchSettings = ({ match, onClose, onUpdate }) => {
         try {
             // Update match with new overs
             await api.put(`/matches/${match._id}`, {
-                totalOvers: newOvers,
-                matchType: 'Custom'
+                totalOvers: newOvers
             });
             alert(`Overs increased to ${newOvers}`);
             onUpdate();

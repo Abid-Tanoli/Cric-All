@@ -6,14 +6,20 @@ import BoundariesTracker from "./BoundariesTracker";
 import PartnershipWheel from "./PartnershipWheel";
 import WagonWheel from "./WagonWheel";
 import SpikeGraph from "./SpikeGraph";
+import ManhattanGraph from "./ManhattanGraph";
+import WormGraph from "./WormGraph";
+import RunRateGraph from "./RunRateGraph";
+import WagonZone from "./WagonZone";
 
 const TABS = [
-  { id: "live", label: "Live Score" },
-  { id: "summary", label: "Summary" },
+  { id: "live", label: "Live" },
   { id: "scorecard", label: "Scorecard" },
   { id: "commentary", label: "Commentary" },
-  { id: "stats", label: "Stats" },
+  { id: "partnerships", label: "Partnerships" },
   { id: "wagon", label: "Wagon Wheel" },
+  { id: "graphs", label: "Graphs" },
+  { id: "stats", label: "Analytics" },
+  { id: "summary", label: "Summary" },
   { id: "info", label: "Match Info" },
 ];
 
@@ -170,13 +176,15 @@ const ballLabel = (ball) => {
   if (ball?.isWicket) return "W";
   if (ball?.isWide) return "Wd";
   if (ball?.isNoBall) return "Nb";
+  if (ball?.isLegBye) return "LB";
+  if (ball?.isBye) return "B";
   if (ballRuns(ball) === 0) return "•";
   return String(ballRuns(ball));
 };
 
 const ballClass = (ball) => {
   if (ball?.isWicket) return "bg-red-600 text-white";
-  if (ball?.isWide || ball?.isNoBall) return "bg-orange-100 text-orange-700 ring-1 ring-orange-200";
+  if (ball?.isWide || ball?.isNoBall || ball?.isLegBye || ball?.isBye) return "bg-orange-100 text-orange-700 ring-1 ring-orange-200";
   if (ballRuns(ball) === 4) return "bg-blue-600 text-white";
   if (ballRuns(ball) === 6) return "bg-purple-600 text-white";
   if (ballRuns(ball) === 0) return "bg-slate-200 text-slate-600";
@@ -188,6 +196,8 @@ const ballResultText = (ball) => {
   if (ball?.isWicket) return "OUT!";
   if (ball?.isWide) return "wide";
   if (ball?.isNoBall) return "no ball";
+  if (ball?.isLegBye) return "leg bye";
+  if (ball?.isBye) return "bye";
   if (ballRuns(ball) === 0) return "no run";
   if (ballRuns(ball) === 1) return "1 run";
   if (ballRuns(ball) === 4) return "FOUR";
@@ -212,6 +222,12 @@ const dismissalParts = (row, players) => {
   if (type === "stumped") return { how: `st ${fielder}`, bowler };
   if (type === "hit wicket") return { how: "hit wicket", bowler };
   return { how: type, bowler };
+};
+
+const ordinal = (n) => {
+  const s = ["th", "st", "nd", "rd"];
+  const v = n % 100;
+  return n + (s[(v - 20) % 10] || s[v] || s[0]);
 };
 
 const flattenCommentary = (innings) =>
@@ -461,6 +477,69 @@ const SummaryTab = ({ match, allPlayers }) => {
         </div>
       )}
 
+      {/* Key Moments */}
+      {match && (() => {
+        const allBalls = (match.innings || []).flatMap((inn, innIdx) => {
+          const team = match.teams?.find(t => sameId(t._id, inn.team));
+          return (inn.overs || []).flatMap(over =>
+            (over.balls || []).map((ball, bIdx) => {
+              const runs = ballRuns(ball);
+              const overStr = `${over.overNumber}.${ball.ballNumber || bIdx + 1}`;
+              return { ...ball, runs, overStr, team: team?.shortName || team?.name || `Innings ${innIdx + 1}`, innings: innIdx };
+            })
+          );
+        });
+        const topMoments = [
+          ...allBalls.filter(b => b.runs === 6).slice(0, 3),
+          ...allBalls.filter(b => b.isWicket).slice(0, 3),
+          ...allBalls.filter(b => b.runs === 4).slice(0, 3),
+        ].sort((a, b) => {
+          const pri = (b) => b.runs === 6 ? 2 : b.isWicket ? 2 : 1;
+          return pri(b) - pri(a) || 0;
+        }).slice(0, 6);
+        if (topMoments.length === 0) return null;
+        return (
+          <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+            <div className="px-4 py-2.5 bg-amber-50 border-b border-amber-200">
+              <h3 className="text-xs font-black text-amber-800 uppercase tracking-wider">Key Moments</h3>
+            </div>
+            <div className="divide-y divide-slate-100">
+              {topMoments.map((ball, i) => {
+                const batterName = typeof ball.player === "object" ? ball.player.name || ball.player.fullName : playerName(ball.player, allPlayers);
+                const bowlerName = typeof ball.bowler === "object" ? ball.bowler.name || ball.bowler.fullName : (ball.bowler ? playerName(ball.bowler, allPlayers) : null);
+                return (
+                  <div key={i} className="flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50">
+                    <span className={`text-lg ${ball.runs === 6 ? 'text-purple-600' : ball.runs === 4 ? 'text-blue-600' : 'text-red-600'}`}>
+                      {ball.runs === 6 ? '⚡' : ball.runs === 4 ? '◆' : '🪃'}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-bold text-slate-800 truncate">
+                        {ball.runs === 6 && <span className="text-purple-600">SIX! </span>}
+                        {ball.runs === 4 && <span className="text-blue-600">FOUR! </span>}
+                        {batterName}
+                        {ball.runs > 0 && <span> {batterName ? '' : ''} {ball.runs} runs</span>}
+                      </p>
+                      <p className="text-[10px] text-slate-500">
+                        {bowlerName && <span>Bowled by {bowlerName} • </span>}
+                        <span>Over {ball.overStr} • {ball.team}</span>
+                        {ball.isWicket && <span className="text-red-500 font-bold"> • WICKET</span>}
+                      </p>
+                    </div>
+                    {ball.runs > 0 && (
+                      <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center font-black text-sm ${
+                        ball.runs === 6 ? 'bg-purple-100 text-purple-700' : ball.runs === 4 ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-700'
+                      }`}>
+                        {ball.runs}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Match Details */}
       <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
         <div className="px-4 py-2.5 bg-slate-50 border-b border-slate-200">
@@ -634,6 +713,11 @@ const EnhancedMatchTabs = ({ match }) => {
                 target={target}
                 totalOvers={match.totalOvers}
                 partnership={currentPartnership}
+                striker={striker}
+                nonStriker={nonStriker}
+                bowler={bowler}
+                strikerId={strikerId}
+                players={players}
               />
               <CurrentPlayers
                 striker={striker}
@@ -673,6 +757,14 @@ const EnhancedMatchTabs = ({ match }) => {
 
         {activeTab === "summary" && <SummaryTab match={match} allPlayers={players} />}
 
+        {activeTab === "partnerships" && (
+          <PartnershipsTab match={match} innings={currentInnings} players={players} />
+        )}
+
+        {activeTab === "graphs" && (
+          <GraphsTab match={match} matchId={matchId} innings={currentInnings} />
+        )}
+
         {activeTab === "info" && <MatchInfoTab match={match} />}
 
         {activeTab === "stats" && <StatsTab match={match} players={players} />}
@@ -683,7 +775,7 @@ const EnhancedMatchTabs = ({ match }) => {
   );
 };
 
-function ScoreSummary({ innings, battingTeam, bowlingTeam, crr, rrr, target, totalOvers, partnership }) {
+function ScoreSummary({ innings, battingTeam, bowlingTeam, crr, rrr, target, totalOvers, partnership, striker, nonStriker, bowler, strikerId, players }) {
   const required = target ? Math.max(target - number(innings?.runs), 0) : 0;
 
   return (
@@ -706,6 +798,51 @@ function ScoreSummary({ innings, battingTeam, bowlingTeam, crr, rrr, target, tot
         <Metric label="Need" value={target ? `${required}` : "-"} />
         <Metric label="Partnership" value={`${number(partnership?.runs)} (${number(partnership?.balls)}b)`} />
       </div>
+
+      {/* Current Batters & Bowler - Cricinfo style */}
+      {(striker || nonStriker || bowler) && innings?.status === 'live' && (
+        <div className="mt-4 grid gap-3 sm:grid-cols-3 border-t border-slate-100 pt-4">
+          <div className="rounded-lg bg-slate-50 p-3">
+            <div className="text-[10px] font-black uppercase tracking-widest text-slate-500">Batter</div>
+            <div className="mt-1 flex items-baseline justify-between">
+              <span className="font-black text-sm">
+                {playerName(striker?.player, players)}
+                {sameId(striker?.player, strikerId) && <span className="ml-1 text-orange-500 text-xs">✦</span>}
+              </span>
+              <span className="font-black tabular-nums">{number(striker?.runs)} ({number(striker?.balls)})</span>
+            </div>
+            <div className="mt-1 flex gap-2 text-[10px] text-slate-400 font-bold">
+              <span>{number(striker?.fours)} 4s</span>
+              <span>{number(striker?.sixes)} 6s</span>
+              <span>SR {strikeRate(striker?.runs, striker?.balls)}</span>
+            </div>
+          </div>
+          <div className="rounded-lg bg-slate-50 p-3">
+            <div className="text-[10px] font-black uppercase tracking-widest text-slate-500">Non-Striker</div>
+            <div className="mt-1 flex items-baseline justify-between">
+              <span className="font-black text-sm">{playerName(nonStriker?.player, players)}</span>
+              <span className="font-black tabular-nums">{number(nonStriker?.runs)} ({number(nonStriker?.balls)})</span>
+            </div>
+            <div className="mt-1 flex gap-2 text-[10px] text-slate-400 font-bold">
+              <span>{number(nonStriker?.fours)} 4s</span>
+              <span>{number(nonStriker?.sixes)} 6s</span>
+              <span>SR {strikeRate(nonStriker?.runs, nonStriker?.balls)}</span>
+            </div>
+          </div>
+          <div className="rounded-lg bg-slate-50 p-3">
+            <div className="text-[10px] font-black uppercase tracking-widest text-slate-500">Bowler</div>
+            <div className="mt-1 flex items-baseline justify-between">
+              <span className="font-black text-sm">{playerName(bowler?.player, players)}</span>
+              <span className="font-black tabular-nums text-blue-600">{formatBowlerOvers(bowler)}-{number(bowler?.maidens)}-{number(bowler?.runs)}-{number(bowler?.wickets)}</span>
+            </div>
+            <div className="mt-1 flex gap-2 text-[10px] text-slate-400 font-bold">
+              <span>Econ {bowler?.economy || economyRate(bowler?.runs, bowler?.balls)}</span>
+              <span>{number(bowler?.wides)}w</span>
+              <span>{number(bowler?.noBalls)}nb</span>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -791,8 +928,8 @@ function RecentBalls({ overs }) {
       <div className="flex items-center justify-between gap-3">
         <h3 className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">Recent Balls</h3>
         <div className="flex gap-2">
-          <button type="button" onClick={() => setOverOffset((value) => Math.min(value + 1, maxOffset))} className="rounded bg-slate-100 px-2 py-1 text-xs font-black text-slate-600">&lt;</button>
-          <button type="button" onClick={() => setOverOffset((value) => Math.max(value - 1, 0))} className="rounded bg-slate-100 px-2 py-1 text-xs font-black text-slate-600">&gt;</button>
+          <button type="button" onClick={() => setOverOffset((value) => Math.min(value + 1, maxOffset))} className="rounded bg-slate-100 px-2.5 py-1 text-xs font-black text-slate-600 hover:bg-slate-200 transition-all">&lsaquo;</button>
+          <button type="button" onClick={() => setOverOffset((value) => Math.max(value - 1, 0))} className="rounded bg-slate-100 px-2.5 py-1 text-xs font-black text-slate-600 hover:bg-slate-200 transition-all">&rsaquo;</button>
         </div>
       </div>
       <div className="mt-4 flex gap-2 overflow-x-auto pb-2">
@@ -803,7 +940,7 @@ function RecentBalls({ overs }) {
               <React.Fragment key={ball._id || `${ball.overNumber}-${index}`}>
                 {showSeparator && (
                   <span className="flex min-w-fit items-center rounded bg-slate-100 px-2 py-1 text-[11px] font-black text-slate-600">
-                    {number(ball.overNumber) + 1} ({number(ball.overRuns)})
+                    {ordinal(number(ball.overNumber) + 1)}
                   </span>
                 )}
                 <span className={`flex h-9 min-w-9 items-center justify-center rounded-full px-2 text-xs font-black ${ballClass(ball)}`}>
@@ -823,7 +960,13 @@ function RecentBalls({ overs }) {
 function CommentaryPreview({ overs, players, onSwitchTab }) {
   const allBalls = overs.flatMap((over) => over.balls.map((ball) => ({ ball, over })));
   const latestBall = allBalls[0];
-  const recentBalls = allBalls.slice(0, 3);
+  const recentBalls = allBalls.slice(0, 6);
+  const recentOvers = new Map();
+  recentBalls.forEach(({ ball, over }) => {
+    const key = over.overNumber;
+    if (!recentOvers.has(key)) recentOvers.set(key, { over, balls: [] });
+    recentOvers.get(key).balls.push(ball);
+  });
   return (
     <div className="rounded-xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
       <div className="flex items-center justify-between">
@@ -840,8 +983,24 @@ function CommentaryPreview({ overs, players, onSwitchTab }) {
       </div>
       {latestBall ? (
         <div className="mt-3 space-y-3">
-          {recentBalls.map(({ ball, over }, idx) => (
-            <CommentaryBall key={ball._id || `${over.overNumber}-${idx}`} over={over} ball={ball} players={players} compact />
+          {Array.from(recentOvers.values()).slice(0, 2).map(({ over, balls }) => (
+            <div key={over.overNumber} className="bg-slate-50 rounded-lg p-3 border border-slate-100">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[10px] font-black text-[#ff6b35]">Over {number(over.overNumber) + 1}</span>
+                <span className="text-[9px] text-slate-500 font-bold">
+                  {number(over.runsScored)} run{number(over.runsScored) !== 1 ? "s" : ""}
+                  {number(over.wickets) > 0 && ` | ${over.wickets} wkt`}
+                </span>
+              </div>
+              <div className="flex gap-1 flex-wrap mb-2">
+                {balls.map((b, i) => <BallBadge key={i} ball={b} small />)}
+              </div>
+              <div className="space-y-1">
+                {balls.slice().reverse().map((ball, idx) => (
+                  <CommentaryBall key={ball._id || idx} over={over} ball={ball} players={players} compact />
+                ))}
+              </div>
+            </div>
           ))}
         </div>
       ) : (
@@ -945,11 +1104,22 @@ function ScorecardTab({ match, innings, selectedInnings, setSelectedInnings, bat
         </div>
       </div>
 
-      <InfoBlock title="Fall of Wickets">
-        {(innings?.fallOfWickets || []).length
-          ? innings.fallOfWickets.map((wicket) => `${wicket.wickets}-${wicket.runs} (${playerName(wicket.player, players)}, ${number(wicket.overs).toFixed(1)} ov)`).join(", ")
-          : "No wickets yet"}
-      </InfoBlock>
+      <div className="rounded-xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
+        <h3 className="text-xs font-black uppercase tracking-[0.18em] text-slate-500 mb-3">Fall of Wickets</h3>
+        {(innings?.fallOfWickets || []).length ? (
+          <div className="space-y-2">
+            {innings.fallOfWickets.map((w, i) => (
+              <div key={i} className="flex items-center gap-3 text-sm bg-slate-50 rounded-lg px-3 py-2">
+                <span className="font-black text-slate-700 min-w-[3rem]">{w.wickets}-{w.runs}</span>
+                <span className="text-slate-500 flex-1">{playerName(w.player, players)}</span>
+                <span className="text-xs font-bold text-slate-400">{number(w.overs).toFixed(1)} ov</span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-slate-400">No wickets yet</p>
+        )}
+      </div>
 
       <InfoBlock title="Did Not Bat">
         {dnb.length ? dnb.map((player) => playerName(player, players)).join(", ") : "All listed batters have appeared"}
@@ -989,6 +1159,27 @@ function ScorecardTab({ match, innings, selectedInnings, setSelectedInnings, bat
         </div>
       </div>
     </section>
+  );
+}
+
+function BallBadge({ ball, small = false }) {
+  const isWicket = ball.isWicket;
+  const notation = isWicket ? "W" : (ball.runs === 0 && !ball.isWide && !ball.isNoBall) ? "•" : String(ball.runs || 0);
+  const isFour = ball.runs === 4 && !ball.isWide && !ball.isNoBall && !ball.isWicket;
+  const isSix = ball.runs === 6 && !ball.isWide && !ball.isNoBall && !ball.isWicket;
+  const isWide = ball.isWide;
+  const isNoBall = ball.isNoBall;
+  const base = small ? "w-6 h-6 text-[9px] rounded-md" : "w-9 h-9 text-xs rounded-lg";
+  const color = isWicket
+    ? "bg-red-600 text-white shadow-red-500/40"
+    : isSix ? "bg-purple-600 text-white shadow-purple-500/40"
+      : isFour ? "bg-blue-600 text-white shadow-blue-500/40"
+        : (isWide || isNoBall) ? "bg-amber-500 text-white shadow-amber-500/40"
+          : "bg-slate-200 text-slate-600";
+  return (
+    <div className={`${base} ${color} flex items-center justify-center font-black shrink-0 shadow`}>
+      {notation}
+    </div>
   );
 }
 
@@ -1046,38 +1237,40 @@ function CommentaryTab({ overs, players, visibleOvers, onLoadMore }) {
 
       {visible.length ? visible.map((over) => (
         <div key={over._id || over.overNumber} className="overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-slate-200">
-          {/* Over header - Cricinfo style */}
-          <div className="flex items-center justify-between bg-gradient-to-r from-slate-50 to-white px-4 py-2.5 border-b border-slate-100">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-lg bg-[#031d44] flex items-center justify-center text-white text-xs font-black">
-                {number(over.overNumber) + 1}
-              </div>
-              <div>
-                <p className="text-xs font-black text-slate-700">
+          {/* Over block - BallByBallFeed style */}
+          <div className="p-4">
+            {/* Over Header Summary */}
+            <div className="bg-slate-50 rounded-xl p-4 mb-3 border border-slate-200">
+              <div className="flex justify-between items-start flex-wrap gap-2">
+                <div>
+                  <span className="text-[#ff6b35] font-black text-base">Over {number(over.overNumber) + 1}</span>
+                  <span className="text-slate-500 text-xs ml-3">
+                    {number(over.runsScored)} run{number(over.runsScored) !== 1 ? "s" : ""}
+                    {number(over.wickets) > 0 && <span className="text-red-500"> | {number(over.wickets)} wkt{number(over.wickets) !== 1 ? "s" : ""}</span>}
+                  </span>
+                </div>
+                <div className="text-right text-[10px] text-slate-500 font-bold uppercase tracking-widest">
                   {playerName(over.bowler, players)}
+                </div>
+              </div>
+              {over.summary && (
+                <p className="text-slate-500 text-xs italic mt-2 leading-relaxed border-t border-slate-200 pt-2">
+                  {over.summary}
                 </p>
-                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">
-                  Over {(over.overNumber || 0) + 1}
-                </p>
+              )}
+              <div className="flex gap-1.5 mt-2 flex-wrap">
+                {(over.balls || []).map((b, i) => (
+                  <BallBadge key={i} ball={b} small />
+                ))}
               </div>
             </div>
-            <div className="flex items-center gap-3">
-              <span className="text-xs font-black text-slate-600">
-                {number(over.runsScored)} runs
-              </span>
-              {number(over.wickets) > 0 && (
-                <span className="text-xs font-black text-red-600 bg-red-50 px-2 py-0.5 rounded-full">
-                  {number(over.wickets)} wkt
-                </span>
-              )}
-            </div>
-          </div>
 
-          {/* Ball-by-ball - Cricinfo style */}
-          <div className={compact ? "py-1" : "divide-y divide-slate-50"}>
-            {(over.balls || []).slice().reverse().map((ball, index) => (
-              <CommentaryBall key={ball._id || index} over={over} ball={ball} players={players} compact={compact} />
-            ))}
+            {/* Ball-by-ball */}
+            <div className={compact ? "space-y-1" : "space-y-1"}>
+              {(over.balls || []).slice().reverse().map((ball, index) => (
+                <CommentaryBall key={ball._id || index} over={over} ball={ball} players={players} compact={compact} />
+              ))}
+            </div>
           </div>
         </div>
       )) : (
@@ -1136,65 +1329,39 @@ function CommentaryBall({ over, ball, players, compact = false }) {
   }
 
   return (
-    <div className={`flex gap-3 p-3.5 hover:bg-slate-50 transition-colors ${isWicket ? 'bg-red-50/40' : isSix ? 'bg-purple-50/30' : isBoundary ? 'bg-blue-50/30' : ''}`}>
-      {/* Ball number */}
-      <div className="w-10 shrink-0 pt-0.5">
-        <span className="text-[10px] font-bold text-slate-400 tabular-nums">{overText}</span>
-      </div>
-
-      {/* Result badge */}
-      <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-black shadow-sm ${ballClass(ball)}`}>
-        {ballLabel(ball)}
-      </div>
-
-      {/* Content */}
-      <div className="min-w-0 flex-1">
-        {/* Structured line: Bowler to Batsman, result */}
-        <p className="text-sm">
-          <span className="font-bold text-slate-800">{bowler}</span>
-          <span className="text-slate-400 font-semibold mx-1">to</span>
-          <span className="font-bold text-slate-800">{batsman}</span>
-          <span className="text-slate-500 mx-1">—</span>
-          <span className={`font-black ${isWicket ? 'text-red-600' : isSix ? 'text-purple-600' : isBoundary ? 'text-blue-600' : 'text-slate-600'}`}>
-            {isWicket ? 'OUT' : ballResultText(ball)}
-          </span>
-        </p>
-
-        {/* Commentary text */}
-        {text && (
-          <p className="mt-1 text-sm leading-6 text-slate-600 italic">{text}</p>
-        )}
-
-        {/* Wagon indicator */}
-        {ball.angle !== undefined && (
-          <div className="mt-1 flex items-center gap-1.5">
-            <div className="w-4 h-4 rounded-full border border-slate-200 flex items-center justify-center">
-              <div
-                className="w-1.5 h-1.5 rounded-full"
-                style={{
-                  backgroundColor: isSix ? '#a855f7' : isBoundary ? '#3b82f6' : '#94a3b8',
-                  transform: `rotate(${ball.angle || 0}deg)`,
-                }}
-              />
-            </div>
-            <span className="text-[9px] font-bold text-slate-400 uppercase">
-              {ball.regionName || ball.zone || ''}
+    <div className={`p-3 rounded-xl transition-all ${isWicket ? "bg-red-50 border border-red-200" : "hover:bg-slate-50"}`}>
+      <div className="flex items-center gap-3">
+        <BallBadge ball={ball} />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-baseline gap-2 flex-wrap">
+            <span className="text-slate-900 font-bold text-sm leading-tight">
+              {overText} {bowler} to {batsman}, {isWicket ? "OUT!" : ballResultText(ball)}
             </span>
-            {ball.distance && (
-              <span className="text-[9px] text-slate-400">{Math.round(ball.distance)}m</span>
-            )}
           </div>
-        )}
+        </div>
       </div>
-
-      {/* Over score summary */}
-      <div className="shrink-0 text-right">
-        {runs > 0 && (
-          <span className={`text-sm font-black ${isSix ? 'text-purple-600' : isBoundary ? 'text-blue-600' : 'text-slate-600'}`}>
-            {runs} {isSix ? '🏏' : isBoundary ? '🏏' : ''}
+      {text && (
+        <p className="ml-12 mt-1.5 text-xs text-slate-500 italic leading-relaxed">{text}</p>
+      )}
+      {ball.angle !== undefined && (
+        <div className="ml-12 mt-1.5 flex items-center gap-1.5">
+          <div className="w-3.5 h-3.5 rounded-full border border-slate-200 flex items-center justify-center">
+            <div
+              className="w-1.5 h-1.5 rounded-full"
+              style={{
+                backgroundColor: isSix ? '#a855f7' : isBoundary ? '#3b82f6' : '#94a3b8',
+                transform: `rotate(${ball.angle || 0}deg)`,
+              }}
+            />
+          </div>
+          <span className="text-[9px] font-bold text-slate-400 uppercase">
+            {ball.regionName || ball.zone || ''}
           </span>
-        )}
-      </div>
+          {ball.distance && (
+            <span className="text-[9px] text-slate-400">{Math.round(ball.distance)}m</span>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -1421,6 +1588,207 @@ function WagonWheelTab({ match, players }) {
         })}
         playerName={selectedBatsman ? battingPlayers.find(p => (p.player?._id || p.player) === selectedBatsman)?.player?.name : "All Shots"}
       />
+    </div>
+  );
+}
+
+function PartnershipsTab({ match, innings, players }) {
+  const [partnershipData, setPartnershipData] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const allInnings = match?.innings || [];
+
+  useEffect(() => {
+    const fetchAll = async () => {
+      try {
+        const results = await Promise.all(
+          allInnings.map((_, idx) =>
+            api.get(`/matches/${match._id}/partnerships/${idx + 1}`).then(r => r.data)
+          )
+        );
+        setPartnershipData(results);
+      } catch (err) {
+        console.error("Failed to load partnerships:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchAll();
+  }, [match._id]);
+
+  if (loading) return <div className="text-center text-slate-500 py-8">Loading partnerships...</div>;
+
+  const formatPartnerships = (partnerships, innIdx) => {
+    if (!partnerships || partnerships.length === 0) {
+      return <p className="text-sm text-slate-500 py-4">No partnerships recorded for this innings.</p>;
+    }
+    const inn = allInnings[innIdx];
+    return (
+      <div className="space-y-3">
+        {partnerships.map((p, i) => {
+          const isActive = p.isActive;
+          return (
+            <div
+              key={p._id || i}
+              className={`rounded-xl border p-4 transition-all ${
+                isActive
+                  ? 'border-green-300 bg-green-50 shadow-sm'
+                  : 'border-slate-200 bg-white'
+              }`}
+            >
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">
+                  {p.wicketNumber}{ordinal(p.wicketNumber)} Wicket Partnership
+                  {isActive && <span className="ml-2 text-green-600 text-[9px]">(Current)</span>}
+                </span>
+                {p.runs > 0 && (
+                  <span className="text-xs font-bold text-slate-400">
+                    {((p.runs / (inn?.runs || 1)) * 100).toFixed(1)}% of score
+                  </span>
+                )}
+              </div>
+              {/* Visual progress bar */}
+              {inn?.runs > 0 && (
+                <div className="w-full bg-slate-100 rounded-full h-1.5 mb-3">
+                  <div
+                    className={`h-1.5 rounded-full transition-all ${
+                      p.runs > 50 ? 'bg-emerald-500' : p.runs > 30 ? 'bg-blue-500' : 'bg-slate-400'
+                    }`}
+                    style={{ width: `${Math.max(2, (p.runs / inn.runs) * 100)}%` }}
+                  />
+                </div>
+              )}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-2xl font-black">{p.runs || 0}</span>
+                    <span className="text-sm text-slate-500">runs</span>
+                  </div>
+                  <div className="flex gap-3 text-xs text-slate-500 mt-1">
+                    <span>{p.balls || 0} balls</span>
+                    <span>SR: {p.balls > 0 ? ((p.runs / p.balls) * 100).toFixed(1) : '0.0'}</span>
+                  </div>
+                </div>
+                <div className="text-right text-sm">
+                  <div className="font-medium">{playerName(p.batsman1Id || p.batsman1, players)}</div>
+                  <div className="font-medium">{playerName(p.batsman2Id || p.batsman2, players)}</div>
+                  {p.fours > 0 || p.sixes > 0 ? (
+                    <div className="text-xs text-slate-400 mt-1">
+                      {p.fours > 0 && <span className="text-blue-500">{p.fours} 4s </span>}
+                      {p.sixes > 0 && <span className="text-purple-500">{p.sixes} 6s</span>}
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+              {/* Over range */}
+              {(p.startOver != null || p.endOver != null) && (
+                <div className="mt-2 text-[10px] font-bold text-slate-400 flex gap-2">
+                  {p.startOver != null && <span>From Over {p.startOver}</span>}
+                  {p.endOver != null && <span>To Over {p.endOver}</span>}
+                  {p.startOver != null && p.endOver != null && (
+                    <span>({(p.endOver - (p.startOver || 0)).toFixed(1)} ov span)</span>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
+  return (
+    <div className="space-y-8">
+      {allInnings.map((inn, idx) => (
+        <section key={idx}>
+          <div className="flex items-center gap-3 mb-4">
+            <h2 className="text-sm font-black">
+              {teamName(getTeamById(match, inn.team))} Innings
+            </h2>
+            <span className="text-xs font-bold text-slate-400">
+              {inn.runs || 0}/{inn.wickets || 0} ({formatOvers(inn.balls)} ov)
+            </span>
+          </div>
+          {formatPartnerships(partnershipData[idx], idx)}
+        </section>
+      ))}
+    </div>
+  );
+}
+
+function GraphsTab({ match, matchId, innings }) {
+  const [graphData, setGraphData] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!matchId && !match?._id) return;
+    api.get(`/matches/${matchId || match._id}/graph-data`)
+      .then(res => setGraphData(res.data))
+      .catch(() => setGraphData(null))
+      .finally(() => setLoading(false));
+  }, [matchId, match?._id]);
+
+  if (loading) return <div className="text-center text-slate-500 py-8">Loading graphs...</div>;
+  if (!graphData) return <div className="text-center text-slate-500 py-8">No graph data available</div>;
+
+  const inn1 = match?.innings?.[0];
+  const inn2 = match?.innings?.[1];
+
+  return (
+    <div className="space-y-8">
+      {/* Manhattan Graph */}
+      <section>
+        <h3 className="text-sm font-black mb-3 flex items-center gap-2">
+          <span className="w-2 h-2 rounded-full bg-indigo-500"></span>
+          Runs Per Over (Manhattan)
+        </h3>
+        <ManhattanGraph match={match} innings={0} />
+      </section>
+
+      {/* Worm Graph */}
+      <section>
+        <h3 className="text-sm font-black mb-3 flex items-center gap-2">
+          <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+          Innings Progression (Worm)
+        </h3>
+        <WormGraph match={match} />
+      </section>
+
+      {/* Run Rate Graph */}
+      {inn2 && (
+        <section>
+          <h3 className="text-sm font-black mb-3 flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-green-500"></span>
+            Run Rate Comparison
+          </h3>
+          <RunRateGraph match={match} />
+        </section>
+      )}
+
+      {/* Win Probability */}
+      {graphData.winProbability?.length > 0 && (
+        <section>
+          <h3 className="text-sm font-black mb-3 flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-rose-500"></span>
+            Win Probability
+          </h3>
+          <WinProbabilityChart
+            winProbHistory={graphData.winProbability}
+            currentBattingProb={graphData.winProbability[graphData.winProbability.length - 1]?.team1 || 50}
+            currentBowlingProb={graphData.winProbability[graphData.winProbability.length - 1]?.team2 || 50}
+            battingTeamName={inn2?.team?.name || match?.teams?.[0]?.name || "Team 1"}
+            bowlingTeamName={inn1?.team?.name || match?.teams?.[1]?.name || "Team 2"}
+          />
+        </section>
+      )}
+
+      {/* Wagon Zone */}
+      <section>
+        <h3 className="text-sm font-black mb-3 flex items-center gap-2">
+          <span className="w-2 h-2 rounded-full bg-purple-500"></span>
+          Shot Zone Analysis
+        </h3>
+        <WagonZone matchId={matchId || match._id} match={match} innings={match.currentInnings || 0} />
+      </section>
     </div>
   );
 }

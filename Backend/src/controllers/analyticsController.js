@@ -264,6 +264,105 @@ export async function assignMatchOfficial(req, res) {
   }
 }
 
+export async function getMatchGraphData(req, res) {
+  try {
+    const { id } = req.params;
+    const match = await Match.findById(id)
+      .populate("innings.oversHistory.bowler", "name")
+      .populate("innings.batting.player", "name")
+      .populate("innings.bowling.player", "name");
+
+    if (!match) return res.status(404).json({ error: "Match not found" });
+
+    const graphData = { manhattan: [], worm: [], runRate: [], innings: [] };
+
+    (match.innings || []).forEach((inn, idx) => {
+      const manhattan = [];
+      const worm = [];
+      const runRate = [];
+      let cumRuns = 0;
+
+      (inn.oversHistory || []).forEach((over) => {
+        const overNum = over.overNumber + 1;
+        const runs = over.runsScored || 0;
+        const wkts = over.wickets || 0;
+        cumRuns += runs;
+
+        manhattan.push({ over: overNum, runs, wickets: wkts });
+        worm.push({ over: overNum, cumulativeRuns: cumRuns });
+
+        if (idx === 1 && inn.target) {
+          const rrr = inn.target - cumRuns > 0
+            ? ((inn.target - cumRuns) / Math.max((match.totalOvers || 20) - overNum, 0.1))
+            : 0;
+          runRate.push({ over: overNum, crr: overNum > 0 ? (cumRuns / overNum) : 0, rrr });
+        } else {
+          runRate.push({ over: overNum, crr: overNum > 0 ? (cumRuns / overNum) : 0, rrr: 0 });
+        }
+      });
+
+      graphData.innings.push({
+        inningNumber: idx + 1,
+        totalRuns: inn.runs || 0,
+        totalWickets: inn.wickets || 0,
+        overs: inn.overs || 0,
+        manhattan,
+        worm,
+        runRate,
+        batting: (inn.batting || []).map(b => ({
+          player: b.player?.name || 'Unknown',
+          runs: b.runs || 0,
+          balls: b.balls || 0,
+          fours: b.fours || 0,
+          sixes: b.sixes || 0,
+          strikeRate: b.strikeRate || 0,
+          dotBalls: b.dotBalls || 0,
+          isOut: b.isOut || false,
+          dismissalType: b.dismissalType || null,
+          dismissedBy: b.dismissedBy?.name || null,
+          fielder: b.fielder?.name || null,
+        })),
+        bowling: (inn.bowling || []).map(b => ({
+          player: b.player?.name || 'Unknown',
+          overs: b.overs || 0,
+          maidens: b.maidens || 0,
+          runs: b.runs || 0,
+          wickets: b.wickets || 0,
+          economy: b.economy || 0,
+          dotBalls: b.dotBalls || 0,
+          wides: b.wides || 0,
+          noBalls: b.noBalls || 0,
+        })),
+        fallOfWickets: (inn.fallOfWickets || []).map(f => ({
+          wicket: f.wicket,
+          runs: f.runs,
+          player: f.player?.name || (typeof f.player === 'object' ? f.player?.name : 'Unknown'),
+          overs: f.overs || 0,
+        })),
+        partnerships: (inn.partnerships || []).map(p => ({
+          runs: p.runs || 0,
+          balls: p.balls || 0,
+          batsman1: p.batsman1?.name || (typeof p.batsman1 === 'object' ? p.batsman1?.name : 'Unknown'),
+          batsman2: p.batsman2?.name || (typeof p.batsman2 === 'object' ? p.batsman2?.name : 'Unknown'),
+          wicket: p.wicket || null,
+        })),
+      });
+    });
+
+    // Win probability history from match
+    graphData.winProbability = (match.winProbabilityHistory || []).map(w => ({
+      over: w.over,
+      ball: w.ball,
+      team1: w.team1,
+      team2: w.team2,
+    }));
+
+    res.json(graphData);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+}
+
 export async function getMatchOfficials(req, res) {
   try {
     const { id } = req.params;

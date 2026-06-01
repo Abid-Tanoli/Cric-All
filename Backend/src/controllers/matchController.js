@@ -185,7 +185,7 @@ export const createMatch = async (req, res) => {
 
 export const updateMatch = async (req, res) => {
   try {
-    const { title, venue, matchType, startAt, teams, status, powerplayConfig, series, seriesMatchNumber } = req.body;
+    const { title, venue, matchType, totalOvers, startAt, teams, status, powerplayConfig, series, seriesMatchNumber } = req.body;
 
     const match = await Match.findById(req.params.id);
     if (!match) {
@@ -220,6 +220,7 @@ export const updateMatch = async (req, res) => {
     if (title !== undefined) match.title = title;
     if (venue !== undefined) match.venue = venue;
     if (matchType !== undefined) match.matchType = matchType;
+    if (totalOvers !== undefined) match.totalOvers = totalOvers;
     if (startAt !== undefined) match.startAt = startAt;
     if (status !== undefined) match.status = status;
     if (powerplayConfig !== undefined) match.powerplayConfig = powerplayConfig;
@@ -227,6 +228,16 @@ export const updateMatch = async (req, res) => {
     if (seriesMatchNumber !== undefined) match.seriesMatchNumber = seriesMatchNumber;
 
     await match.save({ validateModifiedOnly: true });
+
+    if (totalOvers !== undefined && match.innings[1]) {
+      const inn2 = match.innings[1];
+      if (inn2.status === "live" || inn2.status === "completed") {
+        const totalBallsFaced = inn2.balls || 0;
+        const remainingOvers = Math.max(totalOvers - Math.floor(totalBallsFaced / 6) - (totalBallsFaced % 6) / 6, 0);
+        const remainingRuns = (inn2.target || 0) - (inn2.runs || 0);
+        inn2.requiredRunRate = remainingOvers > 0 ? (remainingRuns / remainingOvers).toFixed(2) : 0;
+      }
+    }
 
     await match.populate("teams", "name shortName logo");
     await match.populate("innings.team", "name shortName");
