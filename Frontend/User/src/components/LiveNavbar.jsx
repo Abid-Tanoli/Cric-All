@@ -38,6 +38,7 @@ const LiveNavbar = () => {
 
     const navItems = [
         { key: 'live', label: 'Live Scores', path: '/live', icon: '🔴' },
+        { key: 'international', label: 'International', path: '/international', icon: 'INTL' },
         { key: 'series', label: 'Series', path: '/series', icon: '🏆' },
         { key: 'teams', label: 'Teams', path: '/teams', icon: '👥' },
         { key: 'news', label: 'News', path: '/news', icon: '📰' },

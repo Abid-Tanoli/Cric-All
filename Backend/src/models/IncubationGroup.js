@@ -84,8 +84,6 @@ incubationGroupSchema.pre('save', async function () {
   }
 });
 
-incubationGroupSchema.index({ name: 1 });
-incubationGroupSchema.index({ slug: 1 }, { unique: true, sparse: true });
 incubationGroupSchema.index({ parentOrganization: 1 });
 
 export default mongoose.model("IncubationGroup", incubationGroupSchema);

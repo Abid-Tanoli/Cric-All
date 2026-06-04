@@ -2,22 +2,55 @@ import express from 'express';
 import {
   getCurrentMatches, getAllSeries, getSeriesInfo,
   getSeriesPoints, getSeriesSquad, getMatchScorecard,
-  getMatchInfo, searchPlayers, getPlayerInfo
+  getMatchInfo, searchPlayers, getPlayerInfo,
+  getHeadToHead, getTeamForm, getTeamSquadById,
+  getMatchCenter, getMatchCommentary, getMatchStats,
+  getMatchOvers, getMatchPlayingXI, getMatchPhotos,
+  getMatchNews, getMatchVideos
 } from '../services/cricketDataService.js';
-import { searchHighlights, getMatchHighlights, getICCHighlights, getPCBVideos, getCricketNewsVideos } from '../services/youtubeService.js';
+import {
+  getHighlightsByDate as getRapidHighlightsByDate,
+  getMatchHighlights as getRapidMatchHighlights,
+  getTeamHighlights as getRapidTeamHighlights,
+  getRapidApiStatus,
+} from '../services/cricketApiService.js';
+import {
+  searchHighlights,
+  getMatchHighlights as getYoutubeMatchHighlights,
+  getSeriesHighlights,
+  getICCHighlights,
+  getPCBVideos,
+  getCricketNewsVideos
+} from '../services/youtubeService.js';
 import { getCricketNews } from '../services/rssNewsService.js';
 import { generateMatchSummary } from '../services/aiCommentaryService.js';
 
 const router = express.Router();
+const asArray = (value) => Array.isArray(value) ? value : [];
+const hasItems = (value) => Array.isArray(value) && value.length > 0;
+
+router.get('/status', (req, res) => {
+  res.json({ success: true, data: getRapidApiStatus() });
+});
 
 router.get('/live', async (req, res) => {
   const data = await getCurrentMatches();
-  res.json({ success: true, data: data || [] });
+  res.json({ success: true, data: data || [], matches: data || [] });
+});
+
+router.get('/matches', async (req, res) => {
+  const data = await getCurrentMatches();
+  res.json({ success: true, data: data || [], matches: data || [] });
 });
 
 router.get('/series', async (req, res) => {
   const data = await getAllSeries();
-  res.json({ success: true, data: data || [] });
+  res.json({ success: true, data: data || [], series: data || [] });
+});
+
+router.get('/tournaments', async (req, res) => {
+  const data = await getAllSeries();
+  res.json({ success: true, data: data || [], tournaments: data || [], series: data || [] });
 });
 
 router.get('/series/:id', async (req, res) => {
@@ -35,15 +68,90 @@ router.get('/series/:id/squad', async (req, res) => {
   res.json({ success: true, data: data || [] });
 });
 
+const sendMatchScorecard = async (req, res) => {
+  const data = await getMatchScorecard(req.params.id);
+  res.json({ success: true, data, match: data?.match || data });
+};
+
+router.get('/match/:id', sendMatchScorecard);
+router.get('/matches/:id', sendMatchScorecard);
+
 router.get('/match/:id/scorecard', async (req, res) => {
   const data = await getMatchScorecard(req.params.id);
   res.json({ success: true, data });
 });
 
-router.get('/match/:id/info', async (req, res) => {
+const sendMatchInfo = async (req, res) => {
   const data = await getMatchInfo(req.params.id);
-  res.json({ success: true, data });
-});
+  res.json({ success: true, data, match: data?.match || data });
+};
+
+router.get('/match/:id/info', sendMatchInfo);
+router.get('/matches/:id/info', sendMatchInfo);
+
+const sendMatchCenter = async (req, res) => {
+  const data = await getMatchCenter(req.params.id);
+  res.json({ success: true, data: data || null });
+};
+
+router.get('/match/:id/center', sendMatchCenter);
+router.get('/matches/:id/center', sendMatchCenter);
+
+const sendMatchCommentary = async (req, res) => {
+  const data = await getMatchCommentary(req.params.id);
+  res.json({ success: true, data: data || [] });
+};
+
+router.get('/match/:id/commentary', sendMatchCommentary);
+router.get('/matches/:id/commentary', sendMatchCommentary);
+
+const sendMatchStats = async (req, res) => {
+  const data = await getMatchStats(req.params.id);
+  res.json({ success: true, data: data || null });
+};
+
+router.get('/match/:id/stats', sendMatchStats);
+router.get('/matches/:id/stats', sendMatchStats);
+
+const sendMatchOvers = async (req, res) => {
+  const data = await getMatchOvers(req.params.id);
+  res.json({ success: true, data: data || [] });
+};
+
+router.get('/match/:id/overs', sendMatchOvers);
+router.get('/matches/:id/overs', sendMatchOvers);
+
+const sendMatchPlayingXI = async (req, res) => {
+  const data = await getMatchPlayingXI(req.params.id);
+  res.json({ success: true, data: data || [] });
+};
+
+router.get('/match/:id/playing-xi', sendMatchPlayingXI);
+router.get('/matches/:id/playing-xi', sendMatchPlayingXI);
+
+const sendMatchPhotos = async (req, res) => {
+  const data = await getMatchPhotos(req.params.id);
+  res.json({ success: true, data: data || [] });
+};
+
+router.get('/match/:id/photos', sendMatchPhotos);
+router.get('/matches/:id/photos', sendMatchPhotos);
+
+const sendMatchNews = async (req, res) => {
+  const data = await getMatchNews(req.params.id);
+  res.json({ success: true, data: data || [] });
+};
+
+router.get('/match/:id/news', sendMatchNews);
+router.get('/matches/:id/news', sendMatchNews);
+
+const sendMatchVideos = async (req, res) => {
+  const data = await getMatchVideos(req.params.id);
+  res.json({ success: true, data: data || [] });
+};
+
+router.get('/match/:id/videos', sendMatchVideos);
+router.get('/matches/:id/videos', sendMatchVideos);
 
 router.get('/match/:id/summary', async (req, res) => {
   const scorecard = await getMatchScorecard(req.params.id);
@@ -53,6 +161,31 @@ router.get('/match/:id/summary', async (req, res) => {
 });
 
 router.get('/highlights', async (req, res) => {
+  if (req.query.matchId) {
+    const rapidVideos = await getRapidMatchHighlights(req.query.matchId);
+    if (hasItems(rapidVideos)) return res.json({ success: true, data: rapidVideos });
+  }
+
+  if (req.query.team) {
+    const rapidVideos = await getRapidTeamHighlights(req.query.team);
+    if (hasItems(rapidVideos)) return res.json({ success: true, data: rapidVideos });
+    const videos = await searchHighlights(`${req.query.team} cricket highlights`, 6);
+    return res.json({ success: true, data: videos });
+  }
+
+  if (req.query.date) {
+    const rapidVideos = await getRapidHighlightsByDate(req.query.date);
+    if (hasItems(rapidVideos)) return res.json({ success: true, data: rapidVideos });
+    const videos = await searchHighlights(`cricket highlights ${req.query.date}`, 6);
+    return res.json({ success: true, data: videos });
+  }
+
+  if (req.query.seriesId) {
+    const seriesData = await getSeriesInfo(req.query.seriesId);
+    const videos = await getSeriesHighlights(seriesData, 8);
+    return res.json({ success: true, data: videos });
+  }
+
   const query = req.query.q || 'cricket highlights';
   const videos = await searchHighlights(`${query} highlights`, 6);
   res.json({ success: true, data: videos });
@@ -68,11 +201,19 @@ router.get('/highlights/pcb', async (req, res) => {
   res.json({ success: true, data: videos });
 });
 
-router.get('/match/:id/highlights', async (req, res) => {
+const sendMatchHighlights = async (req, res) => {
   const { team1 = '', team2 = '', type = '' } = req.query;
-  const videos = await getMatchHighlights(team1, team2, type);
+  const match = await getMatchInfo(req.params.id);
+  const rapidVideos = await getRapidMatchHighlights(req.params.id);
+  if (hasItems(rapidVideos)) return res.json({ success: true, data: rapidVideos });
+  const videos = team1 || team2
+    ? await getYoutubeMatchHighlights(team1, team2, type)
+    : await searchHighlights(`${match?.name || 'cricket match'} ${match?.matchType || ''} ${match?.date || ''}`, 4);
   res.json({ success: true, data: videos });
-});
+};
+
+router.get('/match/:id/highlights', sendMatchHighlights);
+router.get('/matches/:id/highlights', sendMatchHighlights);
 
 router.get('/news', async (req, res) => {
   const limit = parseInt(req.query.limit) || 20;
@@ -87,7 +228,7 @@ router.get('/videos', async (req, res) => {
 });
 
 router.get('/players', async (req, res) => {
-  const { search } = req.query;
+  const search = req.query.search || req.query.q || '';
   if (!search) return res.json({ success: true, data: [] });
   const data = await searchPlayers(search);
   res.json({ success: true, data: data || [] });
@@ -96,6 +237,21 @@ router.get('/players', async (req, res) => {
 router.get('/players/:id', async (req, res) => {
   const data = await getPlayerInfo(req.params.id);
   res.json({ success: true, data });
+});
+
+router.get('/teams/:id', async (req, res) => {
+  const data = await getTeamSquadById(req.params.id);
+  res.json({ success: true, data: asArray(data) });
+});
+
+router.get('/teams/:id/form', async (req, res) => {
+  const data = await getTeamForm(req.params.id);
+  res.json({ success: true, data: data || null });
+});
+
+router.get('/h2h', async (req, res) => {
+  const data = await getHeadToHead(req.query.home, req.query.away);
+  res.json({ success: true, data: data || null });
 });
 
 export default router;

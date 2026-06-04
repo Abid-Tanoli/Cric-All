@@ -24,6 +24,7 @@ import seriesRoutes from "./routes/seriesRoutes.js";
 import cricketPolling from "./services/cricketPolling.js";
 import internationalRoutes from "./routes/international.js";
 import { startPoller as startInternationalPoller } from "./services/internationalPoller.js";
+import { hasCricApiKey, hasExternalCricketProvider } from "./services/cricketDataService.js";
 
 // New team categorization routes
 import teamCategoryRoutes from "./routes/teamCategoryRoutes.js";
@@ -62,7 +63,7 @@ app.use((req, res, next) => {
 });
 
 app.use((req, res, next) => {
-  console.log(`${req.method} ${req.path}`);
+  console.log(`${req.method} ${req.originalUrl}`);
   next();
 });
 
@@ -81,6 +82,7 @@ app.use("/api/cricket", cricketApiRoutes);
 app.use("/api/categories", categoryRoutes);
 app.use("/api/series", seriesRoutes);
 app.use("/api/international", internationalRoutes);
+app.use("/api/intl", internationalRoutes);
 
 // New team categorization routes
 app.use("/api/team-categories", teamCategoryRoutes);
@@ -141,20 +143,27 @@ server.listen(PORT, () => {
   console.log(`🌐 CORS enabled for all origins (development mode)`);
 
   // Start cricket polling if API key is configured (OPTIONAL)
-  if (process.env.CRICKET_API_KEY && process.env.CRICKET_API_KEY !== 'your_api_key_here' && process.env.CRICKET_API_KEY.trim() !== '') {
+  if (hasCricApiKey()) {
     cricketPolling.start();
     console.log(`🏏 External Cricket API polling started (OPTIONAL FEATURE)`);
   }
 
   // Start international live score poller
-  if (process.env.CRICKET_API_KEY && process.env.CRICKET_API_KEY !== 'your_api_key_here' && process.env.CRICKET_API_KEY.trim() !== '') {
+  if (hasExternalCricketProvider()) {
     startInternationalPoller(io);
     console.log(`🌍 International live score poller started`);
+  } else {
+    console.log('International live score poller disabled (add RAPIDAPI_KEY or CRICKET_API_KEY to enable)');
   }
 
-  // Start ESPNcricinfo sync scheduler (free, no API key needed)
-  startSyncScheduler();
-  console.log(`🔄 ESPNcricinfo sync scheduler started`);
+  // Start ESPNcricinfo sync scheduler only when explicitly enabled.
+  // It is optional and requires outbound internet/DNS access.
+  if (process.env.ENABLE_ESPN_SYNC === "true") {
+    startSyncScheduler();
+    console.log(`🔄 ESPNcricinfo sync scheduler started`);
+  } else {
+    console.log(`🔄 ESPNcricinfo sync scheduler disabled (set ENABLE_ESPN_SYNC=true to enable)`);
+  }
 
   // No warning - external API is completely optional
 });

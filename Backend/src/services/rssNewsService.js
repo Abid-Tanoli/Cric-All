@@ -25,6 +25,28 @@ const RSS_FEEDS = [
 ];
 
 const newsCache = { data: [], expires: 0 };
+let rssOfflineLogged = false;
+
+const FALLBACK_NEWS = [
+  {
+    title: 'International cricket updates are temporarily offline',
+    description: 'External RSS feeds could not be reached from this machine. Live scores and local BQ-PLAY content still work.',
+    link: '',
+    pubDate: new Date().toISOString(),
+    image: null,
+    source: 'BQ-PLAY',
+    sourceLogo: null,
+  },
+  {
+    title: 'Add network access to enable cricket news feeds',
+    description: 'ESPNcricinfo, CricBuzz, and Cricket365 feeds are optional. They will load automatically when DNS/internet access is available.',
+    link: '',
+    pubDate: new Date().toISOString(),
+    image: null,
+    source: 'BQ-PLAY',
+    sourceLogo: null,
+  },
+];
 
 export async function getCricketNews(limit = 20) {
   if (Date.now() < newsCache.expires && newsCache.data.length > 0) {
@@ -32,6 +54,7 @@ export async function getCricketNews(limit = 20) {
   }
 
   const allArticles = [];
+  let failedFeeds = 0;
 
   for (const feed of RSS_FEEDS) {
     try {
@@ -56,8 +79,18 @@ export async function getCricketNews(limit = 20) {
 
       allArticles.push(...articles);
     } catch (e) {
-      console.warn(`[RSS] Failed to fetch ${feed.name}:`, e.message);
+      failedFeeds++;
     }
+  }
+
+  if (allArticles.length === 0) {
+    if (failedFeeds > 0 && !rssOfflineLogged) {
+      console.warn('[RSS] External cricket news feeds unavailable - using fallback news');
+      rssOfflineLogged = true;
+    }
+    newsCache.data = FALLBACK_NEWS;
+    newsCache.expires = Date.now() + 15 * 60 * 1000;
+    return newsCache.data.slice(0, limit);
   }
 
   allArticles.sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate));

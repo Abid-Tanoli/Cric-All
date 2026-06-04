@@ -1,14 +1,19 @@
-import { getCurrentMatches, getMatchScorecard } from './cricketDataService.js';
+import { getCurrentMatches, getMatchScorecard, hasExternalCricketProvider } from './cricketDataService.js';
 
-const INTERVAL = (parseInt(process.env.CRICKET_POLL_INTERVAL) || 30) * 1000;
 let running = false;
 let io;
+
+const getInterval = () => (parseInt(process.env.CRICKET_POLL_INTERVAL, 10) || 60) * 1000;
 
 export function startPoller(socketIO) {
   io = socketIO;
   if (running) return;
+  if (!hasExternalCricketProvider()) {
+    console.log('[International Poller] Disabled - add RAPIDAPI_KEY or CRICKET_API_KEY to enable');
+    return;
+  }
   running = true;
-  console.log(`[International Poller] Started — every ${INTERVAL / 1000}s`);
+  console.log(`[International Poller] Started - every ${getInterval() / 1000}s`);
   poll();
 }
 
@@ -18,26 +23,38 @@ async function poll() {
       const matches = await getCurrentMatches();
       if (matches?.length) {
         io.emit('INTERNATIONAL_MATCHES_UPDATE', { matches, ts: Date.now() });
+        io.emit('INTL_MATCHES', { matches, ts: Date.now() });
 
-        const liveMatches = matches.filter(m => m.ms === 'live' || m.matchStarted);
+        const liveMatches = matches.filter(match =>
+          match.ms === 'live' || (match.matchStarted && !match.matchEnded)
+        );
+
         for (const match of liveMatches) {
           const scorecard = await getMatchScorecard(match.id);
-          if (scorecard) {
-            io.to(`imatch_${match.id}`).emit('INTERNATIONAL_MATCH_UPDATE', {
-              matchId: match.id,
-              score: match.score,
-              status: match.status,
-              scorecard,
-              ts: Date.now()
-            });
-          }
+          if (!scorecard) continue;
+
+          io.to(`imatch_${match.id}`).emit('INTERNATIONAL_MATCH_UPDATE', {
+            matchId: match.id,
+            score: match.score,
+            status: match.status,
+            scorecard,
+            ts: Date.now(),
+          });
+
+          io.to(`m_${match.id}`).emit('INTL_SCORE', {
+            id: match.id,
+            data: scorecard,
+            ts: Date.now(),
+          });
         }
       }
-    } catch (e) {
-      console.error('[International Poller] Error:', e.message);
+    } catch (error) {
+      console.error('[International Poller] Error:', error.message);
     }
-    await new Promise(r => setTimeout(r, INTERVAL));
+    await new Promise(resolve => setTimeout(resolve, getInterval()));
   }
 }
 
-export function stopPoller() { running = false; }
+export function stopPoller() {
+  running = false;
+}

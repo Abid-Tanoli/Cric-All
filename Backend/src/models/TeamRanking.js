@@ -27,7 +27,6 @@ const teamRankingSchema = new mongoose.Schema({
   form: { type: String, default: "" },
 }, { timestamps: true });
 
-teamRankingSchema.index({ team: 1 });
 teamRankingSchema.index({ overallRank: 1 });
 teamRankingSchema.index({ categoryRank: 1, category: 1 });
 

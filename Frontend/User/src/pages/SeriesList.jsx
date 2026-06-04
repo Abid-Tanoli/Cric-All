@@ -5,7 +5,6 @@ import Header from "../components/Header";
 import SeriesCard from "../components/cricapi/SeriesCard";
 import Loader from "../components/cricapi/Loader";
 import ErrorState from "../components/cricapi/ErrorState";
-import { getSeries, isCricApiConfigured } from "../services/cricApi";
 
 const LOCAL_TYPES = ["single-match", "series", "tri-series", "tournament", "world-cup", "champions-trophy", "league"];
 
@@ -15,6 +14,7 @@ export default function SeriesList() {
   const [loading, setLoading] = useState(true);
   const [localError, setLocalError] = useState(null);
   const [cricError, setCricError] = useState(null);
+  const [apiStatus, setApiStatus] = useState(null);
   const [filter, setFilter] = useState("");
   const [search, setSearch] = useState("");
 
@@ -23,17 +23,15 @@ export default function SeriesList() {
     setLocalError(null);
     setCricError(null);
 
-    // Load CricketData/CricAPI first. If the key is missing or the free-plan limit is hit,
-    // we keep going and show local BQ-PLAY events as a fallback.
-    if (isCricApiConfigured()) {
-      try {
-        setCricSeries(await getSeries(0));
-      } catch (error) {
-        setCricError(error.message);
-        setCricSeries([]);
-      }
-    } else {
-      setCricError("Cricket API key missing. Set VITE_CRICAPI_KEY to show CricketData series.");
+    try {
+      const [rapidRes, statusRes] = await Promise.all([
+        api.get("/international/series"),
+        api.get("/international/status").catch(() => ({ data: { data: null } })),
+      ]);
+      setCricSeries(Array.isArray(rapidRes.data?.data) ? rapidRes.data.data : []);
+      setApiStatus(statusRes.data.data || null);
+    } catch (error) {
+      setCricError(error.response?.data?.message || error.message || "Failed to load RapidAPI series.");
       setCricSeries([]);
     }
 
@@ -76,13 +74,13 @@ export default function SeriesList() {
       <div className="bg-gradient-to-r from-[#031d44] via-[#0a2d5e] to-[#031d44] py-8 text-white">
         <div className="mx-auto max-w-7xl px-4">
           <h1 className="mb-2 text-3xl font-black uppercase tracking-tight">Series & Tournaments</h1>
-          <p className="text-sm text-blue-200">CricketData series, live fixtures, and your local BQ-PLAY events in one place.</p>
+          <p className="text-sm text-blue-200">Real RapidAPI cricket series, tournaments, live fixtures, and your local BQ-PLAY events.</p>
         </div>
       </div>
 
       <main className="mx-auto max-w-7xl space-y-10 px-4 py-6">
         <section className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
-          <label className="mb-2 block text-[10px] font-black uppercase tracking-widest text-slate-400">Search CricketData Series</label>
+          <label className="mb-2 block text-[10px] font-black uppercase tracking-widest text-slate-400">Search RapidAPI Series & Tournaments</label>
           <input
             value={search}
             onChange={(event) => setSearch(event.target.value)}
@@ -94,8 +92,8 @@ export default function SeriesList() {
         <section>
           <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
             <div>
-              <h2 className="text-xl font-black uppercase tracking-tight text-[#031d44]">Current CricketData Series</h2>
-              <p className="text-xs font-semibold text-slate-500">Uses CricAPI `/series`, cached in localStorage for a few minutes.</p>
+              <h2 className="text-xl font-black uppercase tracking-tight text-[#031d44]">Current RapidAPI Series & Tournaments</h2>
+              <p className="text-xs font-semibold text-slate-500">Uses backend `/api/international/series` from Cricbuzz RapidAPI.</p>
             </div>
             <button onClick={loadData} className="rounded-xl bg-[#031d44] px-4 py-2 text-[10px] font-black uppercase tracking-widest text-white">
               Refresh
@@ -103,16 +101,20 @@ export default function SeriesList() {
           </div>
 
           {loading && !cricSeries.length ? (
-            <Loader label="Loading CricketData series..." />
-          ) : cricError && !cricSeries.length ? (
-            <ErrorState message={cricError} onRetry={loadData} />
+            <Loader label="Loading RapidAPI series..." />
+          ) : (cricError || apiStatus?.lastError) && !cricSeries.length ? (
+            <ErrorState
+              title="RapidAPI cricket data unavailable"
+              message={apiStatus?.lastError || cricError}
+              onRetry={loadData}
+            />
           ) : searchedCricSeries.length ? (
             <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
               {searchedCricSeries.map((series) => <SeriesCard key={series.id} series={series} />)}
             </div>
           ) : (
             <div className="rounded-2xl bg-white p-8 text-center text-sm font-bold text-slate-500 ring-1 ring-slate-200">
-              No CricketData series found for this search.
+              No RapidAPI series or tournaments found for this search.
             </div>
           )}
         </section>

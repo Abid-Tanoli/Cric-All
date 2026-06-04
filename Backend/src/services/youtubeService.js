@@ -1,6 +1,5 @@
 import fetch from 'node-fetch';
 
-const YT_KEY = process.env.YOUTUBE_API_KEY;
 const YT_BASE = 'https://www.googleapis.com/youtube/v3';
 
 const CRICKET_CHANNELS = {
@@ -21,8 +20,45 @@ function setYTCache(key, data, ttlSec = 3600) {
   ytCache[key] = { data, exp: Date.now() + ttlSec * 1000 };
 }
 
+const getYouTubeKey = () => {
+  const key = process.env.YOUTUBE_API_KEY?.trim();
+  if (!key || key === 'your_youtube_api_key_here' || key === 'your_key_here') return '';
+  return key;
+};
+
+const asArray = (value) => Array.isArray(value) ? value : [];
+
+const isCompletedMatch = (match = {}) => {
+  const marker = String(match.ms || match.status || '').toLowerCase();
+  return match.matchEnded || marker === 'result' || marker === 'completed' || marker.includes('won');
+};
+
+const matchDate = (match = {}) => match.dateTimeGMT || match.date || '';
+
+function makeSearchUrl(query) {
+  return `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
+}
+
+export function makeHighlightSearchCard(query, match = {}) {
+  return {
+    videoId: `search-${match.id || query}`,
+    title: `${match.name || query} highlights`,
+    description: 'Open YouTube search for match highlights',
+    thumbnail: '',
+    channelName: 'YouTube search',
+    publishedAt: matchDate(match),
+    embedUrl: '',
+    watchUrl: makeSearchUrl(`${query} highlights`),
+    matchId: match.id || match._id || match.matchId || '',
+    matchName: match.name || '',
+    matchDate: matchDate(match),
+    isSearchLink: true,
+  };
+}
+
 export async function searchHighlights(query, maxResults = 6) {
-  if (!YT_KEY) return [];
+  const ytKey = getYouTubeKey();
+  if (!ytKey) return [makeHighlightSearchCard(query)];
 
   const cacheKey = `highlights:${query}:${maxResults}`;
   const cached = getYTCache(cacheKey);
@@ -30,7 +66,7 @@ export async function searchHighlights(query, maxResults = 6) {
 
   try {
     const url = new URL(`${YT_BASE}/search`);
-    url.searchParams.set('key', YT_KEY);
+    url.searchParams.set('key', ytKey);
     url.searchParams.set('q', query);
     url.searchParams.set('part', 'snippet');
     url.searchParams.set('type', 'video');
@@ -66,13 +102,46 @@ export async function getMatchHighlights(team1, team2, matchType = '') {
   return searchHighlights(query, 4);
 }
 
+export async function getSeriesHighlights(seriesData, maxResults = 8) {
+  const info = seriesData?.info || seriesData?.series || seriesData || {};
+  const matches = asArray(seriesData?.matchList || seriesData?.matches || seriesData?.matchInfo)
+    .filter(isCompletedMatch);
+
+  if (matches.length === 0) {
+    return searchHighlights(`${info.name || 'cricket series'} highlights`, maxResults);
+  }
+
+  const videos = [];
+  for (const match of matches.slice(0, 6)) {
+    const query = `${match.name || info.name || 'cricket'} ${match.matchType || ''} ${matchDate(match) ? new Date(matchDate(match)).getFullYear() : '2026'}`.trim();
+    const found = await searchHighlights(query, 2);
+    videos.push(...found.map(video => ({
+      ...video,
+      matchId: match.id || match._id || match.matchId || video.matchId,
+      matchName: match.name || video.matchName,
+      matchDate: matchDate(match) || video.matchDate,
+    })));
+  }
+
+  const seen = new Set();
+  return videos
+    .filter(video => {
+      const key = video.watchUrl || video.videoId;
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, maxResults);
+}
+
 export async function getCricketNewsVideos(topic = 'cricket') {
   const query = `${topic} cricket 2025 2026`;
   return searchHighlights(query, 8);
 }
 
 export async function getChannelVideos(channelId, maxResults = 6) {
-  if (!YT_KEY) return [];
+  const ytKey = getYouTubeKey();
+  if (!ytKey) return [];
 
   const cacheKey = `channel:${channelId}:${maxResults}`;
   const cached = getYTCache(cacheKey);
@@ -80,7 +149,7 @@ export async function getChannelVideos(channelId, maxResults = 6) {
 
   try {
     const url = new URL(`${YT_BASE}/search`);
-    url.searchParams.set('key', YT_KEY);
+    url.searchParams.set('key', ytKey);
     url.searchParams.set('channelId', channelId);
     url.searchParams.set('part', 'snippet');
     url.searchParams.set('type', 'video');

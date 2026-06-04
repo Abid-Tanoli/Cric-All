@@ -6,11 +6,13 @@ const formatDate = (value) => value ? new Date(value).toLocaleDateString() : "TB
 export default function SeriesCard({ series }) {
   return (
     <Link
-      to={`/cricket/series/${series.id}`}
+      to={`/international/series/${series.id}`}
       className="group block overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200 transition hover:-translate-y-0.5 hover:shadow-xl"
     >
       <div className="bg-gradient-to-br from-[#031d44] to-blue-700 p-5 text-white">
-        <p className="text-[10px] font-black uppercase tracking-[0.25em] text-blue-200">CricketData Series</p>
+        <p className="text-[10px] font-black uppercase tracking-[0.25em] text-blue-200">
+          {series.category ? `${series.category} series` : "RapidAPI Series"}
+        </p>
         <h3 className="mt-3 line-clamp-2 min-h-[3.5rem] text-xl font-black uppercase leading-tight group-hover:text-orange-300">
           {series.name}
         </h3>

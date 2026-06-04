@@ -1,13 +1,14 @@
 import * as cricinfo from "./cricinfoScraper.js";
 import Match from "../models/Match.js";
 
-const INTERVAL = (parseInt(process.env.SYNC_INTERVAL) || 30) * 1000;
 let intervalId = null;
+const getInterval = () => (parseInt(process.env.SYNC_INTERVAL, 10) || 30) * 1000;
 
 export function startSyncScheduler() {
   if (intervalId) return;
-  console.log(`[SyncScheduler] Starting — every ${INTERVAL / 1000}s`);
-  intervalId = setInterval(poll, INTERVAL);
+  const interval = getInterval();
+  console.log(`[SyncScheduler] Starting - every ${interval / 1000}s`);
+  intervalId = setInterval(poll, interval);
 }
 
 export function stopSyncScheduler() {

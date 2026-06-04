@@ -52,7 +52,9 @@ function App() {
           <Route path="/points-table" element={<PointsTable />} />
           <Route path="/news" element={<News />} />
           <Route path="/videos" element={<Videos />} />
+          <Route path="/intl" element={<International />} />
           <Route path="/international" element={<International />} />
+          <Route path="/international/:matchId" element={<InternationalMatchDetail />} />
           <Route path="/international/match/:matchId" element={<InternationalMatchDetail />} />
           <Route path="/international/series/:seriesId" element={<InternationalSeriesDetail />} />
           <Route path="/highlights" element={<Highlights />} />

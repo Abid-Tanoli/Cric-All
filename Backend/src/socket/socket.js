@@ -56,6 +56,52 @@ export const initSocket = (server) => {
       console.log(`🏏 Socket ${socket.id} joined cricket-live room`);
     });
 
+    socket.on("JOIN_IMATCH", ({ matchId, id } = {}) => {
+      const roomId = matchId || id;
+      if (!roomId) return;
+      socket.join(`imatch_${roomId}`);
+      socket.join(`m_${roomId}`);
+      console.log(`🌍 Socket ${socket.id} joined international match: ${roomId}`);
+    });
+
+    socket.on("LEAVE_IMATCH", ({ matchId, id } = {}) => {
+      const roomId = matchId || id;
+      if (!roomId) return;
+      socket.leave(`imatch_${roomId}`);
+      socket.leave(`m_${roomId}`);
+      console.log(`🌍 Socket ${socket.id} left international match: ${roomId}`);
+    });
+
+    socket.on("JOIN_MATCH", ({ matchId, id } = {}) => {
+      const roomId = matchId || id;
+      if (!roomId) return;
+      socket.join(`imatch_${roomId}`);
+      socket.join(`m_${roomId}`);
+      console.log(`International socket ${socket.id} joined match: ${roomId}`);
+    });
+
+    socket.on("LEAVE_MATCH", ({ matchId, id } = {}) => {
+      const roomId = matchId || id;
+      if (!roomId) return;
+      socket.leave(`imatch_${roomId}`);
+      socket.leave(`m_${roomId}`);
+      console.log(`International socket ${socket.id} left match: ${roomId}`);
+    });
+
+    socket.on("JOIN", ({ matchId, id } = {}) => {
+      const roomId = matchId || id;
+      if (!roomId) return;
+      socket.join(`imatch_${roomId}`);
+      socket.join(`m_${roomId}`);
+    });
+
+    socket.on("LEAVE", ({ matchId, id } = {}) => {
+      const roomId = matchId || id;
+      if (!roomId) return;
+      socket.leave(`imatch_${roomId}`);
+      socket.leave(`m_${roomId}`);
+    });
+
     socket.on("match:updateList", () => {
       io.emit("match:updateList");
     });

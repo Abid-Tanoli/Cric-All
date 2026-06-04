@@ -1,174 +1,252 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import Header from '../components/Header';
 import { api } from '../services/api';
 import { getSocket, initSocket } from '../services/socket';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
+const asArray = (value) => Array.isArray(value) ? value : [];
+
+const getMatchId = (match = {}) => match.id || match._id || match.matchId;
+
+const getMatchState = (match = {}) => {
+  const marker = String(match.ms || match.status || '').toLowerCase();
+  if (marker === 'live' || marker.includes('live') || (match.matchStarted && !match.matchEnded)) return 'live';
+  if (marker === 'result' || marker === 'completed' || marker.includes('won') || match.matchEnded) return 'result';
+  if (marker === 'preview' || marker === 'fixture' || marker === 'upcoming' || !match.matchStarted) return 'upcoming';
+  return 'upcoming';
+};
+
+const formatDate = (value) => {
+  if (!value) return 'Date TBD';
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString();
+};
+
+const formatSeriesDate = (series, key) =>
+  series?.[key] || series?.[key.toLowerCase()] || series?.[key.replace('Date', 'date')] || '';
+
+const scoreTeam = (score = {}) => score.inning?.split(' Inning')[0] || score.team || score.teamName || 'Innings';
+const scoreRuns = (score = {}) => score.r ?? score.runs ?? 0;
+const scoreWickets = (score = {}) => score.w ?? score.wickets ?? 0;
+const scoreOvers = (score = {}) => score.o ?? score.overs ?? '0';
+
 export default function International() {
   const [activeTab, setActiveTab] = useState('live');
-  const [liveMatches, setLiveMatches] = useState([]);
-  const [allMatches, setAllMatches] = useState([]);
+  const [matches, setMatches] = useState([]);
   const [series, setSeries] = useState([]);
   const [highlights, setHighlights] = useState([]);
   const [news, setNews] = useState([]);
+  const [apiStatus, setApiStatus] = useState(null);
   const [loading, setLoading] = useState(true);
+
+  const groupedMatches = useMemo(() => ({
+    live: matches.filter(match => getMatchState(match) === 'live'),
+    upcoming: matches.filter(match => getMatchState(match) === 'upcoming'),
+    results: matches.filter(match => getMatchState(match) === 'result'),
+  }), [matches]);
 
   useEffect(() => {
     fetchData();
-    setupSocket();
+    const cleanupSocket = setupSocket();
+    return cleanupSocket;
   }, []);
 
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [liveRes, matchesRes, seriesRes, highlightsRes, newsRes] = await Promise.all([
-        api.get('/international/live').catch(() => ({ data: { data: [] } })),
+      const [matchesRes, seriesRes, newsRes, statusRes] = await Promise.all([
+        api.get('/international/matches').catch(() => ({ data: { data: [] } })),
         api.get('/international/series').catch(() => ({ data: { data: [] } })),
-        api.get('/international/series').catch(() => ({ data: { data: [] } })),
-        api.get('/international/highlights?q=cricket').catch(() => ({ data: { data: [] } })),
         api.get('/international/news?limit=5').catch(() => ({ data: { data: [] } })),
+        api.get('/international/status').catch(() => ({ data: { data: null } })),
       ]);
-      setLiveMatches(liveRes.data.data || []);
-      setAllMatches(matchesRes.data.data || []);
-      setSeries(seriesRes.data.data || []);
-      setHighlights(highlightsRes.data.data || []);
-      setNews(newsRes.data.data || []);
-    } catch (e) {
-      console.error('International fetch error:', e);
+
+      const nextMatches = asArray(matchesRes.data.data);
+      const nextSeries = asArray(seriesRes.data.data);
+      const seriesId = nextSeries[0]?.id;
+      const highlightsRes = await api
+        .get(seriesId ? `/international/highlights?seriesId=${encodeURIComponent(seriesId)}` : '/international/highlights?q=cricket')
+        .catch(() => ({ data: { data: [] } }));
+
+      setMatches(nextMatches);
+      setSeries(nextSeries);
+      setHighlights(asArray(highlightsRes.data.data));
+      setNews(asArray(newsRes.data.data));
+      setApiStatus(statusRes.data.data || null);
+    } catch (error) {
+      console.error('International fetch error:', error);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const setupSocket = () => {
     const socket = getSocket() || initSocket(API_BASE.replace('/api', ''));
-    socket.on('INTERNATIONAL_MATCHES_UPDATE', ({ matches }) => {
-      setLiveMatches(matches.filter(m => m.ms === 'live' || m.matchStarted));
-    });
+    const handleMatchesUpdate = ({ matches: nextMatches = [] }) => {
+      setMatches(asArray(nextMatches));
+    };
+    socket.on('INTERNATIONAL_MATCHES_UPDATE', handleMatchesUpdate);
+    return () => socket.off('INTERNATIONAL_MATCHES_UPDATE', handleMatchesUpdate);
   };
 
   const tabs = [
-    { id: 'live', label: '🔴 Live' },
-    { id: 'upcoming', label: '📅 Upcoming' },
-    { id: 'series', label: '🏆 Series' },
-    { id: 'highlights', label: '🎬 Highlights' },
-    { id: 'news', label: '📰 News' },
+    { id: 'live', label: `Live (${groupedMatches.live.length})` },
+    { id: 'upcoming', label: `Upcoming (${groupedMatches.upcoming.length})` },
+    { id: 'results', label: `Results (${groupedMatches.results.length})` },
+    { id: 'series', label: `Series/Tournaments (${series.length})` },
+    { id: 'highlights', label: 'Highlights' },
+    { id: 'news', label: 'News' },
   ];
 
-  const renderLive = () => (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-      {liveMatches.length === 0 ? (
-        <div className="col-span-full text-center py-16 text-slate-500">
-          <p className="text-4xl mb-4">🏏</p>
-          <p className="text-lg font-bold">No live matches right now</p>
-          <p className="text-sm">Check back later or browse upcoming matches</p>
+  const apiWarning = apiStatus?.lastError
+    ? apiStatus.lastError
+    : (!loading && matches.length === 0 && series.length === 0 ? 'RapidAPI returned no cricket data.' : '');
+
+  const renderApiOverview = () => {
+    const topMatch = groupedMatches.live[0] || groupedMatches.upcoming[0] || groupedMatches.results[0];
+    return (
+      <section className="mb-8 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-800">
+        <div className="bg-[#031d44] px-5 py-4 text-white">
+          <p className="text-[10px] font-black uppercase tracking-[0.25em] text-blue-200">Cricbuzz RapidAPI live feed</p>
+          <h2 className="mt-1 text-2xl font-black uppercase tracking-tight">Real cricket data</h2>
         </div>
-      ) : (
-        liveMatches.map(match => (
-          <Link
-            key={match.id}
-            to={`/international/match/${match.id}`}
-            className="bg-white dark:bg-slate-800 rounded-2xl shadow-lg border border-slate-200 dark:border-slate-700 p-5 hover:shadow-xl transition-all group"
-          >
-            <div className="flex items-center justify-between mb-3">
-              <span className="bg-red-600 text-white text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full animate-pulse">
-                🔴 LIVE
-              </span>
-              <span className="text-[10px] text-slate-400 font-bold uppercase">{match.matchType}</span>
-            </div>
-            <h3 className="text-lg font-black text-[#031d44] dark:text-white mb-3 group-hover:text-blue-600 transition-colors">
-              {match.name}
-            </h3>
-            {match.score?.map((inn, i) => (
-              <div key={i} className="flex justify-between items-center py-1 border-b border-slate-100 dark:border-slate-700 last:border-0">
-                <span className="text-sm font-bold text-slate-700 dark:text-slate-300">{inn.inning?.split(' Inning')[0]}</span>
-                <span className="text-sm font-black text-[#031d44] dark:text-white">{inn.r}/{inn.w} ({inn.o})</span>
+        <div className="grid gap-0 lg:grid-cols-[1fr_1.2fr]">
+          <div className="grid grid-cols-2 gap-3 border-b border-slate-100 p-5 dark:border-slate-700 lg:border-b-0 lg:border-r">
+            {[
+              ['Matches', matches.length],
+              ['Live', groupedMatches.live.length],
+              ['Upcoming', groupedMatches.upcoming.length],
+              ['Results', groupedMatches.results.length],
+              ['Series/Tournaments', series.length],
+              ['Highlights', highlights.length],
+            ].map(([label, value]) => (
+              <div key={label} className="rounded-xl bg-slate-50 p-4 dark:bg-slate-700">
+                <p className="text-2xl font-black text-[#031d44] dark:text-white">{value}</p>
+                <p className="mt-1 text-[10px] font-black uppercase tracking-widest text-slate-400">{label}</p>
               </div>
             ))}
-            <p className="text-xs text-slate-500 mt-3 font-medium">{match.status}</p>
+          </div>
+          <div className="p-5">
+            {topMatch ? (
+              <Link to={`/international/match/${getMatchId(topMatch)}`} className="block rounded-xl border border-slate-100 p-4 transition hover:border-blue-300 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-700">
+                <p className="text-[10px] font-black uppercase tracking-widest text-blue-600">{getMatchState(topMatch)} match</p>
+                <h3 className="mt-2 text-xl font-black text-[#031d44] dark:text-white">{topMatch.name}</h3>
+                <p className="mt-2 text-sm font-bold text-slate-500">{topMatch.series?.name || topMatch.description || 'Cricbuzz RapidAPI'}</p>
+                <p className="mt-2 text-sm font-semibold text-slate-600 dark:text-slate-300">{topMatch.status}</p>
+                <p className="mt-1 text-xs font-semibold text-slate-400">{formatDate(topMatch.dateTimeGMT || topMatch.date)}{topMatch.venue ? ` - ${topMatch.venue}` : ''}</p>
+              </Link>
+            ) : (
+              <div className="rounded-xl border border-dashed border-slate-200 p-8 text-center text-sm font-bold text-slate-500">
+                Waiting for RapidAPI cricket data.
+              </div>
+            )}
+          </div>
+        </div>
+      </section>
+    );
+  };
+
+  const renderMatchGrid = (matchList, emptyTitle, emptySubtitle) => (
+    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+      {matchList.length === 0 ? (
+        <div className="col-span-full rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-16 text-center text-slate-500 dark:border-slate-700 dark:bg-slate-800">
+          <p className="text-lg font-black">{emptyTitle}</p>
+          {emptySubtitle && <p className="mt-1 text-sm">{emptySubtitle}</p>}
+        </div>
+      ) : (
+        matchList.slice(0, 18).map(match => (
+          <Link
+            key={getMatchId(match)}
+            to={`/international/match/${getMatchId(match)}`}
+            className="group rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-xl dark:border-slate-700 dark:bg-slate-800"
+          >
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <span className={`rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-widest ${
+                getMatchState(match) === 'live'
+                  ? 'bg-red-600 text-white'
+                  : getMatchState(match) === 'result'
+                    ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-200'
+                    : 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-200'
+              }`}>
+                {getMatchState(match)}
+              </span>
+              <span className="text-[10px] font-bold uppercase text-slate-400">{match.matchType || match.type || 'Match'}</span>
+            </div>
+            <h3 className="mb-3 line-clamp-2 text-lg font-black text-[#031d44] transition-colors group-hover:text-blue-600 dark:text-white">
+              {match.name}
+            </h3>
+            {asArray(match.score).map((score, index) => (
+              <div key={`${scoreTeam(score)}-${index}`} className="flex justify-between border-b border-slate-100 py-1 text-sm last:border-0 dark:border-slate-700">
+                <span className="font-bold text-slate-700 dark:text-slate-300">{scoreTeam(score)}</span>
+                <span className="font-black text-[#031d44] dark:text-white">{scoreRuns(score)}/{scoreWickets(score)} ({scoreOvers(score)})</span>
+              </div>
+            ))}
+            <p className="mt-3 text-xs font-semibold text-slate-500">{formatDate(match.dateTimeGMT || match.date)}</p>
+            {match.status && <p className="mt-1 text-xs font-bold text-slate-500">{match.status}</p>}
+            {match.venue && <p className="mt-1 text-xs text-slate-400">{match.venue}</p>}
           </Link>
         ))
       )}
     </div>
   );
 
-  const renderUpcoming = () => {
-    const upcoming = allMatches.filter(m => !m.matchStarted || m.ms === 'upcoming');
-    return (
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {upcoming.length === 0 ? (
-          <div className="col-span-full text-center py-16 text-slate-500">
-            <p className="text-4xl mb-4">📅</p>
-            <p className="text-lg font-bold">No upcoming matches</p>
-          </div>
-        ) : (
-          upcoming.slice(0, 12).map(match => (
-            <div key={match.id} className="bg-white dark:bg-slate-800 rounded-2xl shadow border border-slate-200 dark:border-slate-700 p-5">
-              <div className="flex items-center justify-between mb-3">
-                <span className="bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full">
-                  Upcoming
-                </span>
-                <span className="text-[10px] text-slate-400 font-bold">{match.matchType}</span>
-              </div>
-              <h3 className="text-base font-black text-[#031d44] dark:text-white mb-2">{match.name}</h3>
-              <p className="text-xs text-slate-500">{match.venue || 'TBD'}</p>
-              <p className="text-xs text-slate-400 mt-1">{match.dateTimeGMT ? new Date(match.dateTimeGMT).toLocaleString() : 'Date TBD'}</p>
-            </div>
-          ))
-        )}
-      </div>
-    );
-  };
-
   const renderSeries = () => (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
       {series.length === 0 ? (
-        <div className="col-span-full text-center py-16 text-slate-500">
-          <p className="text-4xl mb-4">🏆</p>
-          <p className="text-lg font-bold">No series data available</p>
+        <div className="col-span-full rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-16 text-center text-slate-500 dark:border-slate-700 dark:bg-slate-800">
+          <p className="text-lg font-black">No series data available</p>
+          <p className="mt-1 text-sm">Add RAPIDAPI_KEY or CRICKET_API_KEY to load live series.</p>
         </div>
       ) : (
-        series.slice(0, 12).map(s => (
-          <Link
-            key={s.id}
-            to={`/international/series/${s.id}`}
-            className="bg-white dark:bg-slate-800 rounded-2xl shadow border border-slate-200 dark:border-slate-700 p-5 hover:shadow-lg transition-all group"
-          >
-            <h3 className="text-base font-black text-[#031d44] dark:text-white group-hover:text-blue-600 transition-colors">{s.name}</h3>
-            <p className="text-xs text-slate-500 mt-2">{s.startDate ? new Date(s.startDate).toLocaleDateString() : ''} — {s.endDate ? new Date(s.endDate).toLocaleDateString() : ''}</p>
-            <p className="text-xs text-slate-400 mt-1">{s.matchType || 'T20'}</p>
-          </Link>
-        ))
+        series.slice(0, 18).map(item => {
+          const matchCount = Number(item.odi || 0) + Number(item.t20 || 0) + Number(item.test || 0) || item.matches || item.matchCount || 0;
+          return (
+            <Link
+              key={item.id}
+              to={`/international/series/${item.id}`}
+              className="group rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-xl dark:border-slate-700 dark:bg-slate-800"
+            >
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Series/Tournament</p>
+              <h3 className="mt-2 line-clamp-2 text-lg font-black text-[#031d44] transition-colors group-hover:text-blue-600 dark:text-white">{item.name}</h3>
+              <p className="mt-3 text-xs font-semibold text-slate-500">
+                {formatSeriesDate(item, 'startDate')} - {formatSeriesDate(item, 'endDate')}
+              </p>
+              <p className="mt-1 text-xs font-bold text-slate-400">{[item.category, `${matchCount} matches`].filter(Boolean).join(' - ')}</p>
+            </Link>
+          );
+        })
       )}
     </div>
   );
 
   const renderHighlights = () => (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
       {highlights.length === 0 ? (
-        <div className="col-span-full text-center py-16 text-slate-500">
-          <p className="text-4xl mb-4">🎬</p>
-          <p className="text-lg font-bold">No highlights available</p>
+        <div className="col-span-full rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-16 text-center text-slate-500 dark:border-slate-700 dark:bg-slate-800">
+          <p className="text-lg font-black">No highlights available</p>
         </div>
       ) : (
         highlights.map(video => (
           <a
-            key={video.videoId}
+            key={video.videoId || video.watchUrl}
             href={video.watchUrl}
             target="_blank"
             rel="noreferrer"
-            className="bg-white dark:bg-slate-800 rounded-2xl shadow border border-slate-200 dark:border-slate-700 overflow-hidden hover:shadow-lg transition-all group"
+            className="group overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-xl dark:border-slate-700 dark:bg-slate-800"
           >
-            <div className="relative">
-              <img src={video.thumbnail} alt={video.title} className="w-full h-44 object-cover" />
-              <div className="absolute inset-0 bg-black/30 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                <span className="text-white text-4xl">▶</span>
+            {video.thumbnail ? (
+              <img src={video.thumbnail} alt={video.title} className="h-44 w-full object-cover" />
+            ) : (
+              <div className="flex h-44 items-center justify-center bg-[#031d44] px-5 text-center text-white">
+                <span className="text-sm font-black uppercase tracking-widest">Open highlights</span>
               </div>
-            </div>
+            )}
             <div className="p-4">
-              <h4 className="text-sm font-bold text-[#031d44] dark:text-white line-clamp-2">{video.title}</h4>
-              <p className="text-xs text-slate-500 mt-1">{video.channelName}</p>
-              <p className="text-[10px] text-slate-400">{new Date(video.publishedAt).toLocaleDateString()}</p>
+              <h4 className="line-clamp-2 text-sm font-black text-[#031d44] group-hover:text-blue-600 dark:text-white">{video.title}</h4>
+              <p className="mt-1 text-xs font-semibold text-slate-500">{video.matchName || video.channelName}</p>
+              {video.matchDate && <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">{formatDate(video.matchDate)}</p>}
             </div>
           </a>
         ))
@@ -179,33 +257,23 @@ export default function International() {
   const renderNews = () => (
     <div className="space-y-4">
       {news.length === 0 ? (
-        <div className="text-center py-16 text-slate-500">
-          <p className="text-4xl mb-4">📰</p>
-          <p className="text-lg font-bold">No news available</p>
+        <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-16 text-center text-slate-500 dark:border-slate-700 dark:bg-slate-800">
+          <p className="text-lg font-black">No news available</p>
         </div>
       ) : (
-        news.map((article, i) => (
+        news.map((article, index) => (
           <a
-            key={i}
+            key={article.link || index}
             href={article.link}
             target="_blank"
             rel="noreferrer"
-            className="block bg-white dark:bg-slate-800 rounded-2xl shadow border border-slate-200 dark:border-slate-700 overflow-hidden hover:shadow-lg transition-all group"
+            className="flex gap-4 overflow-hidden rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition-all hover:shadow-lg dark:border-slate-700 dark:bg-slate-800"
           >
-            <div className="flex gap-4 p-5">
-              {article.image && (
-                <img src={article.image} alt="" className="w-24 h-24 rounded-xl object-cover flex-shrink-0" />
-              )}
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="text-[10px] font-black uppercase tracking-widest text-blue-600">{article.source}</span>
-                  <span className="text-[10px] text-slate-400">{article.pubDate ? new Date(article.pubDate).toLocaleDateString() : ''}</span>
-                </div>
-                <h4 className="text-base font-bold text-[#031d44] dark:text-white group-hover:text-blue-600 transition-colors line-clamp-2">
-                  {article.title}
-                </h4>
-                <p className="text-sm text-slate-500 mt-1 line-clamp-2">{article.description}</p>
-              </div>
+            {article.image && <img src={article.image} alt="" className="h-24 w-24 flex-shrink-0 rounded-xl object-cover" />}
+            <div className="min-w-0 flex-1">
+              <p className="text-[10px] font-black uppercase tracking-widest text-blue-600">{article.source}</p>
+              <h4 className="mt-1 line-clamp-2 text-base font-black text-[#031d44] dark:text-white">{article.title}</h4>
+              <p className="mt-1 line-clamp-2 text-sm text-slate-500">{article.description}</p>
             </div>
           </a>
         ))
@@ -215,31 +283,40 @@ export default function International() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white dark:from-slate-900 dark:to-slate-950">
-      <div className="max-w-7xl mx-auto px-4 py-8">
-        <div className="flex items-center justify-between mb-8">
+      <Header />
+      <main className="mx-auto max-w-7xl px-4 py-8">
+        <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
           <div>
-            <h1 className="text-3xl lg:text-4xl font-black text-[#031d44] dark:text-white">
-              🌍 International Cricket
-            </h1>
-            <p className="text-sm text-slate-500 mt-1">Live scores, series, highlights & news</p>
+            <h1 className="text-3xl font-black text-[#031d44] dark:text-white lg:text-4xl">International Cricket</h1>
+            <p className="mt-1 text-sm font-semibold text-slate-500">Live scores, ODI fixtures, series, highlights and cricket news.</p>
           </div>
           <button
             onClick={fetchData}
-            className="bg-[#031d44] hover:bg-slate-800 text-white text-[10px] font-black uppercase tracking-widest px-5 py-2.5 rounded-xl transition-all"
+            className="rounded-xl bg-[#031d44] px-5 py-2.5 text-[10px] font-black uppercase tracking-widest text-white transition-all hover:bg-slate-800"
           >
             Refresh
           </button>
         </div>
 
-        <div className="flex gap-2 mb-8 overflow-x-auto pb-2">
+        {renderApiOverview()}
+
+        {apiWarning && (
+          <div className="mb-8 rounded-2xl border border-amber-200 bg-amber-50 p-5 text-amber-900">
+            <p className="text-xs font-black uppercase tracking-widest">RapidAPI data unavailable</p>
+            <p className="mt-2 text-sm font-bold">{apiWarning}</p>
+            <p className="mt-1 text-xs font-semibold">Real-key mode is enabled, so BQ-PLAY is not showing fallback/demo cricket data.</p>
+          </div>
+        )}
+
+        <div className="mb-8 flex gap-2 overflow-x-auto pb-2">
           {tabs.map(tab => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`px-5 py-2.5 rounded-xl text-[11px] font-black uppercase tracking-widest whitespace-nowrap transition-all ${
+              className={`whitespace-nowrap rounded-xl px-5 py-2.5 text-[11px] font-black uppercase tracking-widest transition-all ${
                 activeTab === tab.id
                   ? 'bg-[#031d44] text-white shadow-lg'
-                  : 'bg-white dark:bg-slate-800 text-slate-500 hover:text-[#031d44] border border-slate-200 dark:border-slate-700'
+                  : 'border border-slate-200 bg-white text-slate-500 hover:text-[#031d44] dark:border-slate-700 dark:bg-slate-800'
               }`}
             >
               {tab.label}
@@ -248,20 +325,21 @@ export default function International() {
         </div>
 
         {loading ? (
-          <div className="text-center py-20">
-            <div className="inline-block w-8 h-8 border-4 border-[#031d44] border-t-transparent rounded-full animate-spin" />
-            <p className="text-slate-500 mt-4 text-sm font-bold">Loading...</p>
+          <div className="py-20 text-center">
+            <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-[#031d44] border-t-transparent" />
+            <p className="mt-4 text-sm font-bold text-slate-500">Loading...</p>
           </div>
         ) : (
           <>
-            {activeTab === 'live' && renderLive()}
-            {activeTab === 'upcoming' && renderUpcoming()}
+            {activeTab === 'live' && renderMatchGrid(groupedMatches.live, 'No live matches right now', 'Check upcoming fixtures or refresh shortly.')}
+            {activeTab === 'upcoming' && renderMatchGrid(groupedMatches.upcoming, 'No upcoming matches', 'Fixtures will appear here from Cricbuzz RapidAPI.')}
+            {activeTab === 'results' && renderMatchGrid(groupedMatches.results, 'No recent results', 'Completed international matches will appear here.')}
             {activeTab === 'series' && renderSeries()}
             {activeTab === 'highlights' && renderHighlights()}
             {activeTab === 'news' && renderNews()}
           </>
         )}
-      </div>
+      </main>
     </div>
   );
 }

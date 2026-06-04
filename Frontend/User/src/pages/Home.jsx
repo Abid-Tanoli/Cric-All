@@ -298,6 +298,7 @@ export function Home() {
                   { label: "Live Scores", icon: "⚡", path: "/live" },
                   { label: "Rankings", icon: "🏆", path: "/rankings" },
                   { label: "Points Table", icon: "📊", path: "/points-table" },
+                  { label: "International", icon: "INTL", path: "/international" },
                   { label: "Teams", icon: "👥", path: "/teams" },
                   { label: "Players", icon: "🏏", path: "/players" },
                   { label: "Series", icon: "📅", path: "/series" },
