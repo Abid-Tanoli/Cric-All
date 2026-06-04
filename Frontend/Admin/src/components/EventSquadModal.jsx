@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import api from '../services/api';
+import { useToast } from './Toast';
 
 const REASONS = [
   { value: 'injury',       label: 'Injury',        color: 'red',    icon: '🤕' },
@@ -39,6 +40,7 @@ export default function EventSquadModal({ event, team, onClose, onSuccess }) {
   const [saving, setSaving] = useState(false);
   const [squadExists, setSquadExists] = useState(false);
   const [changeHistory, setChangeHistory] = useState([]);
+  const { showToast } = useToast();
 
   // Change Player tab state
   const [outPlayer, setOutPlayer] = useState('');
@@ -84,7 +86,7 @@ export default function EventSquadModal({ event, team, onClose, onSuccess }) {
   const togglePlayer = (playerId) => {
     setSelectedPlayers(prev => {
       if (prev.includes(playerId)) return prev.filter(id => id !== playerId);
-      if (prev.length >= 20) { alert('Maximum 20 players allowed in a squad'); return prev; }
+      if (prev.length >= 20) { showToast('Maximum 20 players allowed in a squad', 'warning'); return prev; }
       return [...prev, playerId];
     });
   };
@@ -96,10 +98,10 @@ export default function EventSquadModal({ event, team, onClose, onSuccess }) {
   };
 
   const handleSaveSquad = async () => {
-    if (selectedPlayers.length < 11) { alert('Minimum 11 players required'); return; }
-    if (!captain) { alert('Please select a captain'); return; }
-    if (!viceCaptain) { alert('Please select a vice-captain'); return; }
-    if (wicketKeepers.length === 0) { alert('Please select at least one wicket-keeper'); return; }
+    if (selectedPlayers.length < 11) { showToast('Minimum 11 players required', 'warning'); return; }
+    if (!captain) { showToast('Please select a captain', 'warning'); return; }
+    if (!viceCaptain) { showToast('Please select a vice-captain', 'warning'); return; }
+    if (wicketKeepers.length === 0) { showToast('Please select at least one wicket-keeper', 'warning'); return; }
 
     setSaving(true);
     try {
@@ -113,7 +115,7 @@ export default function EventSquadModal({ event, team, onClose, onSuccess }) {
       setSquadExists(true);
       onSuccess?.();
     } catch (err) {
-      alert('Failed to save squad: ' + (err.response?.data?.message || err.message));
+      showToast('Failed to save squad: ' + (err.response?.data?.message || err.message), 'error');
     } finally {
       setSaving(false);
     }
@@ -121,9 +123,9 @@ export default function EventSquadModal({ event, team, onClose, onSuccess }) {
 
   // ========== Change Player Tab Handlers ==========
   const handleChangePlayer = async () => {
-    if (!outPlayer) { alert('Please select the player going OUT'); return; }
-    if (!inPlayer) { alert('Please select the replacement player'); return; }
-    if (outPlayer === inPlayer) { alert('In-player and out-player must be different'); return; }
+    if (!outPlayer) { showToast('Please select the player going OUT', 'warning'); return; }
+    if (!inPlayer) { showToast('Please select the replacement player', 'warning'); return; }
+    if (outPlayer === inPlayer) { showToast('In-player and out-player must be different', 'warning'); return; }
 
     setChangeSaving(true);
     try {
@@ -149,7 +151,7 @@ export default function EventSquadModal({ event, team, onClose, onSuccess }) {
       setInPlayerSearch('');
       onSuccess?.();
     } catch (err) {
-      alert('Failed to change player: ' + (err.response?.data?.message || err.message));
+      showToast('Failed to change player: ' + (err.response?.data?.message || err.message), 'error');
     } finally {
       setChangeSaving(false);
     }

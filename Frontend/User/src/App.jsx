@@ -18,6 +18,8 @@ import News from "./pages/News";
 import Videos from "./pages/Videos";
 import Series from "./pages/Series";
 import SeriesList from "./pages/SeriesList";
+import CricSeriesDetails from "./pages/CricSeriesDetails";
+import CricMatchDetails from "./pages/CricMatchDetails";
 import International from "./pages/International";
 import InternationalMatchDetail from "./pages/InternationalMatchDetail";
 import InternationalSeriesDetail from "./pages/InternationalSeriesDetail";
@@ -33,6 +35,8 @@ function App() {
           <Route path="/live" element={<Live />} />
           <Route path="/series" element={<SeriesList />} />
           <Route path="/series/:seriesId" element={<Series />} />
+          <Route path="/cricket/series/:seriesId" element={<CricSeriesDetails />} />
+          <Route path="/cricket/match/:matchId" element={<CricMatchDetails />} />
           <Route path="/match/:matchId" element={<Match />} />
           <Route path="/matches/:matchId" element={<Match />} />
           <Route path="/summary/:matchId" element={<Summary />} />

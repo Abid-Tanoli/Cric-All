@@ -13,6 +13,7 @@ const LiveScoringPanel = ({
     selectedMatch,
     formattedHistory,
     formatOvers,
+    onRetire,
 }) => {
     const scrollRef = useRef(null);
 
@@ -77,7 +78,7 @@ const LiveScoringPanel = ({
                                     <div className="text-[10px] font-bold text-slate-500 uppercase tracking-tighter">Striker</div>
                                     {!isStrikerOut && strikerId && (
                                         <button 
-                                            onClick={() => onRetire(strikerId, 'retired_hurt')}
+                                            onClick={() => onRetire?.(strikerId, 'retired_hurt')}
                                             className="text-[9px] font-black text-amber-500 hover:text-amber-600 transition-colors uppercase tracking-widest border border-amber-500/20 px-2 py-0.5 rounded-full"
                                         >
                                             Retired Hurt
@@ -100,7 +101,7 @@ const LiveScoringPanel = ({
                                     <div className="text-[10px] font-bold text-slate-500 uppercase tracking-tighter">Non-Striker</div>
                                     {!isNonStrikerOut && nonStrikerId && (
                                         <button 
-                                            onClick={() => onRetire(nonStrikerId, 'retired_hurt')}
+                                            onClick={() => onRetire?.(nonStrikerId, 'retired_hurt')}
                                             className="text-[9px] font-black text-amber-500 hover:text-amber-600 transition-colors uppercase tracking-widest border border-amber-500/20 px-2 py-0.5 rounded-full"
                                         >
                                             Retired Hurt

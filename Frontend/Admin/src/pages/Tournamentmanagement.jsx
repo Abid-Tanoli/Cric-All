@@ -1,11 +1,15 @@
 import React, { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import api from '../services/api';
+import { useToast } from '../components/Toast';
+import ConfirmModal from '../components/ConfirmModal';
 
 const TournamentManagement = () => {
     const { register, handleSubmit, reset, setValue } = useForm();
     const [tournaments, setTournaments] = useState([]);
     const [loading, setLoading] = useState(false);
+    const { showToast } = useToast();
+    const [confirmModal, setConfirmModal] = useState({ open: false, title: '', message: '', onConfirm: null, variant: 'danger' });
     const [editMode, setEditMode] = useState(false);
     const [currentTournament, setCurrentTournament] = useState(null);
     const [showDetailsModal, setShowDetailsModal] = useState(false);
@@ -41,7 +45,7 @@ const TournamentManagement = () => {
             fetchTournaments();
         } catch (err) {
             console.error('Failed to save tournament:', err);
-            alert('Failed to save tournament');
+            showToast('Failed to save tournament', 'error');
         }
     };
 
@@ -57,15 +61,8 @@ const TournamentManagement = () => {
         setValue('venue', tournament.venue);
     };
 
-    const handleDelete = async (id) => {
-        if (window.confirm('Are you sure you want to delete this tournament?')) {
-            try {
-                await api.delete(`/tournaments/${id}`);
-                fetchTournaments();
-            } catch (err) {
-                console.error('Failed to delete tournament:', err);
-            }
-        }
+    const handleDelete = (id) => {
+        setConfirmModal({ open: true, title: 'Delete Tournament', message: 'Are you sure you want to delete this tournament?', confirmLabel: 'Delete', variant: 'danger', onConfirm: async () => { setConfirmModal({ open: false }); try { await api.delete(`/tournaments/${id}`); fetchTournaments(); } catch (err) { console.error('Failed to delete tournament:', err); } } });
     };
 
     const viewDetails = (tournament) => {
@@ -365,6 +362,15 @@ const TournamentManagement = () => {
                     </div>
                 </div>
             )}
+            <ConfirmModal
+                open={confirmModal.open}
+                title={confirmModal.title}
+                message={confirmModal.message}
+                confirmLabel={confirmModal.confirmLabel}
+                variant={confirmModal.variant}
+                onConfirm={confirmModal.onConfirm}
+                onCancel={() => setConfirmModal({ open: false })}
+            />
         </div>
     );
 };

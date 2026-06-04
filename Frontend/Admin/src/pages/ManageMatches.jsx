@@ -10,6 +10,8 @@ import {
 } from '../store/slices/matchesSlice';
 import { fetchTeams } from '../store/slices/teamSlice';
 import { initSocket } from '../store/socket';
+import { useToast } from '../components/Toast';
+import ConfirmModal from '../components/ConfirmModal';
 
 const matchTypes = ['T6', 'T8', 'T10', 'T20', 'ODI', 'Test', 'Tape Ball'];
 
@@ -24,6 +26,8 @@ const ManageMatches = () => {
     const [xiTeam, setXiTeam] = useState(null);
     const [selectedXI, setSelectedXI] = useState([]);
     const [xiSearch, setXiSearch] = useState('');
+    const { showToast } = useToast();
+    const [confirmModal, setConfirmModal] = useState({ open: false, title: '', message: '', onConfirm: null, variant: 'danger' });
 
     const team1Id = watch('team1');
     const matchType = watch('matchType');
@@ -77,11 +81,8 @@ const ManageMatches = () => {
         setValue('overs', match.overs);
     };
 
-    const handleDelete = async (id) => {
-        if (window.confirm('Are you sure you want to delete this match?')) {
-            await dispatch(deleteMatch(id));
-            dispatch(fetchMatches());
-        }
+    const handleDelete = (id) => {
+        setConfirmModal({ open: true, title: 'Delete Match', message: 'Are you sure you want to delete this match?', confirmLabel: 'Delete', variant: 'danger', onConfirm: async () => { setConfirmModal({ open: false }); await dispatch(deleteMatch(id)); dispatch(fetchMatches()); } });
     };
 
     const openXIModal = (match, teamId) => {
@@ -104,7 +105,7 @@ const ManageMatches = () => {
 
     const saveXI = async () => {
         if (selectedXI.length !== 11) {
-            alert('Please select exactly 11 players');
+            showToast('Please select exactly 11 players', 'warning');
             return;
         }
         await dispatch(
@@ -329,6 +330,15 @@ const ManageMatches = () => {
                     </div>
                 </div>
             )}
+            <ConfirmModal
+                open={confirmModal.open}
+                title={confirmModal.title}
+                message={confirmModal.message}
+                confirmLabel={confirmModal.confirmLabel}
+                variant={confirmModal.variant}
+                onConfirm={confirmModal.onConfirm}
+                onCancel={() => setConfirmModal({ open: false })}
+            />
         </div>
     );
 };

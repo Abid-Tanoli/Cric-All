@@ -20,7 +20,8 @@ export default function WagonWheel({ battingData, innings }) {
     if (shotType === 'leg glance' || shotType === 'on drive') return 225;
     if (shotType === 'cut' || shotType === 'pull') return 45;
     if (shotType === 'late cut') return 0;
-    return Math.random() * 360;
+    const hash = (shotType || '').length * 37 + (direction || '').length * 13;
+    return hash % 360;
   };
 
   const balls = ballData.map((ball, idx) => {
@@ -56,7 +57,7 @@ export default function WagonWheel({ battingData, innings }) {
             
             {balls.map((ball, i) => {
               const rad = (ball.angle - 90) * (Math.PI / 180);
-              const dist = ball.isBoundary ? 85 : 50 + Math.random() * 20;
+              const dist = ball.isBoundary ? 85 : 50 + (ball.angle % 20);
               const x = 100 + dist * Math.cos(rad);
               const y = 100 + dist * Math.sin(rad);
               return (

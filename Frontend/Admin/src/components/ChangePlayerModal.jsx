@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import api from '../services/api';
+import { useToast } from './Toast';
 
 const ChangePlayerModal = ({ event, team, currentSquad, onClose, onSuccess }) => {
     const [changeType, setChangeType] = useState('');
@@ -8,6 +9,7 @@ const ChangePlayerModal = ({ event, team, currentSquad, onClose, onSuccess }) =>
     const [reason, setReason] = useState('');
     const [customReason, setCustomReason] = useState('');
     const [saving, setSaving] = useState(false);
+    const { showToast } = useToast();
 
     const changeReasons = [
         'Injury',
@@ -37,25 +39,25 @@ const ChangePlayerModal = ({ event, team, currentSquad, onClose, onSuccess }) =>
 
     const handleSave = async () => {
         if (!changeType) {
-            alert('Please select change type');
+            showToast('Please select change type', 'warning');
             return;
         }
         if (changeType === 'replace') {
             if (!playerOut) {
-                alert('Please select player to remove');
+                showToast('Please select player to remove', 'warning');
                 return;
             }
             if (!playerIn) {
-                alert('Please select player to add');
+                showToast('Please select player to add', 'warning');
                 return;
             }
         }
         if (!reason) {
-            alert('Please select reason for change');
+            showToast('Please select reason for change', 'warning');
             return;
         }
         if (reason === 'Other' && !customReason.trim()) {
-            alert('Please specify reason');
+            showToast('Please specify reason', 'warning');
             return;
         }
 
@@ -71,12 +73,12 @@ const ChangePlayerModal = ({ event, team, currentSquad, onClose, onSuccess }) =>
                 notes: finalReason
             });
 
-            alert('Player change recorded successfully');
+            showToast('Player change recorded successfully', 'success');
             onSuccess();
             onClose();
         } catch (err) {
             console.error('Failed to record player change:', err);
-            alert('Failed: ' + (err.response?.data?.message || err.message));
+            showToast('Failed: ' + (err.response?.data?.message || err.message), 'error');
         } finally {
             setSaving(false);
         }

@@ -1,8 +1,10 @@
 import React, { useState, useMemo } from 'react';
+import { useToast } from '../Toast';
 
 const SuperOverSetupModal = ({ isOpen, onStart, selectedMatch, battingTeam, bowlingTeam, battingXI, bowlingXI }) => {
     const [selectedBatsmen, setSelectedBatsmen] = useState([]);
     const [selectedBowler, setSelectedBowler] = useState('');
+    const { showToast } = useToast();
 
     const superOverNumber = useMemo(() => {
         const totalInnings = selectedMatch?.innings?.length || 0;
@@ -29,11 +31,11 @@ const SuperOverSetupModal = ({ isOpen, onStart, selectedMatch, battingTeam, bowl
 
     const handleStart = () => {
         if (selectedBatsmen.length < 2) {
-            alert("Select at least 2 batsmen (max 3)");
+            showToast("Select at least 2 batsmen (max 3)", "warning");
             return;
         }
         if (!selectedBowler) {
-            alert("Select a bowler");
+            showToast("Select a bowler", "warning");
             return;
         }
         onStart({ batsmenIds: selectedBatsmen, bowlerId: selectedBowler });

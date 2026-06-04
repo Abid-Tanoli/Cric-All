@@ -6,6 +6,8 @@ import { fetchTeams } from "../store/slices/teamSlice";
 import api from "../services/api";
 import EventSquadSelection from "../components/EventSquadSelection";
 import ChangePlayerModal from "../components/ChangePlayerModal";
+import { useToast } from "../components/Toast";
+import ConfirmModal from "../components/ConfirmModal";
 
 const EVENT_TYPES = [
     { value: "single-match", label: "Single Match", icon: "🏏", desc: "One standalone match" },
@@ -42,6 +44,8 @@ export default function ManageEvents() {
     const [changePlayerEvent, setChangePlayerEvent] = useState(null);
     const [changePlayerTeam, setChangePlayerTeam] = useState(null);
     const [changePlayerSquad, setChangePlayerSquad] = useState(null);
+    const { showToast } = useToast();
+    const [confirmModal, setConfirmModal] = useState({ open: false, title: '', message: '', onConfirm: null, variant: 'danger' });
 
     useEffect(() => {
         loadEvents();
@@ -113,7 +117,7 @@ export default function ManageEvents() {
             loadEvents();
         } catch (err) {
             console.error(err);
-            alert(err.response?.data?.message || "Failed to save event");
+            showToast(err.response?.data?.message || "Failed to save event", 'error');
         } finally { setLoading(false); }
     };
 
@@ -136,9 +140,8 @@ export default function ManageEvents() {
         setValue("address", ev.address || { town: "", district: "", city: "", province: "", country: "Pakistan" });
     };
 
-    const onDelete = async (id) => {
-        if (!window.confirm("Delete this event and all its matches?")) return;
-        try { await api.delete(`/events/${id}`); loadEvents(); } catch (err) { alert("Failed to delete event"); }
+    const onDelete = (id) => {
+        setConfirmModal({ open: true, title: 'Delete Event', message: 'Delete this event and all its matches?', confirmLabel: 'Delete', variant: 'danger', onConfirm: async () => { setConfirmModal({ open: false }); try { await api.delete(`/events/${id}`); loadEvents(); } catch (err) { showToast('Failed to delete event', 'error'); } } });
     };
 
     const openSquadForm = async (ev, teamId) => {
@@ -473,6 +476,15 @@ export default function ManageEvents() {
                     onSuccess={loadEvents}
                 />
             )}
+            <ConfirmModal
+                open={confirmModal.open}
+                title={confirmModal.title}
+                message={confirmModal.message}
+                confirmLabel={confirmModal.confirmLabel}
+                variant={confirmModal.variant}
+                onConfirm={confirmModal.onConfirm}
+                onCancel={() => setConfirmModal({ open: false })}
+            />
         </div>
     );
 }

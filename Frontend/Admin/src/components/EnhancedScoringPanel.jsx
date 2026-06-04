@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { useToast } from "./Toast";
 
 export default function EnhancedScoringPanel({ onSubmitBall, onEndInnings, onBack, currentBatsmen, currentBowler, selectedZoneLabel }) {
     const [runs, setRuns] = useState(0);
@@ -8,6 +9,7 @@ export default function EnhancedScoringPanel({ onSubmitBall, onEndInnings, onBac
     const [nonStrikerId, setNonStrikerId] = useState("");
     const [bowlerId, setBowlerId] = useState("");
     const [commentary, setCommentary] = useState("");
+    const { showToast } = useToast();
     const [pitchZone, setPitchZone] = useState("");
     const [ballMovement, setBallMovement] = useState("none");
     const [ballOutcome, setBallOutcome] = useState("played");
@@ -42,7 +44,7 @@ export default function EnhancedScoringPanel({ onSubmitBall, onEndInnings, onBac
 
     const handleSubmit = () => {
         if (!strikerId || !nonStrikerId || !bowlerId) {
-            alert("Please select striker, non-striker, and bowler.");
+            showToast("Please select striker, non-striker, and bowler.", "warning");
             return;
         }
 

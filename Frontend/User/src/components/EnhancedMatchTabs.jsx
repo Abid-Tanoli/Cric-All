@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect } from "react";
+﻿import React, { useMemo, useState, useEffect } from "react";
 import { api } from "../services/api";
 import WinProbabilityChart from "./WinProbabilityChart";
 import ProjectedScoreWidget from "./ProjectedScoreWidget";
@@ -10,11 +10,18 @@ import ManhattanGraph from "./ManhattanGraph";
 import WormGraph from "./WormGraph";
 import RunRateGraph from "./RunRateGraph";
 import WagonZone from "./WagonZone";
+import Commentary from "./Commentary";
+import PlayingXI from "./PlayingXI";
+import Overs from "./Overs";
+import LiveStats from "./LiveStats";
 
 const TABS = [
   { id: "live", label: "Live" },
   { id: "scorecard", label: "Scorecard" },
   { id: "commentary", label: "Commentary" },
+  { id: "playing-xi", label: "Playing XI" },
+  { id: "overs", label: "Overs" },
+  { id: "live-stats", label: "Live Stats" },
   { id: "partnerships", label: "Partnerships" },
   { id: "wagon", label: "Wagon Wheel" },
   { id: "graphs", label: "Graphs" },
@@ -205,6 +212,34 @@ const ballResultText = (ball) => {
   return `${ballRuns(ball)} runs`;
 };
 
+const labelize = (value) =>
+  String(value || "")
+    .replace(/_/g, "-")
+    .replace(/-/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+
+const ballMetaItems = (ball) =>
+  [
+    ball?.pitchZone || ball?.pitchLength ? `Length: ${labelize(ball.pitchZone || ball.pitchLength)}` : "",
+    ball?.pitchLine ? `Line: ${labelize(ball.pitchLine)}` : "",
+    ball?.ballMovement && ball.ballMovement !== "none" ? `Movement: ${labelize(ball.ballMovement)}` : "",
+    ball?.ballOutcome && ball.ballOutcome !== "played" ? `Outcome: ${labelize(ball.ballOutcome)}` : "",
+    ball?.fieldingZone || ball?.nearestPosition || ball?.regionName || ball?.zone
+      ? `Area: ${labelize(ball.fieldingZone || ball.nearestPosition || ball.regionName || ball.zone)}`
+      : "",
+    ball?.shotType || ball?.pitchShotType ? `Shot: ${labelize(ball.shotType || ball.pitchShotType)}` : "",
+  ].filter(Boolean);
+
+const overRunsAndWickets = (over) => {
+  const balls = over?.balls || [];
+  const fallbackRuns = balls.reduce((sum, ball) => sum + number(ball.runs) + (ball.isWide || ball.isNoBall ? 1 : 0), 0);
+  const fallbackWickets = balls.filter((ball) => ball.isWicket).length;
+  return {
+    runs: number(over?.runsScored, fallbackRuns),
+    wickets: number(over?.wickets, fallbackWickets),
+  };
+};
+
 const dismissalParts = (row, players) => {
   if (!row?.isOut) {
     if (row?.isRetiredHurt) return { how: "retired hurt", bowler: "" };
@@ -296,7 +331,7 @@ const SummaryTab = ({ match, allPlayers }) => {
               <p className="text-lg font-black mt-0.5">{match.result?.description || match.result?.winnerName || "Match Complete"}</p>
               {momName && (
                 <div className="flex items-center gap-2 mt-2 bg-white/15 rounded-lg px-3 py-1.5 inline-flex">
-                  <span className="text-lg">🏆</span>
+                  <span className="text-lg">Trophy</span>
                   <span className="text-sm font-bold">Player of the Match: <span className="underline decoration-yellow-300 decoration-2">{momName}</span></span>
                 </div>
               )}
@@ -326,7 +361,7 @@ const SummaryTab = ({ match, allPlayers }) => {
               <div key={idOf(p.player)} className="flex items-center justify-between px-4 py-2.5 hover:bg-slate-50">
                 <div className="flex items-center gap-3">
                   <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black ${idx === 0 ? "bg-amber-400 text-amber-900" : "bg-slate-100 text-slate-500"}`}>
-                    {idx === 0 ? "👑" : idx + 1}
+                    {idx === 0 ? "1" : idx + 1}
                   </span>
                   <div>
                     <p className="text-sm font-bold text-slate-800">{p.name}</p>
@@ -352,7 +387,7 @@ const SummaryTab = ({ match, allPlayers }) => {
         <div className="bg-white rounded-xl border border-slate-200 p-4">
           <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Toss Update</h3>
           <div className="flex items-center gap-3">
-            <span className="text-2xl">🪙</span>
+            <span className="text-2xl">Toss</span>
             <div>
               <p className="text-sm font-bold text-slate-800">
                 {typeof match.tossWinner === "object" ? match.tossWinner.name || match.tossWinner.shortName : playerName(match.tossWinner, allPlayers)} won the toss
@@ -363,7 +398,7 @@ const SummaryTab = ({ match, allPlayers }) => {
           {match.preMatchComments && (
             <div className="mt-3 bg-slate-50 rounded-lg p-3 border border-slate-100">
               <p className="text-xs font-semibold text-slate-500 italic">"{match.preMatchComments}"</p>
-              <p className="text-[10px] text-slate-400 font-bold mt-1">— Pre-match Comments</p>
+              <p className="text-[10px] text-slate-400 font-bold mt-1">- Pre-match Comments</p>
             </div>
           )}
         </div>
@@ -388,7 +423,7 @@ const SummaryTab = ({ match, allPlayers }) => {
                     </div>
                     <div className="text-right">
                       <p className="text-lg font-black tabular-nums text-slate-800">{inn.runs}/{inn.wickets ?? "-"}</p>
-                      <p className="text-[10px] font-bold text-slate-400">Overs: {formatOvers(inn.balls)} • RR: {getCrr(inn)}</p>
+                      <p className="text-[10px] font-bold text-slate-400">Overs: {formatOvers(inn.balls)} - RR: {getCrr(inn)}</p>
                     </div>
                   </div>
                 </div>
@@ -397,7 +432,7 @@ const SummaryTab = ({ match, allPlayers }) => {
                     <div className="flex items-center justify-between text-xs">
                       <span className="font-semibold text-slate-600">Top Batter:</span>
                       <span className="font-bold text-slate-800">
-                        {playerName(topBatter.player, allPlayers)} {topBatter.runs}({topBatter.ballsFaced}) • SR {strikeRate(topBatter.runs, topBatter.ballsFaced)}
+                        {playerName(topBatter.player, allPlayers)} {topBatter.runs}({topBatter.ballsFaced}) - SR {strikeRate(topBatter.runs, topBatter.ballsFaced)}
                       </span>
                     </div>
                   )}
@@ -405,7 +440,7 @@ const SummaryTab = ({ match, allPlayers }) => {
                     <div className="flex items-center justify-between text-xs">
                       <span className="font-semibold text-slate-600">Top Bowler:</span>
                       <span className="font-bold text-slate-800">
-                        {playerName(topBowler.player, allPlayers)} {topBowler.wickets}/{topBowler.runs} ({formatBowlerOvers(topBowler)}) • Econ {economyRate(topBowler.runs, topBowler.balls)}
+                        {playerName(topBowler.player, allPlayers)} {topBowler.wickets}/{topBowler.runs} ({formatBowlerOvers(topBowler)}) - Econ {economyRate(topBowler.runs, topBowler.balls)}
                       </span>
                     </div>
                   )}
@@ -426,7 +461,7 @@ const SummaryTab = ({ match, allPlayers }) => {
         return (
           <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
             <div className="px-4 py-2.5 bg-slate-50 border-b border-slate-200">
-              <h3 className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Best Performances — Bowlers</h3>
+              <h3 className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Best Performances - Bowlers</h3>
             </div>
             <div className="divide-y divide-slate-100">
               {topBowlers.map((b, idx) => (
@@ -445,8 +480,8 @@ const SummaryTab = ({ match, allPlayers }) => {
                       {number(b.wickets)}/{number(b.runs)}
                     </p>
                     <p className="text-[10px] text-slate-400">
-                      {formatBowlerOvers(b)} • Econ {economyRate(b.runs, b.balls)}
-                      {number(b.maidens) > 0 && ` • ${b.maidens}M`}
+                      {formatBowlerOvers(b)} - Econ {economyRate(b.runs, b.balls)}
+                      {number(b.maidens) > 0 && ` - ${b.maidens}M`}
                     </p>
                   </div>
                 </div>
@@ -464,13 +499,13 @@ const SummaryTab = ({ match, allPlayers }) => {
             {match.result?.captainComments && (
               <div className="bg-slate-50 rounded-lg p-3 border border-slate-100">
                 <p className="text-xs font-semibold text-slate-500 italic">"{match.result.captainComments}"</p>
-                <p className="text-[10px] text-slate-400 font-bold mt-1">— Captain's Comments</p>
+                <p className="text-[10px] text-slate-400 font-bold mt-1">- Captain's Comments</p>
               </div>
             )}
             {match.result?.postMatchComments && (
               <div className="bg-slate-50 rounded-lg p-3 border border-slate-100">
                 <p className="text-xs font-semibold text-slate-500 italic">"{match.result.postMatchComments}"</p>
-                <p className="text-[10px] text-slate-400 font-bold mt-1">— Post-match Comments</p>
+                <p className="text-[10px] text-slate-400 font-bold mt-1">- Post-match Comments</p>
               </div>
             )}
           </div>
@@ -510,7 +545,7 @@ const SummaryTab = ({ match, allPlayers }) => {
                 return (
                   <div key={i} className="flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50">
                     <span className={`text-lg ${ball.runs === 6 ? 'text-purple-600' : ball.runs === 4 ? 'text-blue-600' : 'text-red-600'}`}>
-                      {ball.runs === 6 ? '⚡' : ball.runs === 4 ? '◆' : '🪃'}
+                      {ball.runs === 6 ? '6' : ball.runs === 4 ? '4' : 'W'}
                     </span>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-bold text-slate-800 truncate">
@@ -520,9 +555,9 @@ const SummaryTab = ({ match, allPlayers }) => {
                         {ball.runs > 0 && <span> {batterName ? '' : ''} {ball.runs} runs</span>}
                       </p>
                       <p className="text-[10px] text-slate-500">
-                        {bowlerName && <span>Bowled by {bowlerName} • </span>}
-                        <span>Over {ball.overStr} • {ball.team}</span>
-                        {ball.isWicket && <span className="text-red-500 font-bold"> • WICKET</span>}
+                        {bowlerName && <span>Bowled by {bowlerName} - </span>}
+                        <span>Over {ball.overStr} - {ball.team}</span>
+                        {ball.isWicket && <span className="text-red-500 font-bold"> - WICKET</span>}
                       </p>
                     </div>
                     {ball.runs > 0 && (
@@ -597,7 +632,7 @@ const SummaryTab = ({ match, allPlayers }) => {
           {match.weather && (
             <div>
               <span className="font-bold text-slate-400 block text-[10px] uppercase">Weather</span>
-              <span className="font-semibold text-slate-700">{typeof match.weather === "object" ? `${match.weather.condition || match.weather.description || ""} ${match.weather.temp ? `• ${match.weather.temp}°C` : ""}`.trim() : match.weather}</span>
+              <span className="font-semibold text-slate-700">{typeof match.weather === "object" ? `${match.weather.condition || match.weather.description || ""} ${match.weather.temp ? `- ${match.weather.temp}C` : ""}`.trim() : match.weather}</span>
             </div>
           )}
         </div>
@@ -606,7 +641,7 @@ const SummaryTab = ({ match, allPlayers }) => {
       {/* No data state */}
       {(!firstInnings && !secondInnings && !match.tossWinner && match.status !== "completed") && (
         <div className="bg-white rounded-xl border border-slate-200 p-8 text-center">
-          <p className="text-3xl mb-2">📋</p>
+          <p className="text-3xl mb-2">Info</p>
           <p className="text-sm font-bold text-slate-400">Match details will appear here once the match begins</p>
         </div>
       )}
@@ -614,7 +649,7 @@ const SummaryTab = ({ match, allPlayers }) => {
   );
 };
 
-const EnhancedMatchTabs = ({ match }) => {
+const EnhancedMatchTabs = ({ match, matchId }) => {
   const [activeTab, setActiveTab] = useState("live");
   const [selectedInnings, setSelectedInnings] = useState(0);
   const [visibleOvers, setVisibleOvers] = useState(5);
@@ -651,27 +686,27 @@ const EnhancedMatchTabs = ({ match }) => {
   const currentPartnership = (currentInnings?.partnerships || [])[(currentInnings?.partnerships || []).length - 1] || { runs: 0, balls: 0 };
 
   return (
-    <main className="min-h-screen bg-[#eef2f6] text-slate-900">
-      <section className="bg-[#07172f] text-white">
-        <div className="mx-auto max-w-6xl px-4 py-5 sm:px-6 lg:px-8">
-          <div className="flex flex-wrap items-center justify-between gap-3 text-xs font-bold uppercase tracking-[0.2em] text-slate-300">
-            <span>BQ-PLAY Live Centre</span>
+    <main className="min-h-screen bg-white text-slate-900">
+      <section className="bg-[#0b66c3] text-white shadow-sm">
+        <div className="mx-auto max-w-7xl px-4 py-3 sm:px-6 lg:px-8">
+          <div className="flex flex-wrap items-center justify-between gap-3 text-xs font-bold uppercase tracking-[0.16em] text-blue-100">
+            <span>BQ-PLAY Live Scores</span>
             <span className="flex items-center gap-2">
               {isLive && <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-red-500" />}
               {statusLabel(match.status)}
             </span>
           </div>
-          <div className="mt-5 grid gap-5 lg:grid-cols-[1fr_auto] lg:items-end">
+          <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_auto] lg:items-end">
             <div>
-              <h1 className="text-2xl font-black tracking-tight sm:text-4xl">
+              <h1 className="text-xl font-black tracking-tight sm:text-3xl">
                 {longTeamName(match.teams?.[0])} vs {longTeamName(match.teams?.[1])}
               </h1>
-              <p className="mt-2 text-sm text-slate-300">{getTossLine(match)}</p>
-              {getResultLine(match) && <p className="mt-1 text-sm font-semibold text-amber-300">{getResultLine(match)}</p>}
+              <p className="mt-2 text-sm text-blue-100">{match.venue || "Venue TBC"} · {match.matchType || "Match"} · {getTossLine(match)}</p>
+              {getResultLine(match) && <p className="mt-1 text-sm font-semibold text-amber-100">{getResultLine(match)}</p>}
             </div>
-            <div className="rounded-xl bg-white px-5 py-4 text-right text-slate-950 shadow-lg">
-              <div className="text-sm font-black uppercase text-slate-500">{longTeamName(battingTeam)}</div>
-              <div className="text-4xl font-black tabular-nums">
+            <div className="rounded-lg bg-white px-5 py-3 text-right text-slate-950 shadow-lg">
+              <div className="text-xs font-black uppercase text-slate-500">{longTeamName(battingTeam)}</div>
+              <div className="text-3xl font-black tabular-nums">
                 {number(currentInnings?.runs)}/{number(currentInnings?.wickets)}
               </div>
               <div className="text-sm font-bold text-slate-500">
@@ -684,14 +719,14 @@ const EnhancedMatchTabs = ({ match }) => {
       </section>
 
       <nav className="sticky top-0 z-30 border-b border-slate-200 bg-white/95 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl gap-2 overflow-x-auto px-4 py-2 sm:px-6 lg:px-8">
+        <div className="mx-auto flex max-w-7xl gap-6 overflow-x-auto px-4 py-0 sm:px-6 lg:px-8">
           {TABS.map((tab) => (
             <button
               key={tab.id}
               type="button"
               onClick={() => setActiveTab(tab.id)}
-              className={`whitespace-nowrap rounded-lg px-4 py-2 text-sm font-black transition ${
-                activeTab === tab.id ? "bg-[#ff6b35] text-white shadow" : "text-slate-600 hover:bg-slate-100"
+              className={`whitespace-nowrap border-b-2 px-0 py-4 text-sm font-black transition ${
+                activeTab === tab.id ? "border-[#0b66c3] text-[#0b66c3]" : "border-transparent text-slate-600 hover:text-slate-900"
               }`}
             >
               {tab.label}
@@ -700,9 +735,9 @@ const EnhancedMatchTabs = ({ match }) => {
         </div>
       </nav>
 
-      <div className="mx-auto max-w-6xl px-4 py-5 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-7xl px-4 py-5 sm:px-6 lg:px-8">
         {activeTab === "live" && (
-          <div className="grid gap-4 lg:grid-cols-[1fr_360px]">
+          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
             <section className="space-y-4">
               <ScoreSummary
                 innings={currentInnings}
@@ -727,10 +762,11 @@ const EnhancedMatchTabs = ({ match }) => {
                 players={players}
               />
               <RecentBalls overs={recentOvers} />
+              <CommentaryPreview overs={commentaryOvers} players={players} onSwitchTab={setActiveTab} />
             </section>
             <aside className="space-y-4">
               <MiniInfo match={match} />
-              <CommentaryPreview overs={commentaryOvers} players={players} onSwitchTab={setActiveTab} />
+              <ScoreBreakdown match={match} />
             </aside>
           </div>
         )}
@@ -755,6 +791,12 @@ const EnhancedMatchTabs = ({ match }) => {
           />
         )}
 
+        {activeTab === "playing-xi" && <PlayingXITab match={match} players={players} />}
+
+        {activeTab === "overs" && <OversTab matchId={matchId || match?._id} />}
+
+        {activeTab === "live-stats" && <LiveStatsTab matchId={matchId || match?._id} />}
+
         {activeTab === "summary" && <SummaryTab match={match} allPlayers={players} />}
 
         {activeTab === "partnerships" && (
@@ -775,74 +817,38 @@ const EnhancedMatchTabs = ({ match }) => {
   );
 };
 
-function ScoreSummary({ innings, battingTeam, bowlingTeam, crr, rrr, target, totalOvers, partnership, striker, nonStriker, bowler, strikerId, players }) {
+function ScoreSummary({ innings, battingTeam, bowlingTeam, crr, rrr, target, totalOvers, partnership }) {
   const required = target ? Math.max(target - number(innings?.runs), 0) : 0;
+  const remainingBalls = target ? Math.max(number(totalOvers) * 6 - number(innings?.balls), 0) : 0;
 
   return (
-    <div className="rounded-xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
-      <div className="flex flex-wrap items-start justify-between gap-4">
+    <div className="border-b border-slate-200 bg-white pb-4">
+      <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <div className="text-xs font-black uppercase tracking-[0.18em] text-orange-600">Live Score</div>
-          <h2 className="mt-2 text-xl font-black">{longTeamName(battingTeam)}</h2>
-          <p className="text-sm text-slate-500">Batting against {longTeamName(bowlingTeam)}</p>
+          <div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-widest text-red-600">
+            <span className="h-2 w-2 rounded-full bg-red-500" />
+            Live
+          </div>
+          <h2 className="mt-3 text-2xl font-black">{longTeamName(battingTeam)}</h2>
+          <p className="text-sm text-slate-600">Batting against {longTeamName(bowlingTeam)}</p>
+          {target > 0 && (
+            <p className="mt-3 text-base font-semibold text-slate-900">
+              {longTeamName(battingTeam)} need {required} runs from {remainingBalls} balls.
+            </p>
+          )}
         </div>
         <div className="text-right">
-          <div className="text-4xl font-black tabular-nums">{number(innings?.runs)}/{number(innings?.wickets)}</div>
-          <div className="text-sm font-bold text-slate-500">{formatOvers(innings?.balls)} / {totalOvers || 0} ov</div>
-        </div>
-      </div>
-      <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-5">
-        <Metric label="CRR" value={crr} />
-        <Metric label="RRR" value={rrr || "-"} />
-        <Metric label="Target" value={target || "-"} />
-        <Metric label="Need" value={target ? `${required}` : "-"} />
-        <Metric label="Partnership" value={`${number(partnership?.runs)} (${number(partnership?.balls)}b)`} />
-      </div>
-
-      {/* Current Batters & Bowler - Cricinfo style */}
-      {(striker || nonStriker || bowler) && innings?.status === 'live' && (
-        <div className="mt-4 grid gap-3 sm:grid-cols-3 border-t border-slate-100 pt-4">
-          <div className="rounded-lg bg-slate-50 p-3">
-            <div className="text-[10px] font-black uppercase tracking-widest text-slate-500">Batter</div>
-            <div className="mt-1 flex items-baseline justify-between">
-              <span className="font-black text-sm">
-                {playerName(striker?.player, players)}
-                {sameId(striker?.player, strikerId) && <span className="ml-1 text-orange-500 text-xs">✦</span>}
-              </span>
-              <span className="font-black tabular-nums">{number(striker?.runs)} ({number(striker?.balls)})</span>
-            </div>
-            <div className="mt-1 flex gap-2 text-[10px] text-slate-400 font-bold">
-              <span>{number(striker?.fours)} 4s</span>
-              <span>{number(striker?.sixes)} 6s</span>
-              <span>SR {strikeRate(striker?.runs, striker?.balls)}</span>
-            </div>
-          </div>
-          <div className="rounded-lg bg-slate-50 p-3">
-            <div className="text-[10px] font-black uppercase tracking-widest text-slate-500">Non-Striker</div>
-            <div className="mt-1 flex items-baseline justify-between">
-              <span className="font-black text-sm">{playerName(nonStriker?.player, players)}</span>
-              <span className="font-black tabular-nums">{number(nonStriker?.runs)} ({number(nonStriker?.balls)})</span>
-            </div>
-            <div className="mt-1 flex gap-2 text-[10px] text-slate-400 font-bold">
-              <span>{number(nonStriker?.fours)} 4s</span>
-              <span>{number(nonStriker?.sixes)} 6s</span>
-              <span>SR {strikeRate(nonStriker?.runs, nonStriker?.balls)}</span>
-            </div>
-          </div>
-          <div className="rounded-lg bg-slate-50 p-3">
-            <div className="text-[10px] font-black uppercase tracking-widest text-slate-500">Bowler</div>
-            <div className="mt-1 flex items-baseline justify-between">
-              <span className="font-black text-sm">{playerName(bowler?.player, players)}</span>
-              <span className="font-black tabular-nums text-blue-600">{formatBowlerOvers(bowler)}-{number(bowler?.maidens)}-{number(bowler?.runs)}-{number(bowler?.wickets)}</span>
-            </div>
-            <div className="mt-1 flex gap-2 text-[10px] text-slate-400 font-bold">
-              <span>Econ {bowler?.economy || economyRate(bowler?.runs, bowler?.balls)}</span>
-              <span>{number(bowler?.wides)}w</span>
-              <span>{number(bowler?.noBalls)}nb</span>
-            </div>
+          <div className="text-4xl font-black tabular-nums text-slate-950">{number(innings?.runs)}/{number(innings?.wickets)}</div>
+          <div className="text-sm font-bold text-slate-500">
+            ({formatOvers(innings?.balls)}/{totalOvers || 0} ov{target > 0 ? `, T:${target}` : ""})
           </div>
         </div>
-      )}
+      </div>
+      <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-slate-600">
+        <span>Current RR: <strong className="text-slate-900">{crr}</strong></span>
+        {rrr && <span>Required RR: <strong className="text-slate-900">{rrr}</strong></span>}
+        <span>Partnership: <strong className="text-slate-900">{number(partnership?.runs)} ({number(partnership?.balls)}b)</strong></span>
+      </div>
     </div>
   );
 }
@@ -863,7 +869,7 @@ function PlayerLine({ row, label, players, active }) {
       <div className="flex items-center justify-between gap-3">
         <div>
           <div className="text-[10px] font-black uppercase tracking-widest text-slate-500">{label}</div>
-          <div className="font-black">{name}{active ? " ✦" : ""}</div>
+          <div className="font-black">{name}{active ? " *" : ""}</div>
         </div>
         <div className="text-right font-black tabular-nums">{number(row?.runs)} ({number(row?.balls)})</div>
       </div>
@@ -877,27 +883,79 @@ function PlayerLine({ row, label, players, active }) {
 }
 
 function CurrentPlayers({ striker, nonStriker, bowler, strikerId, players }) {
+  const batterRows = [striker, nonStriker].filter(Boolean);
+
   return (
-    <div className="grid gap-4 md:grid-cols-2">
-      <div className="rounded-xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
-        <h3 className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">Current Batsmen</h3>
-        <div className="mt-3 space-y-3">
-          <PlayerLine row={striker} label="On strike" players={players} active={sameId(striker?.player, strikerId)} />
-          <PlayerLine row={nonStriker} label="Non-striker" players={players} />
-        </div>
-      </div>
-      <div className="rounded-xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
-        <h3 className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">Current Bowler</h3>
-        <div className="mt-3 rounded-lg bg-slate-50 p-3">
-          <div className="font-black">{playerName(bowler?.player, players)}</div>
-          <div className="mt-3 grid grid-cols-5 gap-2 text-center text-sm">
-            <MetricSmall label="O" value={formatBowlerOvers(bowler)} />
-            <MetricSmall label="M" value={number(bowler?.maidens)} />
-            <MetricSmall label="R" value={number(bowler?.runs)} />
-            <MetricSmall label="W" value={number(bowler?.wickets)} />
-            <MetricSmall label="Econ" value={bowler?.economy || economyRate(bowler?.runs, bowler?.balls)} />
-          </div>
-        </div>
+    <div className="overflow-hidden border-b border-slate-200 bg-white">
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[720px] text-left text-sm">
+          <thead className="bg-slate-100 text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">
+            <tr>
+              <th className="px-3 py-2">Batters</th>
+              <th className="px-3 py-2 text-right">R</th>
+              <th className="px-3 py-2 text-right">B</th>
+              <th className="px-3 py-2 text-right">4s</th>
+              <th className="px-3 py-2 text-right">6s</th>
+              <th className="px-3 py-2 text-right">SR</th>
+              <th className="px-3 py-2 text-right">This Bowler</th>
+              <th className="px-3 py-2 text-right">Last 5 ov</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {batterRows.length ? batterRows.map((row) => {
+              const active = sameId(row?.player, strikerId);
+              return (
+                <tr key={idOf(row?.player)} className={active ? "bg-blue-50/50" : ""}>
+                  <td className="px-3 py-2 font-black text-slate-950">
+                    {playerName(row?.player, players)}
+                    {active && <span className="ml-1 text-red-600">*</span>}
+                  </td>
+                  <td className="px-3 py-2 text-right font-black tabular-nums">{number(row?.runs)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{number(row?.balls)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{number(row?.fours)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{number(row?.sixes)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{strikeRate(row?.runs, row?.balls)}</td>
+                  <td className="px-3 py-2 text-right text-slate-500">-</td>
+                  <td className="px-3 py-2 text-right text-slate-500">-</td>
+                </tr>
+              );
+            }) : (
+              <tr>
+                <td className="px-3 py-4 text-slate-500" colSpan={8}>Current batters will appear after scoring starts.</td>
+              </tr>
+            )}
+          </tbody>
+          <thead className="bg-slate-100 text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">
+            <tr>
+              <th className="px-3 py-2">Bowlers</th>
+              <th className="px-3 py-2 text-right">O</th>
+              <th className="px-3 py-2 text-right">M</th>
+              <th className="px-3 py-2 text-right">R</th>
+              <th className="px-3 py-2 text-right">W</th>
+              <th className="px-3 py-2 text-right">Econ</th>
+              <th className="px-3 py-2 text-right">0s</th>
+              <th className="px-3 py-2 text-right">Wd/Nb</th>
+            </tr>
+          </thead>
+          <tbody>
+            {bowler ? (
+              <tr>
+                <td className="px-3 py-2 font-black text-slate-950">{playerName(bowler?.player, players)}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{formatBowlerOvers(bowler)}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{number(bowler?.maidens)}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{number(bowler?.runs)}</td>
+                <td className="px-3 py-2 text-right font-black tabular-nums">{number(bowler?.wickets)}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{bowler?.economy || economyRate(bowler?.runs, bowler?.balls)}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{number(bowler?.dots || bowler?.dotBalls)}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{number(bowler?.wides)}/{number(bowler?.noBalls)}</td>
+              </tr>
+            ) : (
+              <tr>
+                <td className="px-3 py-4 text-slate-500" colSpan={8}>Current bowler will appear after scoring starts.</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
       </div>
     </div>
   );
@@ -924,12 +982,12 @@ function RecentBalls({ overs }) {
     .slice(-18);
 
   return (
-    <div className="rounded-xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
+    <div className="border-b border-slate-200 bg-white py-3">
       <div className="flex items-center justify-between gap-3">
         <h3 className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">Recent Balls</h3>
         <div className="flex gap-2">
-          <button type="button" onClick={() => setOverOffset((value) => Math.min(value + 1, maxOffset))} className="rounded bg-slate-100 px-2.5 py-1 text-xs font-black text-slate-600 hover:bg-slate-200 transition-all">&lsaquo;</button>
-          <button type="button" onClick={() => setOverOffset((value) => Math.max(value - 1, 0))} className="rounded bg-slate-100 px-2.5 py-1 text-xs font-black text-slate-600 hover:bg-slate-200 transition-all">&rsaquo;</button>
+          <button type="button" onClick={() => setOverOffset((value) => Math.min(value + 1, maxOffset))} className="rounded bg-slate-100 px-2.5 py-1 text-xs font-black text-slate-600 transition-all hover:bg-slate-200">&lsaquo;</button>
+          <button type="button" onClick={() => setOverOffset((value) => Math.max(value - 1, 0))} className="rounded bg-slate-100 px-2.5 py-1 text-xs font-black text-slate-600 transition-all hover:bg-slate-200">&rsaquo;</button>
         </div>
       </div>
       <div className="mt-4 flex gap-2 overflow-x-auto pb-2">
@@ -939,11 +997,11 @@ function RecentBalls({ overs }) {
             return (
               <React.Fragment key={ball._id || `${ball.overNumber}-${index}`}>
                 {showSeparator && (
-                  <span className="flex min-w-fit items-center rounded bg-slate-100 px-2 py-1 text-[11px] font-black text-slate-600">
-                    {ordinal(number(ball.overNumber) + 1)}
+                  <span className="flex min-w-fit items-center rounded bg-slate-100 px-2.5 py-2 text-[11px] font-black text-slate-700">
+                    {number(ball.overNumber) + 1} ov
                   </span>
                 )}
-                <span className={`flex h-9 min-w-9 items-center justify-center rounded-full px-2 text-xs font-black ${ballClass(ball)}`}>
+                <span className={`flex h-9 min-w-9 items-center justify-center rounded px-2 text-xs font-black ${ballClass(ball)}`}>
                   {ballLabel(ball)}
                 </span>
               </React.Fragment>
@@ -968,9 +1026,9 @@ function CommentaryPreview({ overs, players, onSwitchTab }) {
     recentOvers.get(key).balls.push(ball);
   });
   return (
-    <div className="rounded-xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
+    <div className="bg-white py-3">
       <div className="flex items-center justify-between">
-        <h3 className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">Latest Commentary</h3>
+        <h3 className="text-lg font-black text-slate-950">Match Centre</h3>
         {onSwitchTab && (
           <button
             type="button"
@@ -984,15 +1042,15 @@ function CommentaryPreview({ overs, players, onSwitchTab }) {
       {latestBall ? (
         <div className="mt-3 space-y-3">
           {Array.from(recentOvers.values()).slice(0, 2).map(({ over, balls }) => (
-            <div key={over.overNumber} className="bg-slate-50 rounded-lg p-3 border border-slate-100">
+            <div key={over.overNumber} className="border-t border-slate-200 pt-3">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-[10px] font-black text-[#ff6b35]">Over {number(over.overNumber) + 1}</span>
+                <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Over {number(over.overNumber) + 1}</span>
                 <span className="text-[9px] text-slate-500 font-bold">
                   {number(over.runsScored)} run{number(over.runsScored) !== 1 ? "s" : ""}
                   {number(over.wickets) > 0 && ` | ${over.wickets} wkt`}
                 </span>
               </div>
-              <div className="flex gap-1 flex-wrap mb-2">
+              <div className="mb-2 flex flex-wrap gap-1">
                 {balls.map((b, i) => <BallBadge key={i} ball={b} small />)}
               </div>
               <div className="space-y-1">
@@ -1012,14 +1070,59 @@ function CommentaryPreview({ overs, players, onSwitchTab }) {
 
 function MiniInfo({ match }) {
   return (
-    <div className="rounded-xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
-      <h3 className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">Match Info</h3>
+    <div className="border-b border-slate-200 bg-white pb-4">
+      <h3 className="text-lg font-black text-slate-950">Match Info</h3>
       <dl className="mt-3 space-y-2 text-sm">
         <InfoRow label="Venue" value={match.venue || "TBC"} />
         <InfoRow label="Date" value={formatDate(match.startAt)} />
         <InfoRow label="Type" value={match.matchType || "T20"} />
         <InfoRow label="Toss" value={getTossLine(match)} />
       </dl>
+    </div>
+  );
+}
+
+function ScoreBreakdown({ match }) {
+  const innings = match?.innings || [];
+  const phases = [
+    { label: "Power Play", start: 0, end: 6 },
+    { label: "Middle Overs", start: 6, end: Math.max(number(match?.totalOvers) - 5, 6) },
+    { label: "Final Overs", start: Math.max(number(match?.totalOvers) - 5, 0), end: number(match?.totalOvers) || 20 },
+  ];
+
+  const phaseScore = (inn, phase) => {
+    const overs = inn?.oversHistory || [];
+    const selected = overs.filter((over) => number(over.overNumber) >= phase.start && number(over.overNumber) < phase.end);
+    if (!selected.length) return "-";
+    const runs = selected.reduce((sum, over) => sum + overRunsAndWickets(over).runs, 0);
+    const wickets = selected.reduce((sum, over) => sum + overRunsAndWickets(over).wickets, 0);
+    return `${runs}/${wickets}`;
+  };
+
+  return (
+    <div className="bg-white pt-4">
+      <h3 className="text-lg font-black text-slate-950">Scoring Breakdown</h3>
+      <div className="mt-4 overflow-hidden rounded-lg border border-slate-200">
+        <div className="grid grid-cols-[1fr_repeat(2,minmax(70px,1fr))] bg-slate-50 px-3 py-2 text-xs font-black text-slate-700">
+          <span>Phase</span>
+          {innings.slice(0, 2).map((inn, index) => (
+            <span key={inn?._id || index} className="text-right">{teamName(getTeamById(match, inn?.team))}</span>
+          ))}
+        </div>
+        <div className="divide-y divide-slate-100">
+          {phases.map((phase) => (
+            <div key={phase.label} className="grid grid-cols-[1fr_repeat(2,minmax(70px,1fr))] px-3 py-3 text-sm">
+              <span className="font-semibold text-slate-700">{phase.label}</span>
+              {innings.slice(0, 2).map((inn, index) => (
+                <span key={`${phase.label}-${inn?._id || index}`} className="text-right font-black tabular-nums text-slate-900">
+                  {phaseScore(inn, phase)}
+                </span>
+              ))}
+              {innings.length < 2 && <span className="text-right font-black text-slate-400">-</span>}
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
@@ -1164,7 +1267,7 @@ function ScorecardTab({ match, innings, selectedInnings, setSelectedInnings, bat
 
 function BallBadge({ ball, small = false }) {
   const isWicket = ball.isWicket;
-  const notation = isWicket ? "W" : (ball.runs === 0 && !ball.isWide && !ball.isNoBall) ? "•" : String(ball.runs || 0);
+  const notation = isWicket ? "W" : (ball.runs === 0 && !ball.isWide && !ball.isNoBall) ? "." : String(ball.runs || 0);
   const isFour = ball.runs === 4 && !ball.isWide && !ball.isNoBall && !ball.isWicket;
   const isSix = ball.runs === 6 && !ball.isWide && !ball.isNoBall && !ball.isWicket;
   const isWide = ball.isWide;
@@ -1245,8 +1348,8 @@ function CommentaryTab({ overs, players, visibleOvers, onLoadMore }) {
                 <div>
                   <span className="text-[#ff6b35] font-black text-base">Over {number(over.overNumber) + 1}</span>
                   <span className="text-slate-500 text-xs ml-3">
-                    {number(over.runsScored)} run{number(over.runsScored) !== 1 ? "s" : ""}
-                    {number(over.wickets) > 0 && <span className="text-red-500"> | {number(over.wickets)} wkt{number(over.wickets) !== 1 ? "s" : ""}</span>}
+                    {overRunsAndWickets(over).runs} run{overRunsAndWickets(over).runs !== 1 ? "s" : ""}
+                    {overRunsAndWickets(over).wickets > 0 && <span className="text-red-500"> | {overRunsAndWickets(over).wickets} wkt{overRunsAndWickets(over).wickets !== 1 ? "s" : ""}</span>}
                   </span>
                 </div>
                 <div className="text-right text-[10px] text-slate-500 font-bold uppercase tracking-widest">
@@ -1275,13 +1378,13 @@ function CommentaryTab({ overs, players, visibleOvers, onLoadMore }) {
         </div>
       )) : (
         <div className="rounded-xl bg-white p-8 text-center shadow-sm ring-1 ring-slate-200">
-          <p className="text-3xl mb-3">🎙️</p>
+          <p className="text-3xl mb-3">Commentary</p>
           <p className="text-sm font-black text-slate-400">
             {filter === 'all' ? 'No commentary yet.' : `No ${filter} in this match.`}
           </p>
           {filter !== 'all' && (
             <button onClick={() => setFilter('all')} className="mt-2 text-xs font-bold text-blue-600 hover:underline">
-              Show all commentary →
+              Show all commentary
             </button>
           )}
         </div>
@@ -1312,6 +1415,7 @@ function CommentaryBall({ over, ball, players, compact = false }) {
   const isWicket = ball?.isWicket;
   const isWide = ball?.isWide;
   const isNoBall = ball?.isNoBall;
+  const metaItems = ballMetaItems(ball);
 
   if (compact) {
     return (
@@ -1321,9 +1425,9 @@ function CommentaryBall({ over, ball, players, compact = false }) {
           {ballLabel(ball)}
         </span>
         <span className="font-semibold text-slate-700 truncate">{batsman}</span>
-        <span className="text-slate-300 mx-1">•</span>
+        <span className="text-slate-300 mx-1">-</span>
         <span className="font-bold text-slate-500">{ballResultText(ball)}</span>
-        {text && <span className="text-slate-400 truncate ml-1">— {text}</span>}
+        {text && <span className="text-slate-400 truncate ml-1">- {text}</span>}
       </div>
     );
   }
@@ -1342,6 +1446,15 @@ function CommentaryBall({ over, ball, players, compact = false }) {
       </div>
       {text && (
         <p className="ml-12 mt-1.5 text-xs text-slate-500 italic leading-relaxed">{text}</p>
+      )}
+      {metaItems.length > 0 && (
+        <div className="ml-12 mt-2 flex flex-wrap gap-1.5">
+          {metaItems.map((item) => (
+            <span key={item} className="rounded-full bg-slate-100 px-2 py-1 text-[9px] font-black uppercase tracking-wider text-slate-500">
+              {item}
+            </span>
+          ))}
+        </div>
       )}
       {ball.angle !== undefined && (
         <div className="ml-12 mt-1.5 flex items-center gap-1.5">
@@ -1363,6 +1476,93 @@ function CommentaryBall({ over, ball, players, compact = false }) {
         </div>
       )}
     </div>
+  );
+}
+
+function PlayingXITab({ match, players }) {
+  const currentTeamId = match?.innings?.[match?.currentInnings || 0]?.team;
+  const rolesByTeam = new Map((match?.teamRoles || []).map((entry) => [idOf(entry.team), entry]));
+
+  const inningsForTeam = (teamId) => (match?.innings || []).find((innings) => sameId(innings.team, teamId));
+
+  return (
+    <section className="space-y-4">
+      <div className="rounded-xl bg-[#07172f] p-5 text-white shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.22em] text-orange-300">Playing XI</p>
+            <h2 className="mt-1 text-2xl font-black">Team Sheets</h2>
+            <p className="mt-1 text-sm text-slate-300">{getTossLine(match)}</p>
+          </div>
+          <div className="rounded-lg bg-white/10 px-4 py-2 text-xs font-black uppercase tracking-widest">
+            {statusLabel(match?.status)}
+          </div>
+        </div>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        {(match?.teams || []).map((team) => {
+          const teamId = idOf(team);
+          const xi = getPlayingXI(match, team).length ? getPlayingXI(match, team) : (team.players || []);
+          const roles = rolesByTeam.get(teamId) || {};
+          const innings = inningsForTeam(teamId);
+          const battingIds = new Set((innings?.batting || []).map((row) => idOf(row.player)));
+
+          return (
+            <div key={teamId || team?.name} className={`overflow-hidden rounded-xl bg-white shadow-sm ring-1 ${sameId(currentTeamId, teamId) ? "ring-orange-300" : "ring-slate-200"}`}>
+              <div className={`px-4 py-3 ${sameId(currentTeamId, teamId) ? "bg-orange-50" : "bg-slate-50"} border-b border-slate-200`}>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-white ring-1 ring-slate-200">
+                      {team.logo ? <img src={team.logo} alt={longTeamName(team)} className="h-full w-full object-cover" /> : <span className="font-black text-slate-700">{teamName(team).charAt(0)}</span>}
+                    </div>
+                    <div className="min-w-0">
+                      <h3 className="truncate text-base font-black text-slate-900">{longTeamName(team)}</h3>
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">
+                        {xi.length || 0} players {sameId(currentTeamId, teamId) ? "- batting now" : ""}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="text-right text-[10px] font-black uppercase tracking-widest text-slate-500">
+                    {innings ? `${number(innings.runs)}/${number(innings.wickets)} (${formatOvers(innings.balls)})` : "Not started"}
+                  </div>
+                </div>
+              </div>
+
+              <div className="divide-y divide-slate-100">
+                {(xi.length ? xi : Array.from({ length: 11 })).map((player, index) => {
+                  const playerId = idOf(player);
+                  const isCaptain = sameId(roles.captain, playerId);
+                  const isViceCaptain = sameId(roles.viceCaptain, playerId);
+                  const isKeeper = (roles.wicketKeepers || []).some((keeper) => sameId(keeper, playerId));
+                  const hasBatted = battingIds.has(playerId);
+
+                  return (
+                    <div key={playerId || index} className="flex items-center justify-between gap-3 px-4 py-3 hover:bg-slate-50">
+                      <div className="flex min-w-0 items-center gap-3">
+                        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[11px] font-black text-slate-500">
+                          {index + 1}
+                        </span>
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-black text-slate-900">{player ? playerName(player, players) : `Player ${index + 1}`}</p>
+                          <div className="mt-1 flex flex-wrap gap-1">
+                            {isCaptain && <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[9px] font-black uppercase text-blue-700">C</span>}
+                            {isViceCaptain && <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[9px] font-black uppercase text-emerald-700">VC</span>}
+                            {isKeeper && <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[9px] font-black uppercase text-amber-700">WK</span>}
+                            {hasBatted && <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[9px] font-black uppercase text-slate-500">Batted</span>}
+                          </div>
+                        </div>
+                      </div>
+                      <span className="text-[10px] font-bold uppercase text-slate-400">{player?.playingRole || player?.role || ""}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 
@@ -1715,6 +1915,22 @@ function PartnershipsTab({ match, innings, players }) {
   );
 }
 
+function OversTab({ matchId }) {
+  return (
+    <section>
+      <Overs matchId={matchId} />
+    </section>
+  );
+}
+
+function LiveStatsTab({ matchId }) {
+  return (
+    <section>
+      <LiveStats matchId={matchId} />
+    </section>
+  );
+}
+
 function GraphsTab({ match, matchId, innings }) {
   const [graphData, setGraphData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -1794,3 +2010,5 @@ function GraphsTab({ match, matchId, innings }) {
 }
 
 export default EnhancedMatchTabs;
+
+

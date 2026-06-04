@@ -303,6 +303,9 @@ class ScoringEngine {
       if (!bat) {
         bat = { player: br.batsmanOnStrike, runs: 0, ballsFaced: 0, fours: 0, sixes: 0, dotBalls: 0, isOut: false, dismissalType: null, dismissedBy: null, fielder: null };
         innings.batting.push(bat);
+      } else {
+        if (bat.ballsFaced == null || isNaN(bat.ballsFaced)) bat.ballsFaced = bat.balls || 0;
+        if (bat.dotBalls == null || isNaN(bat.dotBalls)) bat.dotBalls = 0;
       }
       if (br.isWicket) { bat.isOut = true; bat.dismissalType = br.wicketType; bat.dismissedBy = br.bowler; bat.fielder = br.fielder; }
       bat.runs += br.batsmanRuns;
@@ -315,6 +318,8 @@ class ScoringEngine {
       if (!bat) {
         bat = { player: br.batsmanNonStrike, runs: 0, ballsFaced: 0, fours: 0, sixes: 0, dotBalls: 0, isOut: false, dismissalType: null, dismissedBy: null, fielder: null };
         innings.batting.push(bat);
+      } else {
+        if (bat.ballsFaced == null || isNaN(bat.ballsFaced)) bat.ballsFaced = bat.balls || 0;
       }
     }
   }

@@ -4,6 +4,8 @@ import { fetchPlayers, createPlayer, updatePlayer, updatePlayerStats, deletePlay
 import { fetchTeams } from "../store/slices/teamSlice";
 import { useForm } from "react-hook-form";
 import { Link } from "react-router-dom";
+import { useToast } from "../components/Toast";
+import ConfirmModal from "../components/ConfirmModal";
 
 export default function ManagePlayers() {
   const dispatch = useDispatch();
@@ -18,6 +20,8 @@ export default function ManagePlayers() {
   const [selectedPlayers, setSelectedPlayers] = useState([]);
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const { register, handleSubmit, reset, setValue } = useForm();
+  const { showToast } = useToast();
+  const [confirmModal, setConfirmModal] = useState({ open: false, title: '', message: '', onConfirm: null, variant: 'danger' });
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -50,7 +54,7 @@ export default function ManagePlayers() {
       reset();
     } catch (err) {
       console.error(err);
-      alert(editingId ? "Failed to update player" : "Failed to create player");
+      showToast(editingId ? "Failed to update player" : "Failed to create player", 'error');
     }
   };
 
@@ -75,10 +79,8 @@ export default function ManagePlayers() {
     reset();
   };
 
-  const handleDelete = async (id) => {
-    if (window.confirm("Delete this player?")) {
-      await dispatch(deletePlayer(id));
-    }
+  const handleDelete = (id) => {
+    setConfirmModal({ open: true, title: 'Delete Player', message: 'Delete this player?', confirmLabel: 'Delete', variant: 'danger', onConfirm: async () => { setConfirmModal({ open: false }); await dispatch(deletePlayer(id)); } });
   };
 
   const handleSelectPlayer = (playerId) => {
@@ -97,27 +99,24 @@ export default function ManagePlayers() {
     }
   };
 
-  const handleBulkDelete = async () => {
+  const handleBulkDelete = () => {
     if (selectedPlayers.length === 0) {
-      alert("Please select players to delete");
+      showToast("Please select players to delete", 'warning');
       return;
     }
+    setConfirmModal({ open: true, title: 'Bulk Delete Players', message: `Are you sure you want to delete ${selectedPlayers.length} player(s)? This action cannot be undone.`, confirmLabel: 'Delete All', variant: 'danger', onConfirm: async () => { setConfirmModal({ open: false }); doBulkDelete(); } });
+  };
 
-    const confirmDelete = window.confirm(
-      `Are you sure you want to delete ${selectedPlayers.length} player(s)? This action cannot be undone.`
-    );
-
-    if (!confirmDelete) return;
-
+  const doBulkDelete = async () => {
     try {
       setBulkDeleting(true);
       await dispatch(bulkDeletePlayers(selectedPlayers));
-      alert(`Successfully deleted ${selectedPlayers.length} player(s)`);
+      showToast(`Successfully deleted ${selectedPlayers.length} player(s)`, 'success');
       setSelectedPlayers([]);
       dispatch(fetchPlayers({ page, search: debouncedSearch, team: filterTeam, Campus: filterCampus }));
     } catch (err) {
       console.error(err);
-      alert("Error deleting players: " + (err.message || "Unknown error"));
+      showToast("Error deleting players: " + (err.message || "Unknown error"), 'error');
     } finally {
       setBulkDeleting(false);
     }
@@ -526,6 +525,15 @@ export default function ManagePlayers() {
           )}
         </div>
       </div>
+      <ConfirmModal
+        open={confirmModal.open}
+        title={confirmModal.title}
+        message={confirmModal.message}
+        confirmLabel={confirmModal.confirmLabel}
+        variant={confirmModal.variant}
+        onConfirm={confirmModal.onConfirm}
+        onCancel={() => setConfirmModal({ open: false })}
+      />
     </div>
   );
 }

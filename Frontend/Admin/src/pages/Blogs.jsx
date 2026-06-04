@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import api from '../services/api';
+import { useToast } from '../components/Toast';
 
 const categories = ['General', 'Match News', 'Player Spotlight', 'Tournament'];
 
@@ -10,6 +11,7 @@ const Blogs = () => {
     const [editMode, setEditMode] = useState(false);
     const [currentBlog, setCurrentBlog] = useState(null);
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(null);
+    const { showToast } = useToast();
     const [tournaments, setTournaments] = useState([]);
     const [formData, setFormData] = useState({
         title: '',
@@ -95,7 +97,7 @@ const Blogs = () => {
             fetchBlogs();
         } catch (err) {
             console.error('Failed to save blog:', err);
-            alert('Failed to save blog');
+            showToast('Failed to save blog', 'error');
         }
     };
 

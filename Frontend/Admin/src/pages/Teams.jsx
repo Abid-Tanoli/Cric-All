@@ -10,6 +10,7 @@ import { fetchPlayers } from '../store/slices/playersSlice';
 import { initSocket } from '../store/socket';
 import api from '../services/api';
 import TeamForm from '../components/admin/teams/TeamForm';
+import ConfirmModal from '../components/ConfirmModal';
 
 const CATEGORIES = [
   { key: 'all', label: 'All', icon: '📋' },
@@ -37,6 +38,7 @@ const Teams = () => {
   const [cityFilter, setCityFilter] = useState('');
   const [organizations, setOrganizations] = useState([]);
   const [expandedOrgs, setExpandedOrgs] = useState({});
+  const [confirmModal, setConfirmModal] = useState({ open: false, title: '', message: '', onConfirm: null, variant: 'danger' });
 
   useEffect(() => {
     dispatch(fetchTeams());
@@ -92,12 +94,8 @@ const Teams = () => {
     }
   };
 
-  const handleDelete = async (id) => {
-    if (window.confirm('Are you sure you want to delete this team?')) {
-      await dispatch(deleteTeam(id));
-      dispatch(fetchTeams());
-      fetchOrganizations();
-    }
+  const handleDelete = (id) => {
+    setConfirmModal({ open: true, title: 'Delete Team', message: 'Are you sure you want to delete this team?', confirmLabel: 'Delete', variant: 'danger', onConfirm: async () => { setConfirmModal({ open: false }); await dispatch(deleteTeam(id)); dispatch(fetchTeams()); fetchOrganizations(); } });
   };
 
   const toggleOrgExpand = (orgId) => {
@@ -343,6 +341,15 @@ const Teams = () => {
           ))
         )
       )}
+      <ConfirmModal
+        open={confirmModal.open}
+        title={confirmModal.title}
+        message={confirmModal.message}
+        confirmLabel={confirmModal.confirmLabel}
+        variant={confirmModal.variant}
+        onConfirm={confirmModal.onConfirm}
+        onCancel={() => setConfirmModal({ open: false })}
+      />
     </div>
   );
 };

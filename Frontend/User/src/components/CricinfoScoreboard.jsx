@@ -1,9 +1,16 @@
-import React from 'react';
+import React, { useState } from 'react';
+import Commentary from './Commentary';
+import PlayingXI from './PlayingXI';
 
-// Cricinfo-style Scoreboard Component
-// Professional live score display with match summary stats
+const TABS = [
+  { id: 'scorecard', label: 'Scorecard' },
+  { id: 'commentary', label: 'Commentary' },
+  { id: 'playing-xi', label: 'Playing XI' },
+];
 
 const CricinfoScoreboard = ({ match }) => {
+  const [activeTab, setActiveTab] = useState('scorecard');
+
   if (!match || !match.innings || match.innings.length === 0) {
     return null;
   }
@@ -23,7 +30,6 @@ const CricinfoScoreboard = ({ match }) => {
   const currentInnings = match.innings[match.currentInnings] || match.innings[0];
   const isLive = match.status === 'live';
 
-  // Calculate run rates
   const totalOvers = (currentInnings.balls || 0) / 6;
   const runRate = totalOvers > 0 ? (currentInnings.runs / totalOvers).toFixed(2) : '0.00';
   const target = currentInnings.target;
@@ -31,19 +37,16 @@ const CricinfoScoreboard = ({ match }) => {
     ? ((target - currentInnings.runs) / (match.totalOvers - totalOvers)).toFixed(2)
     : null;
 
-  // Compute match summary
   const computeSummary = () => {
     const summary = { inningsSummaries: [], highestScore: null, bestBowling: null };
 
     match.innings?.forEach((inn) => {
-      // Powerplay
       const ppOversCount = Math.min(inn.powerplayOvers || 6, 6);
       let ppRuns = 0, ppWickets = 0;
       inn.oversHistory?.slice(0, ppOversCount).forEach(over => {
         ppRuns += over.runsScored || 0;
         ppWickets += over.wickets || 0;
       });
-      // If oversHistory doesn't have runs, compute from balls
       if (ppRuns === 0) {
         inn.oversHistory?.slice(0, ppOversCount).forEach(over => {
           over.balls?.forEach(b => { ppRuns += b.runs || 0; if (b.isWicket) ppWickets++; });
@@ -57,7 +60,6 @@ const CricinfoScoreboard = ({ match }) => {
         powerplay: `${ppRuns}/${ppWickets}`,
       });
 
-      // Highest batting
       inn.batting?.forEach(bat => {
         const name = bat.player?.name || bat.player?.fullName || 'Unknown';
         if (!summary.highestScore || bat.runs > summary.highestScore.runs) {
@@ -65,7 +67,6 @@ const CricinfoScoreboard = ({ match }) => {
         }
       });
 
-      // Best bowling
       inn.bowling?.forEach(bowl => {
         const name = bowl.player?.name || bowl.player?.fullName || 'Unknown';
         if (!summary.bestBowling || bowl.wickets > summary.bestBowling.wickets ||
@@ -81,27 +82,23 @@ const CricinfoScoreboard = ({ match }) => {
 
   const summary = computeSummary();
 
-  // Last 5 balls from overs history
   const allRecentBalls = currentInnings.oversHistory?.slice(-2).reduce((acc, over) => {
     return [...acc, ...(over.balls || [])];
   }, []).slice(-6) || [];
 
-  // Partnership
   const currentPartnership = currentInnings.partnerships?.length > 0
     ? currentInnings.partnerships[currentInnings.partnerships.length - 1]
     : null;
 
-  return (
+  const renderScorecard = () => (
     <div className="space-y-4">
-      {/* Main Scoreboard Card */}
       <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg overflow-hidden">
-        {/* Match Header */}
         <div className="bg-gradient-to-r from-[#031d44] to-slate-700 dark:from-slate-900 dark:to-slate-800 text-white p-4">
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
               {isLive && (
                 <span className="inline-flex items-center gap-1.5 bg-red-600 px-2.5 py-1 rounded text-xs font-bold animate-pulse">
-                  <span className="w-2 h-2 bg-white rounded-full"></span>
+                  <span className="w-2 h-2 bg-white rounded-full" />
                   LIVE
                 </span>
               )}
@@ -125,14 +122,13 @@ const CricinfoScoreboard = ({ match }) => {
           </div>
         </div>
 
-        {/* All Innings Scores */}
         {match.innings.length > 1 && (
           <div className="px-4 pt-3 flex gap-3">
             {match.innings.map((inn, idx) => (
               <div key={idx} className={`flex-1 text-center py-2 rounded-lg ${idx === match.currentInnings
                 ? 'bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700'
                 : 'bg-slate-50 dark:bg-slate-700'
-                }`}>
+              }`}>
                 <p className="text-xs text-slate-500 dark:text-slate-400 font-semibold">{getTeamName(inn.team)}</p>
                 <p className={`text-xl font-black ${idx === match.currentInnings ? 'text-[#031d44] dark:text-white' : 'text-slate-600 dark:text-slate-300'}`}>
                   {inn.runs}/{inn.wickets}
@@ -143,19 +139,17 @@ const CricinfoScoreboard = ({ match }) => {
           </div>
         )}
 
-        {/* Main Score Display */}
         <div className="p-4 bg-gradient-to-b from-blue-50 to-white dark:from-slate-700 dark:to-slate-800">
           <div className="text-center mb-4">
             <div className="text-5xl font-black text-[#031d44] dark:text-white mb-1">
               {currentInnings.runs}/{currentInnings.wickets}
             </div>
             <div className="text-sm text-slate-600 dark:text-slate-300">
-              {getTeamName(currentInnings.team)} • {formatOvers(currentInnings.balls)} ov
-              {currentInnings.target && <span className="ml-2 font-semibold">• Target: {currentInnings.target}</span>}
+              {getTeamName(currentInnings.team)} &bull; {formatOvers(currentInnings.balls)} ov
+              {currentInnings.target && <span className="ml-2 font-semibold">&bull; Target: {currentInnings.target}</span>}
             </div>
           </div>
 
-          {/* Run Rates */}
           <div className="grid grid-cols-2 gap-3 mb-4">
             <div className="bg-white dark:bg-slate-600 p-3 rounded-lg text-center shadow-sm">
               <p className="text-xs text-slate-500 dark:text-slate-400">Run Rate</p>
@@ -169,19 +163,17 @@ const CricinfoScoreboard = ({ match }) => {
             )}
           </div>
 
-          {/* Target Banner */}
           {target && (
             <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 p-3 rounded-lg text-center mb-4">
               <p className="text-sm font-semibold text-amber-800 dark:text-amber-200">
-                Target: {target} • Need {target - currentInnings.runs} from {Math.max(0, Math.floor((match.totalOvers || 20) * 6 - currentInnings.balls) / 6)}.{Math.max(0, Math.floor((match.totalOvers || 20) * 6 - currentInnings.balls) % 6)} overs
+                Target: {target} &bull; Need {target - currentInnings.runs} from {Math.max(0, Math.floor((match.totalOvers || 20) * 6 - currentInnings.balls) / 6)}.{Math.max(0, Math.floor((match.totalOvers || 20) * 6 - currentInnings.balls) % 6)} overs
               </p>
             </div>
           )}
 
-          {/* Current Batsmen */}
           <div className="bg-white dark:bg-slate-600 rounded-lg p-4 mb-3">
             <h4 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-2 flex items-center gap-2">
-              <span className="w-2 h-2 bg-blue-600 rounded-full inline-block"></span>
+              <span className="w-2 h-2 bg-blue-600 rounded-full inline-block" />
               Batting
             </h4>
             <div className="space-y-2">
@@ -189,12 +181,12 @@ const CricinfoScoreboard = ({ match }) => {
                 if (!batsman) return null;
                 const batStats = currentInnings.batting?.find(b => (b.player?._id || b.player) === (batsman._id || batsman));
                 const isOnStrike = (currentInnings.onStrikeBatsman?._id || currentInnings.onStrikeBatsman) === (batsman._id || batsman);
-                const sr = batStats?.balls > 0 ? ((batStats.runs / batStats.balls) * 100).toFixed(1) : '—';
+                const sr = batStats?.balls > 0 ? ((batStats.runs / batStats.balls) * 100).toFixed(1) : '&mdash;';
 
                 return (
                   <div key={idx} className="flex justify-between items-center">
                     <div className="flex items-center gap-2">
-                      {isOnStrike && <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>}
+                      {isOnStrike && <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />}
                       <span className="font-semibold text-sm dark:text-white">
                         {batsman.name || 'Batsman'}
                         {isOnStrike && <span className="text-green-600 dark:text-green-400 ml-0.5">*</span>}
@@ -213,11 +205,10 @@ const CricinfoScoreboard = ({ match }) => {
             </div>
           </div>
 
-          {/* Current Bowler */}
           {currentInnings.currentBowler && (
             <div className="bg-white dark:bg-slate-600 rounded-lg p-4">
               <h4 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-2 flex items-center gap-2">
-                <span className="w-2 h-2 bg-red-500 rounded-full inline-block"></span>
+                <span className="w-2 h-2 bg-red-500 rounded-full inline-block" />
                 Bowling
               </h4>
               <div className="flex justify-between items-center">
@@ -243,14 +234,13 @@ const CricinfoScoreboard = ({ match }) => {
           )}
         </div>
 
-        {/* Recent Balls */}
         {allRecentBalls.length > 0 && (
           <div className="border-t border-slate-200 dark:border-slate-700 p-4">
             <h4 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-3">Recent Balls</h4>
             <div className="flex gap-2">
               {allRecentBalls.map((ball, idx) => {
                 let bgColor = 'bg-slate-300 dark:bg-slate-600 text-slate-700 dark:text-slate-300';
-                let label = '•';
+                let label = '\u2022';
                 if (ball.isWicket) { bgColor = 'bg-red-500 text-white'; label = 'W'; }
                 else if (ball.runs === 4) { bgColor = 'bg-green-500 text-white'; label = '4'; }
                 else if (ball.runs === 6) { bgColor = 'bg-emerald-600 text-white'; label = '6'; }
@@ -268,7 +258,6 @@ const CricinfoScoreboard = ({ match }) => {
           </div>
         )}
 
-        {/* Partnership */}
         {currentPartnership && currentPartnership.runs > 0 && (
           <div className="border-t border-slate-200 dark:border-slate-700 p-4 bg-blue-50/50 dark:bg-blue-900/10">
             <div className="flex justify-between text-sm">
@@ -280,7 +269,6 @@ const CricinfoScoreboard = ({ match }) => {
           </div>
         )}
 
-        {/* Match Result (completed) */}
         {match.result?.description && match.status === 'completed' && (
           <div className="border-t-2 border-green-500 p-4 bg-green-50 dark:bg-green-900/20">
             <p className="text-center font-bold text-green-700 dark:text-green-300 text-lg">
@@ -295,14 +283,12 @@ const CricinfoScoreboard = ({ match }) => {
         )}
       </div>
 
-      {/* Match Summary Stats Card */}
       {match.innings.length > 0 && (
         <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg overflow-hidden">
           <div className="bg-gradient-to-r from-slate-700 to-slate-800 dark:from-slate-800 dark:to-slate-900 text-white px-5 py-3">
             <h3 className="text-sm font-bold uppercase tracking-wider">Match Stats</h3>
           </div>
           <div className="p-4">
-            {/* Innings Scores Row */}
             <div className="flex gap-3 mb-4">
               {summary.inningsSummaries.map((inn, idx) => (
                 <div key={idx} className="flex-1 text-center py-3 rounded-lg bg-slate-50 dark:bg-slate-700">
@@ -316,7 +302,6 @@ const CricinfoScoreboard = ({ match }) => {
               ))}
             </div>
 
-            {/* Highest Score & Best Bowling */}
             <div className="grid grid-cols-2 gap-3">
               {summary.highestScore && (
                 <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3 border border-blue-100 dark:border-blue-800">
@@ -344,6 +329,39 @@ const CricinfoScoreboard = ({ match }) => {
           </div>
         </div>
       )}
+    </div>
+  );
+
+  const renderContent = () => {
+    switch (activeTab) {
+      case 'commentary':
+        return <Commentary matchId={match._id} />;
+      case 'playing-xi':
+        return <PlayingXI matchId={match._id} />;
+      default:
+        return renderScorecard();
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex gap-1 bg-white rounded-xl shadow-sm border border-slate-200 p-1 overflow-x-auto">
+        {TABS.map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            className={`px-4 py-2 rounded-lg text-xs font-black uppercase tracking-wider transition-all whitespace-nowrap ${
+              activeTab === tab.id
+                ? 'bg-[#ff6b35] text-white shadow'
+                : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {renderContent()}
     </div>
   );
 };

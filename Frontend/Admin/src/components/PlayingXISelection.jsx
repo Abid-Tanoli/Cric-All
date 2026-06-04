@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import api from '../services/api';
+import { useToast } from './Toast';
 
 const PlayingXISelection = ({ match, team, eventSquad, onClose, onSuccess }) => {
     const [squadPlayers, setSquadPlayers] = useState([]);
@@ -11,6 +12,7 @@ const PlayingXISelection = ({ match, team, eventSquad, onClose, onSuccess }) => 
     const [search, setSearch] = useState('');
     const [saving, setSaving] = useState(false);
     const [sourceLabel, setSourceLabel] = useState('');
+    const { showToast } = useToast();
 
     useEffect(() => {
         loadSquadAndXI();
@@ -132,7 +134,7 @@ const PlayingXISelection = ({ match, team, eventSquad, onClose, onSuccess }) => 
                 return prev.filter(id => id !== playerId);
             }
             if (prev.length >= 11) {
-                alert('Maximum 11 players allowed');
+                showToast('Maximum 11 players allowed', 'warning');
                 return prev;
             }
             return [...prev, playerId];
@@ -141,19 +143,19 @@ const PlayingXISelection = ({ match, team, eventSquad, onClose, onSuccess }) => 
 
     const handleSave = async () => {
         if (selectedXI.length !== 11) {
-            alert('Please select exactly 11 players for Playing XI');
+            showToast('Please select exactly 11 players for Playing XI', 'warning');
             return;
         }
         if (!captain) {
-            alert('Please select a captain');
+            showToast('Please select a captain', 'warning');
             return;
         }
         if (!viceCaptain) {
-            alert('Please select a vice-captain');
+            showToast('Please select a vice-captain', 'warning');
             return;
         }
         if (!wicketKeeper) {
-            alert('Please select a wicket-keeper');
+            showToast('Please select a wicket-keeper', 'warning');
             return;
         }
 
@@ -177,7 +179,7 @@ const PlayingXISelection = ({ match, team, eventSquad, onClose, onSuccess }) => 
             onClose();
         } catch (err) {
             console.error('Failed to save Playing XI:', err);
-            alert('Failed to save: ' + (err.response?.data?.message || err.message));
+            showToast('Failed to save: ' + (err.response?.data?.message || err.message), 'error');
         } finally {
             setSaving(false);
         }

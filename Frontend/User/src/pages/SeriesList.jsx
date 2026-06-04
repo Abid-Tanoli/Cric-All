@@ -1,115 +1,175 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../services/api";
 import Header from "../components/Header";
+import SeriesCard from "../components/cricapi/SeriesCard";
+import Loader from "../components/cricapi/Loader";
+import ErrorState from "../components/cricapi/ErrorState";
+import { getSeries, isCricApiConfigured } from "../services/cricApi";
+
+const LOCAL_TYPES = ["single-match", "series", "tri-series", "tournament", "world-cup", "champions-trophy", "league"];
 
 export default function SeriesList() {
   const [events, setEvents] = useState([]);
+  const [cricSeries, setCricSeries] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [localError, setLocalError] = useState(null);
+  const [cricError, setCricError] = useState(null);
   const [filter, setFilter] = useState("");
+  const [search, setSearch] = useState("");
 
-  const loadEvents = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const res = await api.get("/events");
-      let eventsData = Array.isArray(res.data) ? res.data : (res.data?.events || []);
-      setEvents(eventsData);
-      
-      // If no events, try tournaments
-      if (eventsData.length === 0) {
-        try {
-          const res2 = await api.get("/tournaments");
-          const tourneyData = Array.isArray(res2.data) ? res2.data : (res2.data?.tournaments || []);
-          setEvents(tourneyData);
-        } catch (e2) {
-          console.log("No tournaments found either");
-        }
-      }
-    } catch (err) {
-      console.error("Failed to load events:", err.message);
-      // Fallback to tournaments
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    setLocalError(null);
+    setCricError(null);
+
+    // Load CricketData/CricAPI first. If the key is missing or the free-plan limit is hit,
+    // we keep going and show local BQ-PLAY events as a fallback.
+    if (isCricApiConfigured()) {
       try {
-        const res = await api.get("/tournaments");
-        const tourneyData = Array.isArray(res.data) ? res.data : (res.data?.tournaments || []);
-        setEvents(tourneyData);
-      } catch (e2) {
-        setError(err.message || "Failed to load events");
+        setCricSeries(await getSeries(0));
+      } catch (error) {
+        setCricError(error.message);
+        setCricSeries([]);
+      }
+    } else {
+      setCricError("Cricket API key missing. Set VITE_CRICAPI_KEY to show CricketData series.");
+      setCricSeries([]);
+    }
+
+    try {
+      const res = await api.get("/events");
+      const eventsData = Array.isArray(res.data) ? res.data : (res.data?.events || []);
+      if (eventsData.length) {
+        setEvents(eventsData);
+      } else {
+        const tournamentRes = await api.get("/tournaments");
+        setEvents(Array.isArray(tournamentRes.data) ? tournamentRes.data : (tournamentRes.data?.tournaments || []));
+      }
+    } catch (error) {
+      try {
+        const tournamentRes = await api.get("/tournaments");
+        setEvents(Array.isArray(tournamentRes.data) ? tournamentRes.data : (tournamentRes.data?.tournaments || []));
+      } catch {
+        setLocalError(error.message || "Failed to load local events");
       }
     } finally {
       setLoading(false);
     }
   }, []);
 
-  useEffect(() => { loadEvents(); }, [loadEvents]);
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
-  const filtered = filter ? events.filter(e => e.eventType === filter) : events;
-  const types = ["single-match", "series", "tri-series", "tournament", "world-cup", "champions-trophy", "league"];
+  const searchedCricSeries = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    if (!term) return cricSeries;
+    return cricSeries.filter((series) => series.name.toLowerCase().includes(term));
+  }, [cricSeries, search]);
+
+  const localEvents = filter ? events.filter((event) => event.eventType === filter) : events;
 
   return (
-    <div className="bg-[#f0f2f5] min-h-screen">
+    <div className="min-h-screen bg-[#f0f2f5]">
       <Header />
-      <div className="bg-gradient-to-r from-[#031d44] via-[#0a2d5e] to-[#031d44] text-white py-8">
-        <div className="max-w-7xl mx-auto px-4">
-          <h1 className="text-3xl font-black uppercase tracking-tight mb-2">Series & Tournaments</h1>
-          <p className="text-blue-200 text-sm">Browse all cricket events, series and championships</p>
+      <div className="bg-gradient-to-r from-[#031d44] via-[#0a2d5e] to-[#031d44] py-8 text-white">
+        <div className="mx-auto max-w-7xl px-4">
+          <h1 className="mb-2 text-3xl font-black uppercase tracking-tight">Series & Tournaments</h1>
+          <p className="text-sm text-blue-200">CricketData series, live fixtures, and your local BQ-PLAY events in one place.</p>
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 py-6">
-        {/* Filter */}
-        <div className="flex gap-2 overflow-x-auto pb-3 mb-6">
-          <button onClick={() => setFilter("")} className={`px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap ${!filter ? "bg-[#031d44] text-white" : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-50"}`}>All ({events.length})</button>
-          {types.map(t => (
-            <button key={t} onClick={() => setFilter(t)} className={`px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap capitalize ${filter === t ? "bg-[#031d44] text-white" : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
-              {t.replace('-', ' ')} ({events.filter(e => e.eventType === t).length})
-            </button>
-          ))}
-        </div>
+      <main className="mx-auto max-w-7xl space-y-10 px-4 py-6">
+        <section className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
+          <label className="mb-2 block text-[10px] font-black uppercase tracking-widest text-slate-400">Search CricketData Series</label>
+          <input
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search Pakistan, Australia, PAK AUS..."
+            className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-800 outline-none focus:border-blue-500"
+          />
+        </section>
 
-        {/* Grid */}
-        {loading ? (
-          <div className="flex justify-center py-20"><div className="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" /></div>
-        ) : error ? (
-          <div className="bg-red-50 border border-red-200 rounded-2xl p-8 text-center">
-            <p className="text-red-600 font-medium">{error}</p>
-            <button onClick={loadEvents} className="mt-4 px-4 py-2 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700">Retry</button>
+        <section>
+          <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <h2 className="text-xl font-black uppercase tracking-tight text-[#031d44]">Current CricketData Series</h2>
+              <p className="text-xs font-semibold text-slate-500">Uses CricAPI `/series`, cached in localStorage for a few minutes.</p>
+            </div>
+            <button onClick={loadData} className="rounded-xl bg-[#031d44] px-4 py-2 text-[10px] font-black uppercase tracking-widest text-white">
+              Refresh
+            </button>
           </div>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            {filtered.map(ev => (
-              <Link key={ev._id} to={`/series/${ev.slug || ev._id}`} className="bg-white rounded-2xl shadow-lg overflow-hidden border border-slate-200 hover:shadow-xl transition-all group">
-                <div className="aspect-[4/3] bg-gradient-to-br from-[#031d44] to-blue-700 flex items-center justify-center p-6 relative">
-                  {ev.logo ? (
-                    <img src={ev.logo} alt={ev.name} className="w-full h-full object-contain" />
-                  ) : (
-                    <span className="text-6xl font-black text-white/80">{ev.name?.charAt(0)}</span>
-                  )}
-                  <span className={`absolute top-3 right-3 px-2 py-0.5 rounded-full text-[9px] font-bold uppercase ${ev.status === "live" ? "bg-red-600 text-white animate-pulse" : ev.status === "completed" ? "bg-green-600 text-white" : "bg-blue-500/30 text-blue-200"}`}>{ev.status}</span>
-                </div>
-                <div className="p-4">
-                  <p className="text-[10px] font-bold text-slate-500 uppercase">{ev.eventType?.replace('-', ' ')}</p>
-                  <h3 className="text-base font-black text-[#031d44] uppercase tracking-tight truncate group-hover:text-blue-600 transition-colors">{ev.name}</h3>
-                  <div className="flex items-center gap-3 mt-2 text-[10px] text-slate-500 font-bold">
-                    <span>{ev.teams?.length || 0} Teams</span>
-                    <span>•</span>
-                    <span>{ev.matches?.length || 0} Matches</span>
-                    {ev.startDate && <><span>•</span><span>{new Date(ev.startDate).toLocaleDateString()}</span></>}
-                  </div>
-                </div>
-              </Link>
+
+          {loading && !cricSeries.length ? (
+            <Loader label="Loading CricketData series..." />
+          ) : cricError && !cricSeries.length ? (
+            <ErrorState message={cricError} onRetry={loadData} />
+          ) : searchedCricSeries.length ? (
+            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+              {searchedCricSeries.map((series) => <SeriesCard key={series.id} series={series} />)}
+            </div>
+          ) : (
+            <div className="rounded-2xl bg-white p-8 text-center text-sm font-bold text-slate-500 ring-1 ring-slate-200">
+              No CricketData series found for this search.
+            </div>
+          )}
+        </section>
+
+        <section>
+          <div className="mb-4">
+            <h2 className="text-xl font-black uppercase tracking-tight text-[#031d44]">BQ-PLAY Local Events</h2>
+            <p className="text-xs font-semibold text-slate-500">Your own app events, tournaments, leagues and created matches.</p>
+          </div>
+
+          <div className="mb-6 flex gap-2 overflow-x-auto pb-3">
+            <button onClick={() => setFilter("")} className={`whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-bold ${!filter ? "bg-[#031d44] text-white" : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"}`}>
+              All ({events.length})
+            </button>
+            {LOCAL_TYPES.map((type) => (
+              <button key={type} onClick={() => setFilter(type)} className={`whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-bold capitalize ${filter === type ? "bg-[#031d44] text-white" : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"}`}>
+                {type.replace("-", " ")} ({events.filter((event) => event.eventType === type).length})
+              </button>
             ))}
           </div>
-        )}
-        {!loading && filtered.length === 0 && (
-          <div className="bg-white rounded-2xl shadow-xl p-16 text-center border border-slate-200">
-            <span className="text-5xl block mb-4">🏏</span>
-            <h4 className="text-xl font-black text-[#031d44] uppercase">No Events Found</h4>
-            <p className="text-slate-500 text-sm mt-2">Check back later for upcoming series and tournaments</p>
-          </div>
-        )}
-      </div>
+
+          {loading ? (
+            <Loader label="Loading local events..." />
+          ) : localError ? (
+            <ErrorState title="Local events unavailable" message={localError} onRetry={loadData} />
+          ) : localEvents.length ? (
+            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {localEvents.map((event) => (
+                <Link key={event._id} to={`/series/${event.slug || event._id}`} className="group overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-lg transition-all hover:shadow-xl">
+                  <div className="relative flex aspect-[4/3] items-center justify-center bg-gradient-to-br from-[#031d44] to-blue-700 p-6">
+                    {event.logo ? <img src={event.logo} alt={event.name} className="h-full w-full object-contain" /> : <span className="text-6xl font-black text-white/80">{event.name?.charAt(0)}</span>}
+                    <span className={`absolute right-3 top-3 rounded-full px-2 py-0.5 text-[9px] font-bold uppercase ${event.status === "live" ? "bg-red-600 text-white animate-pulse" : event.status === "completed" ? "bg-green-600 text-white" : "bg-blue-500/30 text-blue-200"}`}>
+                      {event.status || "upcoming"}
+                    </span>
+                  </div>
+                  <div className="p-4">
+                    <p className="text-[10px] font-bold uppercase text-slate-500">{event.eventType?.replace("-", " ") || "event"}</p>
+                    <h3 className="truncate text-base font-black uppercase tracking-tight text-[#031d44] transition-colors group-hover:text-blue-600">{event.name}</h3>
+                    <div className="mt-2 flex items-center gap-3 text-[10px] font-bold text-slate-500">
+                      <span>{event.teams?.length || 0} Teams</span>
+                      <span>•</span>
+                      <span>{event.matches?.length || 0} Matches</span>
+                      {event.startDate && <><span>•</span><span>{new Date(event.startDate).toLocaleDateString()}</span></>}
+                    </div>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-slate-200 bg-white p-16 text-center shadow-xl">
+              <span className="mb-4 block text-5xl">🏏</span>
+              <h4 className="text-xl font-black uppercase text-[#031d44]">No Events Found</h4>
+              <p className="mt-2 text-sm text-slate-500">Check back later for upcoming series and tournaments.</p>
+            </div>
+          )}
+        </section>
+      </main>
     </div>
   );
 }

@@ -1,5 +1,4 @@
 import React, { useCallback, useRef, useState } from "react";
-import "./PitchMap.css";
 
 const SVG_W = 420;
 const SVG_H = 720;
@@ -173,17 +172,17 @@ export default function PitchMap({
     const hoverLengthLabel = hoverPos ? LENGTH_ZONES.find(z => z.id === hoverPos.length)?.label : "";
 
     return (
-        <div className="pitchmap-root">
-            <div className="pitchmap-header">
-                <h4 className="pitchmap-title">Pitch Map</h4>
-                <span className="pitchmap-subtitle">{bowlerName && batsmanName ? `${bowlerName} to ${batsmanName}` : "Bowling Length Map"}</span>
+        <div className="flex flex-col gap-2.5 max-w-[160px] w-full">
+            <div className="flex items-baseline gap-2 px-0.5">
+                <h4 className="text-[10px] font-black tracking-[0.25em] uppercase text-[#ff6b35] m-0">Pitch Map</h4>
+                <span className="text-[9px] font-bold tracking-[0.15em] uppercase text-slate-500">{bowlerName && batsmanName ? `${bowlerName} to ${batsmanName}` : "Bowling Length Map"}</span>
             </div>
 
-            <div className="pitchmap-svg-wrap">
+            <div className="relative flex items-stretch w-full justify-center">
                 <svg
                     ref={svgRef}
                     viewBox={`0 0 ${SVG_W} ${SVG_H}`}
-                    className="pitchmap-svg pitchmap-svg-reference"
+                    className="flex-1 cursor-crosshair select-none rounded-xl overflow-hidden max-h-[380px] min-h-[260px] w-full aspect-[16/32]"
                     onClick={handlePitchClick}
                     onMouseMove={handleMouseMove}
                     onMouseLeave={() => setHoverPos(null)}
@@ -192,6 +191,13 @@ export default function PitchMap({
                         <filter id="pm-dot-shadow">
                             <feDropShadow dx="0" dy="2" stdDeviation="2" floodOpacity="0.22" />
                         </filter>
+                        <style>{`
+                            @keyframes pm-pulse { 0%,100% { opacity: 0.95; } 50% { opacity: 0.7; } }
+                            @keyframes pm-ring-pulse { 0%,100% { opacity: 0.4; } 50% { opacity: 0.15; } }
+                            .pm-active-dot { animation: pm-pulse 1.5s ease-in-out infinite; }
+                            .pm-active-ring { animation: pm-ring-pulse 1.5s ease-in-out infinite; }
+                            .pm-ripple { pointer-events: none; }
+                        `}</style>
                     </defs>
 
                     <rect x="0" y="0" width={SVG_W} height={SVG_H} rx="8" fill="#2c7a17" />
@@ -270,15 +276,15 @@ export default function PitchMap({
                     {clickPos && (
                         <g>
                             <circle cx={clickPos.x} cy={clickPos.y} r="8"
-                                fill="#f71963" stroke="white" strokeWidth="2" className="pitchmap-active-dot" />
+                                fill="#f71963" stroke="white" strokeWidth="2" className="pm-active-dot" />
                             <circle cx={clickPos.x} cy={clickPos.y} r="14"
-                                fill="none" stroke="#f71963" strokeWidth="1.5" opacity="0.4" className="pitchmap-active-ring" />
+                                fill="none" stroke="#f71963" strokeWidth="1.5" opacity="0.4" className="pm-active-ring" />
                         </g>
                     )}
 
                     {ripple && (
                         <circle key={ripple.key} cx={ripple.x} cy={ripple.y} r="5"
-                            fill="rgba(247,25,99,0.45)" className="pitchmap-ripple">
+                            fill="rgba(247,25,99,0.45)" className="pm-ripple">
                             <animate attributeName="r" from="5" to="28" dur="0.45s" fill="freeze" />
                             <animate attributeName="opacity" from="0.45" to="0" dur="0.45s" fill="freeze" />
                         </circle>
@@ -287,14 +293,12 @@ export default function PitchMap({
             </div>
 
             {hoverPos && (
-                <div className="pitchmap-hover-tip">
+                <div className="text-center text-[9px] font-black uppercase tracking-[0.15em] text-[#ff6b35] px-3 py-1 bg-black/30 rounded-full self-center border border-[#ff6b35]/20">
                     {hoverLengthLabel} | {hoverLineLabel}
                 </div>
             )}
 
-
-
-            <div className="pitchmap-legend pitchmap-reference-legend">
+            <div className="flex flex-wrap gap-3 justify-center pt-2.5 pb-1">
                 {[
                     { color: "#f4f4f5", border: "#e5e7eb", label: "0" },
                     { color: "#a8adb7", border: "#e5e7eb", label: "1+" },
@@ -302,19 +306,19 @@ export default function PitchMap({
                     { color: "#4b5563", border: "#111827", label: "6" },
                     { color: "#f71963", border: "#f71963", label: "W" },
                 ].map(item => (
-                    <div key={item.label} className="pitchmap-legend-item">
-                        <span className="pitchmap-legend-dot" style={{ background: item.color, borderColor: item.border }} />
-                        <span className="pitchmap-legend-text">{item.label}</span>
+                    <div key={item.label} className="flex items-center gap-1">
+                        <span className="w-4 h-4 rounded-full border-[1.5px] shrink-0" style={{ background: item.color, borderColor: item.border }} />
+                        <span className="text-[13px] font-black uppercase tracking-[0.1em] text-slate-400">{item.label}</span>
                     </div>
                 ))}
             </div>
 
             {(selectedLine || selectedLength || selectedShot) && (
-                <div className="pitchmap-info-bar">
-                    <div className="pitchmap-info-row">
-                        {selectedLine && <span className="pitchmap-info-tag pitchmap-info-line">{LINE_ZONES.find(z => z.id === selectedLine)?.label}</span>}
-                        {selectedLength && <span className="pitchmap-info-tag pitchmap-info-length">{LENGTH_ZONES.find(z => z.id === selectedLength)?.label}</span>}
-                        {selectedShot && <span className="pitchmap-info-tag pitchmap-info-shot">{SHOT_TYPES.find(shot => shotToId(shot) === selectedShot) || selectedShot}</span>}
+                <div className="bg-black/15 border border-white/5 rounded-2xl px-3 py-2">
+                    <div className="flex flex-wrap gap-1.5 items-center">
+                        {selectedLine && <span className="text-[9px] font-black uppercase tracking-[0.1em] px-2.5 py-[3px] rounded-full bg-blue-500/15 text-blue-400 border border-blue-500/20">{LINE_ZONES.find(z => z.id === selectedLine)?.label}</span>}
+                        {selectedLength && <span className="text-[9px] font-black uppercase tracking-[0.1em] px-2.5 py-[3px] rounded-full bg-green-500/15 text-green-400 border border-green-500/20">{LENGTH_ZONES.find(z => z.id === selectedLength)?.label}</span>}
+                        {selectedShot && <span className="text-[9px] font-black uppercase tracking-[0.1em] px-2.5 py-[3px] rounded-full bg-[#ff6b35]/15 text-[#ff6b35] border border-[#ff6b35]/20">{SHOT_TYPES.find(shot => shotToId(shot) === selectedShot) || selectedShot}</span>}
                     </div>
                 </div>
             )}

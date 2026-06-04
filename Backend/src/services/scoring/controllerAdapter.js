@@ -37,42 +37,48 @@ function enrichBallRecord(engineBall, deliveryData, batsmanName, bowlerName) {
 }
 
 function mapBattingStats(engineBatting) {
-  return (engineBatting || []).map(b => ({
-    player: b.player,
-    runs: b.runs || 0,
-    balls: b.ballsFaced ?? b.balls ?? 0,
-    fours: b.fours || 0,
-    sixes: b.sixes || 0,
-    dotBalls: b.dotBalls || 0,
-    strikeRate: b.ballsFaced > 0
-      ? ((b.runs / b.ballsFaced) * 100).toFixed(2)
-      : b.strikeRate || 0,
-    isOut: b.isOut || false,
-    isRetiredHurt: b.isRetiredHurt || false,
-    isRetired: b.isRetired || false,
-    dismissalType: b.dismissalType || null,
-    dismissedBy: b.dismissedBy || null,
-    fielder: b.fielder || null,
-    position: b.position || 0,
-    shots: b.shots || [],
-  }));
+  return (engineBatting || []).map(b => {
+    const bf = (b.ballsFaced != null && !isNaN(b.ballsFaced)) ? b.ballsFaced : (b.balls || 0);
+    return {
+      player: b.player,
+      runs: b.runs || 0,
+      balls: bf,
+      fours: b.fours || 0,
+      sixes: b.sixes || 0,
+      dotBalls: b.dotBalls || 0,
+      strikeRate: bf > 0
+        ? ((b.runs / bf) * 100).toFixed(2)
+        : (b.strikeRate && !isNaN(b.strikeRate) ? b.strikeRate : '0.00'),
+      isOut: b.isOut || false,
+      isRetiredHurt: b.isRetiredHurt || false,
+      isRetired: b.isRetired || false,
+      dismissalType: b.dismissalType || null,
+      dismissedBy: b.dismissedBy || null,
+      fielder: b.fielder || null,
+      position: b.position || 0,
+      shots: b.shots || [],
+    };
+  });
 }
 
 function mapBowlingStats(engineBowling) {
-  return (engineBowling || []).map(b => ({
-    player: b.player,
-    overs: b.overs || Math.floor((b.balls || 0) / 6),
-    balls: b.balls || 0,
-    maidens: b.maidens || 0,
-    runs: b.runs || 0,
-    wickets: b.wickets || 0,
-    wides: b.wides || 0,
-    noBalls: b.noBalls || 0,
-    economy: b.economy || '0.00',
-    dotBalls: b.dotBalls || b.dots || 0,
-    foursScored: b.foursScored || 0,
-    sixesScored: b.sixesScored || 0,
-  }));
+  return (engineBowling || []).map(b => {
+    const bBalls = (b.balls != null && !isNaN(b.balls)) ? b.balls : 0;
+    return {
+      player: b.player,
+      overs: b.overs || Math.floor(bBalls / 6),
+      balls: bBalls,
+      maidens: b.maidens || 0,
+      runs: b.runs || 0,
+      wickets: b.wickets || 0,
+      wides: b.wides || 0,
+      noBalls: b.noBalls || 0,
+      economy: b.economy || '0.00',
+      dotBalls: b.dotBalls || b.dots || 0,
+      foursScored: b.foursScored || 0,
+      sixesScored: b.sixesScored || 0,
+    };
+  });
 }
 
 function mapOversHistory(engineOvers, deliveryData) {

@@ -1,4 +1,5 @@
 import React, { useRef, useState } from "react";
+import { zoneToHyphen } from "./ScoreManagement/constants";
 
 const GW = 400;
 const GH = 400;
@@ -144,6 +145,7 @@ export default function CricketGround({ onShotSelect, activeZone }) {
         setClickEffect({ x: point.x, y: point.y, zone: info.zone, key: Date.now() });
         setTimeout(() => setClickEffect(null), 650);
 
+        // FIELD_POSITIONS IDs use underscore internally; convert to hyphen for back-end
         onShotSelect({
             x: point.x,
             y: point.y,
@@ -155,6 +157,7 @@ export default function CricketGround({ onShotSelect, activeZone }) {
             shotType: info.shotType,
             side: info.side,
             nearestPosition: info.nearestPos?.name || "",
+            nearestPositionId: zoneToHyphen(info.nearestPos?.id || ""),
             autoRuns: null,
         });
     };

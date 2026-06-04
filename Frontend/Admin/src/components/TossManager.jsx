@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import api from '../services/api';
+import { useToast } from './Toast';
 
 const TossManager = ({ match, onClose, onSuccess }) => {
     const [tossWinner, setTossWinner] = useState('');
@@ -9,6 +10,7 @@ const TossManager = ({ match, onClose, onSuccess }) => {
     const [tossInterrupted, setTossInterrupted] = useState(false);
     const [interruptReason, setInterruptReason] = useState('');
     const [saving, setSaving] = useState(false);
+    const { showToast } = useToast();
 
     useEffect(() => {
         if (match?.tossWinner) {
@@ -28,11 +30,11 @@ const TossManager = ({ match, onClose, onSuccess }) => {
 
     const handleToss = async () => {
         if (!tossWinner) {
-            alert('Please select toss winner');
+            showToast('Please select toss winner', 'warning');
             return;
         }
         if (!tossDecision) {
-            alert('Please select toss decision');
+            showToast('Please select toss decision', 'warning');
             return;
         }
 
@@ -46,7 +48,7 @@ const TossManager = ({ match, onClose, onSuccess }) => {
             onSuccess();
         } catch (err) {
             console.error('Failed to record toss:', err);
-            alert('Failed to record toss: ' + (err.response?.data?.message || err.message));
+            showToast('Failed to record toss: ' + (err.response?.data?.message || err.message), 'error');
         } finally {
             setSaving(false);
         }
@@ -54,7 +56,7 @@ const TossManager = ({ match, onClose, onSuccess }) => {
 
     const handleInterrupt = async () => {
         if (!interruptReason) {
-            alert('Please select interrupt reason');
+            showToast('Please select interrupt reason', 'warning');
             return;
         }
 
@@ -66,10 +68,10 @@ const TossManager = ({ match, onClose, onSuccess }) => {
                 interruptReason
             });
             setTossInterrupted(true);
-            alert(`Toss interrupted: ${interruptReason}. You can retry when conditions improve.`);
+            showToast(`Toss interrupted: ${interruptReason}. You can retry when conditions improve.`, 'info');
         } catch (err) {
             console.error('Failed to record interrupt:', err);
-            alert('Failed to record interrupt: ' + (err.response?.data?.message || err.message));
+            showToast('Failed to record interrupt: ' + (err.response?.data?.message || err.message), 'error');
         } finally {
             setSaving(false);
         }

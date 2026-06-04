@@ -57,11 +57,14 @@ const CommentaryFeed = ({ match, live = true }) => {
   // Format ball notation
   const getBallNotation = (ball) => {
     if (ball.isWicket) return 'W';
+    if (ball.isWide) return 'Wd';
+    if (ball.isNoBall) return 'Nb';
     if (ball.runs === 0 && !ball.isWide && !ball.isNoBall) return '•';
     return String(ball.runs || 0);
   };
 
   const getRunText = (ball) => {
+    if (ball.runText) return ball.runText;
     const runs = ball.runs || 0;
     if (ball.isWicket) return 'OUT!';
     if (ball.isWide) return 'wide';
@@ -74,6 +77,20 @@ const CommentaryFeed = ({ match, live = true }) => {
     if (runs === 6) return 'SIX';
     return `${runs} runs`;
   };
+
+  const labelize = (value) =>
+    String(value || "")
+      .replace(/_/g, "-")
+      .replace(/-/g, " ")
+      .replace(/\b\w/g, (letter) => letter.toUpperCase());
+
+  const getBallMeta = (ball) => [
+    ball.pitchZone || ball.pitchLength ? `Length: ${labelize(ball.pitchZone || ball.pitchLength)}` : "",
+    ball.pitchLine ? `Line: ${labelize(ball.pitchLine)}` : "",
+    ball.ballMovement && ball.ballMovement !== "none" ? `Movement: ${labelize(ball.ballMovement)}` : "",
+    ball.ballOutcome && ball.ballOutcome !== "played" ? `Outcome: ${labelize(ball.ballOutcome)}` : "",
+    ball.fieldingZone || ball.nearestPosition || ball.regionName || ball.zone ? `Area: ${labelize(ball.fieldingZone || ball.nearestPosition || ball.regionName || ball.zone)}` : "",
+  ].filter(Boolean);
 
   // Group balls by over for over summaries
   const groupedByOver = [];
@@ -131,11 +148,9 @@ const CommentaryFeed = ({ match, live = true }) => {
                     </span>
                   )}
                 </div>
-                {over.summary && (
-                  <div className="text-xs font-bold text-slate-600 dark:text-slate-300">
-                    {over.summary}
-                  </div>
-                )}
+                <div className="text-xs font-bold text-slate-600 dark:text-slate-300">
+                  {over.summary || `${over.balls.reduce((sum, ball) => sum + (ball.runs || 0) + (ball.isWide || ball.isNoBall ? 1 : 0), 0)} runs, ${over.balls.filter(ball => ball.isWicket).length} wickets`}
+                </div>
               </div>
             </div>
 
@@ -145,6 +160,7 @@ const CommentaryFeed = ({ match, live = true }) => {
                 const bowlerName = ball.bowlerName || ball.bowler?.name || over.balls[0]?.bowler?.name || 'Bowler';
                 const batsmanName = ball.batsmanName || ball.batsmanOnStrike?.name || 'Batsman';
                 const summaryLine = `${over.overNumber}.${ball.ballNumber || ball.ballIndex + 1} ${bowlerName} to ${batsmanName}, ${getRunText(ball)}`;
+                const meta = getBallMeta(ball);
                 return (
                   <div
                     key={ballIdx}
@@ -169,6 +185,15 @@ const CommentaryFeed = ({ match, live = true }) => {
                           <p className="text-sm text-slate-600 dark:text-slate-300 mt-1 leading-relaxed">
                             {ball.vividCommentary || ball.commentary}
                           </p>
+                        )}
+                        {meta.length > 0 && (
+                          <div className="mt-2 flex flex-wrap gap-1.5">
+                            {meta.map(item => (
+                              <span key={item} className="rounded-full bg-slate-100 dark:bg-slate-700 px-2 py-1 text-[9px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-300">
+                                {item}
+                              </span>
+                            ))}
+                          </div>
                         )}
                       </div>
                     </div>

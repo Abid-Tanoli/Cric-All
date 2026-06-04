@@ -4,6 +4,7 @@ import { useDispatch } from 'react-redux';
 import { updateTeam, fetchTeams } from '../store/slices/teamSlice';
 import api from '../services/api';
 import TeamForm from '../components/admin/teams/TeamForm';
+import { useToast } from '../components/Toast';
 
 export default function TeamEdit() {
   const { id } = useParams();
@@ -13,6 +14,7 @@ export default function TeamEdit() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
+  const { showToast } = useToast();
 
   useEffect(() => {
     fetchTeam();
@@ -38,10 +40,10 @@ export default function TeamEdit() {
         dispatch(fetchTeams());
         navigate(`/admin/teams/${id}`);
       } else {
-        alert(result.payload || 'Failed to update team');
+        showToast(result.payload || 'Failed to update team', 'error');
       }
     } catch (e) {
-      alert('Failed to update team');
+      showToast('Failed to update team', 'error');
     }
     setSaving(false);
   };

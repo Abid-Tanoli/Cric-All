@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import { api } from "../services/api";
+import { useToast } from "../components/Toast";
 
 export default function SyncPanel() {
   const [seriesList, setSeriesList] = useState([]);
@@ -9,6 +10,7 @@ export default function SyncPanel() {
   const [urlInput, setUrlInput] = useState("");
   const [autoRefresh, setAutoRefresh] = useState(true);
   const intervalRef = useRef(null);
+  const { showToast } = useToast();
 
   const fetchSeries = useCallback(async () => {
     try {
@@ -50,7 +52,7 @@ export default function SyncPanel() {
         fetchLog();
       }
     } catch (err) {
-      alert(`Sync failed: ${err.response?.data?.error || err.message}`);
+            showToast(`Sync failed: ${err.response?.data?.error || err.message}`, 'error');
     } finally {
       setSyncing(prev => ({ ...prev, [key]: false }));
     }
@@ -65,7 +67,7 @@ export default function SyncPanel() {
         fetchLog();
       }
     } catch (err) {
-      alert(`Sync all failed: ${err.response?.data?.error || err.message}`);
+            showToast(`Sync all failed: ${err.response?.data?.error || err.message}`, 'error');
     } finally {
       setSyncing(prev => ({ ...prev, __all__: false }));
     }
@@ -80,7 +82,7 @@ export default function SyncPanel() {
         fetchLog();
       }
     } catch (err) {
-      alert(`Live sync failed: ${err.response?.data?.error || err.message}`);
+            showToast(`Live sync failed: ${err.response?.data?.error || err.message}`, 'error');
     } finally {
       setSyncing(prev => ({ ...prev, __live__: false }));
     }
@@ -93,8 +95,8 @@ export default function SyncPanel() {
       setUrlInput("");
     } else {
       const seriesIdMatch = urlInput.match(/\d+/);
-      if (seriesIdMatch) alert("Enter a full ESPNcricinfo series URL like:\nhttps://www.espncricinfo.com/series/australia-in-pakistan-2026-1535643");
-      else alert("Invalid URL. Paste a series URL from espncricinfo.com");
+      if (seriesIdMatch) showToast("Enter a full ESPNcricinfo series URL.", 'info');
+      else showToast("Invalid URL. Paste a series URL from espncricinfo.com", 'warning');
     }
   };
 

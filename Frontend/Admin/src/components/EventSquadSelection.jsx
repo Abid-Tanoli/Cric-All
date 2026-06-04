@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import api from '../services/api';
+import { useToast } from './Toast';
 
 const EventSquadSelection = ({ event, team, onClose, onSuccess }) => {
     const [teamPlayers, setTeamPlayers] = useState([]);
@@ -10,6 +11,7 @@ const EventSquadSelection = ({ event, team, onClose, onSuccess }) => {
     const [wicketKeepers, setWicketKeepers] = useState([]);
     const [search, setSearch] = useState('');
     const [saving, setSaving] = useState(false);
+    const { showToast } = useToast();
 
     useEffect(() => {
         fetchTeamPlayers();
@@ -45,7 +47,7 @@ const EventSquadSelection = ({ event, team, onClose, onSuccess }) => {
                 return prev.filter(id => id !== playerId);
             }
             if (prev.length >= 20) {
-                alert('Maximum 20 players allowed');
+                showToast('Maximum 20 players allowed', 'warning');
                 return prev;
             }
             return [...prev, playerId];
@@ -54,19 +56,19 @@ const EventSquadSelection = ({ event, team, onClose, onSuccess }) => {
 
     const handleSave = async () => {
         if (selectedPlayers.length < 11) {
-            alert('Minimum 11 players required for squad');
+            showToast('Minimum 11 players required for squad', 'warning');
             return;
         }
         if (!captain) {
-            alert('Please select a captain');
+            showToast('Please select a captain', 'warning');
             return;
         }
         if (!viceCaptain) {
-            alert('Please select a vice-captain');
+            showToast('Please select a vice-captain', 'warning');
             return;
         }
         if (wicketKeepers.length === 0) {
-            alert('Please select at least one wicket-keeper');
+            showToast('Please select at least one wicket-keeper', 'warning');
             return;
         }
 
@@ -83,7 +85,7 @@ const EventSquadSelection = ({ event, team, onClose, onSuccess }) => {
             onClose();
         } catch (err) {
             console.error('Failed to save squad:', err);
-            alert('Failed to save squad: ' + (err.response?.data?.message || err.message));
+            showToast('Failed to save squad: ' + (err.response?.data?.message || err.message), 'error');
         } finally {
             setSaving(false);
         }

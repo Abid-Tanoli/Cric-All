@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import axios from 'axios';
 import api from '../services/api';
+import { useToast } from './Toast';
+import ConfirmModal from './ConfirmModal';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
@@ -11,10 +13,12 @@ const MatchSettings = ({ match, onClose, onUpdate }) => {
     const [drsRemaining, setDrsRemaining] = useState({ team1: 2, team2: 2 });
     const [superOverEnabled, setSuperOverEnabled] = useState(false);
     const [loading, setLoading] = useState(false);
+    const { showToast } = useToast();
+    const [confirmModal, setConfirmModal] = useState({ open: false, title: '', message: '', onConfirm: null, variant: 'danger' });
 
     const handleReduceOvers = async () => {
         if (newOvers < 1 || newOvers > match.totalOvers) {
-            alert(`Overs must be between 1 and ${match.totalOvers}`);
+            showToast(`Overs must be between 1 and ${match.totalOvers}`, 'warning');
             return;
         }
 
@@ -25,11 +29,11 @@ const MatchSettings = ({ match, onClose, onUpdate }) => {
                 { overs: newOvers },
                 { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }
             );
-            alert(`Overs reduced to ${newOvers}`);
+            showToast(`Overs reduced to ${newOvers}`, 'success');
             onUpdate();
         } catch (err) {
             console.error('Failed to reduce overs:', err);
-            alert('Failed to reduce overs: ' + (err.response?.data?.message || err.message));
+            showToast('Failed to reduce overs: ' + (err.response?.data?.message || err.message), 'error');
         } finally {
             setLoading(false);
         }
@@ -37,7 +41,7 @@ const MatchSettings = ({ match, onClose, onUpdate }) => {
 
     const handleIncreaseOvers = async () => {
         if (newOvers <= match.totalOvers) {
-            alert(`New overs must be greater than current overs (${match.totalOvers})`);
+            showToast(`New overs must be greater than current overs (${match.totalOvers})`, 'warning');
             return;
         }
 
@@ -47,11 +51,11 @@ const MatchSettings = ({ match, onClose, onUpdate }) => {
             await api.put(`/matches/${match._id}`, {
                 totalOvers: newOvers
             });
-            alert(`Overs increased to ${newOvers}`);
+            showToast(`Overs increased to ${newOvers}`, 'success');
             onUpdate();
         } catch (err) {
             console.error('Failed to increase overs:', err);
-            alert('Failed to increase overs: ' + (err.response?.data?.message || err.message));
+            showToast('Failed to increase overs: ' + (err.response?.data?.message || err.message), 'error');
         } finally {
             setLoading(false);
         }
@@ -59,23 +63,23 @@ const MatchSettings = ({ match, onClose, onUpdate }) => {
 
     const handleDRSReview = async (teamId) => {
         if (drsRemaining[`team${teamId === match.teams?.[0]?._id ? '1' : '2'}`] <= 0) {
-            alert('No DRS reviews remaining for this team');
+            showToast('No DRS reviews remaining for this team', 'warning');
             return;
         }
 
         // In a real implementation, this would trigger a review process
-        alert(`DRS review requested by ${match.teams?.find(t => t._id === teamId)?.name}. Umpire to review.`);
+        showToast(`DRS review requested by ${match.teams?.find(t => t._id === teamId)?.name}. Umpire to review.`, 'info');
         setDrsRemaining(prev => ({
             ...prev,
             [`team${teamId === match.teams?.[0]?._id ? '1' : '2'}`]: prev[`team${teamId === match.teams?.[0]?._id ? '1' : '2'}`] - 1
         }));
     };
 
-    const handleSuperOver = async () => {
-        if (!window.confirm('Start Super Over? This will reset the match for a single over decider.')) {
-            return;
-        }
+    const handleSuperOver = () => {
+        setConfirmModal({ open: true, title: 'Start Super Over', message: 'Start Super Over? This will reset the match for a single over decider.', confirmLabel: 'Start', variant: 'danger', onConfirm: async () => { setConfirmModal({ open: false }); doSuperOver(); } });
+    };
 
+    const doSuperOver = async () => {
         setLoading(true);
         try {
             await axios.post(
@@ -83,18 +87,27 @@ const MatchSettings = ({ match, onClose, onUpdate }) => {
                 {},
                 { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }
             );
-            alert('Super Over started!');
+            showToast('Super Over started!', 'success');
             onUpdate();
             onClose();
         } catch (err) {
             console.error('Failed to start super over:', err);
-            alert('Failed to start super over: ' + (err.response?.data?.message || err.message));
+            showToast('Failed to start super over: ' + (err.response?.data?.message || err.message), 'error');
         } finally {
             setLoading(false);
         }
     };
 
-    return (
+    return (<>
+        <ConfirmModal
+            open={confirmModal.open}
+            title={confirmModal.title}
+            message={confirmModal.message}
+            confirmLabel={confirmModal.confirmLabel}
+            variant={confirmModal.variant}
+            onConfirm={confirmModal.onConfirm}
+            onCancel={() => setConfirmModal({ open: false })}
+        />
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden">
                 {/* Header */}
@@ -295,6 +308,7 @@ const MatchSettings = ({ match, onClose, onUpdate }) => {
                 </div>
             </div>
         </div>
+        </>
     );
 };
 

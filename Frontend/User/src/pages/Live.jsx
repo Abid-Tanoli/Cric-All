@@ -3,6 +3,7 @@ import { api } from "../services/api";
 import { Link } from "react-router-dom";
 import LiveNavbar from "../components/LiveNavbar";
 import { initSocket } from "../services/socket";
+import LiveMatchesSection from "../components/cricapi/LiveMatchesSection";
 
 export default function Live() {
   const [matches, setMatches] = useState([]);
@@ -128,6 +129,8 @@ export default function Live() {
 
       {/* Content */}
       <div className="max-w-7xl mx-auto px-4 py-8">
+        <LiveMatchesSection />
+
         {/* YESTERDAY - RESULTS */}
         {(activeTab === 'all' || activeTab === 'results') && yesterdayMatches.filter(m => m.status === 'completed').length > 0 && (
           <div className="mb-10">
