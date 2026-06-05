@@ -10,10 +10,10 @@ const LOCAL_TYPES = ["single-match", "series", "tri-series", "tournament", "worl
 
 export default function SeriesList() {
   const [events, setEvents] = useState([]);
-  const [cricSeries, setCricSeries] = useState([]);
+  const [providerSeries, setProviderSeries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [localError, setLocalError] = useState(null);
-  const [cricError, setCricError] = useState(null);
+  const [providerError, setProviderError] = useState(null);
   const [apiStatus, setApiStatus] = useState(null);
   const [filter, setFilter] = useState("");
   const [search, setSearch] = useState("");
@@ -21,18 +21,18 @@ export default function SeriesList() {
   const loadData = useCallback(async () => {
     setLoading(true);
     setLocalError(null);
-    setCricError(null);
+    setProviderError(null);
 
     try {
       const [rapidRes, statusRes] = await Promise.all([
         api.get("/international/series"),
         api.get("/international/status").catch(() => ({ data: { data: null } })),
       ]);
-      setCricSeries(Array.isArray(rapidRes.data?.data) ? rapidRes.data.data : []);
+      setProviderSeries(Array.isArray(rapidRes.data?.data) ? rapidRes.data.data : []);
       setApiStatus(statusRes.data.data || null);
     } catch (error) {
-      setCricError(error.response?.data?.message || error.message || "Failed to load RapidAPI series.");
-      setCricSeries([]);
+      setProviderError(error.response?.data?.message || error.message || "Failed to load external series.");
+      setProviderSeries([]);
     }
 
     try {
@@ -62,9 +62,9 @@ export default function SeriesList() {
 
   const searchedCricSeries = useMemo(() => {
     const term = search.trim().toLowerCase();
-    if (!term) return cricSeries;
-    return cricSeries.filter((series) => series.name.toLowerCase().includes(term));
-  }, [cricSeries, search]);
+    if (!term) return providerSeries;
+    return providerSeries.filter((series) => series.name.toLowerCase().includes(term));
+  }, [providerSeries, search]);
 
   const localEvents = filter ? events.filter((event) => event.eventType === filter) : events;
 
@@ -74,13 +74,13 @@ export default function SeriesList() {
       <div className="bg-gradient-to-r from-[#031d44] via-[#0a2d5e] to-[#031d44] py-8 text-white">
         <div className="mx-auto max-w-7xl px-4">
           <h1 className="mb-2 text-3xl font-black uppercase tracking-tight">Series & Tournaments</h1>
-          <p className="text-sm text-blue-200">Real RapidAPI cricket series, tournaments, live fixtures, and your local BQ-PLAY events.</p>
+          <p className="text-sm text-blue-200">Live cricket series, tournaments, fixtures, and your local BQ-PLAY events.</p>
         </div>
       </div>
 
       <main className="mx-auto max-w-7xl space-y-10 px-4 py-6">
         <section className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
-          <label className="mb-2 block text-[10px] font-black uppercase tracking-widest text-slate-400">Search RapidAPI Series & Tournaments</label>
+          <label className="mb-2 block text-[10px] font-black uppercase tracking-widest text-slate-400">Search Live Series & Tournaments</label>
           <input
             value={search}
             onChange={(event) => setSearch(event.target.value)}
@@ -92,20 +92,20 @@ export default function SeriesList() {
         <section>
           <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
             <div>
-              <h2 className="text-xl font-black uppercase tracking-tight text-[#031d44]">Current RapidAPI Series & Tournaments</h2>
-              <p className="text-xs font-semibold text-slate-500">Uses backend `/api/international/series` from Cricbuzz RapidAPI.</p>
+              <h2 className="text-xl font-black uppercase tracking-tight text-[#031d44]">Current Live Series & Tournaments</h2>
+              <p className="text-xs font-semibold text-slate-500">Uses BQ-PLAY backend live cricket provider data.</p>
             </div>
             <button onClick={loadData} className="rounded-xl bg-[#031d44] px-4 py-2 text-[10px] font-black uppercase tracking-widest text-white">
               Refresh
             </button>
           </div>
 
-          {loading && !cricSeries.length ? (
-            <Loader label="Loading RapidAPI series..." />
-          ) : (cricError || apiStatus?.lastError) && !cricSeries.length ? (
+          {loading && !providerSeries.length ? (
+            <Loader label="Loading live series..." />
+          ) : (providerError || apiStatus?.lastError) && !providerSeries.length ? (
             <ErrorState
-              title="RapidAPI cricket data unavailable"
-              message={apiStatus?.lastError || cricError}
+              title="Live cricket data unavailable"
+              message={apiStatus?.lastError || providerError}
               onRetry={loadData}
             />
           ) : searchedCricSeries.length ? (
@@ -114,7 +114,7 @@ export default function SeriesList() {
             </div>
           ) : (
             <div className="rounded-2xl bg-white p-8 text-center text-sm font-bold text-slate-500 ring-1 ring-slate-200">
-              No RapidAPI series or tournaments found for this search.
+              No live series or tournaments found for this search.
             </div>
           )}
         </section>
@@ -155,9 +155,9 @@ export default function SeriesList() {
                     <h3 className="truncate text-base font-black uppercase tracking-tight text-[#031d44] transition-colors group-hover:text-blue-600">{event.name}</h3>
                     <div className="mt-2 flex items-center gap-3 text-[10px] font-bold text-slate-500">
                       <span>{event.teams?.length || 0} Teams</span>
-                      <span>•</span>
+                      <span>-</span>
                       <span>{event.matches?.length || 0} Matches</span>
-                      {event.startDate && <><span>•</span><span>{new Date(event.startDate).toLocaleDateString()}</span></>}
+                      {event.startDate && <><span>-</span><span>{new Date(event.startDate).toLocaleDateString()}</span></>}
                     </div>
                   </div>
                 </Link>

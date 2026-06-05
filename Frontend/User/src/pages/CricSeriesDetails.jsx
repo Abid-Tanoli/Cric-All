@@ -65,7 +65,7 @@ export default function CricSeriesDetails() {
         ) : matches.length === 0 ? (
           <div className="rounded-2xl bg-white p-12 text-center shadow-sm ring-1 ring-slate-200">
             <h2 className="text-xl font-black uppercase text-[#031d44]">No matches found</h2>
-            <p className="mt-2 text-sm font-semibold text-slate-500">CricketData did not return fixtures for this series yet.</p>
+            <p className="mt-2 text-sm font-semibold text-slate-500">The live data provider did not return fixtures for this series yet.</p>
           </div>
         ) : (
           <>

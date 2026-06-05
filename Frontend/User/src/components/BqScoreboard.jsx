@@ -8,7 +8,7 @@ const TABS = [
   { id: 'playing-xi', label: 'Playing XI' },
 ];
 
-const CricinfoScoreboard = ({ match }) => {
+const BqScoreboard = ({ match }) => {
   const [activeTab, setActiveTab] = useState('scorecard');
 
   if (!match || !match.innings || match.innings.length === 0) {
@@ -366,4 +366,4 @@ const CricinfoScoreboard = ({ match }) => {
   );
 };
 
-export default CricinfoScoreboard;
+export default BqScoreboard;

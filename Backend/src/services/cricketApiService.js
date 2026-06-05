@@ -1,6 +1,6 @@
 import fetch from 'node-fetch';
 
-const CRICBUZZ_HOST = process.env.RAPIDAPI_CRICKET_HOST || 'cricbuzz-cricket.p.rapidapi.com';
+const CRICBUZZ_HOST = process.env.RAPIDAPI_CRICKET_HOST || 'free-cricbuzz-cricket-api.p.rapidapi.com';
 const CRICBUZZ_BASE = `https://${CRICBUZZ_HOST}`;
 const HIGHLIGHT_HOST = 'cricket-highlights-api.p.rapidapi.com';
 const HIGHLIGHT_BASE = `https://${HIGHLIGHT_HOST}`;
@@ -17,6 +17,28 @@ const asArray = (value) => Array.isArray(value) ? value : [];
 let rapidApiBlockedUntil = 0;
 let lastRapidApiError = '';
 
+const splitPathList = (value, fallback = []) =>
+  String(value || '')
+    .split(',')
+    .map(item => item.trim())
+    .filter(Boolean)
+    .concat(fallback)
+    .filter((item, index, list) => list.indexOf(item) === index);
+
+const RAPID_PATHS = {
+  live: splitPathList(process.env.RAPIDAPI_LIVE_MATCHES_PATHS, ['/cricket-matches-live', '/cricket-livescores']),
+  upcoming: splitPathList(process.env.RAPIDAPI_UPCOMING_MATCHES_PATHS, ['/cricket-schedule-international', '/cricket-matches-upcoming']),
+  recent: splitPathList(process.env.RAPIDAPI_RECENT_MATCHES_PATHS, ['/cricket-matches-recent']),
+  matchInfo: splitPathList(process.env.RAPIDAPI_MATCH_INFO_PATHS, [
+    '/cricket-match-info?matchid={id}',
+    '/cricket-match-scoreboard?matchid={id}',
+  ]),
+  seriesInternational: splitPathList(process.env.RAPIDAPI_SERIES_INTERNATIONAL_PATHS, ['/cricket-series-international']),
+  seriesLeague: splitPathList(process.env.RAPIDAPI_SERIES_LEAGUE_PATHS, ['/cricket-series-leagues']),
+  seriesDomestic: splitPathList(process.env.RAPIDAPI_SERIES_DOMESTIC_PATHS, ['/cricket-series-domestic']),
+  seriesMatches: splitPathList(process.env.RAPIDAPI_SERIES_MATCHES_PATHS, []),
+};
+
 export const getRapidApiKey = () => {
   const key = process.env.RAPIDAPI_KEY?.trim() || '';
   return PLACEHOLDER_KEYS.has(key) ? '' : key;
@@ -26,6 +48,8 @@ export const hasRapidApiKey = () => Boolean(getRapidApiKey());
 
 export const getRapidApiStatus = () => ({
   configured: hasRapidApiKey(),
+  host: CRICBUZZ_HOST,
+  paths: RAPID_PATHS,
   blockedUntil: rapidApiBlockedUntil,
   lastError: lastRapidApiError,
 });
@@ -107,7 +131,12 @@ async function rapidGetFirst(paths, options = {}) {
 }
 
 const cricbuzzGetFirst = (paths, ttl = 60) =>
-  rapidGetFirst(paths, { base: CRICBUZZ_BASE, host: CRICBUZZ_HOST, ttl, label: 'Cricbuzz RapidAPI' });
+  rapidGetFirst(paths, { base: CRICBUZZ_BASE, host: CRICBUZZ_HOST, ttl, label: 'Live Cricket Provider' });
+
+const pathWithId = (path, id) =>
+  String(path)
+    .replaceAll('{id}', encodeURIComponent(id))
+    .replaceAll('{matchId}', encodeURIComponent(id));
 
 const highlightsGet = (path, params = {}, ttl = 3600) =>
   rapidGet({ base: HIGHLIGHT_BASE, host: HIGHLIGHT_HOST, path, params, ttl, label: 'Highlightly' });
@@ -189,7 +218,7 @@ function normalizeCricbuzzMatch(raw = {}, fallbackSeries = {}) {
     venue,
     date: dateTimeGMT ? dateTimeGMT.slice(0, 10) : '',
     dateTimeGMT,
-    matchStarted: ms !== 'preview',
+    matchStarted: ms === 'live' || ms === 'result',
     matchEnded: ms === 'result',
     teams: [team1.name, team2.name].filter(Boolean),
     teamInfo: [team1, team2],
@@ -237,6 +266,28 @@ export function normalizeMatch(raw = {}) {
 
 function flattenCricbuzzMatches(raw = {}, category = '') {
   const matches = [];
+  const response = raw.response || raw.data?.response || {};
+  const wrappedMatchInfo = response.matchInfo || raw.matchInfo;
+
+  asArray(wrappedMatchInfo).forEach(match => matches.push(normalizeMatch(match)));
+  if (wrappedMatchInfo && !Array.isArray(wrappedMatchInfo)) {
+    matches.push(normalizeMatch(wrappedMatchInfo));
+  }
+
+  for (const schedule of asArray(response.schedules || raw.schedules)) {
+    const wrapper = schedule.scheduleAdWrapper || schedule;
+    for (const seriesSchedule of asArray(wrapper.matchScheduleList)) {
+      const seriesMeta = {
+        seriesId: seriesSchedule.seriesId,
+        seriesName: seriesSchedule.seriesName,
+        category: seriesSchedule.seriesCategory || category,
+        sourceState: category,
+      };
+      asArray(seriesSchedule.matchInfo).forEach(info => {
+        matches.push(normalizeCricbuzzMatch({ matchInfo: info }, seriesMeta));
+      });
+    }
+  }
 
   for (const typeMatch of asArray(raw.typeMatches)) {
     const typeName = typeMatch.matchType || category;
@@ -259,6 +310,7 @@ function flattenCricbuzzMatches(raw = {}, category = '') {
   }
 
   asArray(raw.matches || raw.matchList || raw.data).forEach(match => matches.push(normalizeMatch(match)));
+  asArray(response.matches || response.matchList || response.matchesList).forEach(match => matches.push(normalizeMatch(match)));
 
   const seen = new Set();
   return matches.filter(match => {
@@ -337,6 +389,26 @@ function normalizeInnings(innings = {}) {
 }
 
 export function normalizeScorecard(raw = {}) {
+  const wrapped = raw.response || raw.data?.response;
+  if (wrapped?.matchInfo) {
+    const match = normalizeMatch(wrapped.matchInfo);
+    const scorecardRows = asArray(wrapped.scorecard || wrapped.scoreCard || wrapped.innings || wrapped.score);
+    const innings = scorecardRows.map(normalizeInnings);
+    const score = innings.length
+      ? innings.map(item => ({ inning: item.inning, team: item.team || item.inning?.split(' ')[0], r: item.r, w: item.w, o: item.o }))
+      : match.score;
+
+    return {
+      ...match,
+      match: wrapped.matchInfo,
+      score,
+      scorecard: innings,
+      innings,
+      liveScore: wrapped.liveScore || wrapped.score || null,
+      raw: wrapped,
+    };
+  }
+
   if (raw.scoreCard || raw.matchHeader) {
     const match = normalizeCricbuzzMatch({ matchInfo: raw.matchHeader || raw.matchInfo || raw });
     const innings = asArray(raw.scoreCard).map(normalizeCricbuzzInnings);
@@ -367,12 +439,14 @@ export function normalizeScorecard(raw = {}) {
 }
 
 function normalizeSeries(raw = {}, category = '') {
-  const start = raw.startDt || raw.startDate || raw.startdate || raw.start_time || '';
-  const end = raw.endDt || raw.endDate || raw.enddate || raw.end_time || '';
+  const dateParts = String(raw.dates || '').split(/\s+-\s+/);
+  const start = raw.startDt || raw.startDate || raw.startdate || raw.start_time || dateParts[0] || '';
+  const end = raw.endDt || raw.endDate || raw.enddate || raw.end_time || dateParts[1] || '';
+  const urlId = String(raw.url || '').match(/\/cricket-series\/([^/]+)/)?.[1] || '';
   return {
     ...raw,
-    id: String(raw.id || raw.seriesId || raw.key || ''),
-    name: raw.name || raw.title || raw.seriesName || 'Cricket series',
+    id: String(raw.id || raw.seriesId || raw.key || urlId || ''),
+    name: raw.name || raw.series || raw.title || raw.seriesName || 'Cricket series',
     startDate: parseCricbuzzDate(start),
     endDate: parseCricbuzzDate(end),
     matches: raw.matches || raw.matchCount || raw.totalMatches || 0,
@@ -383,6 +457,8 @@ function normalizeSeries(raw = {}, category = '') {
 function flattenCricbuzzSeries(raw = {}, category = '') {
   if (!raw) return [];
   const rows = [];
+  const response = raw.response || raw.data?.response;
+  asArray(response).forEach(series => rows.push(normalizeSeries(series, category)));
   for (const group of asArray(raw.seriesMapProto || raw.seriesMap || raw.data)) {
     asArray(group.series || group.list || group.items).forEach(series => rows.push(normalizeSeries(series, category || group.date)));
   }
@@ -397,6 +473,17 @@ function normalizeSeriesPayload(raw = {}, id = '') {
     info: { ...info, id: info.id || String(id) },
     matchList: matchList.length ? matchList : asArray(raw.matches || raw.matchList || raw.data || raw.fixtures).map(normalizeMatch),
   };
+}
+
+function getMatchSeriesId(match = {}) {
+  return String(
+    match.series?.id
+    || match.series?.seriesId
+    || match.seriesId
+    || match.info?.seriesId
+    || match.matchInfo?.seriesId
+    || ''
+  );
 }
 
 function normalizeHighlight(raw = {}) {
@@ -615,7 +702,7 @@ function normalizeArticle(row = {}) {
     image: article.image || article.imageUrl || article.thumbnail || imageFromId(article.imageId),
     url: article.url || (id ? `https://www.cricbuzz.com/cricket-news/${id}` : ''),
     publishedAt: parseCricbuzzDate(article.pubTime || article.publishedAt || article.date || ''),
-    source: article.source || 'Cricbuzz RapidAPI',
+    source: article.source || 'BQ-PLAY Live Provider',
   };
 }
 
@@ -636,7 +723,7 @@ function normalizePhoto(row = {}) {
     image: photo.image || photo.imageUrl || photo.thumbnail || imageFromId(photo.imageId || id, 420, 280),
     url: photo.url || '',
     publishedAt: parseCricbuzzDate(photo.pubTime || photo.publishedAt || photo.date || ''),
-    source: photo.source || 'Cricbuzz RapidAPI',
+    source: photo.source || 'BQ-PLAY Live Provider',
   };
 }
 
@@ -657,7 +744,7 @@ function normalizeCricbuzzVideo(row = {}) {
     thumbnail: video.thumbnail || video.image || video.imageUrl || imageFromId(video.imageId),
     watchUrl: video.url || (id ? `https://www.cricbuzz.com/cricket-videos/${id}` : ''),
     publishedAt: parseCricbuzzDate(video.pubTime || video.publishedAt || video.date || ''),
-    source: video.source || 'Cricbuzz RapidAPI',
+    source: video.source || 'BQ-PLAY Live Provider',
   };
 }
 
@@ -709,14 +796,19 @@ function buildLiveStats(scorecard = {}, commentary = [], overs = []) {
 }
 
 export async function getAllMatches() {
-  const buckets = await Promise.all([
-    cricbuzzGetFirst(['/matches/v1/live'], 30),
-    cricbuzzGetFirst(['/matches/v1/upcoming'], 300),
-    cricbuzzGetFirst(['/matches/v1/recent'], 300),
-  ]);
+  const buckets = [];
+  for (const [state, paths, ttl] of [
+    ['live', RAPID_PATHS.live, 30],
+    ['upcoming', RAPID_PATHS.upcoming, 300],
+    ['recent', RAPID_PATHS.recent, 300],
+  ]) {
+    const bucket = await cricbuzzGetFirst(paths, ttl);
+    buckets.push({ state, bucket });
+    if (bucket) await new Promise(resolve => setTimeout(resolve, 350));
+  }
 
-  const matches = buckets.flatMap((bucket, index) =>
-    bucket ? flattenCricbuzzMatches(bucket, ['live', 'upcoming', 'recent'][index]) : []
+  const matches = buckets.flatMap(({ state, bucket }) =>
+    bucket ? flattenCricbuzzMatches(bucket, state) : []
   );
   if (matches.length) return matches;
 
@@ -724,11 +816,12 @@ export async function getAllMatches() {
 }
 
 export async function getAllSeries() {
-  const categories = await Promise.all([
-    cricbuzzGetFirst(['/series/v1/international'], 3600),
-    cricbuzzGetFirst(['/series/v1/league'], 3600),
-    cricbuzzGetFirst(['/series/v1/domestic'], 3600),
-  ]);
+  const categories = [];
+  for (const paths of [RAPID_PATHS.seriesInternational, RAPID_PATHS.seriesLeague, RAPID_PATHS.seriesDomestic]) {
+    const category = await cricbuzzGetFirst(paths, 3600);
+    categories.push(category);
+    if (category) await new Promise(resolve => setTimeout(resolve, 350));
+  }
 
   const series = [
     ...flattenCricbuzzSeries(categories[0], 'international'),
@@ -745,18 +838,39 @@ export async function getAllSeries() {
 }
 
 export async function getSeriesMatches(id) {
-  const encoded = encodeURIComponent(id);
-  const data = await cricbuzzGetFirst([`/series/v1/${encoded}`, `/series/${encoded}`], 300);
-  return data ? normalizeSeriesPayload(data, id) : null;
+  const targetId = String(id || '').trim();
+  if (!targetId) return null;
+
+  const [seriesRows, matches] = await Promise.all([
+    getAllSeries(),
+    getAllMatches(),
+  ]);
+
+  const info = asArray(seriesRows).find(series =>
+    String(series.id || series.seriesId || '').trim() === targetId
+  );
+
+  const matchList = asArray(matches).filter(match => getMatchSeriesId(match) === targetId);
+  if (info || matchList.length) {
+    return {
+      info: info || {
+        id: targetId,
+        name: matchList[0]?.series?.name || 'Cricket series',
+        category: matchList[0]?.series?.category || '',
+      },
+      matchList,
+    };
+  }
+
+  const detailPaths = RAPID_PATHS.seriesMatches.map(path => pathWithId(path, targetId));
+  if (!detailPaths.length) return null;
+
+  const data = await cricbuzzGetFirst(detailPaths, 300);
+  return data ? normalizeSeriesPayload(data, targetId) : null;
 }
 
 export async function getMatchScorecard(id) {
-  const encoded = encodeURIComponent(id);
-  const data = await cricbuzzGetFirst([
-    `/mcenter/v1/${encoded}/hscard`,
-    `/mcenter/v1/${encoded}/scard`,
-    `/matches/${encoded}`,
-  ], 30);
+  const data = await cricbuzzGetFirst(RAPID_PATHS.matchInfo.map(path => pathWithId(path, id)), 30);
   return data ? normalizeScorecard(data) : null;
 }
 

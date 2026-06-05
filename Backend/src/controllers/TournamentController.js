@@ -2,6 +2,7 @@ import Tournament from "../models/Tournament.js";
 import Match from "../models/Match.js";
 import Team from "../models/Team.js";
 import { getIO } from "../socket/socket.js";
+import mongoose from "mongoose";
 
 export const getTournaments = async (req, res) => {
   try {
@@ -23,7 +24,9 @@ export const getTournaments = async (req, res) => {
 
 export const getTournament = async (req, res) => {
   try {
-    const tournament = await Tournament.findById(req.params.id)
+    const { id } = req.params;
+    const query = mongoose.isValidObjectId(id) ? { _id: id } : { slug: id };
+    const tournament = await Tournament.findOne(query)
       .populate("teams", "name shortName logo players")
       .populate("matches")
       .populate("pointsTable.team", "name shortName logo")

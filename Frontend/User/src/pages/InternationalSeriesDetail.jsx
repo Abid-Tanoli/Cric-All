@@ -10,43 +10,6 @@ const getMatchId = (match = {}) => match.id || match._id || match.matchId;
 
 const statsLinks = ['Most Runs', 'Most Wickets', 'High Scores', 'Best Bowling', 'High Team Totals', 'Most Catches'];
 
-const fanRatings = [
-  { rank: 1, name: 'Arafat Minhas', team: 'PAK', detail: 'Runs: 51   Wkts: 7', rating: '8.9' },
-  { rank: 2, name: 'Ghazi Ghori', team: 'PAK', detail: 'Runs: 102   Wkts: 0', rating: '7.6' },
-  { rank: 3, name: 'Babar Azam', team: 'PAK', detail: 'Runs: 85   Wkts: 0', rating: '7.5' },
-];
-
-const wicketLeaders = [
-  { name: 'Arafat Minhas', team: 'PAK', value: '7', detail: 'Innings: 2   Average: 8.42' },
-  { name: 'Nathan Ellis', team: 'AUS', value: '6', detail: 'Innings: 2   Average: 13.00' },
-  { name: 'Shaheen Shah Afridi', team: 'PAK', value: '4', detail: 'Innings: 2   Average: 13.75' },
-];
-
-const runLeaders = [
-  { name: 'Matt Renshaw', team: 'AUS', value: '104', detail: 'Innings: 2   Average: 52.00' },
-  { name: 'Ghazi Ghori', team: 'PAK', value: '102', detail: 'Innings: 2   Average: 51.00' },
-  { name: 'Babar Azam', team: 'PAK', value: '85', detail: 'Innings: 2   Average: 42.50' },
-];
-
-const storyCards = [
-  {
-    title: 'Battling Australia force series decider as questions grow for Pakistan',
-    text: 'Tricky pitches have forced batters to adapt and led to a major role for spin and changes of pace',
-  },
-  {
-    title: "'Batting allrounder' Shadab proves his value despite lean bowling returns",
-    text: 'Shadab nearly helped Pakistan steal the second ODI, showing why he remains central to the side.',
-  },
-  {
-    title: 'Ellis, Short share seven wickets as Australia dig deep to level series',
-    text: 'Josh Inglis, Cameron Green and Matt Renshaw made important runs before Australia defended their total.',
-  },
-  {
-    title: "Hesson debunks pitches 'myth', says there will be variety at ODI World Cup",
-    text: 'Pakistan ODI coach defended the surfaces and pointed to preparation for future tournaments.',
-  },
-];
-
 const formatDate = (value, options = {}) => {
   if (!value) return '';
   const parsed = new Date(value);
@@ -77,6 +40,39 @@ const matchDescription = (match = {}, seriesName = '') => {
   const number = match.name?.split(',')?.[1]?.trim() || match.name || 'ODI';
   const date = formatDate(match.dateTimeGMT || match.date);
   return [number, match.venue, date, seriesName.replace(' ODI Series', '')].filter(Boolean).join(', ');
+};
+
+const seriesSummary = (matches = [], info = {}) => {
+  const total = matches.length || Number(info.matches || info.totalMatches || 0);
+  const results = matches.filter(isResult).length;
+  const fixtures = matches.filter(isUpcoming).length;
+  const format = info.matchType || info.format || '';
+  const parts = [];
+  if (total) parts.push(`${total} match${total === 1 ? '' : 'es'}`);
+  if (format) parts.push(format);
+  if (results) parts.push(`${results} result${results === 1 ? '' : 's'}`);
+  if (fixtures) parts.push(`${fixtures} fixture${fixtures === 1 ? '' : 's'}`);
+  if (info.dates) parts.push(info.dates);
+  return parts.length ? parts.join(' - ') : 'Series details from BQ-PLAY live data provider';
+};
+
+const providerMessage = (status) => {
+  const rawMessage = status?.lastError || status?.rapid?.lastError || status?.free?.lastError || '';
+  const message = String(rawMessage);
+  if (!message) return '';
+  if (/quota|too many requests/i.test(message)) {
+    return 'Live data limit reached for the current provider plan. Upgrade the plan or wait for quota reset to restore real-time series data.';
+  }
+  if (/not subscribed/i.test(message)) {
+    return 'Live data provider is configured, but this account is not subscribed to the required cricket API.';
+  }
+  if (/payment required/i.test(message)) {
+    return 'Live data provider requires an active paid plan for this endpoint.';
+  }
+  if (/endpoint .*does not exist|not found/i.test(message)) {
+    return 'The current live provider does not expose this series endpoint.';
+  }
+  return message;
 };
 
 function FlagBox({ code }) {
@@ -146,11 +142,15 @@ function FixtureCard({ match, seriesName }) {
   );
 }
 
-function StatsPanel() {
+function EmptyPanelMessage({ children }) {
+  return <div className="px-4 py-8 text-sm font-bold text-slate-500">{children}</div>;
+}
+
+function StatsPanel({ seriesName }) {
   return (
     <Panel title="Stats & Records" action="See All">
       <div className="px-4 py-4">
-        <p className="text-[11px] font-black uppercase leading-5 tracking-widest text-slate-900">Australia in Pakistan ODIs</p>
+        <p className="text-[11px] font-black uppercase leading-5 tracking-widest text-slate-900">{seriesName || 'Series records'}</p>
         <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3">
           {statsLinks.map(item => (
             <button key={item} className="text-left text-xs font-bold text-slate-700 hover:text-blue-700">
@@ -167,7 +167,7 @@ function LeaderPanel({ title, rows }) {
   return (
     <Panel title={title} action="View full list">
       <div className="divide-y divide-slate-100">
-        {rows.map((row, index) => (
+        {rows.length ? rows.map((row, index) => (
           <div key={`${row.name}-${index}`} className="flex items-center gap-3 px-4 py-4">
             <div className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-xs font-black text-slate-500">
               {row.name.split(' ').map(part => part[0]).join('').slice(0, 2)}
@@ -178,7 +178,7 @@ function LeaderPanel({ title, rows }) {
             </div>
             <span className="text-2xl font-black text-slate-900">{row.value || row.rating}</span>
           </div>
-        ))}
+        )) : <EmptyPanelMessage>No leaderboard data available from the live provider yet.</EmptyPanelMessage>}
       </div>
     </Panel>
   );
@@ -188,69 +188,53 @@ function FanRatingsPanel() {
   return (
     <Panel title="Tournament Fan Ratings">
       <div className="divide-y divide-slate-100">
-        {fanRatings.map(row => (
-          <div key={row.rank} className="flex items-center gap-3 px-4 py-4">
-            <span className="w-4 text-sm font-black text-slate-900">{row.rank}.</span>
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-xs font-black text-slate-500">
-              {row.name.split(' ').map(part => part[0]).join('').slice(0, 2)}
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-black text-slate-900">{row.name} <span className="text-xs font-semibold text-slate-500">{row.team}</span></p>
-              <p className="mt-1 text-[11px] font-semibold text-slate-500">{row.detail}</p>
-            </div>
-            <span className="rounded-full bg-green-400 px-2 py-2 text-xs font-black text-white">{row.rating}</span>
-          </div>
-        ))}
+        <EmptyPanelMessage>Fan ratings will appear after users rate this series.</EmptyPanelMessage>
       </div>
-      <div className="border-t border-slate-100 px-4 py-3 text-center text-xs font-bold text-blue-700">View full list</div>
     </Panel>
   );
 }
 
 function HeroVideo({ highlights }) {
   const first = highlights[0];
-  const href = first?.watchUrl || 'https://www.youtube.com/results?search_query=Australia+Pakistan+2026+ODI+highlights';
+  if (!first) {
+    return (
+      <Panel title="Videos">
+        <EmptyPanelMessage>No videos available from the live provider yet.</EmptyPanelMessage>
+      </Panel>
+    );
+  }
+  const href = first.watchUrl || first.embedUrl || '#';
   return (
     <a href={href} target="_blank" rel="noreferrer" className="group block overflow-hidden rounded-lg bg-slate-950 text-white shadow-sm">
-      <div className="relative min-h-[260px] bg-gradient-to-br from-indigo-950 via-blue-900 to-slate-950 p-6">
-        <div className="absolute right-6 top-6 rounded-full bg-black/60 px-2 py-1 text-xs font-black">1:02</div>
-        <div className="max-w-xs rounded border-4 border-blue-300/70 p-5">
-          <p className="text-2xl font-black uppercase leading-tight text-emerald-300">I haven't got Babar worked out</p>
-          <p className="mt-4 text-xs font-black uppercase tracking-widest text-blue-200">Nathan Ellis</p>
-          <p className="text-xs font-bold uppercase text-blue-200">Australia bowler</p>
-        </div>
+      <div className="relative min-h-[260px] bg-gradient-to-br from-[#031d44] via-blue-900 to-slate-950 p-6">
+        {first.thumbnail ? <img src={first.thumbnail} alt={first.title} className="absolute inset-0 h-full w-full object-cover opacity-70" /> : null}
         <div className="absolute bottom-5 left-5 flex h-16 w-16 items-center justify-center rounded-full bg-blue-500 text-xs font-black uppercase tracking-widest transition group-hover:scale-105">Play</div>
       </div>
       <div className="p-5">
-        <h2 className="text-2xl font-black leading-tight">Ellis on Babar wicket: Good to get Pakistan's lynchpin out</h2>
-        <p className="mt-2 text-sm font-semibold text-slate-200">Nathan Ellis reflects on Australia's win vs Pakistan in the 2nd ODI</p>
+        <h2 className="text-2xl font-black leading-tight">{first.title || 'Series video'}</h2>
+        <p className="mt-2 text-sm font-semibold text-slate-200">{first.description || first.channelName || 'BQ-PLAY video'}</p>
       </div>
     </a>
   );
 }
 
 function StoryList({ highlights }) {
-  const searchLinks = highlights.filter(item => item.isSearchLink);
+  const searchLinks = highlights.filter(item => item.watchUrl || item.isSearchLink);
   return (
     <div className="space-y-4">
-      {searchLinks.map(item => (
+      {searchLinks.length ? searchLinks.map(item => (
         <a key={item.watchUrl} href={item.watchUrl} target="_blank" rel="noreferrer" className="flex gap-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm hover:bg-slate-50">
           <div className="flex h-24 w-36 flex-shrink-0 items-center justify-center rounded bg-[#031d44] px-3 text-center text-xs font-black uppercase tracking-widest text-white">Highlights</div>
           <div>
             <h3 className="line-clamp-2 text-base font-black text-slate-900">{item.title}</h3>
-            <p className="mt-2 text-sm font-semibold text-slate-500">{formatDate(item.matchDate)} - Open match highlights search</p>
+            <p className="mt-2 text-sm font-semibold text-slate-500">{formatDate(item.matchDate || item.publishedAt)} - Open video</p>
           </div>
         </a>
-      ))}
-      {storyCards.map((story, index) => (
-        <article key={story.title} className="flex gap-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-          <div className={`h-24 w-36 flex-shrink-0 rounded ${index % 2 === 0 ? 'bg-amber-100' : 'bg-emerald-100'}`} />
-          <div>
-            <h3 className="line-clamp-2 text-base font-black text-slate-900">{story.title}</h3>
-            <p className="mt-2 line-clamp-2 text-sm font-semibold text-slate-500">{story.text}</p>
-          </div>
-        </article>
-      ))}
+      )) : (
+        <Panel title="News and video links">
+          <EmptyPanelMessage>No related stories or video links available from the live provider yet.</EmptyPanelMessage>
+        </Panel>
+      )}
     </div>
   );
 }
@@ -261,6 +245,7 @@ export default function InternationalSeriesDetail() {
   const [points, setPoints] = useState([]);
   const [squad, setSquad] = useState([]);
   const [highlights, setHighlights] = useState([]);
+  const [providerStatus, setProviderStatus] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeSection, setActiveSection] = useState('Home');
 
@@ -269,6 +254,7 @@ export default function InternationalSeriesDetail() {
   const results = useMemo(() => matches.filter(isResult), [matches]);
   const fixtures = useMemo(() => matches.filter(isUpcoming), [matches]);
   const navItems = ['Home', 'Fixtures and Results', 'Videos', 'Stats', 'Squads', 'Teams', 'Photos', 'Fan Ratings'];
+  const liveProviderMessage = providerMessage(providerStatus);
 
   useEffect(() => {
     fetchData();
@@ -285,6 +271,7 @@ export default function InternationalSeriesDetail() {
       ]);
 
       setSeriesInfo(infoRes.data.data);
+      setProviderStatus(infoRes.data.providerStatus || null);
       setPoints(asArray(pointsRes.data.data));
       setSquad(asArray(squadRes.data.data));
       setHighlights(asArray(highlightsRes.data.data));
@@ -323,15 +310,15 @@ export default function InternationalSeriesDetail() {
 
   const renderStats = () => (
     <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
-      <StatsPanel />
-      <LeaderPanel title="PAK vs AUS 2026 Top Wicket Takers" rows={wicketLeaders} />
-      <LeaderPanel title="PAK vs AUS 2026 Top Run Scorers" rows={runLeaders} />
+      <StatsPanel seriesName={info.name} />
+      <LeaderPanel title="Top Wicket Takers" rows={[]} />
+      <LeaderPanel title="Top Run Scorers" rows={[]} />
     </div>
   );
 
   const renderSquads = () => (
     <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
-      {squad.map(team => (
+      {squad.length ? squad.map(team => (
         <Panel key={team.teamName || team.name} title={team.teamName || team.name || 'Squad'}>
           <div className="grid grid-cols-1 gap-2 px-4 py-4 sm:grid-cols-2">
             {asArray(team.players || team.squad).map(player => (
@@ -342,13 +329,17 @@ export default function InternationalSeriesDetail() {
             ))}
           </div>
         </Panel>
-      ))}
+      )) : (
+        <Panel title="Squads">
+          <EmptyPanelMessage>No squad data available from the live provider yet.</EmptyPanelMessage>
+        </Panel>
+      )}
     </div>
   );
 
   const renderTeams = () => (
     <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
-      {squad.map(team => (
+      {squad.length ? squad.map(team => (
         <Panel key={team.teamName || team.name} title={team.teamName || team.name || 'Team'}>
           <div className="px-4 py-5">
             <div className="flex items-center gap-3">
@@ -360,18 +351,19 @@ export default function InternationalSeriesDetail() {
             </div>
           </div>
         </Panel>
-      ))}
+      )) : (
+        <Panel title="Teams">
+          <EmptyPanelMessage>No team data available from the live provider yet.</EmptyPanelMessage>
+        </Panel>
+      )}
     </div>
   );
 
   const renderPhotos = () => (
     <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
-      {['Rawalpindi 1st ODI', 'Lahore 2nd ODI', 'Lahore 3rd ODI'].map((title, index) => (
-        <Panel key={title} title={title}>
-          <div className={`h-48 ${index === 0 ? 'bg-emerald-100' : index === 1 ? 'bg-amber-100' : 'bg-blue-100'}`} />
-          <p className="px-4 py-3 text-sm font-bold text-slate-600">Series photo gallery placeholder</p>
-        </Panel>
-      ))}
+      <Panel title="Photos">
+        <EmptyPanelMessage>No photos available from the live provider yet.</EmptyPanelMessage>
+      </Panel>
     </div>
   );
 
@@ -380,7 +372,7 @@ export default function InternationalSeriesDetail() {
       <FanRatingsPanel />
       <Panel title="Rate the series">
         <div className="px-4 py-8">
-          <p className="text-sm font-semibold text-slate-500">Fan rating controls can be connected to user accounts later. Current rankings are shown from the series fallback data.</p>
+          <p className="text-sm font-semibold text-slate-500">Fan rating controls can be connected to user accounts later.</p>
         </div>
       </Panel>
     </div>
@@ -412,13 +404,16 @@ export default function InternationalSeriesDetail() {
   }
 
   if (!seriesInfo) {
+    const title = liveProviderMessage ? 'Live data unavailable' : 'Series not found';
+    const body = liveProviderMessage || 'BQ-PLAY could not find this series from the current live data source.';
     return (
       <div className="min-h-screen bg-slate-50">
         <Header />
         <div className="flex min-h-[70vh] items-center justify-center">
-          <div className="text-center">
-            <p className="text-lg font-bold text-slate-500">Series not found</p>
-            <Link to="/international" className="mt-2 inline-block text-sm font-bold text-blue-600">Back to International</Link>
+          <div className="mx-auto max-w-lg px-4 text-center">
+            <p className="text-lg font-black text-slate-700">{title}</p>
+            <p className="mt-2 text-sm font-semibold leading-6 text-slate-500">{body}</p>
+            <Link to="/international" className="mt-4 inline-block rounded-md bg-[#031d44] px-4 py-2 text-xs font-black uppercase tracking-widest text-white">Back to International</Link>
           </div>
         </div>
       </div>
@@ -447,33 +442,46 @@ export default function InternationalSeriesDetail() {
         <div className="mb-5 text-xs font-semibold text-slate-500">
           <Link to="/international" className="hover:text-blue-700">International</Link>
           <span className="px-2">&gt;</span>
-          <span>{info.name || 'Australia tour of Pakistan 2026'}</span>
+          <span>{info.name || 'Series detail'}</span>
         </div>
 
         <div className="mb-6 rounded-lg border border-slate-200 bg-white px-4 py-3">
           <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Series Status</p>
-          <h1 className="mt-1 text-lg font-black text-slate-900">{info.name?.replace(' ODI Series', '') || 'Australia tour of Pakistan 2026'}</h1>
-          <p className="mt-1 text-sm font-semibold text-slate-600">3-match ODI series level 1-1</p>
+          <h1 className="mt-1 text-lg font-black text-slate-900">{info.name?.replace(' ODI Series', '') || 'Series detail'}</h1>
+          <p className="mt-1 text-sm font-semibold text-slate-600">{seriesSummary(matches, info)}</p>
         </div>
+
+        {(liveProviderMessage || !matches.length) && (
+          <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+            <p className="text-[10px] font-black uppercase tracking-widest text-amber-700">Live Data Notice</p>
+            <p className="mt-1 text-sm font-bold leading-6 text-amber-900">
+              {liveProviderMessage || 'Series metadata loaded, but the current live provider did not return fixtures or results for this series.'}
+            </p>
+          </div>
+        )}
 
         {activeSection !== 'Home' ? renderActiveSection() : (
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-[290px_1fr_320px]">
           <aside className="space-y-5">
             <Panel title="Fixtures">
               <div className="divide-y divide-slate-100">
-                {fixtures.map(match => <FixtureCard key={getMatchId(match)} match={match} seriesName={info.name} />)}
+                {fixtures.length ? fixtures.map(match => <FixtureCard key={getMatchId(match)} match={match} seriesName={info.name} />) : (
+                  <EmptyPanelMessage>No fixtures available from the live provider yet.</EmptyPanelMessage>
+                )}
               </div>
               <div className="px-4 py-3 text-center text-xs font-bold text-blue-700">View All Fixtures</div>
             </Panel>
 
             <Panel title="Results">
               <div className="divide-y divide-slate-100">
-                {results.map(match => <ResultCard key={getMatchId(match)} match={match} seriesName={info.name} />)}
+                {results.length ? results.map(match => <ResultCard key={getMatchId(match)} match={match} seriesName={info.name} />) : (
+                  <EmptyPanelMessage>No results available from the live provider yet.</EmptyPanelMessage>
+                )}
               </div>
               <div className="px-4 py-3 text-center text-xs font-bold text-blue-700">View All Results</div>
             </Panel>
 
-            <StatsPanel />
+            <StatsPanel seriesName={info.name} />
           </aside>
 
           <section className="space-y-4">
@@ -483,12 +491,12 @@ export default function InternationalSeriesDetail() {
 
           <aside className="space-y-5">
             <FanRatingsPanel />
-            <LeaderPanel title="PAK vs AUS 2026 Top Wicket Takers" rows={wicketLeaders} />
-            <LeaderPanel title="PAK vs AUS 2026 Top Run Scorers" rows={runLeaders} />
+            <LeaderPanel title="Top Wicket Takers" rows={[]} />
+            <LeaderPanel title="Top Run Scorers" rows={[]} />
 
             <Panel title="Series Squads">
               <div className="space-y-4 px-4 py-4">
-                {squad.map(team => (
+                {squad.length ? squad.map(team => (
                   <div key={team.teamName || team.name}>
                     <p className="mb-2 text-[10px] font-black uppercase tracking-widest text-slate-400">{team.teamName || team.name}</p>
                     <div className="flex flex-wrap gap-2">
@@ -497,7 +505,7 @@ export default function InternationalSeriesDetail() {
                       ))}
                     </div>
                   </div>
-                ))}
+                )) : <EmptyPanelMessage>No squad data available from the live provider yet.</EmptyPanelMessage>}
               </div>
             </Panel>
 

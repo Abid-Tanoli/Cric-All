@@ -1,5 +1,5 @@
 # BQ-PLAY Feature Enhancement Plan
-# Based on ESPNcricinfo Analysis
+# Based on BQ-PLAY Analysis
 
 ## Phase 1: Fix Current Issues (Priority)
 

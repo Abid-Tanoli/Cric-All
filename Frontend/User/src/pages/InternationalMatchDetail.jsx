@@ -82,12 +82,13 @@ function EmptyState({ title, detail }) {
 function ApiWarning({ status }) {
   if (!status?.lastError && status?.configured !== false) return null;
 
+  const provider = status?.configured ? 'BQ-PLAY live data provider' : 'Live data provider';
   const detail = status?.lastError
-    || 'RapidAPI cricket key is not configured. Real live data will appear after adding a working provider key.';
+    || 'Cricket API is not configured. Real live data will appear after adding a working provider.';
 
   return (
     <div className="mb-5 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-900">
-      Original cricket API issue: {detail}
+      {provider} issue: {detail}
     </div>
   );
 }
@@ -134,6 +135,7 @@ export default function InternationalMatchDetail() {
   const news = asArray(center?.news);
   const videos = asArray(center?.videos);
   const stats = center?.stats || {};
+  const liveScore = center?.liveScore || scorecard.liveScore || {};
   const scores = asArray(scorecard.score || matchData.score);
   const innings = useMemo(() => getInnings(scorecard), [scorecard]);
   const teams = asArray(matchData.teamInfo).length ? asArray(matchData.teamInfo) : asArray(matchData.teams);
@@ -204,12 +206,47 @@ export default function InternationalMatchDetail() {
       <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
         <p className="text-[11px] font-black uppercase tracking-widest text-slate-400">Match Status</p>
         <h2 className="mt-2 text-xl font-black text-[#031d44] dark:text-white">
-          {matchData.status || stats.status || 'Live status will appear from the original API'}
+          {matchData.status || stats.status || liveScore.status || 'Live status will appear from the original API'}
         </h2>
+        {liveScore.runRate && <p className="mt-2 text-sm font-black text-blue-700">Run Rate: {liveScore.runRate}</p>}
         <p className="mt-2 text-sm font-semibold text-slate-500">
           {matchData.venue || 'Venue TBD'} {matchData.dateTimeGMT || matchData.date ? `- ${formatDate(matchData.dateTimeGMT || matchData.date)}` : ''}
         </p>
       </section>
+
+      {(asArray(liveScore.batsmen).length > 0 || asArray(liveScore.bowlers).length > 0) && (
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+          {asArray(liveScore.batsmen).length > 0 && (
+            <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+              <h2 className="mb-4 text-lg font-black text-[#031d44] dark:text-white">Current Batting</h2>
+              {asArray(liveScore.batsmen).map((batter, index) => (
+                <div key={`${batter.name}-${index}`} className="flex items-center justify-between border-b border-slate-100 py-3 last:border-0 dark:border-slate-800">
+                  <div>
+                    <p className="font-black text-slate-800 dark:text-slate-100">{batter.name}{batter.isStriker ? ' *' : ''}</p>
+                    <p className="text-xs font-bold text-slate-400">SR {batter.sr || '-'}</p>
+                  </div>
+                  <p className="text-xl font-black text-[#031d44] dark:text-white">{batter.runs}<span className="text-sm text-slate-400"> ({batter.balls})</span></p>
+                </div>
+              ))}
+            </section>
+          )}
+
+          {asArray(liveScore.bowlers).length > 0 && (
+            <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+              <h2 className="mb-4 text-lg font-black text-[#031d44] dark:text-white">Current Bowling</h2>
+              {asArray(liveScore.bowlers).map((bowler, index) => (
+                <div key={`${bowler.name}-${index}`} className="flex items-center justify-between border-b border-slate-100 py-3 last:border-0 dark:border-slate-800">
+                  <div>
+                    <p className="font-black text-slate-800 dark:text-slate-100">{bowler.name}</p>
+                    <p className="text-xs font-bold text-slate-400">{bowler.overs} ov, eco {bowler.economy || '-'}</p>
+                  </div>
+                  <p className="text-xl font-black text-[#031d44] dark:text-white">{bowler.wickets}<span className="text-sm text-slate-400">/{bowler.runs}</span></p>
+                </div>
+              ))}
+            </section>
+          )}
+        </div>
+      )}
 
       {latestComment ? (
         <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
@@ -220,7 +257,7 @@ export default function InternationalMatchDetail() {
           <p className="text-base font-bold leading-7 text-slate-700 dark:text-slate-200">{latestComment.text}</p>
         </section>
       ) : (
-        <EmptyState title="Ball-by-ball live feed not available yet" detail="When the paid live API returns commentary, it will show here without Cricinfo/demo fallback." />
+        <EmptyState title="Ball-by-ball live feed not available yet" detail="The current live provider gives score updates when available. Full commentary needs a richer live-data plan." />
       )}
     </div>
   );

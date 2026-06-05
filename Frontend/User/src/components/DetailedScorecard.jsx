@@ -1,7 +1,7 @@
 import React, { useMemo, useState, Fragment } from 'react';
 import WagonWheel from './WagonWheel';
 
-// Cricinfo-Style Detailed Scorecard
+// BQ-PLAY detailed scorecard
 // Full batting/bowling tables, extras, fall of wickets, yet to bat, match summary
 
 const DetailedScorecard = ({ match }) => {

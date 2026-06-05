@@ -81,7 +81,7 @@ export default function LiveScores() {
         return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
     };
 
-    // MAIN LIVE SCORES DASHBOARD (ESPN Style)
+    // MAIN LIVE SCORES DASHBOARD (professional match-center layout)
     return (
         <div className="min-h-screen bg-gradient-to-b from-slate-100 to-slate-50">
             {/* Header */}

@@ -2,6 +2,7 @@ import fetch from "node-fetch";
 
 const CACHE_TTL = 30 * 1000;
 const cache = new Map();
+const EXTERNAL_SOURCE_BASE = (process.env.EXTERNAL_SYNC_BASE_URL || '').replace(/\/+$/, '');
 
 const USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36";
 
@@ -21,6 +22,11 @@ async function fetchPage(url) {
   return text;
 }
 
+function sourceUrl(path) {
+  if (!EXTERNAL_SOURCE_BASE) return '';
+  return `${EXTERNAL_SOURCE_BASE}${path}`;
+}
+
 function extractNextData(html) {
   const match = html.match(/<script id="__NEXT_DATA__"[^>]*type="application\/json"[^>]*>({.*?})<\/script>/s);
   if (!match) return null;
@@ -35,7 +41,9 @@ function extractPageProps(html) {
 }
 
 export async function getSeriesInfo(seriesSlug, seriesId) {
-  const html = await fetchPage(`https://www.espncricinfo.com/series/${seriesSlug}-${seriesId}`);
+  const url = sourceUrl(`/series/${seriesSlug}-${seriesId}`);
+  if (!url) return null;
+  const html = await fetchPage(url);
   const data = extractPageProps(html);
   if (!data) return null;
   return {
@@ -64,7 +72,9 @@ export async function getSeriesInfo(seriesSlug, seriesId) {
 }
 
 export async function getMatchScorecard(seriesSlug, seriesId, matchSlug, matchId) {
-  const html = await fetchPage(`https://www.espncricinfo.com/series/${seriesSlug}-${seriesId}/${matchSlug}-${matchId}/full-scorecard`);
+  const url = sourceUrl(`/series/${seriesSlug}-${seriesId}/${matchSlug}-${matchId}/full-scorecard`);
+  if (!url) return null;
+  const html = await fetchPage(url);
   const data = extractPageProps(html);
   if (!data) return null;
   const match = data.match || data;
@@ -102,7 +112,9 @@ export async function getMatchScorecard(seriesSlug, seriesId, matchSlug, matchId
 }
 
 export async function getLiveMatches() {
-  const html = await fetchPage("https://www.espncricinfo.com/live-cricket-score");
+  const url = sourceUrl("/live-cricket-score");
+  if (!url) return [];
+  const html = await fetchPage(url);
   const data = extractPageProps(html);
   if (!data) return [];
   const allMatches = [];
@@ -116,7 +128,9 @@ export async function getLiveMatches() {
 }
 
 export async function getSeriesList() {
-  const html = await fetchPage("https://www.espncricinfo.com/cricket-fixtures");
+  const url = sourceUrl("/cricket-fixtures");
+  if (!url) return [];
+  const html = await fetchPage(url);
   const data = extractPageProps(html);
   if (!data) return [];
   const seriesList = [];

@@ -24,9 +24,9 @@ export default function Series() {
       let squadData = [];
 
       const endpoints = [
+        { url: `/series/${seriesId}`, matchesField: 'matches', squadsField: null },
         { url: `/events/${seriesId}`, matchesField: 'matches', squadsField: 'eventSquads' },
-        { url: `/tournaments/${seriesId}`, matchesField: 'matches', squadsField: 'tournamentSquads' },
-        { url: `/series/${seriesId}`, matchesField: 'matches', squadsField: null }
+        { url: `/tournaments/${seriesId}`, matchesField: 'matches', squadsField: 'tournamentSquads' }
       ];
 
       for (const ep of endpoints) {
@@ -197,7 +197,7 @@ export default function Series() {
       <div className="min-h-screen bg-[#f0f2f5] flex items-center justify-center">
         <div className="text-center">
           <p className="text-2xl font-black text-[#031d44] uppercase">Series not found</p>
-          <Link to="/" className="text-blue-600 hover:underline mt-4 block">Go Home</Link>
+          <Link to="/series" className="text-blue-600 hover:underline mt-4 block">Back to Series</Link>
         </div>
       </div>
     );
@@ -217,12 +217,12 @@ export default function Series() {
     <div className="bg-[#f0f2f5] min-h-screen">
       <Header />
 
-      {/* Series Header - ESPN Style */}
+      {/* Series Header */}
       <div className="bg-gradient-to-r from-[#031d44] via-[#0a2d5e] to-[#031d44] text-white">
         <div className="max-w-7xl mx-auto px-4 py-8">
           <div className="flex items-center gap-3 text-sm text-blue-300 mb-4">
             <Link to="/" className="hover:text-white transition-colors">Home</Link>
-            <span>•</span>
+            <span>-</span>
             <span>{series.name}</span>
           </div>
 
@@ -247,7 +247,7 @@ export default function Series() {
               <p className="text-sm text-blue-200 mt-2">
                 {series.startDate ? new Date(series.startDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : ""}
                 {series.endDate && ` - ${new Date(series.endDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`}
-                {series.venue && ` • ${series.venue}`}
+                {series.venue && ` - ${series.venue}`}
               </p>
             </div>
           </div>
@@ -360,7 +360,7 @@ export default function Series() {
                           <span className="text-2xl font-black text-slate-300">VS</span>
                         </div>
                         <p className="text-center text-[10px] text-slate-500 font-bold mt-2">
-                          {new Date(match.startAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })} • {match.venue}
+                          {new Date(match.startAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })} - {match.venue}
                         </p>
                       </div>
                     </Link>

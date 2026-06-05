@@ -33,8 +33,8 @@ export default function CricketNews() {
       <div className="max-w-4xl mx-auto px-4 py-8">
         <div className="flex items-center justify-between mb-8">
           <div>
-            <h1 className="text-3xl lg:text-4xl font-black text-[#031d44] dark:text-white">📰 Cricket News</h1>
-            <p className="text-sm text-slate-500 mt-1">Latest from ESPNcricinfo, CricBuzz & more</p>
+            <h1 className="text-3xl lg:text-4xl font-black text-[#031d44] dark:text-white">Cricket News</h1>
+            <p className="text-sm text-slate-500 mt-1">Latest cricket updates curated for BQ-PLAY.</p>
           </div>
           <button
             onClick={fetchNews}
@@ -97,7 +97,7 @@ export default function CricketNews() {
                         </span>
                         {article.pubDate && (
                           <span className="text-[10px] text-slate-400">
-                            {new Date(article.pubDate).toLocaleDateString()} • {new Date(article.pubDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            {new Date(article.pubDate).toLocaleDateString()} - {new Date(article.pubDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                           </span>
                         )}
                       </div>
@@ -107,7 +107,7 @@ export default function CricketNews() {
                       {article.description && (
                         <p className="text-sm text-slate-500 mt-2 line-clamp-3">{article.description}</p>
                       )}
-                      <span className="text-xs font-bold text-blue-600 mt-3 inline-block group-hover:underline">Read full story →</span>
+                      <span className="text-xs font-bold text-blue-600 mt-3 inline-block group-hover:underline">Read full story</span>
                     </div>
                   </div>
                 </a>

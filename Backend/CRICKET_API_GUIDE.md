@@ -1,51 +1,75 @@
-# BQ-PLAY Cricket API Guide
+# BQ-PLAY Live Cricket API Guide
 
-This guide will help you set up and use external Cricket APIs for live match data.
+This guide explains how BQ-PLAY connects to external cricket data for international matches, series, scorecards, and match-center pages.
 
-## 1. Supported Providers
+## What The API Must Provide
 
-Currently, BQ-PLAY supports the following providers:
+For a full match-center experience, the provider should expose these feeds:
 
-### A. CricketData.org (formerly CricAPI)
-- **Status**: Recommended (Free tier available)
-- **Website**: [https://cricketdata.org/](https://cricketdata.org/)
-- **Pricing**: Free plan includes 100 requests per day.
-- **Setup**:
-  1. Register for an account.
-  2. Copy your API Key.
-  3. Update `.env`:
-     ```env
-     CRICKET_API_PROVIDER=cricapi
-     CRICKET_API_KEY=your_api_key_here
-     ```
+- Live matches
+- Upcoming fixtures
+- Recent results
+- Series list
+- Series fixtures/results by series ID
+- Match info
+- Scorecard
+- Ball-by-ball commentary
+- Live stats
+- Overs
+- Playing XI
+- Photos
+- News
+- Videos
 
-### B. RapidAPI (Cricbuzz)
-- **Status**: Advanced (Free tier available)
-- **Website**: [RapidAPI Cricbuzz](https://rapidapi.com/cricket-api-cricket-api-default/api/cricbuzz-cricket)
-- **Pricing**: Free tier usually includes a limited number of requests.
-- **Setup**:
-  1. Register on RapidAPI.
-  2. Subscribe to the Cricbuzz Cricket API (Free tier).
-  3. Copy your `X-RapidAPI-Key`.
-  4. Update `.env`:
-     ```env
-     CRICKET_API_PROVIDER=rapidapi-cricket
-     CRICKET_API_KEY=your_rapidapi_key_here
-     ```
+If a provider does not include one of these endpoints, BQ-PLAY shows a clear empty state instead of fake data.
 
-## 2. Using the APIs in BQ-PLAY
+## Backend Environment
 
-The system automatically uses the provider specified in `CRICKET_API_PROVIDER`.
+```env
+RAPIDAPI_KEY=your_key_here
+RAPIDAPI_CRICKET_HOST=free-cricbuzz-cricket-api.p.rapidapi.com
+ENABLE_FREE_CRICBUZZ=false
+ENABLE_EXTERNAL_SYNC=false
+ENABLE_DEMO_CRICKET_DATA=false
+```
 
-### Endpoints:
-- `GET /api/cricket-api/live`: Get all live matches from the provider.
-- `GET /api/cricket-api/upcoming`: Get upcoming matches.
-- `GET /api/cricket-api/match/:id`: Get detailed info for a specific match.
+Optional endpoint overrides:
 
-## 3. Graceful Fallback
+```env
+RAPIDAPI_LIVE_MATCHES_PATHS=/cricket-matches-live,/cricket-livescores
+RAPIDAPI_UPCOMING_MATCHES_PATHS=/cricket-schedule-international,/cricket-matches-upcoming
+RAPIDAPI_RECENT_MATCHES_PATHS=/cricket-matches-recent
+RAPIDAPI_MATCH_INFO_PATHS=/cricket-match-info?matchid={id},/cricket-match-scoreboard?matchid={id}
+RAPIDAPI_SERIES_INTERNATIONAL_PATHS=/cricket-series-international
+RAPIDAPI_SERIES_LEAGUE_PATHS=/cricket-series-leagues
+RAPIDAPI_SERIES_DOMESTIC_PATHS=/cricket-series-domestic
+RAPIDAPI_SERIES_MATCHES_PATHS=
+```
 
-If no API key is provided, the system will return an empty list or cached data if available. You can always use the internal scoring system for matches you manage yourself.
+## Validation
 
-## 4. Tips for Free Usage
-- **Caching**: The system has a built-in 8-second cache to prevent over-usage of your daily limit.
-- **Local Matches**: Use the **Internal Match** feature in the Admin panel for matches that don't need external data. This saves your API quota.
+Check provider status:
+
+```http
+GET /api/international/status
+```
+
+Expected success state:
+
+```json
+{
+  "success": true,
+  "data": {
+    "configured": true,
+    "provider": "primary-live-provider",
+    "lastError": ""
+  }
+}
+```
+
+## Important Limits
+
+- Free plans often have small monthly quotas.
+- Some APIs expose series metadata but not all completed matches in that series.
+- A series page can only show all old fixtures/results if the provider has a real series-matches endpoint.
+- BQ-PLAY no longer falls back to demo international results unless `ENABLE_DEMO_CRICKET_DATA=true`.

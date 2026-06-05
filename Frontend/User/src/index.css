@@ -5,21 +5,43 @@
 /* Dark mode configuration */
 @custom-variant dark (&:where(.dark, .dark *));
 
+@theme {
+  --color-cric-bg: var(--cric-bg);
+  --color-cric-card: var(--cric-card);
+  --color-cric-accent: var(--cric-accent);
+  --color-cric-text: var(--cric-text);
+  --color-cric-muted: var(--cric-muted);
+  --color-cric-border: var(--cric-border);
+}
+
 :root {
-  --cric-bg: #0a0e14;
-  --cric-card: #141b24;
+  --cric-bg: #f8fafc;
+  --cric-card: #ffffff;
   --cric-accent: #ff6b35;
   --cric-blue: #009cff;
   --cric-gold: #ffb400;
   --cric-red: #ff3b3b;
-  --cric-text: #e2e8f0;
+  --cric-text: #0f172a;
   --cric-muted: #64748b;
+  --cric-border: #e2e8f0;
+}
+
+.dark {
+  --cric-bg: #0a0e14;
+  --cric-card: #141b24;
+  --cric-accent: #ff6b35;
+  --cric-text: #e2e8f0;
+  --cric-muted: #94a3b8;
+  --cric-border: rgba(255, 255, 255, 0.08);
 }
 
 body {
   margin: 0;
   font-family: 'Inter', sans-serif;
-  @apply bg-slate-50 dark:bg-[#0a0e14] text-slate-900 dark:text-[#e2e8f0];
+  background-color: var(--cric-bg);
+  color: var(--cric-text);
+  overflow-x: hidden;
+  transition: background-color 0.3s ease, color 0.3s ease;
 }
 
 h1, h2, h3, .font-raj {
@@ -42,11 +64,12 @@ h1, h2, h3, .font-raj {
 }
 
 ::-webkit-scrollbar-thumb {
-    @apply bg-slate-400 dark:bg-slate-700 rounded-full;
+    background: var(--cric-muted);
+    border-radius: 999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-    @apply bg-slate-500 dark:bg-slate-600;
+    background: var(--cric-accent);
 }
 
 .no-scrollbar::-webkit-scrollbar {

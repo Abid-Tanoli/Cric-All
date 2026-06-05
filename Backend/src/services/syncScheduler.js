@@ -1,4 +1,4 @@
-import * as cricinfo from "./cricinfoScraper.js";
+import * as externalSource from "./externalCricketScraper.js";
 import Match from "../models/Match.js";
 
 let intervalId = null;
@@ -17,7 +17,7 @@ export function stopSyncScheduler() {
 
 async function poll() {
   try {
-    const liveList = await cricinfo.getLiveMatches();
+    const liveList = await externalSource.getLiveMatches();
     let updated = 0;
     for (const lm of liveList) {
       if (!lm.espnId) continue;

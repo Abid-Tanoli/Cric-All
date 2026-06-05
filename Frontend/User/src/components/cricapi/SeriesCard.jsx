@@ -11,7 +11,7 @@ export default function SeriesCard({ series }) {
     >
       <div className="bg-gradient-to-br from-[#031d44] to-blue-700 p-5 text-white">
         <p className="text-[10px] font-black uppercase tracking-[0.25em] text-blue-200">
-          {series.category ? `${series.category} series` : "RapidAPI Series"}
+          {series.category ? `${series.category} series` : "Live Series"}
         </p>
         <h3 className="mt-3 line-clamp-2 min-h-[3.5rem] text-xl font-black uppercase leading-tight group-hover:text-orange-300">
           {series.name}

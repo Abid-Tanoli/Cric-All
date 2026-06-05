@@ -18,6 +18,13 @@ import {
   getH2H as getRapidH2H,
   getLastFive as getRapidLastFive,
 } from './cricketApiService.js';
+import {
+  isFreeCricbuzzEnabled,
+  getFreeAllMatches,
+  getFreeMatchesByState,
+  getFreeMatchCenter,
+  getFreeMatchScore,
+} from './cricbuzzFreeService.js';
 
 const BASE = 'https://api.cricapi.com/v1';
 const PLACEHOLDER_KEYS = new Set([
@@ -29,6 +36,7 @@ const PLACEHOLDER_KEYS = new Set([
 ]);
 
 const FALLBACK_SERIES_ID = 'aus-tour-pakistan-2026-odi';
+const DEMO_DATA_ENABLED = process.env.ENABLE_DEMO_CRICKET_DATA === 'true';
 const FALLBACK_MATCHES = [
   {
     id: 'aus-pak-2026-odi-1',
@@ -188,7 +196,7 @@ export const hasCricApiKey = () => {
   return !PLACEHOLDER_KEYS.has(key);
 };
 
-export const hasExternalCricketProvider = () => hasRapidApiKey() || hasCricApiKey();
+export const hasExternalCricketProvider = () => hasRapidApiKey() || hasCricApiKey() || isFreeCricbuzzEnabled();
 
 async function getFromRapidApi(endpoint, params = {}) {
   if (!hasRapidApiKey()) return undefined;
@@ -207,8 +215,20 @@ async function getFromRapidApi(endpoint, params = {}) {
     case 'match_scorecard':
     case 'match_info':
       return getRapidMatchScorecard(params.id);
-    case 'match_center':
-      return getRapidMatchCenter(params.id);
+    case 'match_center': {
+      const center = await getRapidMatchCenter(params.id);
+      const hasData = Boolean(
+        center?.match
+        || center?.scorecard
+        || center?.commentary?.length
+        || center?.overs?.length
+        || center?.playingXI?.length
+        || center?.photos?.length
+        || center?.news?.length
+        || center?.videos?.length
+      );
+      return hasData ? center : null;
+    }
     case 'match_commentary':
       return getRapidMatchCommentary(params.id);
     case 'match_stats':
@@ -234,16 +254,59 @@ async function getFromRapidApi(endpoint, params = {}) {
   }
 }
 
+async function getFromFreeCricbuzz(endpoint, params = {}) {
+  if (!isFreeCricbuzzEnabled()) return undefined;
+
+  switch (endpoint) {
+    case 'currentMatches':
+      return getFreeAllMatches(params.type || 'international');
+    case 'liveMatches':
+      return getFreeMatchesByState('live', params.type || 'international');
+    case 'recentMatches':
+      return getFreeMatchesByState('recent', params.type || 'international');
+    case 'upcomingMatches':
+      return getFreeMatchesByState('upcoming', params.type || 'international');
+    case 'match_center':
+      return getFreeMatchCenter(params.id);
+    case 'match_score':
+      return getFreeMatchScore(params.id);
+    case 'match_scorecard': {
+      const center = await getFreeMatchCenter(params.id);
+      return center?.scorecard || null;
+    }
+    case 'match_info': {
+      const center = await getFreeMatchCenter(params.id);
+      return center?.match || null;
+    }
+    case 'match_stats':
+      return (await getFreeMatchCenter(params.id))?.stats || null;
+    case 'match_commentary':
+    case 'match_overs':
+    case 'match_playing_xi':
+    case 'match_photos':
+    case 'match_news':
+    case 'match_videos':
+      return [];
+    default:
+      return undefined;
+  }
+}
+
 async function get(endpoint, params = {}, ttl = 60) {
   const rapidData = await getFromRapidApi(endpoint, params);
   if (rapidData !== undefined) {
     if (rapidData !== null) return rapidData;
+    const freeData = await getFromFreeCricbuzz(endpoint, params);
+    if (freeData !== undefined) return freeData;
     return null;
   }
 
+  const freeData = await getFromFreeCricbuzz(endpoint, params);
+  if (freeData !== undefined) return freeData;
+
   const apiKey = process.env.CRICKET_API_KEY;
   if (!hasCricApiKey()) {
-    return getFallback(endpoint, params);
+    return DEMO_DATA_ENABLED ? getFallback(endpoint, params) : null;
   }
 
   const cacheKey = `${endpoint}:${JSON.stringify(params)}`;
@@ -261,12 +324,18 @@ async function get(endpoint, params = {}, ttl = 60) {
     setCache(cacheKey, json.data, ttl);
     return json.data;
   } catch (e) {
-    console.error(`[CricAPI] ${endpoint} error:`, e.message);
+    console.error(`[LiveCricketAPI] ${endpoint} error:`, e.message);
     return null;
   }
 }
 
-export const getCurrentMatches = () => get('currentMatches', {}, 30);
+export const getCurrentMatches = (type = 'international') => get('currentMatches', { type }, 30);
+
+export const getLiveMatches = (type = 'international') => get('liveMatches', { type }, 20);
+
+export const getRecentMatches = (type = 'international') => get('recentMatches', { type }, 300);
+
+export const getUpcomingMatches = (type = 'international') => get('upcomingMatches', { type }, 600);
 
 export const getAllSeries = () => get('series', {}, 3600);
 
@@ -283,6 +352,8 @@ export const getMatchScorecard = (id) => get('match_scorecard', { id }, 30);
 export const getMatchInfo = (id) => get('match_info', { id }, 300);
 
 export const getMatchCenter = (id) => get('match_center', { id }, 15);
+
+export const getMatchLiveScore = (id) => get('match_score', { id }, 15);
 
 export const getMatchCommentary = (id) => get('match_commentary', { id }, 15);
 

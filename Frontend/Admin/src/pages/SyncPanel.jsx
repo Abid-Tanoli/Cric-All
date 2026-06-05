@@ -89,19 +89,19 @@ export default function SyncPanel() {
   };
 
   const handleUrlSubmit = () => {
-    const match = urlInput.match(/espncricinfo\.com\/series\/([\w-]+)-(\d+)/);
+    const match = urlInput.match(/\/series\/([\w-]+)-(\d+)/);
     if (match) {
       handleSyncSeries(match[1], match[2]);
       setUrlInput("");
     } else {
       const seriesIdMatch = urlInput.match(/\d+/);
-      if (seriesIdMatch) showToast("Enter a full ESPNcricinfo series URL.", 'info');
-      else showToast("Invalid URL. Paste a series URL from espncricinfo.com", 'warning');
+      if (seriesIdMatch) showToast("Enter a full source series URL.", 'info');
+      else showToast("Invalid URL. Paste a source series URL.", 'warning');
     }
   };
 
   const parseSlugId = (url) => {
-    const match = url.match(/espncricinfo\.com\/series\/([\w-]+)-(\d+)/);
+    const match = url.match(/\/series\/([\w-]+)-(\d+)/);
     if (match) return match;
     return null;
   };
@@ -111,7 +111,7 @@ export default function SyncPanel() {
       <div className="mb-10">
         <h1 className="text-4xl font-black text-[#031d44] tracking-tight">SYNC PANEL</h1>
         <p className="text-slate-500 mt-2 font-medium">
-          Sync real cricket data from ESPNcricinfo — no API key needed.
+          Sync real cricket data from an approved source.
         </p>
       </div>
 
@@ -122,14 +122,14 @@ export default function SyncPanel() {
           {/* Add Series */}
           <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
             <h2 className="text-lg font-bold text-slate-800 mb-1">Add Series</h2>
-            <p className="text-xs text-slate-400 mb-4">Paste an ESPNcricinfo series URL to fetch its fixtures</p>
+            <p className="text-xs text-slate-400 mb-4">Paste a source series URL to fetch its fixtures</p>
             <div className="flex gap-3">
               <input
                 type="text"
                 value={urlInput}
                 onChange={e => setUrlInput(e.target.value)}
                 onKeyDown={e => e.key === "Enter" && handleUrlSubmit()}
-                placeholder="https://www.espncricinfo.com/series/australia-in-pakistan-2026-1535643"
+                placeholder="https://source.example/series/australia-in-pakistan-2026-1535643"
                 className="flex-1 px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
               <button

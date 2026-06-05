@@ -11,7 +11,7 @@ export default function LiveMatchesSection() {
 
   const loadLiveMatches = useCallback(async () => {
     if (!isCricApiConfigured()) {
-      setError("Cricket API key missing. Set VITE_CRICAPI_KEY to enable external live scores.");
+      setError("Live cricket API key missing. Set VITE_CRICAPI_KEY to enable external live scores.");
       setLoading(false);
       return;
     }
@@ -38,9 +38,9 @@ export default function LiveMatchesSection() {
         <div>
           <h2 className="flex items-center gap-2 text-xl font-black uppercase tracking-tight text-[#031d44]">
             <span className="h-6 w-2 rounded-full bg-red-600" />
-            CricketData Live Matches
+            BQ-PLAY Live Matches
           </h2>
-          <p className="text-xs font-semibold text-slate-500">External live scores from CricAPI, cached briefly to protect free-plan quota.</p>
+          <p className="text-xs font-semibold text-slate-500">Live scores are cached briefly to protect API quota.</p>
         </div>
         <button onClick={loadLiveMatches} className="rounded-xl bg-[#031d44] px-4 py-2 text-[10px] font-black uppercase tracking-widest text-white">
           Refresh

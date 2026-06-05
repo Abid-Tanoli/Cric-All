@@ -250,7 +250,7 @@ const RightSidebarControls = ({
             </div>
 
             <div className="mt-auto pt-12 text-center opacity-30 text-[9px] font-black tracking-[0.5em] uppercase">
-                Cricinfo Elite Scoring Engine 2026
+                BQ-PLAY Elite Scoring Engine 2026
             </div>
         </div>
     );

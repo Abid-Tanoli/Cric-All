@@ -1,28 +1,13 @@
 import fetch from 'node-fetch';
 import { parseStringPromise } from 'xml2js';
 
-const RSS_FEEDS = [
-  {
-    name: 'ESPNcricinfo',
-    url: 'https://www.espncricinfo.com/rss/content/story/feeds/0.xml',
-    logo: 'https://www.espncricinfo.com/favicon.ico'
-  },
-  {
-    name: 'ESPNcricinfo Pakistan',
-    url: 'https://www.espncricinfo.com/rss/content/story/feeds/6.xml',
-    logo: 'https://www.espncricinfo.com/favicon.ico'
-  },
-  {
-    name: 'CricBuzz',
-    url: 'https://www.cricbuzz.com/rss-feeds/cricket-news',
-    logo: 'https://www.cricbuzz.com/favicon.ico'
-  },
-  {
-    name: 'Cricket365',
-    url: 'https://www.cricket365.com/feed/',
-    logo: 'https://www.cricket365.com/favicon.ico'
-  },
-];
+const RSS_FEEDS = (() => {
+  try {
+    return JSON.parse(process.env.CRICKET_NEWS_FEEDS || '[]');
+  } catch {
+    return [];
+  }
+})();
 
 const newsCache = { data: [], expires: 0 };
 let rssOfflineLogged = false;
@@ -39,7 +24,7 @@ const FALLBACK_NEWS = [
   },
   {
     title: 'Add network access to enable cricket news feeds',
-    description: 'ESPNcricinfo, CricBuzz, and Cricket365 feeds are optional. They will load automatically when DNS/internet access is available.',
+    description: 'External cricket news feeds are optional. They will load automatically when DNS/internet access is available.',
     link: '',
     pubDate: new Date().toISOString(),
     image: null,

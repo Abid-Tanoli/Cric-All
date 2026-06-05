@@ -1,4 +1,4 @@
-// AI Commentary Generation Service — ESPNcricinfo Style
+// AI Commentary Generation Service - BQ-PLAY professional style
 // Using claude-sonnet-4-20250514 as specified by user
 // Parts 4, 5, 6: Per-ball, Over Summary, Ball Edit prompts
 
@@ -288,7 +288,7 @@ class AICommentaryService {
 
     if (this.apiKey) {
       try {
-        const prompt = `You are a professional cricket commentator in the style of ESPNcricinfo.
+        const prompt = `You are a professional BQ-PLAY cricket commentator.
         
 Ball Info:
 - Ball: ${overNumber}.${ballNumber}
@@ -471,7 +471,7 @@ Variation Note: Use diverse vocabulary. Ensure the tone fits the match tempo. Ne
 
     if (this.apiKey) {
       try {
-        const prompt = `You are an ESPNcricinfo pundit analyst.
+        const prompt = `You are a professional BQ-PLAY cricket analyst.
 
 Over ${overNumber + 1} just completed.
 Bowler: ${bowlerName}${bowlingStyle ? ` | Style: ${bowlingStyle}` : ""}
@@ -491,7 +491,7 @@ Write 2-3 sentences of over summary:
 - Comment on the bowling quality and tactical shifts
 - Highlight key wickets, big hits, or building pressure
 - Note the context (closing in on target, middle-over consolidation, etc.)
-ESPNcricinfo pundit style. No emojis. Plain flowing text only.`;
+BQ-PLAY analyst style. No emojis. Plain flowing text only.`;
 
         const response = await fetch("https://api.anthropic.com/v1/messages", {
           method: "POST",
@@ -545,7 +545,7 @@ Write TWO lines of corrected commentary for this ball.
 SHORT: [broadcast summary]
 VIVID: [Highly technical description of delivery length, shot intent, and specific region] (2-3 sentences)
 
-ESPNcricinfo style, no emojis.`;
+BQ-PLAY professional style, no emojis.`;
 
         const response = await fetch("https://api.anthropic.com/v1/messages", {
           method: "POST",

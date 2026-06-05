@@ -28,9 +28,17 @@ const formatSeriesDate = (series, key) =>
   series?.[key] || series?.[key.toLowerCase()] || series?.[key.replace('Date', 'date')] || '';
 
 const scoreTeam = (score = {}) => score.inning?.split(' Inning')[0] || score.team || score.teamName || 'Innings';
-const scoreRuns = (score = {}) => score.r ?? score.runs ?? 0;
-const scoreWickets = (score = {}) => score.w ?? score.wickets ?? 0;
-const scoreOvers = (score = {}) => score.o ?? score.overs ?? '0';
+const scoreRuns = (score = {}) => score.r ?? score.runs ?? '';
+const scoreWickets = (score = {}) => score.w ?? score.wickets ?? '';
+const scoreOvers = (score = {}) => score.o ?? score.overs ?? '';
+const scoreLine = (score = {}) => {
+  if (score.chaseText || score.display) return score.chaseText || score.display;
+  const runs = scoreRuns(score);
+  const wickets = scoreWickets(score);
+  const overs = scoreOvers(score);
+  if (runs === '' && wickets === '' && overs === '') return 'Yet to bat';
+  return `${runs}${wickets !== '' ? `/${wickets}` : ''}${overs ? ` (${overs})` : ''}`;
+};
 
 export default function International() {
   const [activeTab, setActiveTab] = useState('live');
@@ -74,7 +82,7 @@ export default function International() {
       setSeries(nextSeries);
       setHighlights(asArray(highlightsRes.data.data));
       setNews(asArray(newsRes.data.data));
-      setApiStatus(statusRes.data.data || null);
+      setApiStatus(matchesRes.data.providerStatus || statusRes.data.data || null);
     } catch (error) {
       console.error('International fetch error:', error);
     } finally {
@@ -100,16 +108,17 @@ export default function International() {
     { id: 'news', label: 'News' },
   ];
 
+  const providerLabel = apiStatus?.configured ? 'BQ-PLAY live data provider' : 'Live data provider';
   const apiWarning = apiStatus?.lastError
     ? apiStatus.lastError
-    : (!loading && matches.length === 0 && series.length === 0 ? 'RapidAPI returned no cricket data.' : '');
+    : (!loading && matches.length === 0 && series.length === 0 ? `${providerLabel} returned no cricket data.` : '');
 
   const renderApiOverview = () => {
     const topMatch = groupedMatches.live[0] || groupedMatches.upcoming[0] || groupedMatches.results[0];
     return (
       <section className="mb-8 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-800">
         <div className="bg-[#031d44] px-5 py-4 text-white">
-          <p className="text-[10px] font-black uppercase tracking-[0.25em] text-blue-200">Cricbuzz RapidAPI live feed</p>
+          <p className="text-[10px] font-black uppercase tracking-[0.25em] text-blue-200">{providerLabel}</p>
           <h2 className="mt-1 text-2xl font-black uppercase tracking-tight">Real cricket data</h2>
         </div>
         <div className="grid gap-0 lg:grid-cols-[1fr_1.2fr]">
@@ -133,13 +142,13 @@ export default function International() {
               <Link to={`/international/match/${getMatchId(topMatch)}`} className="block rounded-xl border border-slate-100 p-4 transition hover:border-blue-300 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-700">
                 <p className="text-[10px] font-black uppercase tracking-widest text-blue-600">{getMatchState(topMatch)} match</p>
                 <h3 className="mt-2 text-xl font-black text-[#031d44] dark:text-white">{topMatch.name}</h3>
-                <p className="mt-2 text-sm font-bold text-slate-500">{topMatch.series?.name || topMatch.description || 'Cricbuzz RapidAPI'}</p>
+                <p className="mt-2 text-sm font-bold text-slate-500">{topMatch.series?.name || topMatch.description || providerLabel}</p>
                 <p className="mt-2 text-sm font-semibold text-slate-600 dark:text-slate-300">{topMatch.status}</p>
                 <p className="mt-1 text-xs font-semibold text-slate-400">{formatDate(topMatch.dateTimeGMT || topMatch.date)}{topMatch.venue ? ` - ${topMatch.venue}` : ''}</p>
               </Link>
             ) : (
               <div className="rounded-xl border border-dashed border-slate-200 p-8 text-center text-sm font-bold text-slate-500">
-                Waiting for RapidAPI cricket data.
+                Waiting for cricket data from the configured provider.
               </div>
             )}
           </div>
@@ -153,7 +162,13 @@ export default function International() {
       {matchList.length === 0 ? (
         <div className="col-span-full rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-16 text-center text-slate-500 dark:border-slate-700 dark:bg-slate-800">
           <p className="text-lg font-black">{emptyTitle}</p>
-          {emptySubtitle && <p className="mt-1 text-sm">{emptySubtitle}</p>}
+          {apiWarning ? (
+            <div className="mx-auto mt-4 max-w-2xl rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-900">
+              <p className="text-xs font-black uppercase tracking-widest">{providerLabel} issue</p>
+              <p className="mt-2 text-sm font-bold">{apiWarning}</p>
+              <p className="mt-1 text-xs font-semibold">Data tabhi ayega jab API source reachable ho ya working base URL set ho.</p>
+            </div>
+          ) : emptySubtitle && <p className="mt-1 text-sm">{emptySubtitle}</p>}
         </div>
       ) : (
         matchList.slice(0, 18).map(match => (
@@ -180,7 +195,7 @@ export default function International() {
             {asArray(match.score).map((score, index) => (
               <div key={`${scoreTeam(score)}-${index}`} className="flex justify-between border-b border-slate-100 py-1 text-sm last:border-0 dark:border-slate-700">
                 <span className="font-bold text-slate-700 dark:text-slate-300">{scoreTeam(score)}</span>
-                <span className="font-black text-[#031d44] dark:text-white">{scoreRuns(score)}/{scoreWickets(score)} ({scoreOvers(score)})</span>
+                <span className="font-black text-[#031d44] dark:text-white">{scoreLine(score)}</span>
               </div>
             ))}
             <p className="mt-3 text-xs font-semibold text-slate-500">{formatDate(match.dateTimeGMT || match.date)}</p>
@@ -197,7 +212,7 @@ export default function International() {
       {series.length === 0 ? (
         <div className="col-span-full rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-16 text-center text-slate-500 dark:border-slate-700 dark:bg-slate-800">
           <p className="text-lg font-black">No series data available</p>
-          <p className="mt-1 text-sm">Add RAPIDAPI_KEY or CRICKET_API_KEY to load live series.</p>
+          <p className="mt-1 text-sm">Add a supported live cricket API key to load live series.</p>
         </div>
       ) : (
         series.slice(0, 18).map(item => {
@@ -302,9 +317,9 @@ export default function International() {
 
         {apiWarning && (
           <div className="mb-8 rounded-2xl border border-amber-200 bg-amber-50 p-5 text-amber-900">
-            <p className="text-xs font-black uppercase tracking-widest">RapidAPI data unavailable</p>
+            <p className="text-xs font-black uppercase tracking-widest">{providerLabel} unavailable</p>
             <p className="mt-2 text-sm font-bold">{apiWarning}</p>
-            <p className="mt-1 text-xs font-semibold">Real-key mode is enabled, so BQ-PLAY is not showing fallback/demo cricket data.</p>
+            <p className="mt-1 text-xs font-semibold">BQ-PLAY is not showing fallback/demo cricket data here.</p>
           </div>
         )}
 
@@ -332,7 +347,7 @@ export default function International() {
         ) : (
           <>
             {activeTab === 'live' && renderMatchGrid(groupedMatches.live, 'No live matches right now', 'Check upcoming fixtures or refresh shortly.')}
-            {activeTab === 'upcoming' && renderMatchGrid(groupedMatches.upcoming, 'No upcoming matches', 'Fixtures will appear here from Cricbuzz RapidAPI.')}
+            {activeTab === 'upcoming' && renderMatchGrid(groupedMatches.upcoming, 'No upcoming matches', 'Fixtures will appear here from the live data provider.')}
             {activeTab === 'results' && renderMatchGrid(groupedMatches.results, 'No recent results', 'Completed international matches will appear here.')}
             {activeTab === 'series' && renderSeries()}
             {activeTab === 'highlights' && renderHighlights()}

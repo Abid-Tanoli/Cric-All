@@ -1,7 +1,9 @@
-// Cricket API Integration Service
-// Supports multiple providers: CricAPI, RapidAPI Cricket, etc.
+// Cricket API integration service.
+// Supports multiple external live-data providers.
 
 import fetch from 'node-fetch';
+
+const RAPIDAPI_CRICKET_HOST = process.env.RAPIDAPI_CRICKET_HOST || 'free-cricbuzz-cricket-api.p.rapidapi.com';
 
 class CricketAPIService {
   constructor() {
@@ -17,7 +19,7 @@ class CricketAPIService {
       case 'cricapi':
         return 'https://api.cricapi.com/v1';
       case 'rapidapi-cricket':
-        return 'https://cricbuzz-cricket.p.rapidapi.com';
+        return `https://${RAPIDAPI_CRICKET_HOST}`;
       default:
         return 'https://api.cricapi.com/v1';
     }
@@ -34,7 +36,7 @@ class CricketAPIService {
         return {
           'Content-Type': 'application/json',
           'X-RapidAPI-Key': this.apiKey,
-          'X-RapidAPI-Host': 'cricbuzz-cricket.p.rapidapi.com',
+          'X-RapidAPI-Host': RAPIDAPI_CRICKET_HOST,
         };
       default:
         return { 'Content-Type': 'application/json' };
@@ -48,12 +50,12 @@ class CricketAPIService {
     // Check cache first
     const cached = this.cache.get(cacheKey);
     if (cached && Date.now() - cached.timestamp < this.cacheTimeout) {
-      console.log('[CricketAPI] Using cached data for:', endpoint);
+      console.log('[LiveCricketAPI] Using cached data for:', endpoint);
       return cached.data;
     }
 
     try {
-      console.log('[CricketAPI] Fetching from external API:', endpoint);
+      console.log('[LiveCricketAPI] Fetching from external API:', endpoint);
       
       let url = `${this.baseUrl}${endpoint}`;
       
@@ -90,7 +92,7 @@ class CricketAPIService {
 
       return data;
     } catch (error) {
-      console.error('[CricketAPI] Error fetching data:', error.message);
+      console.error('[LiveCricketAPI] Error fetching data:', error.message);
       throw error;
     }
   }
@@ -105,8 +107,8 @@ class CricketAPIService {
     }
   }
 
-  // Transform CricAPI response to our format
-  transformCricAPIMatch(match) {
+  // Transform a standard live-provider match response to our format.
+  transformStandardProviderMatch(match) {
     return {
       id: match.id,
       name: match.name || 'Unknown Match',
@@ -137,8 +139,8 @@ class CricketAPIService {
     };
   }
 
-  // Transform RapidAPI/Cricbuzz response
-  transformCricbuzzMatch(match) {
+  // Transform an alternate live-provider match response to our format.
+  transformAlternateProviderMatch(match) {
     return {
       id: match.matchInfo?.matchId || match.matchInfo?.id,
       name: match.matchInfo?.team1?.name + ' vs ' + match.matchInfo?.team2?.name,
@@ -201,7 +203,7 @@ class CricketAPIService {
         if (data.status === 'success' && data.data) {
           return data.data
             .filter(m => m.matchStarted && !m.matchEnded)
-            .map(m => this.transformCricAPIMatch(m));
+            .map(m => this.transformStandardProviderMatch(m));
         }
       } else if (this.apiProvider === 'rapidapi-cricket') {
         data = await this.makeRequest('/matches/v1/live');
@@ -210,13 +212,13 @@ class CricketAPIService {
           const allMatches = data.typeMatches.flatMap(t => t.seriesMatches || []);
           return allMatches
             .filter(m => m.matchInfo?.matchStarted && !m.matchInfo?.matchEnded)
-            .map(m => this.transformCricbuzzMatch(m));
+            .map(m => this.transformAlternateProviderMatch(m));
         }
       }
       
       return [];
     } catch (error) {
-      console.error('[CricketAPI] Error fetching live matches:', error);
+      console.error('[LiveCricketAPI] Error fetching live matches:', error);
       return [];
     }
   }
@@ -234,13 +236,13 @@ class CricketAPIService {
         if (data.status === 'success' && data.data) {
           return data.data
             .filter(m => !m.matchStarted)
-            .map(m => this.transformCricAPIMatch(m));
+            .map(m => this.transformStandardProviderMatch(m));
         }
       }
       
       return [];
     } catch (error) {
-      console.error('[CricketAPI] Error fetching upcoming matches:', error);
+      console.error('[LiveCricketAPI] Error fetching upcoming matches:', error);
       return [];
     }
   }
@@ -258,13 +260,13 @@ class CricketAPIService {
         if (data.status === 'success' && data.data) {
           return data.data
             .filter(m => m.matchEnded)
-            .map(m => this.transformCricAPIMatch(m));
+            .map(m => this.transformStandardProviderMatch(m));
         }
       }
       
       return [];
     } catch (error) {
-      console.error('[CricketAPI] Error fetching completed matches:', error);
+      console.error('[LiveCricketAPI] Error fetching completed matches:', error);
       return [];
     }
   }
@@ -278,20 +280,20 @@ class CricketAPIService {
         data = await this.makeRequest('/matches');
         
         if (data.status === 'success' && data.data) {
-          return data.data.map(m => this.transformCricAPIMatch(m));
+          return data.data.map(m => this.transformStandardProviderMatch(m));
         }
       } else if (this.apiProvider === 'rapidapi-cricket') {
         data = await this.makeRequest('/matches/v1/recent');
         
         if (data.typeMatches) {
           const allMatches = data.typeMatches.flatMap(t => t.seriesMatches || []);
-          return allMatches.map(m => this.transformCricbuzzMatch(m));
+          return allMatches.map(m => this.transformAlternateProviderMatch(m));
         }
       }
       
       return [];
     } catch (error) {
-      console.error('[CricketAPI] Error fetching all matches:', error);
+      console.error('[LiveCricketAPI] Error fetching all matches:', error);
       return [];
     }
   }
@@ -305,19 +307,19 @@ class CricketAPIService {
         data = await this.makeRequest(`/cricketScore/${matchId}`);
         
         if (data.status === 'success') {
-          return this.transformCricAPIMatch(data.data);
+          return this.transformStandardProviderMatch(data.data);
         }
       } else if (this.apiProvider === 'rapidapi-cricket') {
         data = await this.makeRequest(`/mcenter/view/${matchId}`);
         
         if (data) {
-          return this.transformCricbuzzMatch(data);
+          return this.transformAlternateProviderMatch(data);
         }
       }
       
       return null;
     } catch (error) {
-      console.error('[CricketAPI] Error fetching match info:', error);
+      console.error('[LiveCricketAPI] Error fetching match info:', error);
       return null;
     }
   }
@@ -337,7 +339,7 @@ class CricketAPIService {
       
       return null;
     } catch (error) {
-      console.error('[CricketAPI] Error fetching commentary:', error);
+      console.error('[LiveCricketAPI] Error fetching commentary:', error);
       return null;
     }
   }
@@ -352,7 +354,7 @@ class CricketAPIService {
         
         if (data.status === 'success') {
           return {
-            matchInfo: this.transformCricAPIMatch(data.data),
+            matchInfo: this.transformStandardProviderMatch(data.data),
             innings: data.data.score || [],
             batsmen: data.data.batsman || [],
             bowlers: data.data.bowler || [],
@@ -365,7 +367,7 @@ class CricketAPIService {
       
       return null;
     } catch (error) {
-      console.error('[CricketAPI] Error fetching scorecard:', error);
+      console.error('[LiveCricketAPI] Error fetching scorecard:', error);
       return null;
     }
   }
@@ -373,7 +375,7 @@ class CricketAPIService {
   // Clear cache manually
   clearCache() {
     this.cache.clear();
-    console.log('[CricketAPI] Cache cleared');
+    console.log('[LiveCricketAPI] Cache cleared');
   }
 }
 

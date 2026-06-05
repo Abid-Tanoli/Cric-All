@@ -32,7 +32,7 @@
 
 ---
 
-### 3. Unified ESPN-Style Live Scores Page
+### 3. Unified BQ-PLAY Style Live Scores Page
 **Location:** `/admin/live`
 **Features:**
 - Merged live viewing and scoring into single page
@@ -155,7 +155,7 @@
 
 ---
 
-### 10. ESPN-Style Live Navigation Bar
+### 10. BQ-PLAY Style Live Navigation Bar
 **Location:** User-facing `/live` and `/series` pages
 **Features:**
 - Top bar with search
@@ -280,7 +280,7 @@ oversHistory: [{
 
 ### 4. Test User Live Page
 1. Navigate to `http://localhost:3001/live` (or your User app port)
-2. View ESPN-style match cards
+2. View BQ-PLAY style match cards
 3. Verify Results/Live/Upcoming sections
 4. Check series grouping
 5. Click on a match to view full scorecard

@@ -158,7 +158,7 @@ export default function CricMatchDetails() {
                   {players.map((player) => (
                     <div key={player.id || player.name} className="flex justify-between py-3">
                       <span className="font-black text-slate-800">{player.name}</span>
-                      <span className="text-xs font-bold text-slate-500">{player.country || "CricketData"}</span>
+                      <span className="text-xs font-bold text-slate-500">{player.country || "BQ-PLAY"}</span>
                     </div>
                   ))}
                   {playerSearch && players.length === 0 && <p className="py-4 text-sm font-bold text-slate-500">No players found.</p>}

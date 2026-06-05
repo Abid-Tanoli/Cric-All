@@ -6,7 +6,7 @@ const CRICKET_CHANNELS = {
   icc: 'UCiWrjBhlICf_L_RK5y6Vrxw',
   pcb: 'UCiTDCIBE_1dMH-8VJvqdSTw',
   bcci: 'UC-G7KNFbOq-nUjgaGGwFRkA',
-  espncricinfo: 'UC_1Vwh8cF0B9a8YGbAD_rMQ',
+  globalNews: 'UC_1Vwh8cF0B9a8YGbAD_rMQ',
   skysports: 'UCNAf1k0yIjyGu3k9BwAg3lg',
 };
 

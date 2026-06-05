@@ -107,7 +107,7 @@ function CommentaryLine({ text, loading }) {
     );
 }
 
-// Over block - ESPNcricinfo style
+// Over block - BQ-PLAY style
 function OverBlock({ over, balls, onEdit, showReadMore, onReadMore, allPlayers }) {
     const overRuns = over.runsScored ?? balls.reduce((s, b) => s + (b.runs || 0) + (b.isWide ? 1 : 0) + (b.isNoBall ? 1 : 0), 0);
     const overWickets = over.wickets ?? balls.filter(b => b.isWicket).length;

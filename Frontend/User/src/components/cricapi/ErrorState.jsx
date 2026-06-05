@@ -3,7 +3,7 @@ import React from "react";
 export default function ErrorState({ title = "Cricket API unavailable", message, onRetry }) {
   const friendlyMessage =
     message?.includes("key missing")
-      ? "Add VITE_CRICAPI_KEY to enable CricketData series and live match data."
+      ? "Add VITE_CRICAPI_KEY to enable live series and match data."
       : message || "The free cricket API may be rate limited right now. Cached or local BQ-PLAY data will still be used where available.";
 
   return (

@@ -1,7 +1,7 @@
 import Tournament from "../models/Tournament.js";
 import Match from "../models/Match.js";
 import Team from "../models/Team.js";
-import * as cricinfo from "../services/cricinfoScraper.js";
+import * as externalSource from "../services/externalCricketScraper.js";
 
 const syncLog = [];
 
@@ -14,7 +14,7 @@ function addLog(level, message, data = {}) {
 
 export async function getAvailableSeries(req, res) {
   try {
-    const series = await cricinfo.getSeriesList();
+    const series = await externalSource.getSeriesList();
     res.json({ success: true, data: series });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -25,7 +25,7 @@ export async function syncSeries(req, res) {
   const { slug, seriesId } = req.params;
   try {
     addLog("info", `Syncing series: ${slug} (${seriesId})`);
-    const data = await cricinfo.getSeriesInfo(slug, seriesId);
+    const data = await externalSource.getSeriesInfo(slug, seriesId);
     if (!data) return res.status(404).json({ success: false, error: "Series not found" });
 
     let tournament = await Tournament.findOne({ espnSeriesId: seriesId });
@@ -126,7 +126,7 @@ export async function syncMatch(req, res) {
   const { slug, seriesSlug, seriesId, matchId } = req.params;
   try {
     addLog("info", `Syncing match: ${slug} (${matchId})`);
-    const data = await cricinfo.getMatchScorecard(seriesSlug, seriesId, slug, matchId);
+    const data = await externalSource.getMatchScorecard(seriesSlug, seriesId, slug, matchId);
     if (!data) return res.status(404).json({ success: false, error: "Match not found" });
 
     const matchDoc = await Match.findOne({ espnMatchId: matchId });
@@ -200,8 +200,8 @@ export async function syncMatch(req, res) {
 
 export async function syncLiveScores(req, res) {
   try {
-    addLog("info", "Syncing live scores from ESPNcricinfo");
-    const liveList = await cricinfo.getLiveMatches();
+    addLog("info", "Syncing live scores from external source");
+    const liveList = await externalSource.getLiveMatches();
 
     let updated = 0;
     for (const lm of liveList) {
@@ -251,13 +251,13 @@ export async function syncLiveScores(req, res) {
 export async function syncAll(req, res) {
   try {
     addLog("info", "Syncing all series from fixtures");
-    const seriesList = await cricinfo.getSeriesList();
+    const seriesList = await externalSource.getSeriesList();
     let total = 0;
 
     for (const s of seriesList.slice(0, 10)) {
       if (!s.slug || !s.espnId) continue;
       try {
-        const data = await cricinfo.getSeriesInfo(s.slug, s.espnId);
+        const data = await externalSource.getSeriesInfo(s.slug, s.espnId);
         if (data) total += (data.fixtures?.length || 0) + (data.results?.length || 0);
       } catch { /* skip */ }
     }

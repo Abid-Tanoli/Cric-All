@@ -5,7 +5,7 @@ let socket = null;
 export function initSocket() {
   if (socket) return socket;
 
-  const SERVER = import.meta.env.VITE_SOCKET_URL || "http://localhost:5000";
+  const SERVER = import.meta.env.VITE_SOCKET_URL || (import.meta.env.DEV ? "http://localhost:5000" : window.location.origin);
 
   socket = clientIo(SERVER, {
     transports: ["websocket", "polling"],
@@ -15,11 +15,11 @@ export function initSocket() {
   });
 
   socket.on("connect", () => {
-    console.log("✅ Socket connected:", socket.id);
+    console.log("Socket connected:", socket.id);
   });
 
   socket.on("connect_error", (err) => {
-    console.warn("❌ Socket connect_error:", err.message);
+    console.warn("Socket connect_error:", err.message);
   });
 
   return socket;

@@ -1,12 +1,13 @@
 import express from 'express';
 import {
   getCurrentMatches, getAllSeries, getSeriesInfo,
+  getLiveMatches, getRecentMatches, getUpcomingMatches,
   getSeriesPoints, getSeriesSquad, getMatchScorecard,
   getMatchInfo, searchPlayers, getPlayerInfo,
   getHeadToHead, getTeamForm, getTeamSquadById,
   getMatchCenter, getMatchCommentary, getMatchStats,
   getMatchOvers, getMatchPlayingXI, getMatchPhotos,
-  getMatchNews, getMatchVideos
+  getMatchNews, getMatchVideos, getMatchLiveScore
 } from '../services/cricketDataService.js';
 import {
   getHighlightsByDate as getRapidHighlightsByDate,
@@ -14,6 +15,7 @@ import {
   getTeamHighlights as getRapidTeamHighlights,
   getRapidApiStatus,
 } from '../services/cricketApiService.js';
+import { getFreeCricbuzzStatus } from '../services/cricbuzzFreeService.js';
 import {
   searchHighlights,
   getMatchHighlights as getYoutubeMatchHighlights,
@@ -29,18 +31,72 @@ const router = express.Router();
 const asArray = (value) => Array.isArray(value) ? value : [];
 const hasItems = (value) => Array.isArray(value) && value.length > 0;
 
+const sanitizeProviderError = (value = '') => {
+  const message = String(value || '');
+  if (!message) return '';
+  if (/quota|too many requests/i.test(message)) {
+    return 'Live data quota has been reached for the current provider plan.';
+  }
+  if (/not subscribed/i.test(message)) {
+    return 'The current account is not subscribed to the required live cricket API.';
+  }
+  if (/payment required/i.test(message)) {
+    return 'The live data endpoint requires an active paid plan.';
+  }
+  if (/endpoint .*does not exist|not found/i.test(message)) {
+    return 'The current live provider does not expose this endpoint.';
+  }
+  return message.replace(/https?:\/\/\S+/g, '').trim();
+};
+
+const getInternationalProviderStatus = () => {
+  const rawRapid = getRapidApiStatus();
+  const rapid = {
+    configured: rawRapid.configured,
+    blockedUntil: rawRapid.blockedUntil,
+    lastError: sanitizeProviderError(rawRapid.lastError),
+  };
+  const rawFree = getFreeCricbuzzStatus();
+  const free = {
+    ...rawFree,
+    lastError: sanitizeProviderError(rawFree.lastError),
+  };
+  return {
+    configured: Boolean(rapid.configured || free.enabled),
+    provider: rapid.configured ? 'primary-live-provider' : (free.enabled ? 'fallback-live-provider' : 'none'),
+    lastError: rapid.configured ? rapid.lastError : free.lastError,
+    rapid,
+    free,
+  };
+};
+
 router.get('/status', (req, res) => {
-  res.json({ success: true, data: getRapidApiStatus() });
+  res.json({ success: true, data: getInternationalProviderStatus() });
 });
 
 router.get('/live', async (req, res) => {
   const data = await getCurrentMatches();
-  res.json({ success: true, data: data || [], matches: data || [] });
+  res.json({ success: true, data: data || [], matches: data || [], providerStatus: getInternationalProviderStatus() });
 });
 
 router.get('/matches', async (req, res) => {
-  const data = await getCurrentMatches();
-  res.json({ success: true, data: data || [], matches: data || [] });
+  const data = await getCurrentMatches(req.query.type || 'international');
+  res.json({ success: true, data: data || [], matches: data || [], providerStatus: getInternationalProviderStatus() });
+});
+
+router.get('/matches/live', async (req, res) => {
+  const data = await getLiveMatches(req.query.type || 'international');
+  res.json({ success: true, data: data || [], matches: data || [], providerStatus: getInternationalProviderStatus() });
+});
+
+router.get('/matches/recent', async (req, res) => {
+  const data = await getRecentMatches(req.query.type || 'international');
+  res.json({ success: true, data: data || [], matches: data || [], providerStatus: getInternationalProviderStatus() });
+});
+
+router.get('/matches/upcoming', async (req, res) => {
+  const data = await getUpcomingMatches(req.query.type || 'international');
+  res.json({ success: true, data: data || [], matches: data || [], providerStatus: getInternationalProviderStatus() });
 });
 
 router.get('/series', async (req, res) => {
@@ -55,7 +111,7 @@ router.get('/tournaments', async (req, res) => {
 
 router.get('/series/:id', async (req, res) => {
   const data = await getSeriesInfo(req.params.id);
-  res.json({ success: true, data });
+  res.json({ success: Boolean(data), data, providerStatus: getInternationalProviderStatus() });
 });
 
 router.get('/series/:id/points', async (req, res) => {
@@ -96,6 +152,14 @@ const sendMatchCenter = async (req, res) => {
 
 router.get('/match/:id/center', sendMatchCenter);
 router.get('/matches/:id/center', sendMatchCenter);
+
+const sendMatchLiveScore = async (req, res) => {
+  const data = await getMatchLiveScore(req.params.id);
+  res.json({ success: Boolean(data), data: data || null });
+};
+
+router.get('/match/:id/score', sendMatchLiveScore);
+router.get('/matches/:id/score', sendMatchLiveScore);
 
 const sendMatchCommentary = async (req, res) => {
   const data = await getMatchCommentary(req.params.id);

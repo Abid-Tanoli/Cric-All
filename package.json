@@ -1,0 +1,45 @@
+{
+  "name": "bq-play",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "npm --prefix Frontend/User install && npm --prefix Backend install && npm --prefix Frontend/User run build",
+    "build:user": "npm --prefix Frontend/User run build",
+    "build:admin": "npm --prefix Frontend/Admin run build",
+    "start": "npm --prefix Backend start",
+    "dev:backend": "npm --prefix Backend run dev",
+    "dev:user": "npm --prefix Frontend/User run dev"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.97.1",
+    "@reduxjs/toolkit": "^2.11.2",
+    "@tailwindcss/vite": "^4.1.18",
+    "@tanstack/react-query": "^5.90.16",
+    "axios": "^1.13.2",
+    "bcryptjs": "^3.0.3",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.6",
+    "dotenv": "^17.2.3",
+    "express": "^5.2.1",
+    "jsonwebtoken": "^9.0.3",
+    "mongoose": "^9.1.5",
+    "multer": "^1.4.5-lts.1",
+    "node-fetch": "^3.3.2",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "react-icons": "^5.5.0",
+    "react-redux": "^9.2.0",
+    "react-router-dom": "^7.12.0",
+    "socket.io": "^4.8.3",
+    "socket.io-client": "^4.8.3",
+    "tailwindcss": "^4.1.18",
+    "xlsx": "^0.18.5",
+    "xml2js": "^0.6.2",
+    "zod": "^4.3.5"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^5.1.1",
+    "vite": "^7.2.4"
+  }
+}
