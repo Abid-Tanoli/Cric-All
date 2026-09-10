@@ -4,7 +4,7 @@ import Admin from "../models/Admin.js";
 
 const DEFAULT_ADMIN = {
   name: "Super Admin",
-  email: "admin@bqplay.com",
+  email: "admin@cric-all.com",
   password: "admin123",
 };
 
@@ -16,7 +16,7 @@ async function seedAdmin() {
     if (existing) {
       console.log("Admin already exists with email:", DEFAULT_ADMIN.email);
       console.log("Login credentials:");
-      console.log("  Email:    admin@bqplay.com");
+      console.log("  Email:    admin@cric-all.com");
       console.log("  Password: admin123");
       process.exit(0);
     }

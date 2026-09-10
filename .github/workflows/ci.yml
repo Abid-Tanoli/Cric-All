@@ -37,7 +37,7 @@ jobs:
 
       - name: Start server
         run: |
-          MONGO_URL="mongodb://localhost:27017/bqplay-test" \
+          MONGO_URL="mongodb://localhost:27017/cric-all-test" \
           JWT_SECRET="ci-only-secret" \
           LOG_LEVEL=error \
           node src/index.js &

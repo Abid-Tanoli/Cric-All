@@ -29,7 +29,7 @@ function parseDatabaseName() {
   const databaseName = dbArg?.split("=", 2)[1]?.trim();
 
   if (!databaseName) {
-    throw new Error("Missing database argument. Use --db=bq-play or --db=test.");
+    throw new Error("Missing database argument. Use --db=cric-all or --db=test.");
   }
 
   if (!/^[a-zA-Z0-9_-]+$/.test(databaseName)) {

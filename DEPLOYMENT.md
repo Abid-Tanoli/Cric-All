@@ -91,7 +91,7 @@ Required production environment variables:
 
 ```env
 NODE_ENV=production
-MONGO_URL=mongodb+srv://.../bq-play
+MONGO_URL=mongodb+srv://.../cric-all
 REQUIRE_MONGO_DB_NAME=true
 JWT_SECRET=...
 CORS_ORIGINS=https://your-user-domain,https://your-admin-domain

@@ -12,13 +12,13 @@ Backend notes:
   }
 
 Database safety and seed data:
-- Use an explicit MongoDB database name. The intended database name is bq-play.
-- Do not use a MongoDB URL without a database path such as /bq-play; drivers can default to the test database.
+- Use an explicit MongoDB database name. The intended database name is cric-all.
+- Do not use a MongoDB URL without a database path such as /cric-all; drivers can default to the test database.
 - Export a database snapshot before any cleanup, reset, or migration.
 - The seed script creates dummy starter data only. It is not a production data restore.
 - Do not run npm run seed -- --reset on real data.
 - Real teams, players, and matches should be created through the Admin panel.
-- Read-only exports can be created with npm run db:export:bq-play or npm run db:export:test.
+- Read-only exports can be created with npm run db:export:cric-all or npm run db:export:test.
 
 Creating the first admin:
 - If the database has no admin accounts, create one intentionally with environment variables:

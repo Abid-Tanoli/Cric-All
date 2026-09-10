@@ -8,7 +8,7 @@
     "dev": "nodemon src/index.js",
     "import:old": "node scripts/importOldData.js",
     "seed": "node src/seed/seedInitialData.js",
-    "db:export:bq-play": "node src/scripts/exportDbSnapshot.js --db=bq-play",
+    "db:export:cric-all": "node src/scripts/exportDbSnapshot.js --db=cric-all",
     "db:export:test": "node src/scripts/exportDbSnapshot.js --db=test",
     "admin:create": "node src/scripts/createAdmin.js",
     "test": "node --test test/*.test.js",

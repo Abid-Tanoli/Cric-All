@@ -9,7 +9,7 @@ This guide uses these exact public Docker Hub images:
 Run every PowerShell command from:
 
 ```powershell
-Set-Location "C:\Users\Abid\Desktop\Abid Web Development\BQ-PLAY"
+Set-Location "C:\Users\Abid\Desktop\Abid Web Development\Cric-All"
 ```
 
 The physical folder can keep its old name. The application and image names are CricAll.
@@ -102,7 +102,7 @@ CORS_ORIGINS=https://your-user-service.onrender.com,https://your-admin-service.o
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `NODE_ENV` | Yes | `production` |
-| `MONGODB_URI` | Yes | Full Atlas URI including database path (`/bq-play`) |
+| `MONGODB_URI` | Yes | Full Atlas URI including database path (`/cric-all`) |
 | `JWT_SECRET` | Yes | Long random secret for token signing |
 | `CORS_ORIGINS` | Yes | Comma-separated origin URLs — the only source of truth for allowed CORS origins |
 | `CLIENT_URL` | No | Optional alias for the user frontend origin (legacy compat) |

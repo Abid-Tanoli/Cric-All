@@ -143,7 +143,7 @@ test("user registration and login flow", { skip: () => !serverAvailable }, async
 
 test("admin login with seeded admin", { skip: () => !serverAvailable }, async () => {
   const adminLogin = await req("POST", "/admin/login", {
-    email: process.env.ADMIN_EMAIL || "admin@bqplay.com",
+    email: process.env.ADMIN_EMAIL || "admin@cric-all.com",
     password: process.env.ADMIN_PASSWORD || "admin123",
   });
 

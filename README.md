@@ -90,7 +90,7 @@ Create `Backend/.env` (see `Backend/.env.example` for all options):
 
 ```env
 PORT=5000
-MONGO_URL=mongodb://localhost:27017/bqplay
+MONGO_URL=mongodb://localhost:27017/cric-all
 JWT_SECRET=your-secret-key
 CORS_ORIGINS=http://localhost:5173,http://localhost:5174
 RAPIDAPI_KEY=

@@ -9,7 +9,7 @@ services:
       context: ./Backend
       target: production
     environment:
-      MONGO_URL: mongodb://mongodb-test:27017/bqplay-test
+      MONGO_URL: mongodb://mongodb-test:27017/cric-all-test
       JWT_SECRET: docker-test-secret
       NODE_ENV: test
       LOG_LEVEL: error

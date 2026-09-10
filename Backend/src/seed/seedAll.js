@@ -24,7 +24,7 @@ async function seed() {
     console.log('👤 Creating default admin...');
     const admin = await Admin.create({
       name: 'Super Admin',
-      email: 'admin@bqplay.com',
+      email: 'admin@cric-all.com',
       password: 'admin123'
     });
     console.log(`✅ Admin created: ${admin.email} / admin123`);
@@ -71,7 +71,7 @@ async function seed() {
 
     console.log('\n🎉 Seed completed successfully!');
     console.log('\n📋 Default Admin Credentials:');
-    console.log('   Email: admin@bqplay.com');
+    console.log('   Email: admin@cric-all.com');
     console.log('   Password: admin123');
     console.log('\n⚠️  IMPORTANT: Change the default password after first login!');
 

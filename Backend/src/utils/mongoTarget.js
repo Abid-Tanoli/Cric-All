@@ -18,7 +18,7 @@ export function assertMongoDatabaseName(mongoUrl) {
   const { databaseName } = getMongoTarget(mongoUrl);
   if (databaseName) return;
 
-  const message = "Mongo URL is missing an explicit database name. Add one like /bqplay; otherwise MongoDB drivers default to the test database.";
+  const message = "Mongo URL is missing an explicit database name. Add one like /cric-all; otherwise MongoDB drivers default to the test database.";
   if (process.env.NODE_ENV === "production" || process.env.REQUIRE_MONGO_DB_NAME === "true") {
     throw new Error(message);
   }

@@ -14,9 +14,9 @@ const __dirname = path.dirname(__filename);
 
 dotenv.config({ path: path.resolve(__dirname, "../../.env") });
 
-const SEED_TAG = "bqplay:initial-seed";
-const SEED_ORGANIZATION = "BQ-PLAY Starter Seed";
-const SEED_SERIES = "BQ-PLAY Starter Matches";
+const SEED_TAG = "cric-all:initial-seed";
+const SEED_ORGANIZATION = "Cric-All Starter Seed";
+const SEED_SERIES = "Cric-All Starter Matches";
 const SEED_SOURCE = "seedInitialData";
 const SEED_VERSION = "initial-2026-06";
 const SHOULD_RESET = process.argv.includes("--reset");
@@ -77,7 +77,7 @@ const rosterTemplate = [
 const seedMatches = [
   {
     title: "BQ Falcons vs BQ Titans",
-    slug: "bqplay-initial-seed-falcons-vs-titans",
+    slug: "cric-all-initial-seed-falcons-vs-titans",
     teamNames: ["BQ Falcons", "BQ Titans"],
     venue: "BQ Cricket Ground",
     daysFromNow: 1,
@@ -85,7 +85,7 @@ const seedMatches = [
   },
   {
     title: "BQ Strikers vs BQ Royals",
-    slug: "bqplay-initial-seed-strikers-vs-royals",
+    slug: "cric-all-initial-seed-strikers-vs-royals",
     teamNames: ["BQ Strikers", "BQ Royals"],
     venue: "BQ Academy Ground",
     daysFromNow: 2,

@@ -4,11 +4,11 @@ import { SOCKET_URL } from "../config/env.js";
 const instances = {};
 const CONFIG = {
   admin: {
-    key: "__BQ_PLAY_ADMIN_SOCKET__",
+    key: "__CRIC_ALL_ADMIN_SOCKET__",
     autoConnect: true,
   },
   user: {
-    key: "__BQ_PLAY_USER_SOCKET__",
+    key: "__CRIC_ALL_USER_SOCKET__",
     autoConnect: false,
   },
 };
