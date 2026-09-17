@@ -1,4 +1,5 @@
 import fetch from 'node-fetch';
+import { getExternalApiSettings } from '../models/SystemSettings.js';
 
 const DEFAULT_BASE = 'https://cricbuzz-live.vercel.app';
 const FREE_BASE = (process.env.FREE_CRICBUZZ_BASE_URL || DEFAULT_BASE).replace(/\/+$/, '');
@@ -9,11 +10,18 @@ let lastFreeApiOkAt = 0;
 
 const asArray = (value) => Array.isArray(value) ? value : [];
 
-export const isFreeCricbuzzEnabled = () =>
-  String(process.env.ENABLE_FREE_CRICBUZZ ?? 'true').toLowerCase() !== 'false';
+export async function isFreeCricbuzzEnabled() {
+  try {
+    const settings = await getExternalApiSettings();
+    return Boolean(settings?.freeCricbuzzEnabled);
+  } catch {
+    // Fall back to the env value only if the settings document cannot be read.
+    return String(process.env.ENABLE_FREE_CRICBUZZ ?? 'true').toLowerCase() !== 'false';
+  }
+}
 
-export const getFreeCricbuzzStatus = () => ({
-  enabled: isFreeCricbuzzEnabled(),
+export const getFreeCricbuzzStatus = async () => ({
+  enabled: await isFreeCricbuzzEnabled(),
   provider: 'fallback-live-provider',
   lastError: lastFreeApiError,
   lastOkAt: lastFreeApiOkAt,
@@ -38,7 +46,7 @@ function staleCache(key) {
 }
 
 async function freeGet(path, ttlSec = 30, retries = 1) {
-  if (!isFreeCricbuzzEnabled()) return null;
+  if (!(await isFreeCricbuzzEnabled())) return null;
 
   const cacheKey = `free:${path}`;
   const cached = getCache(cacheKey);
@@ -303,7 +311,7 @@ export async function getFreeMatchCenter(matchId) {
       news: [],
       videos: [],
       stats: statsFromFreeScore({}),
-      apiStatus: getFreeCricbuzzStatus(),
+      apiStatus: await getFreeCricbuzzStatus(),
       source: 'fallback-live-provider',
     };
   }
@@ -325,7 +333,7 @@ export async function getFreeMatchCenter(matchId) {
     news: [],
     videos: [],
     stats: statsFromFreeScore(score),
-    apiStatus: getFreeCricbuzzStatus(),
+    apiStatus: await getFreeCricbuzzStatus(),
     source: 'fallback-live-provider',
   };
 }

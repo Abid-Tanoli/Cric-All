@@ -9,6 +9,14 @@ import { assertDestructiveSeedAllowed } from './destructiveGuard.js';
 
 dotenv.config();
 
+const seedAdminEmail = process.env.SEED_ADMIN_EMAIL;
+const seedAdminPassword = process.env.SEED_ADMIN_PASSWORD;
+
+if (!seedAdminEmail || !seedAdminPassword) {
+  console.error('Set SEED_ADMIN_EMAIL and SEED_ADMIN_PASSWORD before running the seed script.');
+  process.exit(1);
+}
+
 async function seed() {
   try {
     assertDestructiveSeedAllowed('Full database seed');
@@ -24,10 +32,10 @@ async function seed() {
     console.log('👤 Creating default admin...');
     const admin = await Admin.create({
       name: 'Super Admin',
-      email: 'admin@cric-all.com',
-      password: 'admin123'
+      email: seedAdminEmail,
+      password: seedAdminPassword
     });
-    console.log(`✅ Admin created: ${admin.email} / admin123`);
+    console.log(`✅ Admin created: ${admin.email}`);
 
     // Create sample teams
     console.log('🏏 Creating sample teams...');
@@ -70,10 +78,6 @@ async function seed() {
     console.log(`✅ Match created: ${match.title}`);
 
     console.log('\n🎉 Seed completed successfully!');
-    console.log('\n📋 Default Admin Credentials:');
-    console.log('   Email: admin@cric-all.com');
-    console.log('   Password: admin123');
-    console.log('\n⚠️  IMPORTANT: Change the default password after first login!');
 
     process.exit(0);
   } catch (err) {

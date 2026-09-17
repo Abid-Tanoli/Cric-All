@@ -3,6 +3,7 @@
 
 import cricketApi from '../services/cricketApi.js';
 import { emitCricketLiveUpdate } from '../socket/socket.js';
+import { getExternalApiSettings } from '../models/SystemSettings.js';
 
 class CricketPollingService {
   constructor() {
@@ -44,6 +45,14 @@ class CricketPollingService {
   // Poll for updates
   async poll() {
     try {
+      // Re-read the runtime setting each tick so live polling stops as soon as
+      // the external cricket API is switched off without a restart.
+      const settings = await getExternalApiSettings();
+      if (!settings?.syncEnabled) {
+        this.stop();
+        return;
+      }
+
       console.log('[CricketPolling] Polling for live matches...');
       
       const liveMatches = await cricketApi.getLiveMatches();

@@ -2,6 +2,7 @@ import "dotenv/config";
 import express from "express";
 import http from "http";
 import cors from "cors";
+import helmet from "helmet";
 import cookieParser from "cookie-parser";
 import connectDB, { getDbState, isDbConnected } from "./utils/db.js";
 import { initSocket } from "./socket/socket.js";
@@ -24,17 +25,15 @@ import blogRoutes from "./routes/blogRoutes.js";
 import cricketApiRoutes from "./routes/cricketApiRoutes.js";
 import categoryRoutes from "./routes/categoryRoutes.js";
 import seriesRoutes from "./routes/seriesRoutes.js";
-import cricketPolling from "./services/cricketPolling.js";
 import internationalRoutes from "./routes/international.js";
-import { startPoller as startInternationalPoller } from "./services/internationalPoller.js";
-import { hasCricApiKey, hasExternalCricketProvider } from "./services/cricketDataService.js";
 
 // New team categorization routes
 import teamCategoryRoutes from "./routes/teamCategoryRoutes.js";
 import organizationRoutes from "./routes/organizationRoutes.js";
 import rankingRoutes from "./routes/rankingRoutes.js";
 import syncRoutes from "./routes/syncRoutes.js";
-import { startSyncScheduler } from "./services/syncScheduler.js";
+import settingsRoutes from "./routes/settingsRoutes.js";
+import { startExternalSyncManager } from "./controllers/settingsController.js";
 
 initSentry();
 
@@ -51,6 +50,8 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
+
+app.use(helmet());
 
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
@@ -90,6 +91,7 @@ const databaseBackedPrefixes = [
   "/api/organizations",
   "/api/rankings-v2",
   "/api/sync",
+  "/api/settings",
   "/api/shots",
   "/api/fielding-positions"
 ];
@@ -172,6 +174,9 @@ app.use("/api/rankings-v2", rankingRoutes);
 // Optional external sync routes.
 app.use("/api/sync", syncRoutes);
 
+// Runtime toggles for external API sync / free Cricbuzz provider.
+app.use("/api/settings", settingsRoutes);
+
 // Cricket shots & fielding positions routes
 import shotRoutes from "./routes/shotRoutes.js";
 import fieldingPositionRoutes from "./routes/fieldingPositionRoutes.js";
@@ -218,7 +223,6 @@ app.use((req, res) => {
 
 const PORT = process.env.PORT || 5000;
 const shouldListen = process.env.VERCEL !== "1";
-const externalSyncEnabled = process.env.ENABLE_EXTERNAL_SYNC === "true" || process.env.ENABLE_ESPN_SYNC === "true";
 
 // Seed default team categories on startup
 import TeamCategory from "./models/TeamCategory.js";
@@ -251,31 +255,12 @@ if (shouldListen) {
     log.info('Socket.IO ready for connections');
     log.info('CORS enabled for configured origins');
 
-    // External live providers are optional and can consume quota, so they only run when explicitly enabled.
-    if (externalSyncEnabled && hasCricApiKey()) {
-      cricketPolling.start();
-      log.info('External cricket API polling started');
-    } else {
-      log.info('External cricket API polling disabled (set ENABLE_EXTERNAL_SYNC=true to enable)');
-    }
-
-    if (externalSyncEnabled && hasExternalCricketProvider()) {
-      startInternationalPoller(io);
-      log.info('International live score poller started');
-    } else {
-      log.info('International live score poller disabled (set ENABLE_EXTERNAL_SYNC=true to enable)');
-    }
-
-    // Start external sync scheduler only when explicitly enabled.
-    // It is optional and requires outbound internet/DNS access.
-    if (externalSyncEnabled) {
-      startSyncScheduler();
-      log.info('External sync scheduler started');
-    } else {
-      log.info(`External sync scheduler disabled (set ENABLE_EXTERNAL_SYNC=true to enable)`);
-    }
-
-    // No warning - external API is completely optional
+    // External live providers are optional and can consume quota, so they only
+    // run when explicitly enabled. The runtime sync manager re-reads the
+    // SystemSettings document on a short interval (and right after any PUT to
+    // /api/settings/external-api), so sync can be toggled on/off without a restart.
+    startExternalSyncManager(io);
+    log.info('External sync manager started (see GET /api/settings/external-api)');
   });
 }
 

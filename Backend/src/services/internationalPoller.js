@@ -1,14 +1,15 @@
 import { getCurrentMatches, getMatchScorecard, hasExternalCricketProvider } from './cricketDataService.js';
+import { getExternalApiSettings } from '../models/SystemSettings.js';
 
 let running = false;
 let io;
 
 const getInterval = () => (parseInt(process.env.CRICKET_POLL_INTERVAL, 10) || 60) * 1000;
 
-export function startPoller(socketIO) {
+export async function startPoller(socketIO) {
   io = socketIO;
   if (running) return;
-  if (!hasExternalCricketProvider()) {
+  if (!(await hasExternalCricketProvider())) {
     console.log('[International Poller] Disabled - add RAPIDAPI_KEY or CRICKET_API_KEY to enable');
     return;
   }
@@ -20,6 +21,14 @@ export function startPoller(socketIO) {
 async function poll() {
   while (running) {
     try {
+      // Re-read the runtime setting each tick so the poller stops as soon as
+      // the external cricket API is switched off without a restart.
+      const settings = await getExternalApiSettings();
+      if (!settings?.syncEnabled) {
+        running = false;
+        console.log('[International Poller] Stopped (external sync disabled)');
+        return;
+      }
       const matches = await getCurrentMatches();
       if (matches?.length) {
         io.emit('INTERNATIONAL_MATCHES_UPDATE', { matches, ts: Date.now() });
@@ -57,4 +66,8 @@ async function poll() {
 
 export function stopPoller() {
   running = false;
+}
+
+export function isPollerRunning() {
+  return running;
 }

@@ -4,6 +4,7 @@ import {
   loginAdmin,
   listAdmins,
   getAdminProfile,
+  createAdmin,
   updateAdmin,
   deleteAdmin,
 } from "../controllers/adminController.js";
@@ -18,8 +19,9 @@ router.post("/login", loginAdmin);
 router.get("/profile", auth.protect, getAdminProfile);
 
 router.get("/", auth.protect, auth.requireAdmin, listAdmins);
-router.put("/:id", auth.protect, auth.requireAdmin, updateAdmin);
-router.delete("/:id", auth.protect, auth.requireAdmin, deleteAdmin);
+router.post("/create", auth.protect, auth.requireSuperAdmin, createAdmin);
+router.put("/:id", auth.protect, auth.requireSuperAdmin, updateAdmin);
+router.delete("/:id", auth.protect, auth.requireSuperAdmin, deleteAdmin);
 
 // Admin: Cricket Shots
 router.post("/shots", auth.protect, auth.requireAdmin, async (req, res) => {

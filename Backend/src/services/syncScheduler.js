@@ -1,5 +1,6 @@
 import * as externalSource from "./externalCricketScraper.js";
 import Match from "../models/Match.js";
+import { getExternalApiSettings } from "../models/SystemSettings.js";
 
 let intervalId = null;
 const getInterval = () => (parseInt(process.env.SYNC_INTERVAL, 10) || 30) * 1000;
@@ -17,6 +18,13 @@ export function stopSyncScheduler() {
 
 async function poll() {
   try {
+    // Re-read the runtime setting each tick so the scheduler stops as soon as
+    // the external cricket API is switched off without a restart.
+    const settings = await getExternalApiSettings();
+    if (!settings?.syncEnabled) {
+      stopSyncScheduler();
+      return;
+    }
     const liveList = await externalSource.getLiveMatches();
     let updated = 0;
     for (const lm of liveList) {

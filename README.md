@@ -282,6 +282,12 @@ See [DEPLOYMENT_DOCKER_RENDER.md](./DEPLOYMENT_DOCKER_RENDER.md) for the Docker 
 - Ball scoring events: `ball:recorded`, `score:update`, `strike:changed`, `over:completed`, `innings:end`, `match:end`
 - Legacy events maintained for backward compatibility
 
+## Security
+
+- **Helmet** is enabled on the backend: `app.use(helmet())` sets secure HTTP headers (CSP, X-Frame-Options, HSTS, etc.) on every response. Applied after CORS, before route registration.
+- Passwords are hashed with bcryptjs at **12 salt rounds** (was 8) for both admin and user accounts.
+- The seed scripts (`seedAll.js`, `seedAdmin.js`) no longer contain hardcoded credentials — they refuse to run unless `SEED_ADMIN_EMAIL` and `SEED_ADMIN_PASSWORD` are set.
+
 ## Development Notes
 
 - External cricket APIs are completely optional; the app works fully with local data

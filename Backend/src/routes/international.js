@@ -49,14 +49,14 @@ const sanitizeProviderError = (value = '') => {
   return message.replace(/https?:\/\/\S+/g, '').trim();
 };
 
-const getInternationalProviderStatus = () => {
+const getInternationalProviderStatus = async () => {
   const rawRapid = getRapidApiStatus();
   const rapid = {
     configured: rawRapid.configured,
     blockedUntil: rawRapid.blockedUntil,
     lastError: sanitizeProviderError(rawRapid.lastError),
   };
-  const rawFree = getFreeCricbuzzStatus();
+  const rawFree = await getFreeCricbuzzStatus();
   const free = {
     ...rawFree,
     lastError: sanitizeProviderError(rawFree.lastError),
@@ -70,33 +70,33 @@ const getInternationalProviderStatus = () => {
   };
 };
 
-router.get('/status', (req, res) => {
-  res.json({ success: true, data: getInternationalProviderStatus() });
+router.get('/status', async (req, res) => {
+  res.json({ success: true, data: await getInternationalProviderStatus() });
 });
 
 router.get('/live', async (req, res) => {
   const data = await getCurrentMatches();
-  res.json({ success: true, data: data || [], matches: data || [], providerStatus: getInternationalProviderStatus() });
+  res.json({ success: true, data: data || [], matches: data || [], providerStatus: await getInternationalProviderStatus() });
 });
 
 router.get('/matches', async (req, res) => {
   const data = await getCurrentMatches(req.query.type || 'international');
-  res.json({ success: true, data: data || [], matches: data || [], providerStatus: getInternationalProviderStatus() });
+  res.json({ success: true, data: data || [], matches: data || [], providerStatus: await getInternationalProviderStatus() });
 });
 
 router.get('/matches/live', async (req, res) => {
   const data = await getLiveMatches(req.query.type || 'international');
-  res.json({ success: true, data: data || [], matches: data || [], providerStatus: getInternationalProviderStatus() });
+  res.json({ success: true, data: data || [], matches: data || [], providerStatus: await getInternationalProviderStatus() });
 });
 
 router.get('/matches/recent', async (req, res) => {
   const data = await getRecentMatches(req.query.type || 'international');
-  res.json({ success: true, data: data || [], matches: data || [], providerStatus: getInternationalProviderStatus() });
+  res.json({ success: true, data: data || [], matches: data || [], providerStatus: await getInternationalProviderStatus() });
 });
 
 router.get('/matches/upcoming', async (req, res) => {
   const data = await getUpcomingMatches(req.query.type || 'international');
-  res.json({ success: true, data: data || [], matches: data || [], providerStatus: getInternationalProviderStatus() });
+  res.json({ success: true, data: data || [], matches: data || [], providerStatus: await getInternationalProviderStatus() });
 });
 
 router.get('/series', async (req, res) => {
@@ -111,7 +111,7 @@ router.get('/tournaments', async (req, res) => {
 
 router.get('/series/:id', async (req, res) => {
   const data = await getSeriesInfo(req.params.id);
-  res.json({ success: Boolean(data), data, providerStatus: getInternationalProviderStatus() });
+  res.json({ success: Boolean(data), data, providerStatus: await getInternationalProviderStatus() });
 });
 
 router.get('/series/:id/points', async (req, res) => {

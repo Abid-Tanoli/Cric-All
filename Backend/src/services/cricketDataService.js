@@ -57,7 +57,7 @@ export const hasCricApiKey = () => {
   return !PLACEHOLDER_KEYS.has(key);
 };
 
-export const hasExternalCricketProvider = () => hasRapidApiKey() || hasCricApiKey() || isFreeCricbuzzEnabled();
+export const hasExternalCricketProvider = async () => hasRapidApiKey() || hasCricApiKey() || (await isFreeCricbuzzEnabled());
 
 async function getFromRapidApi(endpoint, params = {}) {
   if (!hasRapidApiKey()) return undefined;
@@ -116,7 +116,7 @@ async function getFromRapidApi(endpoint, params = {}) {
 }
 
 async function getFromFreeCricbuzz(endpoint, params = {}) {
-  if (!isFreeCricbuzzEnabled()) return undefined;
+  if (!(await isFreeCricbuzzEnabled())) return undefined;
 
   switch (endpoint) {
     case 'currentMatches':

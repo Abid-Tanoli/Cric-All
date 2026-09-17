@@ -2,6 +2,7 @@ import React, { Suspense, lazy } from "react";
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import { ThemeProvider } from "./context/ThemeContext";
 import Footer from "./components/Footer";
+import OfflineBanner from "./components/OfflineBanner";
 import ErrorBoundary from "../../Shared/components/ErrorBoundary";
 import SocketStatusIndicator from "../../Shared/components/SocketStatusIndicator";
 import { getSocket } from "./services/socket";
@@ -39,6 +40,7 @@ function App() {
     <ThemeProvider>
       <Router>
         <div className="flex flex-col min-h-screen">
+        <OfflineBanner />
         <SocketStatusIndicator getSocket={getSocket} />
         <Suspense fallback={<div className="flex items-center justify-center min-h-screen bg-cric-bg"><div className="w-10 h-10 border-4 border-cric-accent border-t-transparent rounded-full animate-spin" /></div>}>
         <Routes>

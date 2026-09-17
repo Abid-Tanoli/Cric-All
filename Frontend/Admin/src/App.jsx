@@ -5,6 +5,7 @@ import AdminLogin from "./pages/auth/AdminLogin";
 import AdminRegister from "./pages/auth/AdminRegister";
 import Layout from "./components/Layout";
 import ProtectedRoute from "./components/ProtectedRoute";
+import OfflineBanner from "./components/OfflineBanner";
 import ErrorBoundary from "../../Shared/components/ErrorBoundary";
 
 const Dashboard = lazy(() => import("./pages/Dashboard"));
@@ -24,6 +25,7 @@ const EventDetail = lazy(() => import("./pages/EventDetail"));
 const SeriesDetail = lazy(() => import("./pages/SeriesDetail"));
 const AdminInternational = lazy(() => import("./pages/AdminInternational"));
 const SyncPanel = lazy(() => import("./pages/SyncPanel"));
+const ManageAdmins = lazy(() => import("./pages/ManageAdmins"));
 
 const PageLoader = () => (
   <div className="min-h-screen bg-[#0f172a] flex items-center justify-center">
@@ -31,10 +33,19 @@ const PageLoader = () => (
   </div>
 );
 
+function SuperAdminRoute({ children }) {
+  const { token, user } = useSelector((state) => state.auth);
+  if (!token) return <Navigate to="/admin/login" replace />;
+  if (user?.role !== "superadmin") return <Navigate to="/admin" replace />;
+  return children;
+}
+
 export default function App() {
   const { token } = useSelector((state) => state.auth);
 
   return (
+    <>
+    <OfflineBanner />
     <Suspense fallback={<PageLoader />}>
     <Routes>
       <Route path="/admin/login" element={!token ? <AdminLogin /> : <Navigate to="/admin" />} />
@@ -58,8 +69,10 @@ export default function App() {
           <Route path="/admin/series/:id" element={<ProtectedRoute><ErrorBoundary><Layout><SeriesDetail /></Layout></ErrorBoundary></ProtectedRoute>} />
           <Route path="/admin/international" element={<ProtectedRoute><ErrorBoundary><Layout><AdminInternational /></Layout></ErrorBoundary></ProtectedRoute>} />
           <Route path="/admin/sync" element={<ProtectedRoute><ErrorBoundary><Layout><SyncPanel /></Layout></ErrorBoundary></ProtectedRoute>} />
+          <Route path="/admin/admins" element={<SuperAdminRoute><ErrorBoundary><Layout><ManageAdmins /></Layout></ErrorBoundary></SuperAdminRoute>} />
       <Route path="/" element={<Navigate to="/admin" />} />
     </Routes>
     </Suspense>
+    </>
   );
 }

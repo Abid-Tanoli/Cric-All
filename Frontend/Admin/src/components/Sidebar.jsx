@@ -1,5 +1,6 @@
 import React from "react";
 import { NavLink } from "react-router-dom";
+import { useSelector } from "react-redux";
 
 const menuItems = [
   { to: "/admin", label: "Dashboard", icon: "DB" },
@@ -13,9 +14,14 @@ const menuItems = [
   { to: "/admin/blogs", label: "Manage Blogs", icon: "BL" },
   { to: "/admin/rankings", label: "Rankings", icon: "RK" },
   { to: "/admin/sync", label: "Sync Panel", icon: "SY" },
+  { to: "/admin/admins", label: "Manage Admins", icon: "AD", superAdminOnly: true },
 ];
 
 export default function Sidebar({ open, onClose }) {
+  const user = useSelector((state) => state.auth.user);
+  const isSuperAdmin = user?.role === "superadmin";
+  const visibleItems = menuItems.filter((item) => !item.superAdminOnly || isSuperAdmin);
+
   return (
     <aside
       className={`
@@ -40,7 +46,7 @@ export default function Sidebar({ open, onClose }) {
       </div>
       <nav className="flex-1 p-3 sm:p-4 overflow-y-auto no-scrollbar overscroll-contain">
         <ul className="space-y-0.5 sm:space-y-1">
-          {menuItems.map((item) => (
+          {visibleItems.map((item) => (
             <li key={item.to}>
               <NavLink
                 to={item.to}

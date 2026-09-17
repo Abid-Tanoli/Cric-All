@@ -2,10 +2,18 @@ import "dotenv/config";
 import connectDB from "../utils/db.js";
 import Admin from "../models/Admin.js";
 
+const seedAdminEmail = process.env.SEED_ADMIN_EMAIL;
+const seedAdminPassword = process.env.SEED_ADMIN_PASSWORD;
+
+if (!seedAdminEmail || !seedAdminPassword) {
+  console.error("Set SEED_ADMIN_EMAIL and SEED_ADMIN_PASSWORD before running the seed script.");
+  process.exit(1);
+}
+
 const DEFAULT_ADMIN = {
   name: "Super Admin",
-  email: "admin@cric-all.com",
-  password: "admin123",
+  email: seedAdminEmail,
+  password: seedAdminPassword,
 };
 
 async function seedAdmin() {
@@ -15,9 +23,6 @@ async function seedAdmin() {
     const existing = await Admin.findOne({ email: DEFAULT_ADMIN.email });
     if (existing) {
       console.log("Admin already exists with email:", DEFAULT_ADMIN.email);
-      console.log("Login credentials:");
-      console.log("  Email:    admin@cric-all.com");
-      console.log("  Password: admin123");
       process.exit(0);
     }
 
@@ -26,7 +31,6 @@ async function seedAdmin() {
     console.log("  ID:      ", admin._id);
     console.log("  Name:    ", admin.name);
     console.log("  Email:   ", admin.email);
-    console.log("  Password:", DEFAULT_ADMIN.password);
     console.log("\nLogin at: http://localhost:5174/admin/login");
     process.exit(0);
   } catch (err) {
