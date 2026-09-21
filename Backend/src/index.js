@@ -34,6 +34,8 @@ import rankingRoutes from "./routes/rankingRoutes.js";
 import syncRoutes from "./routes/syncRoutes.js";
 import settingsRoutes from "./routes/settingsRoutes.js";
 import { startExternalSyncManager } from "./controllers/settingsController.js";
+import uploadRoutes from "./routes/uploadRoutes.js";
+import { uploadsDir, ensureUploadsDir } from "./utils/photoStore.js";
 
 initSentry();
 
@@ -56,6 +58,12 @@ app.use(helmet());
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 app.use(cookieParser());
+
+// Local image uploads (Task 6). Ensure the dir exists once at boot; when cloud
+// storage env vars (CLOUDINARY_URL / S3_BUCKET) are configured the endpoints
+// still respond, redirecting the uploader to configure the adapter instead.
+ensureUploadsDir();
+app.use("/uploads", express.static(uploadsDir));
 
 const server = http.createServer(app);
 
@@ -158,6 +166,7 @@ app.use("/api/livematch", liveMatchRoutes);
 app.use("/api/tournaments", tournamentRoutes);
 app.use("/api/events", eventRoutes);
 app.use("/api/bulk-import", bulkImportRoutes);
+app.use("/api/upload", uploadRoutes);
 app.use("/api/rankings", rankingsRoutes);
 app.use("/api/blogs", blogRoutes);
 app.use("/api/cricket", cricketApiRoutes);
@@ -259,8 +268,19 @@ if (shouldListen) {
     // run when explicitly enabled. The runtime sync manager re-reads the
     // SystemSettings document on a short interval (and right after any PUT to
     // /api/settings/external-api), so sync can be toggled on/off without a restart.
-    startExternalSyncManager(io);
-    log.info('External sync manager started (see GET /api/settings/external-api)');
+    //
+    // The first evaluateExternalSync() reads SystemSettings (via
+    // systemsettings.findOne()), so it must wait for the Mongo connection. The
+    // HTTP server itself stays un-blocked — only the sync manager's first run
+    // waits on the dbReadyPromise to avoid the startup MongooseError.
+    (async () => {
+      const connection = await dbReadyPromise;
+      if (!connection) return;
+      startExternalSyncManager(io);
+      log.info('External sync manager started (see GET /api/settings/external-api)');
+    })().catch((err) => {
+      log.error(err, 'Failed to start external sync manager');
+    });
   });
 }
 

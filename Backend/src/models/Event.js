@@ -19,6 +19,9 @@ const eventSchema = new mongoose.Schema({
     default: "T20"
   },
   totalMatches: { type: Number, default: 0 },
+  // Declared target team count for multi-team formats (hard-guarded in the
+  // create/update handlers). Not required for single-match — the format implies 2.
+  totalTeams: { type: Number, default: 0 },
   oversPerInnings: { type: Number, default: 20 },
   startDate: { type: Date },
   endDate: { type: Date },
@@ -39,7 +42,10 @@ const eventSchema = new mongoose.Schema({
     enum: ["U-10", "U-13", "U-15", "U-17", "U-19", "Open"],
     default: "Open"
   },
-  organization: { type: String, default: "" }, // Parent body like "Al-Khidmat", "Board of Education"
+  // Leaf node of the arbitrarily-deep Organization hierarchy (ref: TeamOrganization).
+  // Before this field type change it was a flat free-text string — legacy events
+  // must be backfilled manually (see task summary).
+  organization: { type: mongoose.Schema.Types.ObjectId, ref: "TeamOrganization", default: null },
   
   // Detailed Address
   address: {

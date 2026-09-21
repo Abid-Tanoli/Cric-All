@@ -119,6 +119,11 @@ export default function Login({ onSuccess, onCancel, embedded = false }) {
               </button>
             )}
           </div>
+          <div className="pt-1 text-center">
+            <a href="/forgot-password" className="text-xs font-bold text-cric-accent hover:underline">
+              Forgot password?
+            </a>
+          </div>
         </form>
       </div>
     </div>

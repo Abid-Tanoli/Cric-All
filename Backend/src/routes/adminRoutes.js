@@ -7,6 +7,8 @@ import {
   createAdmin,
   updateAdmin,
   deleteAdmin,
+  forgotPassword,
+  resetPassword,
 } from "../controllers/adminController.js";
 import auth from "../middleware/authMiddleware.js";
 import CricketShot from "../models/CricketShot.js";
@@ -16,6 +18,8 @@ const router = express.Router();
 
 router.post("/register", registerAdmin);
 router.post("/login", loginAdmin);
+router.post("/forgot-password", forgotPassword);
+router.post("/reset-password/:token", resetPassword);
 router.get("/profile", auth.protect, getAdminProfile);
 
 router.get("/", auth.protect, auth.requireAdmin, listAdmins);

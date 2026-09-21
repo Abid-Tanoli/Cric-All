@@ -8,6 +8,7 @@ import { GoogleLogin } from "@react-oauth/google";
 import { login, clearError } from "../../store/slices/authSlice";
 import api from "../../services/api";
 import { consumeSessionMessage } from "../../services/authSession";
+import PasswordField from "../../components/PasswordField";
 
 const hasGoogleClientId = Boolean(import.meta.env.VITE_GOOGLE_CLIENT_ID && import.meta.env.VITE_GOOGLE_CLIENT_ID !== 'your_google_client_id.apps.googleusercontent.com');
 
@@ -118,18 +119,17 @@ export default function AdminLogin() {
             </div>
 
             <div>
-              <label className="block text-xs font-bold uppercase text-cric-muted mb-2">
-                Password
-              </label>
-              <input
-                {...register("password")}
-                type="password"
-                className="w-full px-4 py-3 bg-cric-bg border border-cric-border rounded-xl focus:ring-2 focus:ring-cric-accent outline-none font-bold text-cric-text"
+              <PasswordField
+                label="Password"
                 placeholder="••••••••"
+                error={errors.password?.message}
+                inputProps={register("password")}
               />
-              {errors.password && (
-                <p className="mt-2 text-xs text-red-500 font-bold">{errors.password.message}</p>
-              )}
+              <div className="mt-2 text-right">
+                <Link to="/admin/forgot-password" className="text-xs font-bold text-cric-accent hover:underline">
+                  Forgot password?
+                </Link>
+              </div>
             </div>
 
             <button

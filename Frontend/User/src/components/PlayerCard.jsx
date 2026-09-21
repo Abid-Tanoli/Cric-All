@@ -1,4 +1,5 @@
 import React from "react";
+import SafeImage from "../../../Shared/components/SafeImage.jsx";
 
 const PlayerCard = ({ player }) => {
   return (
@@ -10,7 +11,7 @@ const PlayerCard = ({ player }) => {
         <div className="flex items-center gap-5 mb-6">
           <div className="relative shrink-0">
              {player.imageUrl ? (
-                <img src={player.imageUrl} alt={player.name} className="w-16 h-16 rounded-2xl object-cover bg-cric-bg shadow-inner group-hover:scale-105 transition-transform" />
+                <SafeImage src={player.imageUrl} alt={player.name} className="w-16 h-16 rounded-2xl object-cover bg-cric-bg shadow-inner group-hover:scale-105 transition-transform" />
               ) : (
                 <div className="w-16 h-16 rounded-2xl bg-cric-accent flex items-center justify-center text-white font-black text-xl italic italic">
                  {player.name?.substring(0, 2).toUpperCase()}

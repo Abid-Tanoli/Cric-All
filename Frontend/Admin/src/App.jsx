@@ -3,6 +3,8 @@ import { Routes, Route, Navigate } from "react-router-dom";
 import { useSelector } from "react-redux";
 import AdminLogin from "./pages/auth/AdminLogin";
 import AdminRegister from "./pages/auth/AdminRegister";
+import ForgotPassword from "./pages/auth/ForgotPassword";
+import ResetPassword from "./pages/auth/ResetPassword";
 import Layout from "./components/Layout";
 import ProtectedRoute from "./components/ProtectedRoute";
 import OfflineBanner from "./components/OfflineBanner";
@@ -50,6 +52,8 @@ export default function App() {
     <Routes>
       <Route path="/admin/login" element={!token ? <AdminLogin /> : <Navigate to="/admin" />} />
       <Route path="/admin/register" element={!token ? <AdminRegister /> : <Navigate to="/admin" />} />
+      <Route path="/admin/forgot-password" element={!token ? <ForgotPassword /> : <Navigate to="/admin" />} />
+      <Route path="/admin/reset-password/:token" element={!token ? <ResetPassword /> : <Navigate to="/admin" />} />
       <Route path="/admin" element={<ProtectedRoute><ErrorBoundary><Layout><Dashboard /></Layout></ErrorBoundary></ProtectedRoute>} />
       <Route path="/admin/live" element={<ProtectedRoute><ErrorBoundary><Layout><LiveScores /></Layout></ErrorBoundary></ProtectedRoute>} />
       <Route path="/admin/events" element={<ProtectedRoute><ErrorBoundary><Layout><ManageEvents /></Layout></ErrorBoundary></ProtectedRoute>} />

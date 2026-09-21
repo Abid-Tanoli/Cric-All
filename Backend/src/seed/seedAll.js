@@ -22,6 +22,16 @@ async function seed() {
     assertDestructiveSeedAllowed('Full database seed');
     await connectDB();
 
+    // Hard production-reseed guard: never wipe a database that already has
+    // admins in production, regardless of ALLOW_* flags.
+    if (process.env.NODE_ENV === "production") {
+      const existingAdminCount = await Admin.countDocuments({});
+      if (existingAdminCount > 0) {
+        console.error('Admins already exist — refusing to reseed in production.');
+        process.exit(1);
+      }
+    }
+
     console.log('🗑️  Clearing existing data...');
     await Admin.deleteMany({});
     await Team.deleteMany({});

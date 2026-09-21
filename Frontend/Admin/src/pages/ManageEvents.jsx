@@ -6,6 +6,7 @@ import { fetchTeams } from "../store/slices/teamSlice";
 import api from "../services/api";
 import EventSquadSelection from "../components/EventSquadSelection";
 import ChangePlayerModal from "../components/ChangePlayerModal";
+import OrganizationPicker from "../components/OrganizationPicker";
 import { useToast } from "../components/Toast";
 import ConfirmModal from "../components/ConfirmModal";
 
@@ -32,7 +33,15 @@ export default function ManageEvents() {
     const selectedType = watch("eventType");
     const selectedFormat = watch("format");
     const selectedTeams = watch("teams") || [];
+    const selectedTotalTeams = watch("totalTeams");
     const selectedTotalMatches = watch("totalMatches");
+    const [orgSelection, setOrgSelection] = useState({ id: null, name: "" });
+
+    const EXPECTED_MULTI_TEAM_TYPES = ["series", "tri-series", "tournament", "world-cup", "champions-trophy", "league"];
+    const expectedTeams = selectedType === "single-match"
+        ? 2
+        : (selectedType && EXPECTED_MULTI_TEAM_TYPES.includes(selectedType) ? Number(selectedTotalTeams) || 0 : 0);
+    const teamsReady = !selectedType || (expectedTeams > 0 && selectedTeams.length === expectedTeams);
 
     // Event Squad Modal State
     const [showEventSquadModal, setShowEventSquadModal] = useState(false);
@@ -75,6 +84,7 @@ export default function ManageEvents() {
     const onSubmit = async (data) => {
         try {
             setLoading(true);
+            data.organization = orgSelection.id || "";
             let eventId = editingId;
             if (editingId) {
                 await api.put(`/events/${editingId}`, data);
@@ -96,7 +106,7 @@ export default function ManageEvents() {
                             matchType: data.format || "T20",
                             matchCategory: data.category || "Other",
                             category: data.category || "Other",
-                            organization: data.organization || "",
+                            organization: orgSelection.name || data.organization || "",
                             address: data.address || {},
                             startAt,
                             teams: data.teams,
@@ -113,6 +123,7 @@ export default function ManageEvents() {
                 }
             }
             reset();
+            setOrgSelection({ id: null, name: "" });
             setShowForm(false);
             loadEvents();
         } catch (err) {
@@ -133,10 +144,17 @@ export default function ManageEvents() {
         setValue("venue", ev.venue || "");
         setValue("description", ev.description || "");
         setValue("teams", ev.teams?.map(t => t._id || t));
+        setValue("totalTeams", ev.totalTeams || ev.teams?.length || "");
         setValue("category", ev.category);
         setValue("subCategory", ev.subCategory);
         setValue("ageGroup", ev.ageGroup);
-        setValue("organization", ev.organization);
+        const orgVal = ev.organization || null;
+        const orgId = typeof orgVal === "string"
+            ? (/^[0-9a-f]{24}$/i.test(orgVal) ? orgVal : null)
+            : (orgVal?._id || null);
+        const orgName = typeof orgVal === "string" ? orgVal : (orgVal?.name || "");
+        setOrgSelection({ id: orgId, name: orgName });
+        setValue("organization", orgId || "");
         setValue("address", ev.address || { town: "", district: "", city: "", province: "", country: "Pakistan" });
     };
 
@@ -159,7 +177,7 @@ export default function ManageEvents() {
                     <p className="text-blue-200/60 text-xs mt-1 font-medium">Single matches, series, tournaments & championships</p>
                 </div>
                 <button
-                    onClick={() => { setShowForm(!showForm); setEditingId(null); reset(); }}
+                    onClick={() => { setShowForm(!showForm); setEditingId(null); setOrgSelection({ id: null, name: "" }); reset(); }}
                     className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-black text-xs uppercase tracking-widest shadow-lg transition-all"
                 >
                     {showForm ? "✕ Cancel" : "+ Create Event"}
@@ -245,6 +263,15 @@ export default function ManageEvents() {
                             </div>
                         )}
 
+                        {/* Total Teams (multi-team formats; the exact count must be selected below) */}
+                        {selectedType && selectedType !== "single-match" && (
+                            <div>
+                                <label className="text-[10px] font-black uppercase text-slate-400 block mb-1">Total Teams *</label>
+                                <input type="number" {...register("totalTeams", { min: 2, valueAsNumber: true })} min="2" placeholder="e.g., 8" className="w-full md:w-1/3 p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800" />
+                                <p className="text-[10px] text-slate-500 mt-1">Declared target team count. You must select exactly this many teams below.</p>
+                            </div>
+                        )}
+
                         {/* Deep Categorization Section */}
                         <div className="bg-blue-50/50 p-6 rounded-2xl border border-blue-100 space-y-4">
                             <h4 className="text-xs font-black text-[#031d44] uppercase tracking-widest flex items-center gap-2">
@@ -270,7 +297,16 @@ export default function ManageEvents() {
                             </div>
                             <div>
                                 <label className="text-[10px] font-black uppercase text-slate-400 block mb-1">Parent Organization / Institution</label>
-                                <input {...register("organization")} placeholder="e.g., Al-Khidmat, University of Karachi, Allied Bank" className="w-full p-3 bg-white border border-slate-200 rounded-xl font-bold text-slate-800" />
+                                <OrganizationPicker
+                                    value={orgSelection.id}
+                                    valueName={orgSelection.name}
+                                    onChange={(id, name) => {
+                                        setOrgSelection({ id, name });
+                                        setValue("organization", id || "");
+                                    }}
+                                />
+                                <input type="hidden" {...register("organization")} />
+                                <p className="text-[10px] text-slate-500 mt-1">Drill down to any depth — or add a new sub-organization inline.</p>
                             </div>
                         </div>
 
@@ -328,21 +364,36 @@ export default function ManageEvents() {
                             <input {...register("venue")} placeholder="e.g., National Stadium, Karachi" className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800" />
                         </div>
 
-                        {/* Teams (for multi-team events) */}
-                        {selectedType && selectedType !== "single-match" && (
-                            <div>
-                                <label className="text-[10px] font-black uppercase text-slate-400 block mb-2">Teams * (Selected: {selectedTeams.length})</label>
-                                <div className="max-h-48 overflow-y-auto border rounded-xl p-3 space-y-2 bg-slate-50">
-                                    {teams.map(team => (
-                                        <label key={team._id} className="flex items-center gap-3 p-2 bg-white rounded-lg border border-slate-200 cursor-pointer hover:bg-blue-50">
-                                            <input type="checkbox" value={team._id} {...register("teams", { validate: v => selectedType === "single-match" || v?.length >= 2 || "Select at least 2 teams" })} className="w-4 h-4" />
-                                            {team.logo && <img src={team.logo} alt={team.name} className="w-6 h-6 rounded object-cover" />}
-                                            <span className="text-sm font-bold text-slate-800">{team.name}</span>
-                                        </label>
-                                    ))}
+                        {/* Teams (shown for every event type; single-match = exactly 2) */}
+                        {selectedType && (
+                            <>
+                                <div>
+                                    <label className="text-[10px] font-black uppercase text-slate-400 block mb-2">
+                                        Teams *{" "}
+                                        <span className={`ml-1 px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${selectedTeams.length === expectedTeams && expectedTeams > 0 ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}`}>
+                                            Selected: {selectedTeams.length} / {selectedType === "single-match" ? 2 : (selectedTotalTeams || 0)} teams
+                                        </span>
+                                    </label>
+                                    <div className="max-h-48 overflow-y-auto border rounded-xl p-3 space-y-2 bg-slate-50">
+                                        {teams.map(team => (
+                                            <label key={team._id} className="flex items-center gap-3 p-2 bg-white rounded-lg border border-slate-200 cursor-pointer hover:bg-blue-50">
+                                                <input type="checkbox" value={team._id} {...register("teams")} className="w-4 h-4" />
+                                                {team.logo && <img src={team.logo} alt={team.name} className="w-6 h-6 rounded object-cover" />}
+                                                <span className="text-sm font-bold text-slate-800">{team.name}</span>
+                                            </label>
+                                        ))}
+                                    </div>
+                                    {selectedTeams.length !== expectedTeams && (
+                                        <p className="text-amber-600 text-xs mt-1 font-bold">
+                                            {expectedTeams === 0
+                                                ? selectedType === "single-match"
+                                                    ? "A single match requires exactly 2 teams"
+                                                    : "Enter the total number of teams above to enable event creation"
+                                                : `Select exactly ${expectedTeams} teams to enable event creation`}
+                                        </p>
+                                    )}
                                 </div>
-                                {errors.teams && <p className="text-red-500 text-xs mt-1">{errors.teams.message}</p>}
-                            </div>
+                            </>
                         )}
 
                         <div>
@@ -350,12 +401,12 @@ export default function ManageEvents() {
                             <textarea {...register("description")} rows={2} placeholder="Brief description of the event" className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800" />
                         </div>
 
-                        <div className="flex gap-3 pt-4 border-t">
-                            <button type="submit" disabled={loading} className="flex-1 bg-[#031d44] hover:bg-slate-800 text-white py-3 rounded-xl font-black text-xs uppercase tracking-widest shadow-xl disabled:opacity-50">
+                        <div className="flex gap-3 pt-4 border-t items-center">
+                            <button type="submit" disabled={loading || !teamsReady} className="flex-1 bg-[#031d44] hover:bg-slate-800 text-white py-3 rounded-xl font-black text-xs uppercase tracking-widest shadow-xl disabled:opacity-50 disabled:cursor-not-allowed">
                                 {loading ? "Saving..." : editingId ? "Update Event" : "Create Event"}
                             </button>
                             {editingId && (
-                                <button type="button" onClick={() => { setEditingId(null); reset(); }} className="px-6 py-3 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl font-black text-xs uppercase tracking-widest">
+                                <button type="button" onClick={() => { setEditingId(null); setOrgSelection({ id: null, name: "" }); reset(); }} className="px-6 py-3 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl font-black text-xs uppercase tracking-widest">
                                     Cancel
                                 </button>
                             )}

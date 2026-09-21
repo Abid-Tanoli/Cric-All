@@ -43,6 +43,8 @@ const userSchema = new mongoose.Schema({
   organizationName: { type: String, trim: true, default: "" },
   phone: { type: String, trim: true, default: "" },
   joinIntent: { type: String, trim: true, default: "" },
+  resetPasswordToken: { type: String, select: false, default: undefined },
+  resetPasswordExpires: { type: Date, default: undefined },
 }, { timestamps: true });
 
 userSchema.pre("save", async function () {

@@ -20,6 +20,15 @@ async function seedAdmin() {
   try {
     await connectDB();
 
+    // In production, never create/reseed an admin if admins already exist.
+    if (process.env.NODE_ENV === "production") {
+      const existingAdminCount = await Admin.countDocuments({});
+      if (existingAdminCount > 0) {
+        console.error("Admins already exist — refusing to reseed in production.");
+        process.exit(1);
+      }
+    }
+
     const existing = await Admin.findOne({ email: DEFAULT_ADMIN.email });
     if (existing) {
       console.log("Admin already exists with email:", DEFAULT_ADMIN.email);

@@ -1,6 +1,15 @@
 import User from "../models/User.js";
 import Player from "../models/Player.js";
 import { generateToken } from "../utils/jwt.js";
+import { validatePasswordStrength } from "../utils/password.js";
+import {
+  generateResetToken,
+  hashResetToken,
+  getResetTokenExpiry,
+  isResetTokenExpired,
+} from "../utils/passwordReset.js";
+
+const userFrontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
 
 export const registerUser = async (req, res) => {
   try {
@@ -123,6 +132,64 @@ export const loginUser = async (req, res) => {
 
 export const logoutUser = async (req, res) => {
   res.json({ message: "Logged out successfully" });
+};
+
+export const forgotPassword = async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ message: "Email is required" });
+
+    const user = await User.findOne({ email }).select("+resetPasswordToken");
+    if (user) {
+      const token = generateResetToken();
+      user.resetPasswordToken = hashResetToken(token);
+      user.resetPasswordExpires = getResetTokenExpiry();
+      await user.save();
+
+      // TODO: send via email once an email service is configured
+      console.log(`[User password reset] ${user.email}: ${userFrontendUrl}/reset-password/${token}`);
+    }
+
+    // Always return the same generic success message so we don't leak
+    // which email addresses are registered.
+    res.status(200).json({ message: "If an account exists for this email, a reset link has been sent" });
+  } catch (err) {
+    console.error("Forgot Password Error:", err);
+    res.status(500).json({ message: "Password reset request failed" });
+  }
+};
+
+export const resetPassword = async (req, res) => {
+  try {
+    const { token } = req.params;
+    const { password } = req.body;
+
+    if (!token || !password) {
+      return res.status(400).json({ message: "Token and new password are required" });
+    }
+
+    const passwordError = validatePasswordStrength(password);
+    if (passwordError) return res.status(400).json({ message: passwordError });
+
+    const hashedToken = hashResetToken(token);
+    const user = await User.findOne({
+      resetPasswordToken: hashedToken,
+    }).select("+password +resetPasswordToken");
+
+    if (!user || isResetTokenExpired(user.resetPasswordExpires)) {
+      return res.status(400).json({ message: "Password reset token is invalid or has expired" });
+    }
+
+    user.password = password;
+    user.resetPasswordToken = undefined;
+    user.resetPasswordExpires = undefined;
+    await user.save();
+
+    res.status(200).json({ message: "Password reset successfully. You can now sign in." });
+  } catch (err) {
+    console.error("Reset Password Error:", err);
+    res.status(500).json({ message: "Password reset failed" });
+  }
 };
 
 export const getProfile = async (req, res) => {

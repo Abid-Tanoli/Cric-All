@@ -5,6 +5,7 @@ import Header from "../components/Header";
 import FormTracker from "../components/FormTracker";
 import ShareButton from "../components/ShareButton";
 import { getStoredUser, logout as doLogout } from "../pages/auth/auth";
+import SafeImage from "../../../Shared/components/SafeImage.jsx";
 
 export default function PlayerProfile() {
   const { playerId } = useParams();
@@ -96,7 +97,7 @@ export default function PlayerProfile() {
           <div className="flex flex-col md:flex-row items-start gap-8">
             <div className="w-48 h-48 md:w-64 md:h-64 rounded-3xl bg-white/10 border-2 border-white/20 overflow-hidden flex-shrink-0">
               {player.imageUrl ? (
-                <img src={player.imageUrl} alt={player.name} className="w-full h-full object-cover" />
+                <SafeImage src={player.imageUrl} alt={player.name} className="w-full h-full object-cover" />
               ) : (
                 <div className="w-full h-full bg-gradient-to-br from-cric-accent to-orange-700 flex items-center justify-center">
                   <span className="text-6xl font-black text-white/30">{player.name?.charAt(0)}</span>

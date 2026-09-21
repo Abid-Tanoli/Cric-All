@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import Header from '../components/Header';
 import { api } from '../services/api';
 import { getStoredUser, logout as doLogout } from './auth/auth';
+import SafeImage from '../../../Shared/components/SafeImage.jsx';
 
 const idOf = (v) => v?._id || v?.id || v;
 
@@ -368,7 +369,7 @@ export default function TeamProfile() {
                     <div className="flex items-center gap-4 mb-3">
                       <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-cric-accent to-blue-900 flex items-center justify-center text-white font-black text-lg group-hover:scale-110 transition-transform">
                         {player.imageUrl ? (
-                          <img src={player.imageUrl} alt="" className="w-full h-full object-cover rounded-xl" />
+                          <SafeImage src={player.imageUrl} alt="" className="w-full h-full object-cover rounded-xl" />
                         ) : (
                           player.name?.charAt(0)
                         )}

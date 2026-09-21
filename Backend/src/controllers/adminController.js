@@ -1,12 +1,24 @@
 import Admin from "../models/Admin.js";
 import { generateToken } from "../utils/jwt.js";
 import bcrypt from "bcryptjs";
+import { validatePasswordStrength } from "../utils/password.js";
+import {
+  generateResetToken,
+  hashResetToken,
+  getResetTokenExpiry,
+  isResetTokenExpired,
+} from "../utils/passwordReset.js";
+
+const adminFrontendUrl = process.env.ADMIN_URL || "http://localhost:5174";
 
 export const registerAdmin = async (req, res) => {
   try {
     const { name, email, password } = req.body;
     if (!name || !email || !password)
       return res.status(400).json({ message: "All fields are required" });
+
+    const passwordError = validatePasswordStrength(password);
+    if (passwordError) return res.status(400).json({ message: passwordError });
 
     const adminCount = await Admin.countDocuments();
     if (adminCount > 0) {
@@ -33,6 +45,9 @@ export const createAdmin = async (req, res) => {
     const { name, email, password } = req.body;
     if (!name || !email || !password)
       return res.status(400).json({ message: "All fields are required" });
+
+    const passwordError = validatePasswordStrength(password);
+    if (passwordError) return res.status(400).json({ message: passwordError });
 
     const existing = await Admin.findOne({ email });
     if (existing) return res.status(400).json({ message: "Admin already exists" });
@@ -78,6 +93,62 @@ export const getAdminProfile = async (req, res) => {
   }
 };
 
+export const forgotPassword = async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ message: "Email is required" });
+
+    const admin = await Admin.findOne({ email }).select("+resetPasswordToken");
+    if (admin) {
+      const token = generateResetToken();
+      admin.resetPasswordToken = hashResetToken(token);
+      admin.resetPasswordExpires = getResetTokenExpiry();
+      await admin.save();
+
+      // TODO: send via email once an email service is configured
+      console.log(`[Admin password reset] ${admin.email}: ${adminFrontendUrl}/admin/reset-password/${token}`);
+    }
+
+    // Always return the same generic success message so we don't leak
+    // which email addresses are registered.
+    res.status(200).json({ message: "If an account exists for this email, a reset link has been sent" });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+export const resetPassword = async (req, res) => {
+  try {
+    const { token } = req.params;
+    const { password } = req.body;
+
+    if (!token || !password) {
+      return res.status(400).json({ message: "Token and new password are required" });
+    }
+
+    const passwordError = validatePasswordStrength(password);
+    if (passwordError) return res.status(400).json({ message: passwordError });
+
+    const hashedToken = hashResetToken(token);
+    const admin = await Admin.findOne({
+      resetPasswordToken: hashedToken,
+    }).select("+resetPasswordToken");
+
+    if (!admin || isResetTokenExpired(admin.resetPasswordExpires)) {
+      return res.status(400).json({ message: "Password reset token is invalid or has expired" });
+    }
+
+    admin.password = password;
+    admin.resetPasswordToken = undefined;
+    admin.resetPasswordExpires = undefined;
+    await admin.save();
+
+    res.status(200).json({ message: "Password reset successfully. You can now sign in." });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
 export const listAdmins = async (req, res) => {
   try {
     const admins = await Admin.find().select("-password");
@@ -113,7 +184,11 @@ export const updateAdmin = async (req, res) => {
 
     admin.name = payload.name ?? admin.name;
     admin.email = payload.email ?? admin.email;
-    if (payload.password) admin.password = payload.password;
+    if (payload.password) {
+      const passwordError = validatePasswordStrength(payload.password);
+      if (passwordError) return res.status(400).json({ message: passwordError });
+      admin.password = payload.password;
+    }
 
     await admin.save();
     const updated = await Admin.findById(id).select("-password");

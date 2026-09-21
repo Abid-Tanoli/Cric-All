@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import api from '../../../services/api';
+import PhotoInput from '../../../../../Shared/components/PhotoInput.jsx';
 
 const CATEGORIES = ["School", "College", "University", "Organization", "Business", "Industry", "Club", "Corporate", "Academy", "International", "Other"];
 const AGE_GROUPS = ["U-10", "U-13", "U-15", "U-17", "U-19", "Open"];
@@ -320,8 +321,12 @@ export default function TeamForm({ editMode, currentTeam, onSave, onCancel }) {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="text-[10px] font-black uppercase text-cric-muted block mb-1">Logo URL</label>
-              <input {...register('logo')} placeholder="Logo URL" className="w-full bg-cric-card border border-cric-border rounded-xl px-4 py-3 text-cric-text" />
+              <label className="text-[10px] font-black uppercase text-cric-muted block mb-1">Logo</label>
+              <PhotoInput
+                value={watch('logo') || ''}
+                onChange={(url) => setValue('logo', url)}
+                disabled={loading}
+              />
             </div>
             <div>
               <label className="text-[10px] font-black uppercase text-cric-muted block mb-1">Owner Name</label>

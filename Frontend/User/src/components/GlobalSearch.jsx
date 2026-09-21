@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
+import SafeImage from '../../../Shared/components/SafeImage.jsx';
 
 export default function GlobalSearch() {
     const [query, setQuery] = useState('');
@@ -94,7 +95,7 @@ export default function GlobalSearch() {
                                         <p className="text-sm font-black text-slate-800 uppercase tracking-tight">{ev.name}</p>
                                         <div className="flex items-center gap-2 mt-0.5">
                                             <span className="text-[9px] font-bold bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded uppercase">{ev.category}</span>
-                                            <span className="text-[9px] font-medium text-slate-400 uppercase tracking-tighter truncate">{ev.organization || 'Independent'}</span>
+                                            <span className="text-[9px] font-medium text-slate-400 uppercase tracking-tighter truncate">{ev.organization?.name || 'Independent'}</span>
                                         </div>
                                     </div>
                                 </div>
@@ -134,7 +135,7 @@ export default function GlobalSearch() {
                             {results.players.map(player => (
                                 <div key={player._id} onClick={() => handleSelect('player', player)} className="px-4 py-3 hover:bg-blue-50 cursor-pointer flex items-center gap-3 transition-colors border-b border-slate-50 last:border-0">
                                     {player.imageUrl ? (
-                                        <img src={player.imageUrl} className="w-10 h-10 rounded-full object-cover shadow-sm" />
+                                        <SafeImage src={player.imageUrl} alt={player.name} className="w-10 h-10 rounded-full object-cover shadow-sm" />
                                     ) : (
                                         <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 text-xs font-black shadow-inner">{player.name.substring(0, 2)}</div>
                                     )}

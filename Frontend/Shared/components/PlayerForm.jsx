@@ -2,6 +2,7 @@ import React from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
+import PhotoInput from "./PhotoInput.jsx";
 
 const userSchema = z.object({
   name: z.string().min(1, "Full name is required"),
@@ -103,7 +104,7 @@ export default function PlayerForm({
   submitButtonText,
 }) {
   const schema = mode === "user" ? userSchema : adminSchema;
-  const { register, handleSubmit, formState: { errors } } = useForm({
+  const { register, handleSubmit, setValue, watch, formState: { errors } } = useForm({
     resolver: zodResolver(schema),
     defaultValues,
   });
@@ -167,8 +168,12 @@ export default function PlayerForm({
             </Select>
           </FormField>
 
-          <FormField label="Photo URL">
-            <Input register={register} name="imageUrl" placeholder="https://..." />
+          <FormField label="Photo">
+            <PhotoInput
+              value={watch("imageUrl") || ""}
+              onChange={(url) => setValue("imageUrl", url, { shouldValidate: true })}
+              disabled={loading}
+            />
           </FormField>
         </>
       )}

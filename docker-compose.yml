@@ -10,6 +10,8 @@ services:
       - "5000:5000"
     env_file:
       - ${BACKEND_ENV_FILE:-./Backend/.env}
+    volumes:
+      - uploads_data:/app/uploads
     networks:
       - cricall-net
 
@@ -66,6 +68,7 @@ services:
 
 volumes:
   mongo_data:
+  uploads_data:
 
 networks:
   cricall-net:

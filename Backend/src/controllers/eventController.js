@@ -10,6 +10,32 @@ const isTransientDbError = (error) => (
   /timed out|buffering|not connected/i.test(error?.message || "")
 );
 
+const MULTI_TEAM_TYPES = ["series", "tri-series", "tournament", "world-cup", "champions-trophy", "league"];
+
+// Enforces the exact team count for an event regardless of caller. Returns an
+// error message string (null when valid), and the expected count.
+const validateEventTeamCount = (eventType, teams, totalTeams) => {
+  const teamCount = Array.isArray(teams) ? teams.length : 0;
+
+  if (eventType === "single-match") {
+    if (teamCount !== 2) return "A single match requires exactly 2 teams";
+    return null;
+  }
+
+  if (MULTI_TEAM_TYPES.includes(eventType)) {
+    const expected = Number(totalTeams);
+    if (!Number.isInteger(expected) || expected < 2) {
+      return "Total teams must be a number of at least 2 for this event type";
+    }
+    if (teamCount !== expected) {
+      return `Select exactly ${expected} teams to enable event creation`;
+    }
+    return null;
+  }
+
+  return null;
+};
+
 export const getEvents = async (req, res) => {
   try {
     const { eventType, status, category, subCategory, ageGroup, organization, city, search } = req.query;
@@ -22,14 +48,17 @@ export const getEvents = async (req, res) => {
     if (category) query.category = category;
     if (subCategory) query.subCategory = { $regex: subCategory, $options: "i" };
     if (ageGroup) query.ageGroup = ageGroup;
-    if (organization) query.organization = { $regex: organization, $options: "i" };
+    if (organization) {
+      // organization is now an ObjectId ref to TeamOrganization. Legacy string
+      // filters won't match — matched only when a valid ObjectId is supplied.
+      if (/^[0-9a-fA-F]{24}$/.test(organization)) query.organization = organization;
+    }
     if (city) query["address.city"] = { $regex: city, $options: "i" };
     
     if (search) {
       query.$or = [
         { name: { $regex: search, $options: "i" } },
         { shortName: { $regex: search, $options: "i" } },
-        { organization: { $regex: search, $options: "i" } },
         { "address.city": { $regex: search, $options: "i" } },
         { "address.town": { $regex: search, $options: "i" } }
       ];
@@ -37,6 +66,7 @@ export const getEvents = async (req, res) => {
 
     const events = await Event.find(query)
       .populate("teams", "name shortName logo")
+      .populate("organization", "name shortName")
       .populate("winner", "name shortName logo")
       .populate("runnerUp", "name shortName logo")
       .sort({ startDate: -1 })
@@ -96,7 +126,7 @@ export const getEvent = async (req, res) => {
 export const createEvent = async (req, res) => {
   try {
     const { 
-      name, shortName, eventType, teams, format, startDate, endDate, venue, description, totalMatches, overs,
+      name, shortName, eventType, teams, format, startDate, endDate, venue, description, totalMatches, totalTeams, overs,
       category, subCategory, ageGroup, organization, address
     } = req.body;
 
@@ -104,13 +134,14 @@ export const createEvent = async (req, res) => {
       return res.status(400).json({ message: "Name and event type are required" });
     }
 
-    if (eventType !== "single-match" && (!teams || teams.length < 2)) {
-      return res.status(400).json({ message: "At least 2 teams are required" });
+    const teamCountError = validateEventTeamCount(eventType, teams, totalTeams);
+    if (teamCountError) {
+      return res.status(400).json({ message: teamCountError });
     }
 
     // Initialize points table for multi-team events
     let pointsTable = [];
-    if (["series", "tri-series", "tournament", "world-cup", "champions-trophy", "league"].includes(eventType)) {
+    if (MULTI_TEAM_TYPES.includes(eventType)) {
       pointsTable = teams.map(teamId => ({
         team: teamId,
         matchesPlayed: 0, won: 0, lost: 0, tied: 0, noResult: 0,
@@ -123,6 +154,7 @@ export const createEvent = async (req, res) => {
       shortName: shortName || name.substring(0, 10).toUpperCase(),
       eventType,
       teams: teams || [],
+      totalTeams: (eventType === "single-match" ? 2 : Number(totalTeams) || teams?.length || 0),
       format: format || "T20",
       totalMatches: totalMatches || 0,
       oversPerInnings: overs || (format === "Tape Ball" ? 8 : 20),
@@ -135,7 +167,7 @@ export const createEvent = async (req, res) => {
       category: category || "Other",
       subCategory: subCategory || "",
       ageGroup: ageGroup || "Open",
-      organization: organization || "",
+      organization: organization && /^[0-9a-f]{24}$/i.test(String(organization)) ? organization : null,
       address: address || { town: "", district: "", city: "", province: "", country: "Pakistan" }
     });
 
@@ -155,7 +187,28 @@ export const updateEvent = async (req, res) => {
     const event = await Event.findById(req.params.id);
     if (!event) return res.status(404).json({ message: "Event not found" });
 
+    // Re-enforce the exact team-count rule whenever teams, totalTeams, or the
+    // event type changes so a direct API call cannot bypass the rule either.
+    if ("teams" in req.body || "totalTeams" in req.body || "eventType" in req.body) {
+      const eventType = req.body.eventType || event.eventType;
+      const teams = "teams" in req.body ? req.body.teams : event.teams;
+      const totalTeams = "totalTeams" in req.body ? req.body.totalTeams : event.totalTeams;
+      const teamCountError = validateEventTeamCount(eventType, teams, totalTeams);
+      if (teamCountError) {
+        return res.status(400).json({ message: teamCountError });
+      }
+    }
+
+    if ("organization" in req.body) {
+      req.body.organization = req.body.organization && /^[0-9a-f]{24}$/i.test(String(req.body.organization))
+        ? req.body.organization
+        : null;
+    }
+
     Object.assign(event, req.body);
+    if ("totalTeams" in req.body && req.body.eventType === "single-match") {
+      event.totalTeams = 2;
+    }
     await event.save();
     await event.populate("teams", "name shortName logo");
 

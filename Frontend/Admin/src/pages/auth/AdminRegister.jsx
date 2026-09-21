@@ -5,6 +5,7 @@ import * as z from "zod";
 import { useDispatch, useSelector } from "react-redux";
 import { Link, useNavigate } from "react-router-dom";
 import { register as registerAction, clearError } from "../../store/slices/authSlice";
+import PasswordField from "../../components/PasswordField";
 
 const RegisterSchema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters"),
@@ -94,35 +95,18 @@ export default function AdminRegister() {
               )}
             </div>
 
-            <div>
-              <label className="block text-xs font-bold uppercase text-cric-muted mb-2">
-                Password
-              </label>
-              <input
-                {...register("password")}
-                type="password"
-                className="w-full px-4 py-3 bg-cric-bg border border-cric-border rounded-xl focus:ring-2 focus:ring-cric-accent outline-none font-bold text-cric-text"
-                placeholder="••••••••"
-              />
-              {errors.password && (
-                <p className="mt-2 text-xs text-red-500 font-bold">{errors.password.message}</p>
-              )}
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold uppercase text-cric-muted mb-2">
-                Confirm Password
-              </label>
-              <input
-                {...register("confirmPassword")}
-                type="password"
-                className="w-full px-4 py-3 bg-cric-bg border border-cric-border rounded-xl focus:ring-2 focus:ring-cric-accent outline-none font-bold text-cric-text"
-                placeholder="••••••••"
-              />
-              {errors.confirmPassword && (
-                <p className="mt-2 text-xs text-red-500 font-bold">{errors.confirmPassword.message}</p>
-              )}
-            </div>
+            <PasswordField
+              label="Password"
+              placeholder="••••••••"
+              error={errors.password?.message}
+              inputProps={register("password")}
+            />
+            <PasswordField
+              label="Confirm Password"
+              placeholder="••••••••"
+              error={errors.confirmPassword?.message}
+              inputProps={register("confirmPassword")}
+            />
 
             <button
               type="submit"

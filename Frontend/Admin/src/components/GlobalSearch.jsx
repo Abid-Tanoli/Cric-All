@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
+import SafeImage from '../../../Shared/components/SafeImage.jsx';
 
 export default function GlobalSearch() {
     const [query, setQuery] = useState('');
@@ -92,7 +93,7 @@ export default function GlobalSearch() {
                                     <div className="w-8 h-8 rounded bg-blue-100 flex items-center justify-center text-blue-600 text-sm">🏏</div>
                                     <div>
                                         <p className="text-sm font-black text-slate-800 uppercase tracking-tight">{ev.name}</p>
-                                        <p className="text-[9px] font-bold text-slate-400 uppercase">{ev.category} | {ev.organization || 'No Institution'}</p>
+                                        <p className="text-[9px] font-bold text-slate-400 uppercase">{ev.category} | {ev.organization?.name || 'No Institution'}</p>
                                     </div>
                                 </div>
                             ))}
@@ -128,7 +129,7 @@ export default function GlobalSearch() {
                             {results.players.map(player => (
                                 <div key={player._id} onClick={() => handleSelect('player', player)} className="px-4 py-3 hover:bg-blue-50 cursor-pointer flex items-center gap-3 transition-colors">
                                     {player.imageUrl ? (
-                                        <img src={player.imageUrl} className="w-8 h-8 rounded-full object-cover" />
+                                        <SafeImage src={player.imageUrl} alt={player.name} className="w-8 h-8 rounded-full object-cover" />
                                     ) : (
                                         <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 text-xs font-black">{player.name.substring(0, 2)}</div>
                                     )}
