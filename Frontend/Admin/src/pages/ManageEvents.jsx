@@ -82,6 +82,11 @@ export default function ManageEvents() {
     };
 
     const onSubmit = async (data) => {
+        const teamCount = Array.isArray(data.teams) ? data.teams.length : 0;
+        if (teamCount < 2) {
+            showToast("At least 2 teams are required for every event type", 'error');
+            return;
+        }
         try {
             setLoading(true);
             data.organization = orgSelection.id || "";

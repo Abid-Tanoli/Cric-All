@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { GoogleLogin } from '@react-oauth/google';
 import { login, loginWithGoogle } from '../pages/auth/auth';
 
@@ -120,9 +121,9 @@ export default function Login({ onSuccess, onCancel, embedded = false }) {
             )}
           </div>
           <div className="pt-1 text-center">
-            <a href="/forgot-password" className="text-xs font-bold text-cric-accent hover:underline">
+            <Link to="/forgot-password" className="text-xs font-bold text-cric-accent hover:underline">
               Forgot password?
-            </a>
+            </Link>
           </div>
         </form>
       </div>

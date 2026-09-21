@@ -1,19 +1,14 @@
 import React, { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import Header from "../components/Header";
 import { api } from "../services/api";
-import { getStoredUser, logout as doLogout } from "../pages/auth/auth";
 
 export default function LeagueTeams() {
   const [leagues, setLeagues] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [authUser, setAuthUser] = useState(null);
   const navigate = useNavigate();
 
   useEffect(() => {
-    const user = getStoredUser();
-    setAuthUser(user);
     fetchLeagues();
   }, []);
 
@@ -30,12 +25,8 @@ export default function LeagueTeams() {
     }
   };
 
-  const handleLogout = () => { doLogout(); setAuthUser(null); };
-
   return (
     <div className="min-h-screen bg-cric-bg dark:bg-slate-900 text-cric-text dark:text-white font-sans">
-      <Header user={authUser} onLogout={handleLogout} />
-
       {/* Hero */}
       <div className="bg-gradient-to-r from-green-600 to-green-800 text-white py-12 relative overflow-hidden">
         <div className="absolute top-0 right-0 w-96 h-96 bg-white/10 rounded-full -mr-48 -mt-48 blur-3xl" />

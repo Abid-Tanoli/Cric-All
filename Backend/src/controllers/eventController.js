@@ -33,6 +33,13 @@ const validateEventTeamCount = (eventType, teams, totalTeams) => {
     return null;
   }
 
+  // Shared floor rule for every event type (including any unrecognized/future
+  // type): no event may be created with fewer than 2 teams, regardless of the
+  // totalTeams value supplied.
+  if (teamCount < 2) {
+    return "At least 2 teams are required for every event type";
+  }
+
   return null;
 };
 

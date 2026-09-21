@@ -1,10 +1,8 @@
 import React, { useEffect, useState } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { api } from "../services/api";
-import Header from "../components/Header";
 import FormTracker from "../components/FormTracker";
 import ShareButton from "../components/ShareButton";
-import { getStoredUser, logout as doLogout } from "../pages/auth/auth";
 import SafeImage from "../../../Shared/components/SafeImage.jsx";
 
 export default function PlayerProfile() {
@@ -12,13 +10,10 @@ export default function PlayerProfile() {
   const [player, setPlayer] = useState(null);
   const [recentMatches, setRecentMatches] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [authUser, setAuthUser] = useState(null);
   const [activeTab, setActiveTab] = useState('overview');
   const navigate = useNavigate();
 
   useEffect(() => {
-    const user = getStoredUser();
-    setAuthUser(user);
     loadPlayer();
   }, [playerId]);
 
@@ -35,8 +30,6 @@ export default function PlayerProfile() {
     }
     setLoading(false);
   };
-
-  const handleLogout = () => { doLogout(); setAuthUser(null); };
 
   if (loading) {
     return (
@@ -77,10 +70,6 @@ export default function PlayerProfile() {
 
   return (
     <div className="min-h-screen bg-cric-bg text-cric-text font-sans">
-      <Header
-        user={authUser}
-        onLogout={handleLogout}
-      />
 
       {/* Player Header */}
       <div className="bg-gradient-to-r from-cric-text to-slate-800 text-white relative overflow-hidden">

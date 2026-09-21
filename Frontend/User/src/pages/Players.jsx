@@ -1,8 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import Header from "../components/Header";
 import PlayerCard from "../components/PlayerCard";
-import { getStoredUser, logout as doLogout } from "../pages/auth/auth";
 import { api } from "../services/api";
 
 export default function Players() {
@@ -12,7 +10,6 @@ export default function Players() {
   const [players, setPlayers] = useState([]);
   const [teams, setTeams] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [authUser, setAuthUser] = useState(null);
 
   // Filters
   const [search, setSearch] = useState("");
@@ -21,9 +18,6 @@ export default function Players() {
   const [filterCampus, setFilterCampus] = useState("");
 
   useEffect(() => {
-    const user = getStoredUser();
-    setAuthUser(user);
-
     // Fetch Teams for the filter dropdown
     api.get("/teams")
       .then(res => setTeams(Array.isArray(res.data) ? res.data : []))
@@ -53,8 +47,6 @@ export default function Players() {
     }
   };
 
-  const handleLogout = () => { doLogout(); setAuthUser(null); };
-
   const filteredPlayers = players.filter(p =>
     p.name?.toLowerCase().includes(search.toLowerCase()) &&
     (!filterRole || p.role?.toLowerCase() === filterRole.toLowerCase())
@@ -62,10 +54,6 @@ export default function Players() {
 
   return (
     <div className="min-h-screen bg-cric-bg text-cric-text font-sans">
-      <Header
-        user={authUser}
-        onLogout={handleLogout}
-      />
 
       {/* Hero / Filter Section */}
       <div className="bg-cric-accent text-white py-16 relative overflow-hidden">

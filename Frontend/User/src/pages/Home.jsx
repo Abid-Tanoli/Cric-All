@@ -1,11 +1,9 @@
 import React, { useEffect, useState, useCallback, useMemo } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { useNavigate, Link } from "react-router-dom";
-import Header from "../components/Header";
-import Login from "../components/Login";
 import Register from "../components/Register";
 import { fetchMatches } from "../store/slices/matchesSlice";
-import { logout as doLogout, getStoredUser } from "../pages/auth/auth";
+import { getStoredUser } from "../pages/auth/auth";
 import BlogGallery from "../components/BlogGallery";
 import { api } from "../services/api";
 import GlobalSearch from "../components/GlobalSearch";
@@ -37,7 +35,6 @@ export function Home() {
   const [series, setSeries] = useState([]);
   const [seriesLoading, setSeriesLoading] = useState(true);
   const [authUser, setAuthUser] = useState(null);
-  const [showLogin, setShowLogin] = useState(false);
   const [showRegister, setShowRegister] = useState(false);
   const [showCreatePlayer, setShowCreatePlayer] = useState(false);
   const [collapseCompleted, setCollapseCompleted] = useState(false);
@@ -86,9 +83,7 @@ export function Home() {
     };
   }, [dispatch, loadSeries]);
 
-  const handleLoginSuccess = (user) => { setAuthUser(user); setShowLogin(false); dispatch(fetchMatches({ limit: 250 })); };
   const handleRegisterSuccess = (user) => { setAuthUser(user); setShowRegister(false); dispatch(fetchMatches({ limit: 250 })); };
-  const handleLogout = () => { doLogout(); setAuthUser(null); dispatch(fetchMatches({ limit: 250 })); };
 
   const liveMatches = matches.filter(m => m.status === "live" || m.status === "in_progress" || m.status === "innings-break");
   const upcomingMatches = matches.filter(m => m.status === "upcoming" || m.status === "scheduled" || m.status === "pending");
@@ -172,12 +167,6 @@ export function Home() {
 
   return (
     <div className="min-h-screen bg-cric-bg text-cric-text font-sans">
-      <Header
-        user={authUser}
-        onShowLogin={() => { setShowLogin(true); setShowRegister(false); }}
-        onShowRegister={() => { setShowRegister(true); setShowLogin(false); }}
-        onLogout={handleLogout}
-      />
 
       <div className="max-w-7xl mx-auto px-4 py-6">
         {/* Series/Tournaments bar */}
@@ -340,7 +329,7 @@ export function Home() {
                 </button>
               ) : (
                 <button
-                  onClick={() => { setShowRegister(true); setShowLogin(false); }}
+                  onClick={() => { setShowRegister(true); }}
                   className="mt-4 w-full rounded-xl bg-cric-accent px-4 py-3 text-[10px] font-black uppercase tracking-widest text-white hover:bg-orange-600"
                 >
                   Join as Player or Handler
@@ -398,7 +387,6 @@ export function Home() {
           </div>
         </div>
 
-        {showLogin && <Login onSuccess={handleLoginSuccess} onCancel={() => setShowLogin(false)} />}
         {showRegister && <Register onSuccess={handleRegisterSuccess} onCancel={() => setShowRegister(false)} />}
         {showCreatePlayer && <CreatePlayerProfile onSuccess={() => setShowCreatePlayer(false)} onCancel={() => setShowCreatePlayer(false)} />}
       </div>

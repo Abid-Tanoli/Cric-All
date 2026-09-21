@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import Header from "../components/Header";
 import MatchCard from "../components/cricapi/MatchCard";
 import LiveScoreCard from "../components/cricapi/LiveScoreCard";
 import Loader from "../components/cricapi/Loader";
@@ -40,7 +39,6 @@ export default function CricSeriesDetails() {
 
   return (
     <div className="min-h-screen bg-cric-bg">
-      <Header />
 
       <section className="bg-gradient-to-r from-cric-accent via-cric-accent to-cric-accent py-8 text-white">
         <div className="mx-auto max-w-7xl px-4">

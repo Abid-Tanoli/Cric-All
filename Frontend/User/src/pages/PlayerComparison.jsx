@@ -1,8 +1,6 @@
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../services/api";
-import Header from "../components/Header";
-import { getStoredUser, logout as doLogout } from "./auth/auth";
 
 const statCategories = [
   {
@@ -49,7 +47,6 @@ const statCategories = [
 ];
 
 const PlayerComparison = () => {
-  const [authUser, setAuthUser] = useState(null);
   const [players, setPlayers] = useState([]);
   const [player1, setPlayer1] = useState(null);
   const [player2, setPlayer2] = useState(null);
@@ -58,10 +55,6 @@ const PlayerComparison = () => {
   const [results1, setResults1] = useState([]);
   const [results2, setResults2] = useState([]);
   const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    setAuthUser(getStoredUser());
-  }, []);
 
   const handleSearch = async (query, setResults) => {
     if (query.length < 2) { setResults([]); return; }
@@ -78,8 +71,6 @@ const PlayerComparison = () => {
     setSearch(player.name);
     setResults([]);
   };
-
-  const handleLogout = () => { doLogout(); setAuthUser(null); };
 
   const getStats = (p) => p?.stats || {};
 
@@ -110,7 +101,6 @@ const PlayerComparison = () => {
 
   return (
     <div className="min-h-screen bg-cric-bg text-cric-text font-sans">
-      <Header user={authUser} onLogout={handleLogout} />
 
       <div className="bg-gradient-to-r from-cric-text to-slate-800 text-white">
         <div className="max-w-7xl mx-auto px-4 py-8">

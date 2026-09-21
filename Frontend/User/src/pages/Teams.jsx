@@ -1,8 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import Header from "../components/Header";
 import { api } from "../services/api";
-import { getStoredUser, logout as doLogout } from "../pages/auth/auth";
 
 const ICONS = {
   School: "🏫", College: "🎓", University: "🏛️",
@@ -12,16 +10,11 @@ const ICONS = {
 };
 
 export default function Teams() {
-  const [authUser, setAuthUser] = useState(null);
   const [teams, setTeams] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [activeCategory, setActiveCategory] = useState("all");
   const [searchTerm, setSearchTerm] = useState("");
-
-  useEffect(() => {
-    setAuthUser(getStoredUser());
-  }, []);
 
   useEffect(() => {
     fetchTeams();
@@ -50,8 +43,6 @@ export default function Teams() {
     }
   };
 
-  const handleLogout = () => { doLogout(); setAuthUser(null); };
-
   const filteredTeams = teams.filter(t => {
     if (activeCategory !== "all" && t.category !== activeCategory) return false;
     if (searchTerm && !t.name.toLowerCase().includes(searchTerm.toLowerCase()) &&
@@ -72,7 +63,6 @@ export default function Teams() {
 
   return (
     <div className="min-h-screen bg-cric-bg text-cric-text font-sans">
-      <Header user={authUser} onLogout={handleLogout} />
 
       <div className="bg-cric-accent text-white py-16 relative overflow-hidden">
         <div className="absolute top-0 right-0 w-96 h-96 bg-blue-600/10 rounded-full -mr-48 -mt-48 blur-3xl" />

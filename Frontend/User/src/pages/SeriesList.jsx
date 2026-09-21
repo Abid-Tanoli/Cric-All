@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../services/api";
-import Header from "../components/Header";
 import SeriesCard from "../components/cricapi/SeriesCard";
 import Loader from "../components/cricapi/Loader";
 import ErrorState from "../components/cricapi/ErrorState";
@@ -81,7 +80,6 @@ export default function SeriesList() {
 
   return (
     <div className="min-h-screen bg-cric-bg">
-      <Header />
       <div className="bg-gradient-to-r from-cric-accent via-[#0a2d5e] to-cric-accent py-8 text-white">
         <div className="mx-auto max-w-7xl px-4">
           <h1 className="mb-2 text-3xl font-black uppercase tracking-tight">Series & Tournaments</h1>

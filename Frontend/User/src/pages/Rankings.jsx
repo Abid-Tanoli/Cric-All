@@ -1,7 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import Header from "../components/Header";
-import { getStoredUser, logout as doLogout } from "../pages/auth/auth";
 import { api } from "../services/api";
 
 const rankingTypes = [
@@ -43,7 +41,6 @@ export default function Rankings() {
   const [activeType, setActiveType] = useState("team-overall");
   const [scope, setScope] = useState("country");
   const [scopeValue, setScopeValue] = useState("");
-  const [authUser, setAuthUser] = useState(null);
 
   const isTeamView = activeType === "team-overall";
   const activeTypeMeta = rankingTypes.find((type) => type.key === activeType) || rankingTypes[0];
@@ -54,10 +51,6 @@ export default function Rankings() {
     if (scopeValue.trim()) params.scopeValue = scopeValue.trim();
     return params;
   }, [scope, scopeValue]);
-
-  useEffect(() => {
-    setAuthUser(getStoredUser());
-  }, []);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -81,14 +74,8 @@ export default function Rankings() {
     }
   };
 
-  const handleLogout = () => {
-    doLogout();
-    setAuthUser(null);
-  };
-
   return (
     <div className="min-h-screen bg-cric-bg text-cric-text font-sans">
-      <Header user={authUser} onLogout={handleLogout} />
 
       <div className="bg-cric-accent text-white">
         <div className="mx-auto max-w-7xl px-4 py-10">

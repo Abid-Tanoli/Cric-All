@@ -1,11 +1,13 @@
-import React, { Suspense, lazy } from "react";
+import React, { Suspense, lazy, useState } from "react";
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import { ThemeProvider } from "./context/ThemeContext";
+import Header from "./components/Header";
 import Footer from "./components/Footer";
 import OfflineBanner from "./components/OfflineBanner";
 import ErrorBoundary from "../../Shared/components/ErrorBoundary";
 import SocketStatusIndicator from "../../Shared/components/SocketStatusIndicator";
 import { getSocket } from "./services/socket";
+import { getStoredUser, logout as clearStoredUser } from "./pages/auth/auth";
 
 const Home = lazy(() => import("./pages/Home").then(m => ({ default: m.Home })));
 const Match = lazy(() => import("./pages/Match"));
@@ -38,6 +40,21 @@ const ResetPassword = lazy(() => import("./pages/auth/ResetPassword"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 const PlayerComparison = lazy(() => import("./pages/PlayerComparison"));
 
+// Single shared layout header. Previously the Header was rendered separately
+// on each page, which left several routes (News, Videos, Highlights, Match,
+// Summary, NotFound, auth pages) without any navbar and caused the "navbar
+// disappears" symptom when navigating between routes.
+function AppHeader() {
+  const [user, setUser] = useState(() => getStoredUser());
+
+  const handleLogout = () => {
+    clearStoredUser();
+    setUser(null);
+  };
+
+  return <Header user={user} onLogout={handleLogout} />;
+}
+
 function App() {
   return (
     <ThemeProvider>
@@ -45,6 +62,8 @@ function App() {
         <div className="flex flex-col min-h-screen">
         <OfflineBanner />
         <SocketStatusIndicator getSocket={getSocket} />
+        <AppHeader />
+        <main className="flex-1">
         <Suspense fallback={<div className="flex items-center justify-center min-h-screen bg-cric-bg"><div className="w-10 h-10 border-4 border-cric-accent border-t-transparent rounded-full animate-spin" /></div>}>
         <Routes>
           <Route path="/" element={<ErrorBoundary><Home /></ErrorBoundary>} />
@@ -85,8 +104,9 @@ function App() {
           <Route path="/compare/:player1Id/:player2Id?" element={<ErrorBoundary><PlayerComparison /></ErrorBoundary>} />
           <Route path="*" element={<ErrorBoundary><NotFound /></ErrorBoundary>} />
         </Routes>
-        <Footer />
         </Suspense>
+        </main>
+        <Footer />
         </div>
       </Router>
     </ThemeProvider>

@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useParams } from "react-router-dom";
-import Header from "../components/Header";
 import Loader from "../components/cricapi/Loader";
 import ErrorState from "../components/cricapi/ErrorState";
 import ScorecardTable from "../components/cricapi/ScorecardTable";
@@ -71,7 +70,6 @@ export default function CricMatchDetails() {
 
   return (
     <div className="min-h-screen bg-cric-bg">
-      <Header />
 
       <section className="bg-gradient-to-r from-cric-accent via-cric-accent to-cric-accent py-8 text-white">
         <div className="mx-auto max-w-7xl px-4">

@@ -48,6 +48,7 @@ Backend/backups/
 
 # Runtime uploads/cache
 Backend/src/Uploads/tmp/
+Backend/uploads/
 tmp/
 temp/
 .cache/

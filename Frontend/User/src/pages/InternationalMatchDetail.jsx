@@ -10,7 +10,6 @@ import {
   FaTable,
   FaUsers,
 } from 'react-icons/fa';
-import Header from '../components/Header';
 import { api } from '../services/api';
 import { getSocket, initSocket } from '../services/socket';
 
@@ -555,7 +554,6 @@ export default function InternationalMatchDetail() {
   if (loading) {
     return (
       <div className="min-h-screen bg-cric-bg dark:bg-slate-950">
-        <Header />
         <div className="flex min-h-[70vh] items-center justify-center">
           <div className="text-center">
             <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-cric-accent border-t-transparent" />
@@ -568,7 +566,6 @@ export default function InternationalMatchDetail() {
 
   return (
     <div className="min-h-screen bg-cric-bg dark:bg-slate-950">
-      <Header />
       <main className="mx-auto max-w-6xl px-4 py-7">
         <div className="mb-5 flex items-center justify-between gap-4">
           <Link to="/international" className="text-xs font-black uppercase tracking-widest text-cric-accent hover:text-cric-accent">

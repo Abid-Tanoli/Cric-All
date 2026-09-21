@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { API_BASE_URL } from "../config/env.js";
 
 const PLACEHOLDER =
   "data:image/svg+xml," +
@@ -10,16 +11,26 @@ const PLACEHOLDER =
     `</svg>`
   );
 
+// Legacy uploads may have stored a bare relative path like "/uploads/x.jpg",
+// which would 404 when the rendering frontend runs on a different origin than
+// the backend. Rebase those onto the backend's public base URL.
+const backendOrigin = (API_BASE_URL || "/api").replace(/\/api\/?$/, "");
+const absolutizeUploadUrl = (src) =>
+  typeof src === "string" && src.startsWith("/uploads/")
+    ? `${backendOrigin}${src}`
+    : src;
+
 const SafeImage = ({ src, alt = "", className = "", ...imgProps }) => {
   const [failed, setFailed] = useState(false);
 
-  const showPlaceholder = !src || failed || src === "null" || src === "undefined";
+  const showPlaceholder = failed || !src || src === "null" || src === "undefined";
+  const resolvedSrc = absolutizeUploadUrl(src);
 
   return showPlaceholder ? (
     <img src={PLACEHOLDER} alt={alt} className={className} {...imgProps} />
   ) : (
     <img
-      src={src}
+      src={resolvedSrc}
       alt={alt}
       className={className}
       {...imgProps}

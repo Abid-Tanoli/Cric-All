@@ -1,7 +1,6 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { useParams, Link } from "react-router-dom";
 import { api } from "../services/api";
-import Header from "../components/Header";
 import BlogGallery from "../components/BlogGallery";
 import BoundaryMeter from "../components/BoundaryMeter";
 import ShareButton from "../components/ShareButton";
@@ -296,7 +295,6 @@ export default function Series() {
 
   return (
     <div className="bg-cric-bg min-h-screen">
-      <Header />
 
       {/* Series Header */}
       <div className="bg-gradient-to-r from-cric-text via-slate-800 to-cric-text text-white">

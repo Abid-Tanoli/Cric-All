@@ -1,8 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import Header from '../components/Header';
 import { api } from '../services/api';
-import { getStoredUser, logout as doLogout } from './auth/auth';
 import SafeImage from '../../../Shared/components/SafeImage.jsx';
 
 const idOf = (v) => v?._id || v?.id || v;
@@ -12,11 +10,9 @@ export default function TeamProfile() {
   const [profile, setProfile] = useState(null);
   const [orgChain, setOrgChain] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [authUser, setAuthUser] = useState(null);
   const [activeTab, setActiveTab] = useState('about');
 
   useEffect(() => {
-    setAuthUser(getStoredUser());
     fetchTeam();
   }, [id]);
 
@@ -39,7 +35,7 @@ export default function TeamProfile() {
     setLoading(false);
   };
 
-  const handleLogout = () => { doLogout(); setAuthUser(null); };
+  
 
   const tabs = [
     { key: 'about', label: 'About' },
@@ -101,12 +97,13 @@ export default function TeamProfile() {
     );
   };
 
+  
+
   const primaryColor = team.primaryColor || '#031d44';
   const secondaryColor = team.secondaryColor || '#1e3a5f';
 
   return (
     <div className="min-h-screen bg-cric-bg text-cric-text font-sans">
-      <Header user={authUser} onLogout={handleLogout} />
 
       <div className="bg-cric-accent text-white py-12 relative overflow-hidden" style={{backgroundColor: primaryColor}}>
         <div className="absolute top-0 right-0 w-96 h-96 bg-white/5 rounded-full -mr-48 -mt-48 blur-3xl" />

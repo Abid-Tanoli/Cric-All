@@ -1,5 +1,6 @@
 import React, { useRef, useState } from "react";
 import { API_BASE_URL } from "../config/env.js";
+import SafeImage from "./SafeImage.jsx";
 
 const PhotoInput = ({ value, onChange, label = "Photo", disabled }) => {
   const inputRef = useRef(null);
@@ -46,7 +47,11 @@ const PhotoInput = ({ value, onChange, label = "Photo", disabled }) => {
       {label && <label className="text-[10px] font-black uppercase text-slate-400 block mb-1">{label}</label>}
       <div className="flex items-center gap-4">
         {value ? (
-          <img src={value} alt="preview" className="w-20 h-20 rounded-xl object-cover border border-slate-200" />
+          <SafeImage
+            src={value}
+            alt={`${label} preview`}
+            className="w-20 h-20 rounded-xl object-cover border border-slate-200"
+          />
         ) : (
           <div className="w-20 h-20 rounded-xl bg-slate-100 border border-dashed border-slate-300 flex items-center justify-center text-2xl text-slate-400">📷</div>
         )}

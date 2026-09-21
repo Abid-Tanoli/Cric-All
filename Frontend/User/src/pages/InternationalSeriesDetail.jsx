@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import Header from '../components/Header';
 import { api } from '../services/api';
 
 const asArray = (value) => Array.isArray(value) ? value : [];
@@ -392,7 +391,6 @@ export default function InternationalSeriesDetail() {
   if (loading) {
     return (
       <div className="min-h-screen bg-cric-bg">
-        <Header />
         <div className="flex min-h-[70vh] items-center justify-center">
           <div className="text-center">
             <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-cric-accent border-t-transparent" />
@@ -408,7 +406,6 @@ export default function InternationalSeriesDetail() {
     const body = liveProviderMessage || 'CricAll could not find this series from the current live data source.';
     return (
       <div className="min-h-screen bg-cric-bg">
-        <Header />
         <div className="flex min-h-[70vh] items-center justify-center">
           <div className="mx-auto max-w-lg px-4 text-center">
             <p className="text-lg font-black text-cric-text">{title}</p>
@@ -422,7 +419,6 @@ export default function InternationalSeriesDetail() {
 
   return (
     <div className="min-h-screen bg-cric-bg text-cric-text">
-      <Header />
 
       <div className="border-b border-cric-border bg-cric-card">
         <div className="mx-auto flex max-w-7xl gap-6 overflow-x-auto px-4 py-3">

@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import Header from '../components/Header';
 import { api } from '../services/api';
 import { getSocket, initSocket } from '../services/socket';
 
@@ -296,7 +295,6 @@ export default function International() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-cric-bg to-white dark:from-slate-900 dark:to-slate-950">
-      <Header />
       <main className="mx-auto max-w-7xl px-4 py-8">
         <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
           <div>

@@ -1,19 +1,13 @@
 import React, { useEffect, useState } from "react";
-import Header from "../components/Header";
 import { api } from "../services/api";
-import { getStoredUser, logout as doLogout } from "../pages/auth/auth";
 
 export default function PointsTable() {
   const [table, setTable] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [authUser, setAuthUser] = useState(null);
   const [tournamentName, setTournamentName] = useState("");
   const [tournamentType, setTournamentType] = useState("");
 
   useEffect(() => {
-    const user = getStoredUser();
-    setAuthUser(user);
-
     const fetchPointsTable = async () => {
       try {
         // Fetch all tournaments and events
@@ -63,17 +57,11 @@ export default function PointsTable() {
     fetchPointsTable();
   }, []);
 
-  const handleLogout = () => { doLogout(); setAuthUser(null); };
-
   // Only show for tournament/league/tri-series
   const isValidType = ['tournament', 'league', 'tri-series'].includes(tournamentType?.toLowerCase());
 
   return (
     <div className="min-h-screen bg-cric-bg text-cric-text font-sans">
-      <Header
-        user={authUser}
-        onLogout={handleLogout}
-      />
 
       {/* Hero Section */}
       <div className="bg-cric-accent text-white py-16 relative overflow-hidden">
