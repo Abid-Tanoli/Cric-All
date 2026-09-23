@@ -63,6 +63,16 @@ app.use(cookieParser());
 // storage env vars (CLOUDINARY_URL / S3_BUCKET) are configured the endpoints
 // still respond, redirecting the uploader to configure the adapter instead.
 ensureUploadsDir();
+
+// helmet() sets Cross-Origin-Resource-Policy: same-origin on every response,
+// which blocks the public/admin SPAs from <img>-loading uploaded files from a
+// different origin (net::ERR_BLOCKED_BY_RESPONSE.NotSameOrigin). Uploaded
+// photos/logos are intended to render across the user app, admin panel and
+// backend alike, so relax CORP for the static /uploads mount only.
+app.use("/uploads", (req, res, next) => {
+  res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+  next();
+});
 app.use("/uploads", express.static(uploadsDir));
 
 const server = http.createServer(app);

@@ -10,6 +10,15 @@ const isTransientDbError = (error) => (
   /timed out|buffering|not connected/i.test(error?.message || "")
 );
 
+// Admin forms submit team as "" for a free agent ("Agent (No Team)") and Team
+// is an ObjectId, so an empty string would throw a Mongoose CastError and fail
+// the whole create/update with a 500. Strip empty optional ObjectId fields.
+export const normalizeEmptyOptionalIds = (body) => {
+  if (!body || typeof body !== "object") return body;
+  if (body.team == null || body.team === "") delete body.team;
+  return body;
+};
+
 export const getPlayers = async (req, res) => {
   try {
     const { page = 1, limit = 10, search = "", team = "", campus = "", category, subCategory, ageGroup, organization, city } = req.query;
@@ -108,6 +117,7 @@ export const getPlayerMatches = async (req, res) => {
 
 export const createPlayer = async (req, res) => {
   try {
+    normalizeEmptyOptionalIds(req.body);
     const player = await Player.create(req.body);
     const populated = await Player.findById(player._id).populate("team", "name");
 
@@ -132,6 +142,7 @@ export const updatePlayer = async (req, res) => {
     const existing = await Player.findById(req.params.id);
     if (!existing) return res.status(404).json({ message: "Player not found" });
 
+    normalizeEmptyOptionalIds(req.body);
     const oldTeamId = existing.team?.toString();
     const newTeamId = req.body.team?.toString();
 
