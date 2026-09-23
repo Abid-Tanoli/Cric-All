@@ -1,4 +1,5 @@
 import React from "react";
+import { Link } from "react-router-dom";
 import SafeImage from "../../../Shared/components/SafeImage.jsx";
 
 const PlayerCard = ({ player }) => {
@@ -42,9 +43,12 @@ const PlayerCard = ({ player }) => {
            </div>
         </div>
 
-        <button className="w-full py-3 bg-cric-bg hover:bg-cric-accent hover:text-white text-cric-accent font-black text-[9px] uppercase tracking-widest rounded-xl transition-all border border-cric-border group-hover:border-transparent">
-           Full Bio & Stats
-        </button>
+        <Link
+          to={`/players/${player._id}`}
+          className="block w-full py-3 bg-cric-bg hover:bg-cric-accent hover:text-white text-cric-accent font-black text-[9px] uppercase tracking-widest rounded-xl transition-all text-center border border-cric-border group-hover:border-transparent"
+        >
+          Full Bio & Stats
+        </Link>
       </div>
     </div>
   );
