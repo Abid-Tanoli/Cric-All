@@ -58,6 +58,9 @@ const eventSchema = new mongoose.Schema({
   },
   // Teams participating in this event
   teams: [{ type: mongoose.Schema.Types.ObjectId, ref: "Team" }],
+  // User (accountType handler / organization_admin) this event is managed by.
+  // Set when an admin approves a HandlerRequest.
+  managedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
   // Matches within this event (for series/tournaments)
   matches: [{ type: mongoose.Schema.Types.ObjectId, ref: "Match" }],
   // Event-level squads (11-20 players per team, selected once for the whole event)
@@ -128,5 +131,6 @@ eventSchema.pre('save', async function () {
 
 eventSchema.index({ eventType: 1, status: 1 });
 eventSchema.index({ teams: 1 });
+eventSchema.index({ managedBy: 1 });
 
 export default mongoose.model("Event", eventSchema);

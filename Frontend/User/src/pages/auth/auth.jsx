@@ -6,12 +6,14 @@ function persistAuth(token, user) {
     setAuthToken(token);
   }
   if (user) localStorage.setItem('bq_user', JSON.stringify(user));
+  window.dispatchEvent(new CustomEvent('bq-auth-changed'));
 }
 
 function clearAuth() {
   localStorage.removeItem('bq_token');
   localStorage.removeItem('bq_user');
   setAuthToken(null);
+  window.dispatchEvent(new CustomEvent('bq-auth-changed'));
 }
 
 export async function register(name, email, password, profile = {}) {
@@ -42,7 +44,7 @@ export function logout() {
 export function getStoredUser() {
   const raw = localStorage.getItem('bq_user');
   if (!raw) return null;
-  try { return JSON.parse(raw); } catch (e) { return null; }
+  try { return JSON.parse(raw); } catch { return null; }
 }
 
 export function initAuthFromStorage() {

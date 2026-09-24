@@ -31,6 +31,7 @@ import organizationRoutes from "./routes/organizationRoutes.js";
 import rankingRoutes from "./routes/rankingRoutes.js";
 import syncRoutes from "./routes/syncRoutes.js";
 import settingsRoutes from "./routes/settingsRoutes.js";
+import handlerRoutes from "./routes/handlerRoutes.js";
 import { startExternalSyncManager } from "./controllers/settingsController.js";
 import uploadRoutes from "./routes/uploadRoutes.js";
 import { uploadsDir, ensureUploadsDir } from "./utils/photoStore.js";
@@ -108,7 +109,8 @@ const databaseBackedPrefixes = [
   "/api/sync",
   "/api/settings",
   "/api/shots",
-  "/api/fielding-positions"
+  "/api/fielding-positions",
+  "/api/handler"
 ];
 
 const emptyCollectionResponses = {
@@ -190,6 +192,9 @@ app.use("/api/sync", syncRoutes);
 
 // Runtime toggles for external API sync / free Cricbuzz provider.
 app.use("/api/settings", settingsRoutes);
+
+// Handler / Organization Admin dashboard endpoints.
+app.use("/api/handler", handlerRoutes);
 
 // Cricket shots & fielding positions routes
 import shotRoutes from "./routes/shotRoutes.js";

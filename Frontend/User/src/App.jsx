@@ -1,5 +1,5 @@
 import React, { Suspense, lazy, useState } from "react";
-import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
+import { BrowserRouter as Router, Routes, Route, useLocation } from "react-router-dom";
 import { ThemeProvider } from "./context/ThemeContext";
 import Header from "./components/Header";
 import Footer from "./components/Footer";
@@ -39,13 +39,25 @@ const ForgotPassword = lazy(() => import("./pages/auth/ForgotPassword"));
 const ResetPassword = lazy(() => import("./pages/auth/ResetPassword"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 const PlayerComparison = lazy(() => import("./pages/PlayerComparison"));
+const HandlerDashboard = lazy(() => import("./pages/HandlerDashboard"));
 
 // Single shared layout header. Previously the Header was rendered separately
 // on each page, which left several routes (News, Videos, Highlights, Match,
 // Summary, NotFound, auth pages) without any navbar and caused the "navbar
 // disappears" symptom when navigating between routes.
 function AppHeader() {
+  const location = useLocation();
   const [user, setUser] = useState(() => getStoredUser());
+
+  // Re-read the stored session whenever the route changes or an auth event fires
+  // (login/register/logout write localStorage only), so the logged-in nav — and the
+  // handler "My Dashboard" link — appears without requiring a manual page refresh.
+  React.useEffect(() => {
+    const syncUser = () => setUser(getStoredUser());
+    syncUser();
+    window.addEventListener("bq-auth-changed", syncUser);
+    return () => window.removeEventListener("bq-auth-changed", syncUser);
+  }, [location.pathname]);
 
   const handleLogout = () => {
     clearStoredUser();
@@ -102,6 +114,7 @@ function App() {
           <Route path="/cricket-news" element={<ErrorBoundary><CricketNews /></ErrorBoundary>} />
           <Route path="/compare" element={<ErrorBoundary><PlayerComparison /></ErrorBoundary>} />
           <Route path="/compare/:player1Id/:player2Id?" element={<ErrorBoundary><PlayerComparison /></ErrorBoundary>} />
+          <Route path="/dashboard" element={<ErrorBoundary><HandlerDashboard /></ErrorBoundary>} />
           <Route path="*" element={<ErrorBoundary><NotFound /></ErrorBoundary>} />
         </Routes>
         </Suspense>

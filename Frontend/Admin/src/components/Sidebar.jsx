@@ -10,6 +10,7 @@ const menuItems = [
   { to: "/admin/events", label: "Manage Events", icon: "EV" },
   { to: "/admin/teams", label: "Manage Teams", icon: "TM" },
   { to: "/admin/players", label: "Manage Players", icon: "PL" },
+  { to: "/admin/handler-requests", label: "Handler Requests", icon: "HR" },
   { to: "/admin/bulk-import", label: "Bulk Import", icon: "BI" },
   { to: "/admin/blogs", label: "Manage Blogs", icon: "BL" },
   { to: "/admin/rankings", label: "Rankings", icon: "RK" },

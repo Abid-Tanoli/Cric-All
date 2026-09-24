@@ -30,6 +30,9 @@ export default function Header({ user, onShowLogin, onShowRegister, onLogout }) 
     else navigate("/register");
   };
 
+  const isHandler = Boolean(user && (user.accountType === "handler" || user.accountType === "organization_admin"));
+  const isDashboardActive = location.pathname === "/dashboard";
+
   return (
     <header className="bg-cric-card border-b border-cric-border sticky top-0 z-50 shadow-xl">
       <div className="max-w-7xl mx-auto px-4 py-4 flex flex-wrap justify-between items-center gap-3">
@@ -61,6 +64,18 @@ export default function Header({ user, onShowLogin, onShowRegister, onLogout }) 
           <ThemeToggle />
           {user ? (
             <div className="hidden sm:flex items-center gap-4">
+              {isHandler && (
+                <Link
+                  to="/dashboard"
+                  className={`shrink-0 text-[10px] font-black uppercase tracking-widest transition-all px-4 py-2 rounded-lg min-h-[44px] flex items-center ${
+                    isDashboardActive
+                      ? "text-white bg-cric-accent shadow-md"
+                      : "text-cric-muted hover:text-cric-text hover:bg-black/5 dark:hover:bg-white/5"
+                  }`}
+                >
+                  My Dashboard
+                </Link>
+              )}
               <div className="text-right">
                 <div className="text-xs font-black text-cric-text uppercase tracking-tight">{user.name}</div>
                 <div className="text-[9px] text-cric-muted font-bold uppercase tracking-widest">{user.role || 'user'}</div>
@@ -128,6 +143,19 @@ export default function Header({ user, onShowLogin, onShowRegister, onLogout }) 
                     <div className="text-sm font-black text-cric-text">{user.name}</div>
                     <div className="text-[10px] text-cric-muted font-bold uppercase tracking-widest">{user.role || 'user'}</div>
                   </div>
+                  {isHandler && (
+                    <Link
+                      to="/dashboard"
+                      onClick={closeMobile}
+                      className={`w-full block text-center px-4 py-3 text-xs font-black uppercase tracking-widest rounded-xl transition-all min-h-[44px] ${
+                        isDashboardActive
+                          ? "bg-cric-accent text-white"
+                          : "border border-cric-border text-cric-muted hover:text-cric-text"
+                      }`}
+                    >
+                      My Dashboard
+                    </Link>
+                  )}
                   <button
                     onClick={() => { onLogout(); closeMobile(); }}
                     className="w-full px-4 py-3 bg-cric-accent hover:bg-orange-600 text-white text-xs font-black uppercase tracking-widest rounded-xl transition-all min-h-[44px]"

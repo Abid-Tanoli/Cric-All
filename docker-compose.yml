@@ -15,7 +15,7 @@ services:
     networks:
       - cricall-net
 
-  user-frontend:
+user-frontend:
     image: abidtanoli/cricall-user-frontend:v1
     build:
       context: ./Frontend
@@ -23,6 +23,7 @@ services:
       args:
         VITE_API_URL: ${VITE_API_URL:-http://localhost:5000/api}
         VITE_SOCKET_URL: ${VITE_SOCKET_URL:-http://localhost:5000}
+        VITE_GOOGLE_CLIENT_ID: ${VITE_GOOGLE_CLIENT_ID:-}
     container_name: cricall-user-frontend
     restart: unless-stopped
     ports:
@@ -34,7 +35,7 @@ services:
     networks:
       - cricall-net
 
-  admin-frontend:
+admin-frontend:
     image: abidtanoli/cricall-admin-frontend:v1
     build:
       context: ./Frontend
@@ -42,6 +43,7 @@ services:
       args:
         VITE_API_URL: ${VITE_API_URL:-http://localhost:5000/api}
         VITE_SOCKET_URL: ${VITE_SOCKET_URL:-http://localhost:5000}
+        VITE_GOOGLE_CLIENT_ID: ${VITE_GOOGLE_CLIENT_ID:-}
     container_name: cricall-admin-frontend
     restart: unless-stopped
     ports:

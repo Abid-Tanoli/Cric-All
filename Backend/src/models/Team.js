@@ -64,6 +64,13 @@ const teamSchema = new mongoose.Schema(
       trim: true,
       default: ""
     },
+    // User (accountType handler / organization_admin) this team is managed by.
+    // Set when an admin approves a HandlerRequest.
+    managedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null
+    },
     logo: {
       type: String,
       default: ""
@@ -160,5 +167,6 @@ teamSchema.index({ "address.district": 1 });
 teamSchema.index({ "address.city": 1 });
 teamSchema.index({ "address.country": 1 });
 teamSchema.index({ isActive: 1 });
+teamSchema.index({ managedBy: 1 });
 
 export default mongoose.model("Team", teamSchema);

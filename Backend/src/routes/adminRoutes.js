@@ -13,6 +13,11 @@ import {
 import auth from "../middleware/authMiddleware.js";
 import CricketShot from "../models/CricketShot.js";
 import FieldingPosition from "../models/FieldingPosition.js";
+import {
+  listHandlerRequests,
+  approveHandlerRequest,
+  rejectHandlerRequest
+} from "../controllers/handlerController.js";
 
 const router = express.Router();
 
@@ -66,5 +71,10 @@ router.put("/fielding-positions/:id", auth.protect, auth.requireAdmin, async (re
     res.status(400).json({ message: error.message });
   }
 });
+
+// Admin: review handler/org-admin creation requests
+router.get("/handler-requests", auth.protect, auth.requireAdmin, listHandlerRequests);
+router.post("/handler-requests/:id/approve", auth.protect, auth.requireAdmin, approveHandlerRequest);
+router.post("/handler-requests/:id/reject", auth.protect, auth.requireAdmin, rejectHandlerRequest);
 
 export default router;

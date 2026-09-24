@@ -1,6 +1,9 @@
 import React, { useState } from 'react';
-import { register } from '../pages/auth/auth';
+import { GoogleLogin } from '@react-oauth/google';
+import { register, loginWithGoogle } from '../pages/auth/auth';
 import PlayerForm from './PlayerForm';
+
+const hasGoogleClientId = Boolean(import.meta.env.VITE_GOOGLE_CLIENT_ID && import.meta.env.VITE_GOOGLE_CLIENT_ID !== 'your_google_client_id.apps.googleusercontent.com');
 
 const accountTypes = [
   {
@@ -11,12 +14,12 @@ const accountTypes = [
   {
     value: 'handler',
     label: 'Cricket Handler',
-    description: 'Manage your own teams, squads, matches, tournaments and local scoring.',
+    description: 'Request access after signing up — our team will set up your teams, tournaments and local scoring.',
   },
   {
     value: 'organization_admin',
     label: 'Organization Admin',
-    description: 'For schools, colleges, universities, industries, clubs, leagues and academies.',
+    description: 'For schools, colleges, universities, industries, clubs, leagues and academies. Request access after signing up — our team will set up your organization\'s teams and events.',
   },
 ];
 
@@ -44,6 +47,7 @@ export default function Register({ onSuccess, onCancel, embedded = false }) {
   const [joinIntent, setJoinIntent] = useState('');
   const [err, setErr] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [postSignup, setPostSignup] = useState(null);
 
   const submitPlayerForm = async (data) => {
     setErr(null);
@@ -87,9 +91,22 @@ export default function Register({ onSuccess, onCancel, embedded = false }) {
         phone,
         joinIntent,
       });
-      onSuccess?.(user);
+      setPostSignup({ user, type: accountType });
     } catch (error) {
       setErr(error.response?.data?.message || 'Registration failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGoogleSuccess = async (credentialResponse) => {
+    setErr(null);
+    setLoading(true);
+    try {
+      const user = await loginWithGoogle(credentialResponse.credential);
+      onSuccess?.(user);
+    } catch (error) {
+      setErr(error.response?.data?.message || 'Google sign-in failed');
     } finally {
       setLoading(false);
     }
@@ -120,6 +137,61 @@ export default function Register({ onSuccess, onCancel, embedded = false }) {
         </div>
 
         <div className="p-6">
+          {postSignup ? (
+            <div className="rounded-xl border border-cric-accent/30 bg-cric-bg p-8 text-center">
+              <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-cric-accent/20 text-2xl text-cric-accent">✓</div>
+              <h4 className="text-xl font-black uppercase tracking-tight text-cric-text">Thanks, {postSignup.user.name}!</h4>
+              <p className="mx-auto mt-3 max-w-md text-sm font-semibold leading-relaxed text-cric-muted">
+                Your {postSignup.type === 'organization_admin' ? 'organization admin' : 'cricket handler'} request has been received.
+                An admin will review it and set up your teams and tournaments. You can track progress on
+                {' '}<span className="font-black text-cric-accent uppercase">My Dashboard</span> once your account is set up.
+              </p>
+              <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => { const u = postSignup.user; setPostSignup(null); onSuccess?.(u); }}
+                  className="rounded-lg bg-cric-accent px-8 py-3 text-xs font-black uppercase tracking-widest text-white shadow-sm transition hover:bg-orange-600"
+                >
+                  Continue
+                </button>
+                {onCancel && (
+                  <button
+                    type="button"
+                    onClick={onCancel}
+                    className="rounded-lg bg-cric-bg px-8 py-3 text-xs font-black uppercase tracking-widest text-cric-muted transition hover:bg-cric-border"
+                  >
+                    Close
+                  </button>
+                )}
+              </div>
+            </div>
+          ) : (
+          <>
+          {hasGoogleClientId && (
+            <div className="mb-6">
+              <GoogleLogin
+                onSuccess={handleGoogleSuccess}
+                onError={() => setErr('Google sign-in failed')}
+                theme="outline"
+                size="large"
+                text="signup_with"
+                shape="rectangular"
+                width="100%"
+              />
+              <p className="mt-3 text-center text-[10px] font-bold uppercase tracking-widest text-cric-muted">
+                Quick sign-up with Google creates a player account.
+              </p>
+              <div className="relative my-6">
+                <div className="absolute inset-0 flex items-center">
+                  <div className="w-full border-t border-cric-border" />
+                </div>
+                <div className="relative flex justify-center text-xs uppercase">
+                  <span className="bg-cric-card px-4 text-cric-muted font-bold">or sign up with email</span>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="grid gap-3 md:grid-cols-3 mb-6">
             {accountTypes.map((item) => (
               <button
@@ -217,7 +289,7 @@ export default function Register({ onSuccess, onCancel, embedded = false }) {
               {err && <p className="text-red-500 text-sm font-bold">{err}</p>}
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <p className="text-xs font-semibold text-cric-muted">
-                  Handler/admin accounts can request scoring and event management access.
+                  Request access after signing up — our team reviews requests and sets up your teams and tournaments.
                 </p>
                 <button
                   type="submit"
@@ -228,6 +300,8 @@ export default function Register({ onSuccess, onCancel, embedded = false }) {
                 </button>
               </div>
             </form>
+          )}
+          </>
           )}
         </div>
       </div>
