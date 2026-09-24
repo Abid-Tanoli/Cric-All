@@ -146,6 +146,7 @@ const inningsSchema = new mongoose.Schema({
     enum: ["upcoming", "toss_done", "live", "completed", "innings-break", "innings_break"],
     default: "upcoming"
   },
+  isFeatured: { type: Boolean, default: false },
   oversHistory: [overSchema],
   batting: [batsmanStatsSchema],
   bowling: [bowlerStatsSchema],

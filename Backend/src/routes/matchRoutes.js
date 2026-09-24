@@ -20,7 +20,8 @@ import {
   setSquad15,
   setTwelfthMan,
   setBowlingXI,
-  setTeamRoles
+  setTeamRoles,
+  toggleMatchFeatured
 } from "../controllers/matchController.js";
 import {
   updateScore,
@@ -124,6 +125,7 @@ router.put("/:matchId/officials/:userId", ...adminOnly, validateObjectId("matchI
 router.post("/:matchId/umpire-signal", ...adminOnly, validateObjectId("matchId"), triggerUmpireSignal);
 router.put("/:matchId/official-status", ...adminOnly, validateObjectId("matchId"), updateMatchStatusOfficial);
 
+router.patch("/:id/featured", ...adminOnly, validateObjectId("id"), toggleMatchFeatured);
 router.put("/:id", ...adminOnly, validateObjectId("id"), updateMatch);
 router.put("/:id/status", ...adminOnly, validateObjectId("id"), updateMatchStatus);
 router.put("/:id/mom", ...adminOnly, validateObjectId("id"), setMOM);

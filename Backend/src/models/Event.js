@@ -30,6 +30,7 @@ const eventSchema = new mongoose.Schema({
     enum: ["upcoming", "live", "completed"],
     default: "upcoming"
   },
+  isFeatured: { type: Boolean, default: false },
   // Deep categorization
   category: {
     type: String,

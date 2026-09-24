@@ -1,8 +1,15 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import PhotoInput from "./PhotoInput.jsx";
+
+const SOCIAL_KEYS = ["facebook", "instagram", "twitter", "youtube", "whatsapp"];
+const PRIVACY_KEYS = [
+  ["contactInfo", "Contact Info"],
+  ["socialLinks", "Social Links"],
+  ["location", "Location"],
+];
 
 const userSchema = z.object({
   name: z.string().min(1, "Full name is required"),
@@ -109,8 +116,26 @@ export default function PlayerForm({
     defaultValues,
   });
 
+  const [gallery, setGallery] = useState([]);
+  const [videos, setVideos] = useState([]);
+  const [social, setSocial] = useState({ facebook: "", instagram: "", twitter: "", youtube: "", whatsapp: "" });
+  const [privacy, setPrivacy] = useState({ contactInfo: "public", socialLinks: "public", location: "public" });
+
+  useEffect(() => {
+    setGallery((defaultValues.gallery || []).map(g => ({ url: g.url || "", caption: g.caption || "" })));
+    setVideos((defaultValues.videos || []).map(v => ({ url: v.url || "", title: v.title || "" })));
+    setSocial({ facebook: "", instagram: "", twitter: "", youtube: "", whatsapp: "", ...(defaultValues.socialLinks || {}) });
+    setPrivacy({ contactInfo: "public", socialLinks: "public", location: "public", ...(defaultValues.privacy || {}) });
+  }, [editingId, defaultValues]);
+
   const handleFormSubmit = async (data) => {
-    await onSubmit(data);
+    await onSubmit({
+      ...data,
+      gallery: gallery.filter(g => g.url),
+      videos: videos.filter(v => v.url),
+      socialLinks: social,
+      privacy,
+    });
   };
 
   const buttonText = submitButtonText || (
@@ -175,6 +200,138 @@ export default function PlayerForm({
               disabled={loading}
             />
           </FormField>
+        </>
+      )}
+
+      {mode === "admin" && (
+        <>
+          <div className="bg-cric-bg p-4 rounded-xl border border-cric-border space-y-3">
+            <label className="block text-[9px] font-black uppercase tracking-widest text-cric-text mb-1">
+              Photo Gallery
+            </label>
+            <div className="space-y-3">
+              {gallery.map((item, idx) => (
+                <div key={idx} className="flex flex-col gap-2 border border-cric-border rounded-xl p-3">
+                  <PhotoInput
+                    value={item.url || ""}
+                    label={`Photo ${idx + 1}`}
+                    onChange={(url) => {
+                      const next = [...gallery];
+                      next[idx] = { ...next[idx], url };
+                      setGallery(next);
+                    }}
+                    disabled={loading}
+                  />
+                  <input
+                    value={item.caption || ""}
+                    onChange={(e) => {
+                      const next = [...gallery];
+                      next[idx] = { ...next[idx], caption: e.target.value };
+                      setGallery(next);
+                    }}
+                    placeholder="Caption"
+                    className="w-full p-2 bg-cric-card border border-cric-border rounded-lg text-xs font-bold text-cric-text"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setGallery(gallery.filter((_, i) => i !== idx))}
+                    className="self-end text-red-600 hover:text-red-800 font-black text-[10px] uppercase tracking-widest"
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() => setGallery([...gallery, { url: "", caption: "" }])}
+              className="w-full py-2 bg-cric-card border border-dashed border-cric-border rounded-xl text-[10px] font-black uppercase tracking-widest text-cric-muted hover:text-cric-accent"
+            >
+              + Add Photo
+            </button>
+          </div>
+
+          <div className="bg-cric-bg p-4 rounded-xl border border-cric-border space-y-3">
+            <label className="block text-[9px] font-black uppercase tracking-widest text-cric-text mb-1">
+              Videos
+            </label>
+            {videos.map((item, idx) => (
+              <div key={idx} className="space-y-2 border border-cric-border rounded-xl p-3">
+                <input
+                  value={item.url || ""}
+                  onChange={(e) => {
+                    const next = [...videos];
+                    next[idx] = { ...next[idx], url: e.target.value };
+                    setVideos(next);
+                  }}
+                  placeholder="Video URL (YouTube / direct)"
+                  className="w-full p-2 bg-cric-card border border-cric-border rounded-lg text-xs font-bold text-cric-text"
+                />
+                <div className="flex items-center gap-2">
+                  <input
+                    value={item.title || ""}
+                    onChange={(e) => {
+                      const next = [...videos];
+                      next[idx] = { ...next[idx], title: e.target.value };
+                      setVideos(next);
+                    }}
+                    placeholder="Title"
+                    className="flex-1 p-2 bg-cric-card border border-cric-border rounded-lg text-xs font-bold text-cric-text"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setVideos(videos.filter((_, i) => i !== idx))}
+                    className="text-red-600 hover:text-red-800 font-black text-[10px] uppercase tracking-widest"
+                  >
+                    Remove
+                  </button>
+                </div>
+              </div>
+            ))}
+            <button
+              type="button"
+              onClick={() => setVideos([...videos, { url: "", title: "" }])}
+              className="w-full py-2 bg-cric-card border border-dashed border-cric-border rounded-xl text-[10px] font-black uppercase tracking-widest text-cric-muted hover:text-cric-accent"
+            >
+              + Add Video
+            </button>
+          </div>
+
+          <div className="bg-cric-bg p-4 rounded-xl border border-cric-border space-y-3">
+            <label className="block text-[9px] font-black uppercase tracking-widest text-cric-text mb-1">
+              Social Links
+            </label>
+            <div className="grid grid-cols-1 gap-2">
+              {SOCIAL_KEYS.map(key => (
+                <input
+                  key={key}
+                  value={social[key] || ""}
+                  onChange={(e) => setSocial({ ...social, [key]: e.target.value })}
+                  placeholder={key === "whatsapp" ? "WhatsApp number / link" : `${key.charAt(0).toUpperCase() + key.slice(1)} profile URL`}
+                  className="w-full p-2 bg-cric-card border border-cric-border rounded-lg text-xs font-bold text-cric-text"
+                />
+              ))}
+            </div>
+          </div>
+
+          <div className="bg-cric-bg p-4 rounded-xl border border-cric-border space-y-3">
+            <label className="block text-[9px] font-black uppercase tracking-widest text-cric-text mb-1">
+              Profile Privacy
+            </label>
+            {PRIVACY_KEYS.map(([key, label]) => (
+              <div key={key} className="flex items-center justify-between gap-2">
+                <span className="text-xs font-bold text-cric-muted">{label}</span>
+                <select
+                  value={privacy[key]}
+                  onChange={(e) => setPrivacy({ ...privacy, [key]: e.target.value })}
+                  className="p-2 bg-cric-card border border-cric-border rounded-lg text-xs font-bold text-cric-text"
+                >
+                  <option value="public">Public</option>
+                  <option value="hidden">Hidden</option>
+                </select>
+              </div>
+            ))}
+          </div>
         </>
       )}
 

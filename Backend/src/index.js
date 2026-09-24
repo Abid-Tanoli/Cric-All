@@ -20,9 +20,7 @@ import { initSentry, sentryMiddleware, captureException } from "./utils/sentry.j
 import tournamentRoutes from "./routes/tournamentRoutes.js";
 import eventRoutes from "./routes/eventRoutes.js";
 import bulkImportRoutes from "./routes/bulkImportRoutes.js";
-import rankingsRoutes from "./routes/rankingsRoutes.js";
 import blogRoutes from "./routes/blogRoutes.js";
-import cricketApiRoutes from "./routes/cricketApiRoutes.js";
 import categoryRoutes from "./routes/categoryRoutes.js";
 import seriesRoutes from "./routes/seriesRoutes.js";
 import internationalRoutes from "./routes/international.js";
@@ -46,7 +44,7 @@ const dbReadyPromise = connectDB();
 const corsOptions = {
   origin: corsOrigin,
   credentials: true,
-  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
   optionsSuccessStatus: 200
 };
@@ -101,7 +99,6 @@ const databaseBackedPrefixes = [
   "/api/tournaments",
   "/api/events",
   "/api/bulk-import",
-  "/api/rankings",
   "/api/blogs",
   "/api/categories",
   "/api/series",
@@ -156,7 +153,7 @@ app.use((req, res, next) => {
     return res.status(200).json([]);
   }
 
-  if (req.method === "GET" && (req.path === "/api/rankings" || req.path.startsWith("/api/rankings-v2"))) {
+  if (req.method === "GET" && req.path.startsWith("/api/rankings-v2")) {
     res.set("X-BQ-DB-State", getDbState());
     return res.status(200).json([]);
   }
@@ -177,9 +174,7 @@ app.use("/api/tournaments", tournamentRoutes);
 app.use("/api/events", eventRoutes);
 app.use("/api/bulk-import", bulkImportRoutes);
 app.use("/api/upload", uploadRoutes);
-app.use("/api/rankings", rankingsRoutes);
 app.use("/api/blogs", blogRoutes);
-app.use("/api/cricket", cricketApiRoutes);
 app.use("/api/categories", categoryRoutes);
 app.use("/api/series", seriesRoutes);
 app.use("/api/international", internationalRoutes);

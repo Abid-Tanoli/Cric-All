@@ -362,7 +362,72 @@ export default function PlayerProfile() {
                 </div>
               </div>
             )}
-          </div>
+
+          {/* Social Links */}
+          {player.privacy?.socialLinks !== 'hidden' && (() => {
+            const links = [
+              ['facebook', 'Facebook', '#1877F2', 'f'],
+              ['instagram', 'Instagram', '#E4405F', 'ig'],
+              ['twitter', 'X', '#000000', 'X'],
+              ['youtube', 'YouTube', '#FF0000', '▶'],
+              ['whatsapp', 'WhatsApp', '#25D366', 'wa'],
+            ].filter(([key]) => player.socialLinks?.[key]);
+            if (links.length === 0) return null;
+            return (
+              <div className="bg-cric-card rounded-xl shadow-sm border border-cric-border p-6">
+                <h3 className="text-xs font-black text-cric-muted uppercase tracking-widest mb-4">Connect</h3>
+                <div className="flex flex-wrap gap-2">
+                  {links.map(([key, label, color, icon]) => (
+                    <a
+                      key={key}
+                      href={player.socialLinks[key]}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title={label}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-white text-[11px] font-black uppercase tracking-wider transition-all hover:scale-105"
+                      style={{ backgroundColor: color }}
+                    >
+                      {icon} {label}
+                    </a>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Gallery */}
+          {player.gallery && player.gallery.some(g => g.url) && (
+            <div className="bg-cric-card rounded-xl shadow-sm border border-cric-border p-6">
+              <h3 className="text-xs font-black text-cric-muted uppercase tracking-widest mb-4">Gallery</h3>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                {player.gallery.map((g, i) => g.url ? (
+                  <a key={i} href={g.url} target="_blank" rel="noopener noreferrer" className="group relative rounded-lg overflow-hidden border border-cric-border">
+                    <SafeImage src={g.url} alt={g.caption || 'photo'} className="w-full h-32 object-cover group-hover:scale-105 transition-transform" />
+                    {g.caption && <span className="absolute bottom-0 inset-x-0 bg-black/60 text-white text-[10px] font-bold px-2 py-1 truncate">{g.caption}</span>}
+                  </a>
+                ) : null)}
+              </div>
+            </div>
+          )}
+
+          {/* Videos */}
+          {player.videos && player.videos.some(v => v.url) && (
+            <div className="bg-cric-card rounded-xl shadow-sm border border-cric-border p-6">
+              <h3 className="text-xs font-black text-cric-muted uppercase tracking-widest mb-4">Videos</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {player.videos.map((v, i) => v.url ? (
+                  <a key={i} href={v.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 bg-cric-bg rounded-lg border border-cric-border px-4 py-3 hover:border-cric-accent transition-all">
+                    <span className="w-10 h-10 rounded-full bg-cric-accent text-white flex items-center justify-center text-sm flex-shrink-0">▶</span>
+                    <div className="min-w-0">
+                      <p className="font-bold text-cric-text text-sm truncate">{v.title || 'Watch Video'}</p>
+                      <p className="text-xs text-cric-muted truncate">{v.url}</p>
+                    </div>
+                  </a>
+                ) : null)}
+              </div>
+            </div>
+          )}
+        </div>
         )}
 
         {/* ──── Batting Tab ──── */}

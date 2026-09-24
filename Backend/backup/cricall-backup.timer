@@ -1,0 +1,9 @@
+[Unit]
+Description=Run the CricAll MongoDB backup once every 24 hours
+
+[Timer]
+OnCalendar=*-*-* 02:15:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

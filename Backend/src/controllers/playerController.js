@@ -2,6 +2,7 @@ import Player from "../models/Player.js";
 import Team from "../models/Team.js";
 import Match from "../models/Match.js";
 import { getIO } from "../socket/socket.js";
+import { deleteStoredFile, deleteStoredFiles } from "../utils/photoStore.js";
 
 const isTransientDbError = (error) => (
   error?.name === "MongooseError" ||
@@ -145,12 +146,18 @@ export const updatePlayer = async (req, res) => {
     normalizeEmptyOptionalIds(req.body);
     const oldTeamId = existing.team?.toString();
     const newTeamId = req.body.team?.toString();
+    const oldImageUrl = existing.imageUrl;
 
     const player = await Player.findByIdAndUpdate(
       req.params.id,
       req.body,
       { new: true }
     ).populate("team", "name");
+
+    // Remove the previous portrait once it is replaced or cleared.
+    if (oldImageUrl && req.body.imageUrl !== undefined && oldImageUrl !== req.body.imageUrl) {
+      await deleteStoredFile(oldImageUrl).catch(() => {});
+    }
 
     // If team changed, update the teams' players arrays
     if (oldTeamId !== newTeamId) {
@@ -188,6 +195,9 @@ export const deletePlayer = async (req, res) => {
       );
     }
     await Player.findByIdAndDelete(req.params.id);
+    if (player?.imageUrl) {
+      await deleteStoredFile(player.imageUrl).catch(() => {});
+    }
     getIO()?.emit("players:updated");
     res.json({ message: "Deleted" });
   } catch (err) {
@@ -224,6 +234,10 @@ export const bulkDeletePlayers = async (req, res) => {
 
     // Delete all players
     const result = await Player.deleteMany({ _id: { $in: playerIds } });
+    const removedImageUrls = players.map((p) => p.imageUrl).filter(Boolean);
+    if (removedImageUrls.length) {
+      await deleteStoredFiles(removedImageUrls).catch(() => {});
+    }
 
     getIO()?.emit("players:updated");
     res.json({

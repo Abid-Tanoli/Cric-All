@@ -118,6 +118,7 @@ const populateMatchList = (query) => {
       "slug",
       "resultText",
       "statusText",
+      "isFeatured",
       "createdAt",
       "updatedAt"
     ].join(" "))
@@ -1261,5 +1262,37 @@ export const setTeamRoles = async (req, res) => {
       message: "Failed to set team roles",
       error: error.message
     });
+  }
+};
+
+const FEATURED_MATCH_CAP = 5;
+
+export const toggleMatchFeatured = async (req, res) => {
+  try {
+    const match = await Match.findById(req.params.id);
+    if (!match) return res.status(404).json({ message: "Match not found" });
+
+    const enabling = !match.isFeatured;
+    if (enabling) {
+      const count = await Match.countDocuments({ isFeatured: true });
+      if (count >= FEATURED_MATCH_CAP) {
+        return res.status(400).json({
+          message: `Cannot feature more than ${FEATURED_MATCH_CAP} matches at once. Unfeature another match first.`
+        });
+      }
+    }
+
+    match.isFeatured = enabling;
+    await match.save();
+
+    try { getIO()?.emit("match:updated", match); } catch (e) {}
+
+    res.json({
+      match,
+      isFeatured: match.isFeatured,
+      message: enabling ? "Match featured" : "Match unfeatured"
+    });
+  } catch (error) {
+    res.status(400).json({ message: error.message });
   }
 };

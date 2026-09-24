@@ -6,6 +6,15 @@ import TeamCategory from "../models/TeamCategory.js";
 import TeamPlayerRanking from "../models/TeamPlayerRanking.js";
 import Match from "../models/Match.js";
 import { getIO } from "../socket/socket.js";
+import { deleteStoredFile, deleteStoredFiles } from "../utils/photoStore.js";
+
+// Pure diff used to decide which team media uploads are no longer referenced
+// after an update. Returns the subset of old URLs that are gone from `newMedia`.
+export function computeRemovedMediaUrls(oldMediaUrls = [], newMedia) {
+  if (!Array.isArray(newMedia)) return [];
+  const newUrls = new Set(newMedia.map((entry) => entry && entry.url).filter(Boolean));
+  return oldMediaUrls.filter((url) => url && !newUrls.has(url));
+}
 
 export async function listTeams(filters = {}) {
   const query = {};
@@ -120,6 +129,10 @@ export async function createTeam(data) {
     teamColorSecondary: data.teamColorSecondary || "#003087",
     isInternal: data.isInternal || false,
     tags: data.tags || [],
+    media: data.media || [],
+    videos: data.videos || [],
+    socialLinks: data.socialLinks || {},
+    privacy: data.privacy || {},
     players: data.players || [],
   });
 
@@ -150,6 +163,9 @@ export async function updateTeam(teamId, data) {
   const team = await Team.findById(teamId);
   if (!team) throw new Error("Team not found");
 
+  const oldLogo = team.logo;
+  const oldMediaUrls = (team.media || []).map((entry) => entry.url);
+
   const updateFields = [
     "name", "shortName", "type", "category", "categoryRef", "subCategory", "ageGroup",
     "organization", "organizationRef", "branchName", "ownername", "logo",
@@ -157,6 +173,7 @@ export async function updateTeam(teamId, data) {
     "googleMapsUrl", "placeId", "phone", "email", "website",
     "establishedYear", "homeGround", "teamColorPrimary", "teamColorSecondary",
     "isActive", "profileComplete", "isInternal", "tags", "media",
+    "videos", "socialLinks", "privacy",
   ];
 
   const objectIdFields = ["categoryRef", "organizationRef", "incubationGroup"];
@@ -189,6 +206,17 @@ export async function updateTeam(teamId, data) {
   await team.populate("categoryRef");
   await team.populate("organizationRef");
 
+  // Clean up replaced/removed uploads after the save succeeds.
+  if (data.logo !== undefined && oldLogo && oldLogo !== data.logo) {
+    await deleteStoredFile(oldLogo).catch(() => {});
+  }
+  if (Array.isArray(data.media)) {
+    const removedUrls = computeRemovedMediaUrls(oldMediaUrls, data.media);
+    if (removedUrls.length) {
+      await deleteStoredFiles(removedUrls).catch(() => {});
+    }
+  }
+
   try { getIO()?.emit("team:updated", team); } catch (e) {}
 
   return team;
@@ -198,10 +226,18 @@ export async function deleteTeam(teamId) {
   const team = await Team.findById(teamId);
   if (!team) throw new Error("Team not found");
 
+  const mediaUrls = (team.media || []).map((entry) => entry.url).filter(Boolean);
+
   await Player.updateMany({ team: teamId }, { $unset: { team: 1 } });
   await TeamRanking.deleteOne({ team: teamId });
   await TeamPlayerRanking.deleteMany({ team: teamId });
   await Team.findByIdAndDelete(teamId);
+
+  // Remove the team's own uploads from disk after the record is gone.
+  if (team.logo) mediaUrls.push(team.logo);
+  if (mediaUrls.length) {
+    await deleteStoredFiles(mediaUrls).catch(() => {});
+  }
 
   try { getIO()?.emit("team:deleted", { id: teamId }); } catch (e) {}
 

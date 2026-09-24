@@ -49,3 +49,62 @@ export async function storeImage(buffer, mimetype, originalName = "") {
   await fs.promises.writeFile(path.join(uploadsDir, filename), buffer);
   return { url: `/uploads/${filename}`, filename };
 }
+
+// Matches storeImage's own scheme (`<13-digit epoch>-<12 hex>-<base>.<ext>`).
+// Only files this server wrote are ever eligible for deletion.
+const SAFE_UPLOAD_FILE_NAME = /^\d{13}-[0-9a-f]{12}-[a-zA-Z0-9_-]{0,40}\.(jpg|png|webp)$/;
+
+export function isUploadedFilename(name = "") {
+  return SAFE_UPLOAD_FILE_NAME.test(name);
+}
+
+// Extracts the bare filename from a stored URL (absolute or /uploads-relative)
+// but only if it points at our own /uploads path with a storeImage-style name.
+// Returns null for external/cloud URLs so unrelated files can never be removed.
+export function uploadFilenameFromUrl(url = "") {
+  if (typeof url !== "string" || !url) return null;
+  const idx = url.indexOf("/uploads/");
+  if (idx === -1) return null;
+  const rest = url.slice(idx + "/uploads/".length);
+  if (!rest || rest.includes("/") || rest.includes("..")) return null;
+  let filename;
+  try {
+    filename = decodeURIComponent(rest);
+  } catch {
+    return null;
+  }
+  return isUploadedFilename(filename) ? filename : null;
+}
+
+export async function deleteStoredFile(url) {
+  const filename = uploadFilenameFromUrl(url);
+  if (!filename) return false;
+  const target = path.normalize(path.join(uploadsDir, filename));
+  if (!target.startsWith(uploadsDir + path.sep)) return false;
+  try {
+    await fs.promises.unlink(target);
+    return true;
+  } catch (error) {
+    if (error.code === "ENOENT") return false;
+    throw error;
+  }
+}
+
+export async function deleteStoredFiles(urls) {
+  let removed = 0;
+  for (const url of urls || []) {
+    if (await deleteStoredFile(url)) removed++;
+  }
+  return removed;
+}
+
+export async function listUploadedFilenames() {
+  if (hasCloudStorage()) return [];
+  try {
+    const entries = await fs.promises.readdir(uploadsDir, { withFileTypes: true });
+    return entries.filter((entry) => entry.isFile()).map((entry) => entry.name);
+  } catch (error) {
+    if (error.code === "ENOENT") return [];
+    throw error;
+  }
+}

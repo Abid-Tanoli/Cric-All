@@ -12,6 +12,7 @@ import { fetchTeams } from '../store/slices/teamSlice';
 import { initSocket } from '../store/socket';
 import { useToast } from '../components/Toast';
 import ConfirmModal from '../components/ConfirmModal';
+import api from '../services/api';
 
 const matchTypes = ['T6', 'T8', 'T10', 'T20', 'ODI', 'Test', 'Tape Ball'];
 
@@ -89,6 +90,16 @@ const ManageMatches = () => {
 
     const handleDelete = (id) => {
         setConfirmModal({ open: true, title: 'Delete Match', message: 'Are you sure you want to delete this match?', confirmLabel: 'Delete', variant: 'danger', onConfirm: async () => { setConfirmModal({ open: false }); await dispatch(deleteMatch(id)); dispatch(fetchMatches()); } });
+    };
+
+    const handleFeature = async (match) => {
+        try {
+            await api.patch(`/matches/${match._id}/featured`);
+            showToast(match.isFeatured ? 'Match unfeatured' : 'Match featured', 'success');
+            dispatch(fetchMatches());
+        } catch (err) {
+            showToast(err.response?.data?.message || err.message || 'Failed to update featured status', 'error');
+        }
     };
 
     const openXIModal = (match, teamId) => {
@@ -249,6 +260,13 @@ const ManageMatches = () => {
                                         XI: {match.team2.name}
                                     </button>
                                 )}
+                                <button
+                                    onClick={() => handleFeature(match)}
+                                    title={match.isFeatured ? 'Unfeature match' : 'Feature match'}
+                                    className={`font-black text-xs uppercase tracking-widest rounded-xl px-4 py-2 ${match.isFeatured ? 'bg-amber-500 hover:bg-amber-600 text-white' : 'bg-slate-200 hover:bg-slate-300 text-slate-600'}`}
+                                >
+                                    {match.isFeatured ? '★ Featured' : '☆ Feature'}
+                                </button>
                                 <button
                                     onClick={() => handleEdit(match)}
                                     className="bg-[#031d44] hover:bg-slate-800 text-white font-black text-xs uppercase tracking-widest rounded-xl px-4 py-2"

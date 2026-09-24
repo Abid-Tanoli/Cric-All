@@ -10,7 +10,8 @@ import {
   setEventSquad,
   getEventSquad,
   addMatchToEvent,
-  changeEventSquadPlayer
+  changeEventSquadPlayer,
+  toggleEventFeatured
 } from '../controllers/eventController.js';
 
 const router = express.Router();
@@ -23,6 +24,7 @@ router.post('/:eventId/squad', ...adminOnly, validateObjectId('eventId'), setEve
 router.put('/:eventId/squad/change-player', ...adminOnly, validateObjectId('eventId'), changeEventSquadPlayer);
 router.post('/:eventId/matches', ...adminOnly, validateObjectId('eventId'), addMatchToEvent);
 router.put('/:id', ...adminOnly, validateObjectId('id'), updateEvent);
+router.patch('/:id/featured', ...adminOnly, validateObjectId('id'), toggleEventFeatured);
 router.delete('/:id', ...adminOnly, validateObjectId('id'), deleteEvent);
 router.get('/:eventId/squad', validateObjectId('eventId'), getEventSquad);
 router.get('/:eventId/squad/:teamId', validateObjectId('eventId'), validateObjectId('teamId'), getEventSquad);

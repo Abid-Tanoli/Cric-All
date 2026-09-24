@@ -80,6 +80,25 @@ const teamSchema = new mongoose.Schema(
         addedAt: Date
       }
     ],
+    videos: [
+      {
+        url: String,
+        title: String,
+        addedAt: Date
+      }
+    ],
+    socialLinks: {
+      facebook: { type: String, default: "" },
+      instagram: { type: String, default: "" },
+      twitter: { type: String, default: "" },
+      youtube: { type: String, default: "" },
+      whatsapp: { type: String, default: "" }
+    },
+    privacy: {
+      contactInfo: { type: String, enum: ["public", "hidden"], default: "public" },
+      socialLinks: { type: String, enum: ["public", "hidden"], default: "public" },
+      location: { type: String, enum: ["public", "hidden"], default: "public" }
+    },
     players: [{
       type: mongoose.Schema.Types.ObjectId,
       ref: "Player"

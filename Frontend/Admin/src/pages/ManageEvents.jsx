@@ -167,6 +167,16 @@ export default function ManageEvents() {
         setConfirmModal({ open: true, title: 'Delete Event', message: 'Delete this event and all its matches?', confirmLabel: 'Delete', variant: 'danger', onConfirm: async () => { setConfirmModal({ open: false }); try { await api.delete(`/events/${id}`); loadEvents(); } catch (err) { showToast('Failed to delete event', 'error'); } } });
     };
 
+    const handleFeature = async (ev) => {
+        try {
+            await api.patch(`/events/${ev._id}/featured`);
+            showToast(ev.isFeatured ? 'Event unfeatured' : 'Event featured', 'success');
+            loadEvents();
+        } catch (err) {
+            showToast(err.response?.data?.message || err.message || 'Failed to update featured status', 'error');
+        }
+    };
+
     const openSquadForm = async (ev, teamId) => {
         navigate(`/admin/events/${ev._id}/squad/${teamId}`);
     };
@@ -497,6 +507,10 @@ export default function ManageEvents() {
                                                 </button>
                                             );
                                         })}
+                                        <button onClick={() => handleFeature(ev)}
+                                                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${ev.isFeatured ? "bg-amber-100 border border-amber-300 text-amber-800 hover:bg-amber-200" : "bg-slate-50 border border-slate-200 text-slate-600 hover:bg-slate-100"}`}>
+                                                    {ev.isFeatured ? "★ Featured" : "☆ Feature"}
+                                                </button>
                                         <button onClick={() => onEdit(ev)} className="px-3 py-1.5 bg-blue-50 border border-blue-200 text-blue-700 hover:bg-blue-100 rounded-lg text-xs font-bold transition-colors">✎ Edit</button>
                                         <button onClick={() => onDelete(ev._id)} className="px-3 py-1.5 bg-red-50 border border-red-200 text-red-700 hover:bg-red-100 rounded-lg text-xs font-bold transition-colors">🗑 Delete</button>
                                     </div>

@@ -72,6 +72,10 @@ export default function ManagePlayers() {
       ageGroup: p.ageGroup || "Open",
       organization: p.organization || "",
       address: p.address || { town: "", district: "", city: "", province: "" },
+      gallery: p.gallery || [],
+      videos: p.videos || [],
+      socialLinks: p.socialLinks || {},
+      privacy: p.privacy || {},
     });
   };
 

@@ -1,0 +1,12 @@
+[Unit]
+Description=CricAll automated MongoDB backup (runs backupDb.js)
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# Point to the repo checkout that contains the script, or run via docker exec
+# against the cricall-mongo container (Docker must be available on this host).
+WorkingDirectory=/opt/cricall/Backend
+ExecStart=/usr/bin/node /opt/cricall/Backend/src/scripts/backupDb.js
+User=root

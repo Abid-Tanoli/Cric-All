@@ -89,6 +89,9 @@ export function Home() {
   const upcomingMatches = matches.filter(m => m.status === "upcoming" || m.status === "scheduled" || m.status === "pending");
   const completedMatches = matches.filter(m => m.status === "completed").slice(0, 10);
   const abandonedMatches = matches.filter(m => m.status === "abandoned");
+  const featuredMatches = matches.filter(m => m.isFeatured);
+  const featuredSeries = series.filter(s => s.isFeatured);
+  const topSeries = featuredSeries.length > 0 ? featuredSeries : series;
 
   const groupBySeries = useCallback((matchList) => {
     const groups = {};
@@ -184,14 +187,14 @@ export function Home() {
               ) : (
                 series.slice(0, 8).map(ev => (
                   <Link key={ev._id} to={`/series/${ev.slug || ev._id}`} className="flex-shrink-0 group">
-                    <div className="w-40 bg-cric-card rounded-xl border border-cric-border p-3 hover:shadow-md hover:border-cric-accent/30 transition-all">
+                    <div className={`w-40 rounded-xl border p-3 hover:shadow-md transition-all ${ev.isFeatured ? "bg-cric-card border-cric-accent/40" : "bg-cric-card border-cric-border hover:border-cric-accent/30"}`}>
                       <div className="flex items-center gap-2">
                         <div className="w-8 h-8 rounded-lg bg-cric-bg flex items-center justify-center overflow-hidden flex-shrink-0">
                           {ev.logo ? <img src={ev.logo} alt="" className="w-full h-full object-cover" /> : <span className="text-lg font-black text-cric-muted">{ev.name?.charAt(0)}</span>}
                         </div>
                         <div className="min-w-0">
                           <p className="text-[10px] font-black text-cric-text uppercase truncate">{ev.shortName || ev.name}</p>
-                          <p className="text-[8px] font-bold text-cric-muted uppercase">{ev.eventType?.replace(/-/g, " ") || ev.format}</p>
+                          <p className="text-[8px] font-bold text-cric-muted uppercase">{ev.eventType?.replace(/-/g, " ") || ev.format}{ev.isFeatured ? " ★" : ""}</p>
                         </div>
                       </div>
                     </div>
@@ -212,6 +215,45 @@ export function Home() {
 
             {/* Left column: Live/Upcoming/Results */}
             <div className="space-y-6">
+
+              {/* Featured Matches */}
+              {featuredMatches.length > 0 && (
+                <section>
+                  <div className="flex items-center gap-2 mb-3">
+                    <span className="text-cric-accent text-sm">★</span>
+                    <h2 className="text-sm font-black font-raj text-cric-text uppercase tracking-wider">Featured Matches</h2>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {featuredMatches.slice(0, 5).map(m => (
+                      <div
+                        key={m._id}
+                        onClick={() => navigate(`/match/${m._id}`)}
+                        className="cursor-pointer bg-cric-card rounded-xl border border-cric-accent/30 border-l-4 border-l-cric-accent p-4 hover:shadow-md transition-all"
+                      >
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-[10px] font-bold text-cric-muted uppercase tracking-wider truncate">{m.tournament?.name || m.matchType}</span>
+                          {statusBadge(m)}
+                        </div>
+                        {(m.teams || []).slice(0, 2).map((team, idx) => {
+                          const inn = m.innings?.[idx];
+                          return (
+                            <div key={team?._id || idx} className="flex items-center justify-between py-0.5">
+                              <span className="text-sm font-bold text-cric-text truncate">{team?.shortName || team?.name || "Team"}</span>
+                              <span className="text-sm font-black tabular-nums text-cric-text ml-2">{inn ? `${inn.runs || 0}/${inn.wickets ?? "-"}` : "-"}</span>
+                            </div>
+                          );
+                        })}
+                        {m.result?.description && <p className="text-[11px] font-bold text-cric-accent mt-1.5 italic leading-tight">{m.result.description}</p>}
+                        {(m.status === "upcoming" || m.status === "scheduled") && m.startAt && (
+                          <p className="text-[11px] font-semibold text-cric-muted mt-1">
+                            {new Date(m.startAt).toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
 
               {/* Live Matches */}
               {liveGroups.length > 0 && (

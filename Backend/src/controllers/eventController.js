@@ -14,7 +14,7 @@ const MULTI_TEAM_TYPES = ["series", "tri-series", "tournament", "world-cup", "ch
 
 // Enforces the exact team count for an event regardless of caller. Returns an
 // error message string (null when valid), and the expected count.
-const validateEventTeamCount = (eventType, teams, totalTeams) => {
+export const validateEventTeamCount = (eventType, teams, totalTeams) => {
   const teamCount = Array.isArray(teams) ? teams.length : 0;
 
   if (eventType === "single-match") {
@@ -389,5 +389,37 @@ export const addMatchToEvent = async (req, res) => {
     res.status(200).json({ message: "Match added to event", event });
   } catch (error) {
     res.status(500).json({ message: "Failed to add match to event", error: error.message });
+  }
+};
+
+const FEATURED_EVENT_CAP = 5;
+
+export const toggleEventFeatured = async (req, res) => {
+  try {
+    const event = await Event.findById(req.params.id);
+    if (!event) return res.status(404).json({ message: "Event not found" });
+
+    const enabling = !event.isFeatured;
+    if (enabling) {
+      const count = await Event.countDocuments({ isFeatured: true });
+      if (count >= FEATURED_EVENT_CAP) {
+        return res.status(400).json({
+          message: `Cannot feature more than ${FEATURED_EVENT_CAP} events at once. Unfeature another event first.`
+        });
+      }
+    }
+
+    event.isFeatured = enabling;
+    await event.save();
+
+    try { getIO()?.emit("event:updated", event); } catch {}
+
+    res.status(200).json({
+      event,
+      isFeatured: event.isFeatured,
+      message: enabling ? "Event featured" : "Event unfeatured"
+    });
+  } catch (error) {
+    res.status(500).json({ message: "Failed to toggle event featured", error: error.message });
   }
 };

@@ -10,6 +10,10 @@
     "seed": "node src/seed/seedInitialData.js",
     "db:export:cric-all": "node src/scripts/exportDbSnapshot.js --db=cric-all",
     "db:export:test": "node src/scripts/exportDbSnapshot.js --db=test",
+    "db:backup": "node src/scripts/backupDb.js",
+    "db:cleanup-uploads": "node src/scripts/cleanupOrphanedUploads.js",
+    "db:cleanup-uploads:apply": "node src/scripts/cleanupOrphanedUploads.js --apply",
+    "db:backfill-event-org": "node src/scripts/backfillEventOrganization.js",
     "admin:create": "node src/scripts/createAdmin.js",
     "test": "node --test test/*.test.js",
     "test:smoke": "node scripts/api-smoke-test.cjs"

@@ -151,8 +151,12 @@ export default function TeamProfile() {
                 )}
               </div>
               <p className="text-blue-200/60 text-sm mt-1">
-                {team.address?.city}{team.address?.country ? `, ${team.address.country}` : ''}
-                {team.homeGround ? ` • ${team.homeGround}` : ''}
+                {team.privacy?.location !== 'hidden' && (
+                  <>
+                    {team.address?.city}{team.address?.country ? `, ${team.address.country}` : ''}
+                    {team.homeGround ? ` • ${team.homeGround}` : ''}
+                  </>
+                )}
                 {team.establishedYear ? ` • Est. ${team.establishedYear}` : ''}
               </p>
             </div>
@@ -242,24 +246,25 @@ export default function TeamProfile() {
             {/* Team Details */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {/* Contact Info */}
+              {team.privacy?.contactInfo !== 'hidden' && (
               <div className="bg-cric-card rounded-2xl shadow-sm border border-slate-100 p-6">
                 <h3 className="text-xs font-black text-cric-muted uppercase tracking-widest mb-4">Contact</h3>
                 <div className="space-y-3 text-sm">
-                  {team.contactPhone && (
+                  {(team.contactPhone || team.phone) && (
                     <div className="flex items-center gap-3">
                       <span className="w-8 h-8 rounded-lg bg-cric-card flex items-center justify-center text-cric-accent">📞</span>
                       <div>
                         <p className="text-[10px] font-bold text-cric-muted uppercase">Phone</p>
-                        <p className="font-semibold text-cric-text">{team.contactPhone}</p>
+                        <p className="font-semibold text-cric-text">{team.contactPhone || team.phone}</p>
                       </div>
                     </div>
                   )}
-                  {team.contactEmail && (
+                  {(team.contactEmail || team.email) && (
                     <div className="flex items-center gap-3">
                       <span className="w-8 h-8 rounded-lg bg-cric-card flex items-center justify-center text-cric-accent">✉️</span>
                       <div>
                         <p className="text-[10px] font-bold text-cric-muted uppercase">Email</p>
-                        <p className="font-semibold text-cric-text">{team.contactEmail}</p>
+                        <p className="font-semibold text-cric-text">{team.contactEmail || team.email}</p>
                       </div>
                     </div>
                   )}
@@ -272,11 +277,12 @@ export default function TeamProfile() {
                       </div>
                     </div>
                   )}
-                  {!team.contactPhone && !team.contactEmail && !team.website && (
+                  {!team.contactPhone && !team.phone && !team.contactEmail && !team.email && !team.website && (
                     <p className="text-cric-muted text-center py-4">No contact information available</p>
                   )}
                 </div>
               </div>
+              )}
 
               {/* Social & Colors */}
               <div className="bg-cric-card rounded-2xl shadow-sm border border-slate-100 p-6">
@@ -293,7 +299,7 @@ export default function TeamProfile() {
                       </div>
                     </div>
                   )}
-                  {socialButtons(team)}
+                  {team.privacy?.socialLinks !== 'hidden' && socialButtons(team)}
                 </div>
               </div>
             </div>
@@ -334,7 +340,7 @@ export default function TeamProfile() {
             )}
 
             {/* Home Ground / Venue */}
-            {team.fullAddress && (
+            {team.fullAddress && team.privacy?.location !== 'hidden' && (
               <div className="bg-cric-card rounded-2xl shadow-sm border border-slate-100 p-6">
                 <h3 className="text-xs font-black text-cric-muted uppercase tracking-widest mb-3">🏟️ Home Ground</h3>
                 <p className="font-bold text-cric-text">{team.fullAddress}</p>
@@ -344,6 +350,39 @@ export default function TeamProfile() {
                       src={`https://www.google.com/maps?q=${team.latitude},${team.longitude}&z=15&output=embed`} />
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* Gallery */}
+            {team.media && team.media.some(m => m.url) && (
+              <div className="bg-cric-card rounded-2xl shadow-sm border border-slate-100 p-6">
+                <h3 className="text-xs font-black text-cric-muted uppercase tracking-widest mb-4">Gallery</h3>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  {team.media.map((m, i) => m.url ? (
+                    <a key={i} href={m.url} target="_blank" rel="noopener noreferrer" className="group relative rounded-lg overflow-hidden border border-cric-border">
+                      <img src={m.url} alt={m.caption || 'photo'} className="w-full h-32 object-cover group-hover:scale-105 transition-transform" />
+                      {m.caption && <span className="absolute bottom-0 inset-x-0 bg-black/60 text-white text-[10px] font-bold px-2 py-1 truncate">{m.caption}</span>}
+                    </a>
+                  ) : null)}
+                </div>
+              </div>
+            )}
+
+            {/* Videos */}
+            {team.videos && team.videos.some(v => v.url) && (
+              <div className="bg-cric-card rounded-2xl shadow-sm border border-slate-100 p-6">
+                <h3 className="text-xs font-black text-cric-muted uppercase tracking-widest mb-4">Videos</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {team.videos.map((v, i) => v.url ? (
+                    <a key={i} href={v.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 bg-cric-bg rounded-lg border border-cric-border px-4 py-3 hover:border-cric-accent transition-all">
+                      <span className="w-10 h-10 rounded-full bg-cric-accent text-white flex items-center justify-center text-sm flex-shrink-0">▶</span>
+                      <div className="min-w-0">
+                        <p className="font-bold text-cric-text text-sm truncate">{v.title || 'Watch Video'}</p>
+                        <p className="text-xs text-cric-muted truncate">{v.url}</p>
+                      </div>
+                    </a>
+                  ) : null)}
+                </div>
               </div>
             )}
           </div>
@@ -506,17 +545,26 @@ export default function TeamProfile() {
   );
 }
 
-const socialButtons = (team) => (
-  <div className="flex flex-wrap gap-2 mt-2">
-    {team.facebookUrl && <SocialBtn url={team.facebookUrl} label="Facebook" color="#1877F2" icon="f" />}
-    {team.instagramUrl && <SocialBtn url={team.instagramUrl} label="Instagram" color="#E4405F" icon="ig" />}
-    {team.twitterUrl && <SocialBtn url={team.twitterUrl} label="Twitter" color="#000000" icon="X" />}
-    {team.youtubeUrl && <SocialBtn url={team.youtubeUrl} label="YouTube" color="#FF0000" icon="▶" />}
-    {!team.facebookUrl && !team.instagramUrl && !team.twitterUrl && !team.youtubeUrl && (
-      <p className="text-cric-muted text-xs">No social links available</p>
-    )}
-  </div>
-);
+const socialButtons = (team) => {
+  const sl = (key, legacy) => team.socialLinks?.[key] || team[legacy];
+  const links = [
+    ['facebook', 'Facebook', '#1877F2', 'f', sl('facebook', 'facebookUrl')],
+    ['instagram', 'Instagram', '#E4405F', 'ig', sl('instagram', 'instagramUrl')],
+    ['twitter', 'X', '#000000', 'X', sl('twitter', 'twitterUrl')],
+    ['youtube', 'YouTube', '#FF0000', '▶', sl('youtube', 'youtubeUrl')],
+    ['whatsapp', 'WhatsApp', '#25D366', 'wa', sl('whatsapp', '')],
+  ].filter(([,,, , url]) => url);
+  if (links.length === 0) {
+    return <p className="text-cric-muted text-xs">No social links available</p>;
+  }
+  return (
+    <div className="flex flex-wrap gap-2 mt-2">
+      {links.map(([key, label, color, icon, url]) => (
+        <SocialBtn key={key} url={url} label={label} color={color} icon={icon} />
+      ))}
+    </div>
+  );
+};
 
 const SocialBtn = ({ url, label, color, icon }) => (
   <a

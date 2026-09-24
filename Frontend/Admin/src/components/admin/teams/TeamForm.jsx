@@ -19,6 +19,11 @@ export default function TeamForm({ editMode, currentTeam, onSave, onCancel }) {
   const [loading, setLoading] = useState(false);
   const [orgChain, setOrgChain] = useState([]);
 
+  const [mediaItems, setMediaItems] = useState([]);
+  const [videoItems, setVideoItems] = useState([]);
+  const [social, setSocial] = useState({ facebook: "", instagram: "", twitter: "", youtube: "", whatsapp: "" });
+  const [privacy, setPrivacy] = useState({ contactInfo: "public", socialLinks: "public", location: "public" });
+
   const selectedCategory = watch('category');
 
   useEffect(() => {
@@ -66,6 +71,10 @@ export default function TeamForm({ editMode, currentTeam, onSave, onCancel }) {
       setValue('phone', currentTeam.phone || '');
       setValue('email', currentTeam.email || '');
       setValue('website', currentTeam.website || '');
+      setMediaItems((currentTeam.media || []).map(m => ({ url: m.url || '', caption: m.caption || '' })));
+      setVideoItems((currentTeam.videos || []).map(v => ({ url: v.url || '', title: v.title || '' })));
+      setSocial({ facebook: '', instagram: '', twitter: '', youtube: '', whatsapp: '', ...(currentTeam.socialLinks || {}) });
+      setPrivacy({ contactInfo: 'public', socialLinks: 'public', location: 'public', ...(currentTeam.privacy || {}) });
       setSelectedPlayers(currentTeam.players?.map(p => p._id) || []);
 
       const orgId = currentTeam.organizationRef?._id || currentTeam.organizationRef;
@@ -181,6 +190,10 @@ export default function TeamForm({ editMode, currentTeam, onSave, onCancel }) {
     setLoading(true);
     try {
       data.players = selectedPlayers;
+      data.media = mediaItems;
+      data.videos = videoItems;
+      data.socialLinks = social;
+      data.privacy = privacy;
       if (locationData) {
         data.latitude = locationData.latitude;
         data.longitude = locationData.longitude;
@@ -202,6 +215,7 @@ export default function TeamForm({ editMode, currentTeam, onSave, onCancel }) {
   const tabs = [
     { key: 'basic', label: 'Basic Info' },
     { key: 'location', label: 'Location & Contact' },
+    { key: 'media', label: 'Media & Social' },
     { key: 'players', label: 'Players' },
     { key: 'stats', label: 'Stats & Ranking' },
   ];
@@ -419,7 +433,156 @@ export default function TeamForm({ editMode, currentTeam, onSave, onCancel }) {
         </div>
       )}
 
-      {/* Tab 3: Players */}
+      {/* Tab 3: Media & Social */}
+      {activeTab === 'media' && (
+        <div className="space-y-6">
+          <div className="bg-cric-bg rounded-2xl p-6 border border-cric-border">
+            <h4 className="font-black text-xs uppercase tracking-widest text-cric-text mb-4">🖼️ Photo Gallery</h4>
+            <div className="space-y-3">
+              {mediaItems.map((item, idx) => (
+                <div key={idx} className="flex flex-col md:flex-row md:items-center gap-3 bg-cric-card rounded-xl p-4 border border-cric-border">
+                  <div className="flex-1">
+                    <PhotoInput
+                      value={item.url || ''}
+                      onChange={(url) => {
+                        const next = [...mediaItems];
+                        next[idx] = { ...next[idx], url };
+                        setMediaItems(next);
+                      }}
+                      disabled={loading}
+                    />
+                  </div>
+                  <div className="flex-1">
+                    <input
+                      value={item.caption || ''}
+                      onChange={(e) => {
+                        const next = [...mediaItems];
+                        next[idx] = { ...next[idx], caption: e.target.value };
+                        setMediaItems(next);
+                      }}
+                      placeholder="Caption"
+                      className="w-full bg-cric-card border border-cric-border rounded-xl px-4 py-3 text-cric-text"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setMediaItems(mediaItems.filter((_, i) => i !== idx))}
+                    className="text-red-600 hover:text-red-800 font-black text-xs uppercase tracking-widest"
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() => setMediaItems([...mediaItems, { url: '', caption: '' }])}
+              className="mt-3 bg-cric-card hover:bg-cric-bg border border-cric-border text-cric-text font-black text-xs uppercase tracking-widest rounded-xl px-4 py-2 transition-all"
+            >
+              + Add Photo
+            </button>
+          </div>
+
+          <div className="bg-cric-bg rounded-2xl p-6 border border-cric-border">
+            <h4 className="font-black text-xs uppercase tracking-widest text-cric-text mb-4">🎬 Videos</h4>
+            <div className="space-y-3">
+              {videoItems.map((item, idx) => (
+                <div key={idx} className="flex flex-col md:flex-row md:items-center gap-3 bg-cric-card rounded-xl p-4 border border-cric-border">
+                  <div className="flex-1">
+                    <input
+                      value={item.url || ''}
+                      onChange={(e) => {
+                        const next = [...videoItems];
+                        next[idx] = { ...next[idx], url: e.target.value };
+                        setVideoItems(next);
+                      }}
+                      placeholder="Video URL (YouTube / direct)"
+                      className="w-full bg-cric-card border border-cric-border rounded-xl px-4 py-3 text-cric-text"
+                    />
+                  </div>
+                  <div className="flex-1">
+                    <input
+                      value={item.title || ''}
+                      onChange={(e) => {
+                        const next = [...videoItems];
+                        next[idx] = { ...next[idx], title: e.target.value };
+                        setVideoItems(next);
+                      }}
+                      placeholder="Title"
+                      className="w-full bg-cric-card border border-cric-border rounded-xl px-4 py-3 text-cric-text"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setVideoItems(videoItems.filter((_, i) => i !== idx))}
+                    className="text-red-600 hover:text-red-800 font-black text-xs uppercase tracking-widest"
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() => setVideoItems([...videoItems, { url: '', title: '' }])}
+              className="mt-3 bg-cric-card hover:bg-cric-bg border border-cric-border text-cric-text font-black text-xs uppercase tracking-widest rounded-xl px-4 py-2 transition-all"
+            >
+              + Add Video
+            </button>
+          </div>
+
+          <div className="bg-cric-bg rounded-2xl p-6 border border-cric-border">
+            <h4 className="font-black text-xs uppercase tracking-widest text-cric-text mb-4">🔗 Social Links</h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {[
+                ['facebook', 'Facebook Profile URL'],
+                ['instagram', 'Instagram Profile URL'],
+                ['twitter', 'X / Twitter Profile URL'],
+                ['youtube', 'YouTube Channel URL'],
+                ['whatsapp', 'WhatsApp Number / Link'],
+              ].map(([key, ph]) => (
+                <div key={key}>
+                  <label className="text-[10px] font-black uppercase text-cric-muted block mb-1">{key}</label>
+                  <input
+                    value={social[key] || ''}
+                    onChange={(e) => setSocial({ ...social, [key]: e.target.value })}
+                    placeholder={ph}
+                    className="w-full bg-cric-card border border-cric-border rounded-xl px-4 py-3 text-cric-text"
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="bg-cric-bg rounded-2xl p-6 border border-cric-border">
+            <h4 className="font-black text-xs uppercase tracking-widest text-cric-text mb-2">🔐 Profile Privacy</h4>
+            <p className="text-xs text-cric-muted mb-4">
+              Choose which sections are visible to the public. Hidden sections only appear for admins.
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {[
+                ['contactInfo', 'Contact Info (phone, email, website)'],
+                ['socialLinks', 'Social Links'],
+                ['location', 'Location / Home Ground'],
+              ].map(([key, label]) => (
+                <div key={key}>
+                  <label className="text-[10px] font-black uppercase text-cric-muted block mb-1">{label}</label>
+                  <select
+                    value={privacy[key]}
+                    onChange={(e) => setPrivacy({ ...privacy, [key]: e.target.value })}
+                    className="w-full bg-cric-card border border-cric-border rounded-xl px-4 py-3 text-cric-text"
+                  >
+                    <option value="public">Public</option>
+                    <option value="hidden">Hidden</option>
+                  </select>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Tab 4: Players */}
       {activeTab === 'players' && (
         <div className="space-y-6">
           <div className="bg-cric-bg rounded-2xl p-6 border border-cric-border">
@@ -490,7 +653,7 @@ export default function TeamForm({ editMode, currentTeam, onSave, onCancel }) {
         </div>
       )}
 
-      {/* Tab 4: Stats & Ranking */}
+      {/* Tab 5: Stats & Ranking */}
       {activeTab === 'stats' && (
         <div className="space-y-6">
           {editMode && currentTeam ? (

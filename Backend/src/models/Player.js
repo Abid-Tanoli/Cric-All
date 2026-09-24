@@ -97,6 +97,28 @@ const playerSchema = new mongoose.Schema(
       stumpings: { type: Number, default: 0 },
       runOuts: { type: Number, default: 0 },
     },
+gallery: [{
+      url: { type: String, default: "" },
+      caption: { type: String, default: "" },
+      addedAt: { type: Date }
+    }],
+    videos: [{
+      url: { type: String, default: "" },
+      title: { type: String, default: "" },
+      addedAt: { type: Date }
+    }],
+    socialLinks: {
+      facebook: { type: String, default: "" },
+      instagram: { type: String, default: "" },
+      twitter: { type: String, default: "" },
+      youtube: { type: String, default: "" },
+      whatsapp: { type: String, default: "" }
+    },
+    privacy: {
+      contactInfo: { type: String, enum: ["public", "hidden"], default: "public" },
+      socialLinks: { type: String, enum: ["public", "hidden"], default: "public" },
+      location: { type: String, enum: ["public", "hidden"], default: "public" }
+    },
     isSeed: { type: Boolean, default: false },
     seedSource: { type: String, default: "" },
     seedVersion: { type: String, default: "" },
