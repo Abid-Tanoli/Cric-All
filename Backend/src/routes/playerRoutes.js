@@ -21,11 +21,11 @@ import {
 import validate from "../middleware/validate.js";
 import { createPlayerSchema } from "../validators/playerValidators.js";
 import * as playerService from "../services/playerService.js";
-import { protect, requireAdmin } from "../middleware/authMiddleware.js";
+import { protect, requireAdmin, requireVerifiedEmail } from "../middleware/authMiddleware.js";
 import validateObjectId from "../middleware/validateObjectId.js";
 
 const router = express.Router();
-const adminOnly = [protect, requireAdmin];
+const adminOnly = [protect, requireAdmin, requireVerifiedEmail];
 
 router.get("/", getPlayers);
 router.get("/ranking", getPlayerRanking);

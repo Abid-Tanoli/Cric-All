@@ -1,10 +1,10 @@
 import express from "express";
 import multer from "multer";
 import { uploadImage } from "../controllers/uploadController.js";
-import { protect, requireAdmin } from "../middleware/authMiddleware.js";
+import { protect, requireAdmin, requireVerifiedEmail } from "../middleware/authMiddleware.js";
 
 const router = express.Router();
-const adminOnly = [protect, requireAdmin];
+const adminOnly = [protect, requireAdmin, requireVerifiedEmail];
 
 const storage = multer.memoryStorage();
 const upload = multer({

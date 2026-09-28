@@ -1,11 +1,13 @@
 import React, { useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import ThemeToggle from "./ThemeToggle";
+import { resendVerification } from "../pages/auth/auth";
 
 export default function Header({ user, onShowLogin, onShowRegister, onLogout }) {
   const location = useLocation();
   const navigate = useNavigate();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [resendState, setResendState] = useState("");
 
   const navItems = [
     { name: "Matches", path: "/" },
@@ -32,9 +34,35 @@ export default function Header({ user, onShowLogin, onShowRegister, onLogout }) 
 
   const isHandler = Boolean(user && (user.accountType === "handler" || user.accountType === "organization_admin"));
   const isDashboardActive = location.pathname === "/dashboard";
+  const needsVerification = Boolean(user && user.emailVerified === false);
+
+  const handleResend = async () => {
+    setResendState("Sending...");
+    try {
+      await resendVerification(user.email);
+      setResendState("Sent — check your inbox (in development the link is printed in the server log).");
+    } catch (error) {
+      setResendState(error?.message || "Could not send right now. Please wait a minute and retry.");
+    }
+  };
 
   return (
     <header className="bg-cric-card border-b border-cric-border sticky top-0 z-50 shadow-xl">
+      {needsVerification && (
+        <div className="bg-cric-accent/15 border-b border-cric-accent/40 px-4 py-2 flex flex-wrap items-center justify-center gap-3 text-center">
+          <p className="text-[10px] font-black uppercase tracking-widest text-cric-text">
+            Verify your email to create organizations, teams and matches.
+          </p>
+          <button
+            type="button"
+            onClick={handleResend}
+            className="rounded-lg bg-cric-accent px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-white hover:bg-orange-600 transition-colors"
+          >
+            Resend link
+          </button>
+          {resendState && <span className="text-[10px] font-bold text-cric-muted">{resendState}</span>}
+        </div>
+      )}
       <div className="max-w-7xl mx-auto px-4 py-4 flex flex-wrap justify-between items-center gap-3">
         <div className="flex items-center gap-5 min-w-0">
           <Link to="/" className="text-2xl font-black font-raj italic text-cric-text tracking-tighter" onClick={closeMobile}>

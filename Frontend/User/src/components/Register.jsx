@@ -14,12 +14,12 @@ const accountTypes = [
   {
     value: 'handler',
     label: 'Cricket Handler',
-    description: 'Request access after signing up — our team will set up your teams, tournaments and local scoring.',
+    description: 'For local cricket handlers who run teams, tournaments and scoring.',
   },
   {
     value: 'organization_admin',
     label: 'Organization Admin',
-    description: 'For schools, colleges, universities, industries, clubs, leagues and academies. Request access after signing up — our team will set up your organization\'s teams and events.',
+    description: 'For schools, colleges, universities, industries, clubs, leagues and academies.',
   },
 ];
 
@@ -121,7 +121,7 @@ export default function Register({ onSuccess, onCancel, embedded = false }) {
               <p className="text-[10px] font-black uppercase tracking-widest text-white/70">Join CricAll</p>
               <h3 className="mt-1 text-2xl font-black uppercase tracking-tight">Choose how you want to join</h3>
               <p className="mt-2 max-w-2xl text-sm font-semibold text-white/80">
-                CricAll provides the platform. Local cricket handlers manage their own teams, playing XI, squads, matches and tournaments.
+                CricAll provides the platform. Create your account, verify your email, and manage your cricket from one place.
               </p>
             </div>
             {onCancel && (
@@ -142,9 +142,12 @@ export default function Register({ onSuccess, onCancel, embedded = false }) {
               <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-cric-accent/20 text-2xl text-cric-accent">✓</div>
               <h4 className="text-xl font-black uppercase tracking-tight text-cric-text">Thanks, {postSignup.user.name}!</h4>
               <p className="mx-auto mt-3 max-w-md text-sm font-semibold leading-relaxed text-cric-muted">
-                Your {postSignup.type === 'organization_admin' ? 'organization admin' : 'cricket handler'} request has been received.
-                An admin will review it and set up your teams and tournaments. You can track progress on
-                {' '}<span className="font-black text-cric-accent uppercase">My Dashboard</span> once your account is set up.
+                Your account is ready. We sent a verification link to{' '}
+                <span className="font-black text-cric-accent">{postSignup.user.email}</span>.
+                Verify your email to unlock organizations, teams and matches.
+              </p>
+              <p className="mx-auto mt-2 max-w-md text-xs font-semibold text-cric-muted">
+                (In development the link is printed in the backend server log.)
               </p>
               <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
                 <button
@@ -179,7 +182,7 @@ export default function Register({ onSuccess, onCancel, embedded = false }) {
                 width="100%"
               />
               <p className="mt-3 text-center text-[10px] font-bold uppercase tracking-widest text-cric-muted">
-                Quick sign-up with Google creates a player account.
+                Quick sign-up with Google verifies your email automatically.
               </p>
               <div className="relative my-6">
                 <div className="absolute inset-0 flex items-center">
@@ -289,7 +292,7 @@ export default function Register({ onSuccess, onCancel, embedded = false }) {
               {err && <p className="text-red-500 text-sm font-bold">{err}</p>}
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <p className="text-xs font-semibold text-cric-muted">
-                  Request access after signing up — our team reviews requests and sets up your teams and tournaments.
+                  One account per email. Verify your address to unlock all features.
                 </p>
                 <button
                   type="submit"

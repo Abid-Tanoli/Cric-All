@@ -1,5 +1,18 @@
 import { api, setAuthToken } from '../../services/api';
 
+// Helpful dev-time signal instead of a silently missing Google button.
+const hasGoogleClientId = Boolean(
+  import.meta.env.VITE_GOOGLE_CLIENT_ID &&
+  import.meta.env.VITE_GOOGLE_CLIENT_ID !== 'your_google_client_id.apps.googleusercontent.com'
+);
+if (!hasGoogleClientId && import.meta.env.DEV) {
+  console.info(
+    '[CricAll] VITE_GOOGLE_CLIENT_ID is not set — Google sign-in buttons stay hidden. ' +
+    'Create an OAuth client in Google Cloud Console and add it to Frontend/User/.env.local ' +
+    '(the backend needs the matching GOOGLE_CLIENT_ID).'
+  );
+}
+
 function persistAuth(token, user) {
   if (token) {
     localStorage.setItem('bq_token', token);
@@ -35,6 +48,22 @@ export async function loginWithGoogle(credential) {
   const { token, user } = res.data;
   persistAuth(token, user);
   return user;
+}
+
+export async function verifyEmailToken(token) {
+  const res = await api.post('/auth/verify-email', { token });
+  const { user } = res.data || {};
+  if (user) {
+    // Refresh the cached user so the verification banner disappears.
+    localStorage.setItem('bq_user', JSON.stringify(user));
+    window.dispatchEvent(new CustomEvent('bq-auth-changed'));
+  }
+  return res.data;
+}
+
+export async function resendVerification(email) {
+  const res = await api.post('/auth/resend-verification', { email });
+  return res.data;
 }
 
 export function logout() {

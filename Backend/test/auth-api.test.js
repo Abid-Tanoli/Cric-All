@@ -4,11 +4,22 @@ import http from "node:http";
 
 const BASE = process.env.BASE_URL || "http://localhost:5000/api";
 
-let serverAvailable = true;
+// Probe the server BEFORE the tests below are registered. Two historical bugs
+// made these tests permanently inert: (1) `skip` was given a function, which
+// node:test treats as a truthy value and never calls, so every test skipped
+// unconditionally; (2) the health probe URL dropped the /api prefix. Both are
+// fixed — the probe now runs at module load and `skip` gets a plain boolean.
+let serverAvailable = false;
 
 async function req(method, path, body = null, token = null) {
   return new Promise((resolve) => {
-    const url = new URL(path, BASE);
+    // BASE is the API root (e.g. http://localhost:5000/api). `new URL` treats a
+    // leading "/" as origin-absolute, which silently dropped the /api prefix
+    // and made every request (including the health probe) a 404 — that is why
+    // these tests were skipped even with a server running. Normalize by
+    // resolving against a BASE that always ends in "/".
+    const base = BASE.endsWith("/") ? BASE : `${BASE}/`;
+    const url = new URL(path.replace(/^\//, ""), base);
     const opts = {
       method,
       hostname: url.hostname,
@@ -36,21 +47,22 @@ async function req(method, path, body = null, token = null) {
   });
 }
 
-test("server must be running for HTTP integration tests", async () => {
-  const { status } = await req("GET", "/health");
-  serverAvailable = status === 200;
-  if (!serverAvailable) {
-    console.log("Backend not available — skipping HTTP tests. Set BASE_URL or start the server.");
-  }
+serverAvailable = (await req("GET", "/health")).status === 200;
+if (!serverAvailable) {
+  console.log("Backend not available — skipping HTTP tests. Set BASE_URL or start the server.");
+}
+
+test("server must be running for HTTP integration tests", { skip: !serverAvailable }, async () => {
+  assert.strictEqual(serverAvailable, true, "server must be running for HTTP integration tests");
 });
 
-test("POST /auth/login — rejects missing credentials", { skip: () => !serverAvailable }, async () => {
+test("POST /auth/login — rejects missing credentials", { skip: !serverAvailable }, async () => {
   const { status, data } = await req("POST", "/auth/login", {});
   assert.strictEqual(status, 400);
   assert.ok(data?.message);
 });
 
-test("POST /auth/login — rejects invalid credentials", { skip: () => !serverAvailable }, async () => {
+test("POST /auth/login — rejects invalid credentials", { skip: !serverAvailable }, async () => {
   const { status } = await req("POST", "/auth/login", {
     email: "nonexistent@test.com",
     password: "wrongpass",
@@ -58,28 +70,28 @@ test("POST /auth/login — rejects invalid credentials", { skip: () => !serverAv
   assert.strictEqual(status, 400);
 });
 
-test("POST /auth/register — rejects missing fields", { skip: () => !serverAvailable }, async () => {
+test("POST /auth/register — rejects missing fields", { skip: !serverAvailable }, async () => {
   const { status } = await req("POST", "/auth/register", { email: "only@email.com" });
   assert.strictEqual(status, 400);
 });
 
-test("GET /auth/profile — rejects without token", { skip: () => !serverAvailable }, async () => {
+test("GET /auth/profile — rejects without token", { skip: !serverAvailable }, async () => {
   const { status } = await req("GET", "/auth/profile");
   assert.strictEqual(status, 401);
 });
 
-test("GET /auth/profile — rejects malformed token", { skip: () => !serverAvailable }, async () => {
+test("GET /auth/profile — rejects malformed token", { skip: !serverAvailable }, async () => {
   const { status } = await req("GET", "/auth/profile", null, "not-a-real-token");
   assert.strictEqual(status, 401);
 });
 
-test("POST /admin/login — rejects missing credentials", { skip: () => !serverAvailable }, async () => {
+test("POST /admin/login — rejects missing credentials", { skip: !serverAvailable }, async () => {
   const { status, data } = await req("POST", "/admin/login", {});
   assert.strictEqual(status, 400);
   assert.ok(data?.message);
 });
 
-test("POST /admin/login — rejects invalid credentials", { skip: () => !serverAvailable }, async () => {
+test("POST /admin/login — rejects invalid credentials", { skip: !serverAvailable }, async () => {
   const { status } = await req("POST", "/admin/login", {
     email: "admin@nonexistent.com",
     password: "wrongpass",
@@ -87,12 +99,12 @@ test("POST /admin/login — rejects invalid credentials", { skip: () => !serverA
   assert.strictEqual(status, 400);
 });
 
-test("GET /admin/profile — rejects without token", { skip: () => !serverAvailable }, async () => {
+test("GET /admin/profile — rejects without token", { skip: !serverAvailable }, async () => {
   const { status } = await req("GET", "/admin/profile");
   assert.strictEqual(status, 401);
 });
 
-test("GET /admin/profile — rejects with user token", { skip: () => !serverAvailable }, async () => {
+test("GET /admin/profile — rejects with user token", { skip: !serverAvailable }, async () => {
   const userLogin = await req("POST", "/auth/login", {
     email: "viewer@test.com",
     password: "viewer123",
@@ -103,7 +115,7 @@ test("GET /admin/profile — rejects with user token", { skip: () => !serverAvai
   assert.strictEqual(status, 403);
 });
 
-test("POST /admin/ — rejects user role from accessing admin list", { skip: () => !serverAvailable }, async () => {
+test("POST /admin/ — rejects user role from accessing admin list", { skip: !serverAvailable }, async () => {
   const userLogin = await req("POST", "/auth/login", {
     email: "viewer@test.com",
     password: "viewer123",
@@ -115,13 +127,13 @@ test("POST /admin/ — rejects user role from accessing admin list", { skip: () 
   if (status === 403) assert.ok(data?.message?.toLowerCase().includes("admin"));
 });
 
-test("POST /auth/logout — returns success", { skip: () => !serverAvailable }, async () => {
+test("POST /auth/logout — returns success", { skip: !serverAvailable }, async () => {
   const { status, data } = await req("POST", "/auth/logout", {});
   assert.strictEqual(status, 200);
   assert.ok(data?.message);
 });
 
-test("user registration and login flow", { skip: () => !serverAvailable }, async () => {
+test("user registration and login flow", { skip: !serverAvailable }, async () => {
   const uniqueEmail = `testuser_${Date.now()}@test.com`;
 
   const reg = await req("POST", "/auth/register", {
@@ -141,7 +153,7 @@ test("user registration and login flow", { skip: () => !serverAvailable }, async
   }
 });
 
-test("admin login with seeded admin", { skip: () => !serverAvailable }, async () => {
+test("admin login with seeded admin", { skip: !serverAvailable }, async () => {
   const adminLogin = await req("POST", "/admin/login", {
     email: process.env.ADMIN_EMAIL || "admin@cric-all.com",
     password: process.env.ADMIN_PASSWORD || "admin123",

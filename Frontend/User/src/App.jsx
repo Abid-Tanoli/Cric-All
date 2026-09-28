@@ -37,6 +37,7 @@ const CricketNews = lazy(() => import("./pages/CricketNews"));
 const AuthPage = lazy(() => import("./pages/auth/AuthPage"));
 const ForgotPassword = lazy(() => import("./pages/auth/ForgotPassword"));
 const ResetPassword = lazy(() => import("./pages/auth/ResetPassword"));
+const VerifyEmail = lazy(() => import("./pages/auth/VerifyEmail"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 const PlayerComparison = lazy(() => import("./pages/PlayerComparison"));
 const HandlerDashboard = lazy(() => import("./pages/HandlerDashboard"));
@@ -84,6 +85,7 @@ function App() {
           <Route path="/auth" element={<ErrorBoundary><AuthPage initialMode="login" /></ErrorBoundary>} />
           <Route path="/forgot-password" element={<ErrorBoundary><ForgotPassword /></ErrorBoundary>} />
           <Route path="/reset-password/:token" element={<ErrorBoundary><ResetPassword /></ErrorBoundary>} />
+          <Route path="/verify-email/:token" element={<ErrorBoundary><VerifyEmail /></ErrorBoundary>} />
           <Route path="/reset-password" element={<ErrorBoundary><NotFound /></ErrorBoundary>} />
           <Route path="/live" element={<ErrorBoundary><Live /></ErrorBoundary>} />
           <Route path="/series" element={<ErrorBoundary><SeriesList /></ErrorBoundary>} />

@@ -14,6 +14,8 @@
     "db:cleanup-uploads": "node src/scripts/cleanupOrphanedUploads.js",
     "db:cleanup-uploads:apply": "node src/scripts/cleanupOrphanedUploads.js --apply",
     "db:backfill-event-org": "node src/scripts/backfillEventOrganization.js",
+    "db:migrate-user-verification": "node src/scripts/migrateUserEmailVerification.js",
+    "db:migrate-user-verification:apply": "node src/scripts/migrateUserEmailVerification.js --apply",
     "admin:create": "node src/scripts/createAdmin.js",
     "test": "node --test test/*.test.js",
     "test:smoke": "node scripts/api-smoke-test.cjs"
@@ -35,12 +37,14 @@
     "mongoose": "^9.1.5",
     "multer": "^1.4.5-lts.1",
     "node-fetch": "^3.3.2",
+    "nodemailer": "^10.0.12",
     "socket.io": "^4.8.3",
     "xlsx": "^0.18.5",
     "xml2js": "^0.6.2",
     "zod": "^4.3.5"
   },
   "devDependencies": {
+    "mongodb-memory-server": "^11.3.0",
     "nodemon": "^3.1.11"
   }
 }

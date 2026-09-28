@@ -1,5 +1,5 @@
 import express from "express";
-import { protect, requireAdmin } from "../middleware/authMiddleware.js";
+import { protect, requireAdmin, requireVerifiedEmail } from "../middleware/authMiddleware.js";
 import validateObjectId from "../middleware/validateObjectId.js";
 import {
   getMatches,
@@ -81,7 +81,7 @@ import {
 import Match from "../models/Match.js";
 
 const router = express.Router();
-const adminOnly = [protect, requireAdmin];
+const adminOnly = [protect, requireAdmin, requireVerifiedEmail];
 const scoringRateLimit = rateLimiter({ windowMs: 1000, max: 12 });
 
 router.get("/", getMatches);

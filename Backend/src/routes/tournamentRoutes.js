@@ -1,5 +1,5 @@
 import express from 'express';
-import { protect, requireAdmin } from '../middleware/authMiddleware.js';
+import { protect, requireAdmin, requireVerifiedEmail } from '../middleware/authMiddleware.js';
 import validateObjectId from '../middleware/validateObjectId.js';
 import {
   getTournaments,
@@ -17,7 +17,7 @@ import {
 } from '../controllers/TournamentController.js';
 
 const router = express.Router();
-const adminOnly = [protect, requireAdmin];
+const adminOnly = [protect, requireAdmin, requireVerifiedEmail];
 
 router.get('/', getTournaments);
 router.get('/:id', validateObjectId('id'), getTournament);

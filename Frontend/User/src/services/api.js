@@ -30,7 +30,12 @@ api.interceptors.response.use(
       window.dispatchEvent(new CustomEvent("bq-auth-expired"));
     }
     const message = error.response?.data?.message || error.message || "An error occurred";
-    return Promise.reject(new Error(message));
+    // Keep the original response on the wrapped error so callers can keep
+    // using error.response?.data?.message / ?.code.
+    const wrapped = new Error(message);
+    wrapped.response = error.response;
+    wrapped.code = error.response?.data?.code;
+    return Promise.reject(wrapped);
   }
 );
 

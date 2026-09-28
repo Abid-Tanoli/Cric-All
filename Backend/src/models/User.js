@@ -24,6 +24,31 @@ const userSchema = new mongoose.Schema({
     minlength: [8, "Password must be at least 8 characters"],
     select: false,
   },
+  // False until the owner proves control of the mailbox (or Google verifies it
+  // server-side). Privileged actions are gated on this via requireVerifiedEmail.
+  emailVerified: { type: Boolean, default: false },
+  emailVerifiedAt: { type: Date, default: undefined },
+  // Every identity that has ever been linked to this account.
+  authProviders: {
+    type: [{
+      _id: false,
+      provider: { type: String, enum: ["password", "google"], required: true },
+      providerUserId: { type: String, default: "" },
+    }],
+    default: [],
+  },
+  // False for Google-only accounts that never chose a password.
+  passwordSet: { type: Boolean, default: false },
+  status: { type: String, enum: ["active", "suspended"], default: "active" },
+  lastLoginAt: { type: Date, default: undefined },
+  // Bumped whenever sessions must be invalidated wholesale (password reset,
+  // Google linking that drops a password, suspension). Compared against the
+  // `tv` claim in the JWT by `protect`.
+  tokenVersion: { type: Number, default: 0 },
+  // Email verification: random token stored hashed, single-use, expiring.
+  emailVerificationToken: { type: String, select: false, default: undefined },
+  emailVerificationExpires: { type: Date, default: undefined },
+  verificationSentAt: { type: Date, default: undefined },
   role: {
     type: String,
     enum: ["admin", "scorer", "viewer"],
@@ -52,6 +77,7 @@ userSchema.pre("save", async function () {
 
   const salt = await bcrypt.genSalt(12);
   this.password = await bcrypt.hash(this.password, salt);
+  this.passwordSet = true;
 });
 
 userSchema.methods.comparePassword = async function(password) {
