@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { api, setAuthToken } from '../../services/api';
 
 // Helpful dev-time signal instead of a silently missing Google button.
@@ -74,6 +75,37 @@ export function getStoredUser() {
   const raw = localStorage.getItem('bq_user');
   if (!raw) return null;
   try { return JSON.parse(raw); } catch { return null; }
+}
+
+/**
+ * Subscribe to the cached session instead of re-reading localStorage during
+ * render.
+ *
+ * `getStoredUser()` parses JSON on every call, so it hands back a brand new
+ * object identity each time. Calling it in a component body and then using it
+ * as a useEffect dependency re-runs that effect on every single render: the
+ * effect fetches, the fetch calls setState, setState renders, render produces a
+ * new user object, dependency changed, effect runs again. That is an infinite
+ * fetch loop which left /organization and /my-players permanently stuck on
+ * their loading text.
+ *
+ * Holding the value in state means the identity only changes when the session
+ * actually changes, so effects depending on it settle.
+ */
+export function useStoredUser() {
+  const [user, setUser] = useState(getStoredUser);
+
+  useEffect(() => {
+    const sync = () => setUser(getStoredUser());
+    window.addEventListener('bq-auth-changed', sync);
+    window.addEventListener('storage', sync);
+    return () => {
+      window.removeEventListener('bq-auth-changed', sync);
+      window.removeEventListener('storage', sync);
+    };
+  }, []);
+
+  return user;
 }
 
 export function initAuthFromStorage() {

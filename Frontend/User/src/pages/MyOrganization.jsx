@@ -8,7 +8,7 @@ import {
   listOrgEvents,
   rejectInvitationById,
 } from "../services/organizationApi";
-import { getStoredUser } from "./auth/auth";
+import { useStoredUser } from "./auth/auth";
 import { PERMISSIONS, can, formatDate, roleLabel } from "../lib/orgUi";
 import { Banner, card, eyebrow, primaryButton, secondaryButton } from "./organization/orgStyles";
 import OrgOverview from "./organization/OrgOverview";
@@ -86,7 +86,7 @@ function InboxRow({ invitation, onDone }) {
 }
 
 export default function MyOrganization() {
-  const storedUser = getStoredUser();
+  const storedUser = useStoredUser();
   const [searchParams, setSearchParams] = useSearchParams();
 
   const [orgs, setOrgs] = useState([]);

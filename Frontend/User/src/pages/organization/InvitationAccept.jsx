@@ -2,13 +2,13 @@ import React, { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { acceptInvitation, previewInvitation, rejectInvitation } from "../../services/organizationApi";
 import { formatDate, roleLabel } from "../../lib/orgUi";
-import { getStoredUser } from "../auth/auth";
+import { useStoredUser } from "../auth/auth";
 import { Banner, card, eyebrow, primaryButton, secondaryButton } from "./orgStyles";
 
 export default function InvitationAccept() {
   const { token } = useParams();
   const navigate = useNavigate();
-  const storedUser = getStoredUser();
+  const storedUser = useStoredUser();
 
   const [invitation, setInvitation] = useState(null);
   const [loading, setLoading] = useState(true);

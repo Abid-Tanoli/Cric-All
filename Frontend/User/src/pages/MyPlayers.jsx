@@ -9,7 +9,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Link, Navigate } from "react-router-dom";
 import { createMyPlayer, deleteMyPlayer, listMyPlayers, updateMyPlayer } from "../services/playerApi";
-import { getStoredUser } from "./auth/auth";
+import { useStoredUser } from "./auth/auth";
 import { Banner, card, dangerButton, eyebrow, primaryButton, secondaryButton, Field, input } from "./organization/orgStyles";
 import { PLAYING_ROLES, BATTING_STYLES, BOWLING_STYLES, PLAYER_CATEGORIES, AGE_GROUPS } from "../lib/playerFields";
 
@@ -132,7 +132,7 @@ function PlayerRow({ player, onEdit, onDelete, busyId }) {
 }
 
 export default function MyPlayers() {
-  const storedUser = getStoredUser();
+  const storedUser = useStoredUser();
   const [players, setPlayers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState(EMPTY);
