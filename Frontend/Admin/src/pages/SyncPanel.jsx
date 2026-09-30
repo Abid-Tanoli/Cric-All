@@ -11,6 +11,7 @@ export default function SyncPanel() {
   const [urlInput, setUrlInput] = useState("");
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [externalApi, setExternalApi] = useState(null);
+  const [platform, setPlatform] = useState(null);
   const [settingsLoading, setSettingsLoading] = useState(true);
   const [settingsSaving, setSettingsSaving] = useState(false);
   const intervalRef = useRef(null);
@@ -21,14 +22,37 @@ export default function SyncPanel() {
 
   const fetchExternalApiSettings = useCallback(async () => {
     try {
-      const { data } = await api.get("/settings/external-api");
-      if (data.success) setExternalApi(data.data);
+      const [sync, platformRes] = await Promise.all([
+        api.get("/settings/external-api"),
+        api.get("/settings/platform").catch(() => null),
+      ]);
+      if (sync.data.success) setExternalApi(sync.data.data);
+      if (platformRes?.data?.success) setPlatform(platformRes.data.data);
     } catch {
-      // Non-fatal; the toggle shows a fallback state.
+      // Non-fatal; the toggles show a fallback state.
     } finally {
       setSettingsLoading(false);
     }
   }, []);
+
+  const savePlatformSetting = async (key, value) => {
+    setSettingsSaving(true);
+    const previous = platform;
+    // Optimistic: the switch should not lag behind the click.
+    setPlatform((prev) => (prev ? { ...prev, [key]: value } : prev));
+    try {
+      const { data } = await api.put("/settings/platform", { [key]: value });
+      if (data.success) {
+        setPlatform(data.data);
+        showToast("Platform setting updated", "success");
+      }
+    } catch (err) {
+      setPlatform(previous);
+      showToast(err.response?.data?.message || "Failed to update setting", "error");
+    } finally {
+      setSettingsSaving(false);
+    }
+  };
 
   const handleToggleExternalApi = async (checked) => {
     setSettingsSaving(true);
@@ -206,6 +230,54 @@ export default function SyncPanel() {
                   externalApi.freeCricbuzzEnabled ? "bg-blue-100 text-blue-700" : "bg-slate-100 text-slate-500"
                 }`}>
                   Free Cricbuzz: {externalApi.freeCricbuzzEnabled ? "Enabled" : "Disabled"}
+                </span>
+              </div>
+            )}
+          </div>
+
+          {/* Organization approval */}
+          <div className="bg-white rounded-xl border border-slate-200 p-5">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h3 className="text-sm font-black text-slate-800">Organization approval</h3>
+                <p className="text-xs text-slate-500 mt-1">
+                  Organizations self-serve by default. Turning approval on makes new organizations start as
+                  pending, so they have to be verified here before they show as active.
+                </p>
+                {!isSuperAdmin && (
+                  <p className="text-[10px] font-bold text-amber-600 mt-1" title="Only super admin can change this.">
+                    Only super admin can change this.
+                  </p>
+                )}
+              </div>
+              {settingsLoading ? (
+                <div className="w-12 h-7 bg-slate-200 rounded-full animate-pulse shrink-0" />
+              ) : (
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={Boolean(platform?.requireOrgApproval)}
+                  disabled={!isSuperAdmin || settingsSaving}
+                  title={isSuperAdmin ? "Toggle organization approval" : "Only super admin can change this."}
+                  onClick={() => savePlatformSetting("requireOrgApproval", !platform?.requireOrgApproval)}
+                  className={`relative w-12 h-7 rounded-full shrink-0 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed ${
+                    platform?.requireOrgApproval ? "bg-emerald-600" : "bg-slate-300"
+                  }`}
+                >
+                  <span
+                    className={`absolute top-0.5 left-0.5 w-6 h-6 bg-white rounded-full shadow transition-transform duration-200 ${
+                      platform?.requireOrgApproval ? "translate-x-5" : "translate-x-0"
+                    }`}
+                  />
+                </button>
+              )}
+            </div>
+            {platform && (
+              <div className="mt-4 pt-4 border-t border-slate-100">
+                <span className={`text-[10px] font-black uppercase rounded-full px-2.5 py-1 ${
+                  platform.requireOrgApproval ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700"
+                }`}>
+                  New organizations: {platform.requireOrgApproval ? "Pending approval" : "Active immediately"}
                 </span>
               </div>
             )}

@@ -220,6 +220,25 @@ const matchSchema = new mongoose.Schema(
       type: String,
       default: ""
     },
+    // Phase 6: the organization that owns this fixture. Until now a match knew
+    // nothing about who ran it — only `organization`, a free-text label — so an
+    // organization could not list, edit or audit its own matches, and any client
+    // that wanted to manage fixtures had to be a platform admin. This is the
+    // tenant key; it is set from the authorized req.org, never from the body.
+    // null on pre-Phase-6 matches, which is why every read is scoped by it
+    // rather than assuming every match has an owner.
+    organizationRef: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "TeamOrganization",
+      default: null
+    },
+    // The competition this fixture belongs to. Event.matches holds the other
+    // side of this link, so a fixture created inside an event shows up there.
+    event: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Event",
+      default: null
+    },
     address: {
       town: String,
       district: String,
@@ -388,6 +407,10 @@ const matchSchema = new mongoose.Schema(
 matchSchema.index({ status: 1, startAt: -1 });
 matchSchema.index({ teams: 1 });
 matchSchema.index({ tournament: 1 });
+// The organization dashboard's main query: this organization's fixtures,
+// soonest first.
+matchSchema.index({ organizationRef: 1, startAt: -1 });
+matchSchema.index({ event: 1 });
 matchSchema.index({ series: 1, status: 1, startAt: 1 });
 matchSchema.index({ "innings.oversHistory.overNumber": 1 });
 matchSchema.index({ "innings.fallOfWickets.player": 1 });

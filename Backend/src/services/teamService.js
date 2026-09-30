@@ -106,6 +106,7 @@ export async function createTeam(data) {
     category: data.category || "Other",
     categoryRef: data.categoryRef || null,
     subCategory: data.subCategory || "",
+    description: data.description || "",
     ageGroup: data.ageGroup || "Open",
     organization: data.organization || "",
     organizationRef: data.organizationRef || null,
@@ -167,7 +168,7 @@ export async function updateTeam(teamId, data) {
   const oldMediaUrls = (team.media || []).map((entry) => entry.url);
 
   const updateFields = [
-    "name", "shortName", "type", "category", "categoryRef", "subCategory", "ageGroup",
+    "name", "shortName", "type", "category", "categoryRef", "subCategory", "description", "ageGroup",
     "organization", "organizationRef", "branchName", "ownername", "logo",
     "fullAddress", "address", "area", "latitude", "longitude",
     "googleMapsUrl", "placeId", "phone", "email", "website",

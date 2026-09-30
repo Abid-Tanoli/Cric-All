@@ -17,9 +17,12 @@ export const fetchPlayers = createAsyncThunk(
   async (params = {}, thunkAPI) => {
     try {
       const { page = 1, limit = 10, search = "", team = "", Campus = "" } = params;
-      let url = `/players?page=${page}&limit=${limit}&search=${search}`;
+      let url = `/players?page=${page}&limit=${limit}`;
       if (team) url += `&team=${team}`;
-      if (Campus) url += `&Campus=${Campus}`;
+      // The query param is `campus`; it was being sent as `Campus`, which the
+      // backend never read, so the campus filter silently did nothing.
+      if (Campus) url += `&campus=${encodeURIComponent(Campus)}`;
+      if (search) url += `&search=${encodeURIComponent(search)}`;
       const res = await api.get(url);
       return res.data;
     } catch (err) {

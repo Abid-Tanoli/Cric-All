@@ -33,7 +33,12 @@ export default function Header({ user, onShowLogin, onShowRegister, onLogout }) 
   };
 
   const isHandler = Boolean(user && (user.accountType === "handler" || user.accountType === "organization_admin"));
+  // Membership, not account type, decides organization access. A user who was
+  // invited as a coach or player owns no admin flag but still has an
+  // organization to manage, so everyone signed in gets the link.
   const isDashboardActive = location.pathname === "/dashboard";
+  const isOrgActive = location.pathname.startsWith("/organization");
+  const isMyPlayersActive = location.pathname === "/my-players";
   const needsVerification = Boolean(user && user.emailVerified === false);
 
   const handleResend = async () => {
@@ -104,6 +109,26 @@ export default function Header({ user, onShowLogin, onShowRegister, onLogout }) 
                   My Dashboard
                 </Link>
               )}
+              <Link
+                to="/my-players"
+                className={`shrink-0 text-[10px] font-black uppercase tracking-widest transition-all px-4 py-2 rounded-lg min-h-[44px] flex items-center ${
+                  isMyPlayersActive
+                    ? "text-white bg-cric-accent shadow-md"
+                    : "text-cric-muted hover:text-cric-text hover:bg-black/5 dark:hover:bg-white/5"
+                }`}
+              >
+                My Players
+              </Link>
+              <Link
+                to="/organization"
+                className={`shrink-0 text-[10px] font-black uppercase tracking-widest transition-all px-4 py-2 rounded-lg min-h-[44px] flex items-center ${
+                  isOrgActive
+                    ? "text-white bg-cric-accent shadow-md"
+                    : "text-cric-muted hover:text-cric-text hover:bg-black/5 dark:hover:bg-white/5"
+                }`}
+              >
+                My Organizations
+              </Link>
               <div className="text-right">
                 <div className="text-xs font-black text-cric-text uppercase tracking-tight">{user.name}</div>
                 <div className="text-[9px] text-cric-muted font-bold uppercase tracking-widest">{user.role || 'user'}</div>
@@ -184,6 +209,28 @@ export default function Header({ user, onShowLogin, onShowRegister, onLogout }) 
                       My Dashboard
                     </Link>
                   )}
+                  <Link
+                    to="/my-players"
+                    onClick={closeMobile}
+                    className={`w-full block text-center px-4 py-3 text-xs font-black uppercase tracking-widest rounded-xl transition-all min-h-[44px] ${
+                      isMyPlayersActive
+                        ? "bg-cric-accent text-white"
+                        : "border border-cric-border text-cric-muted hover:text-cric-text"
+                    }`}
+                  >
+                    My Players
+                  </Link>
+                  <Link
+                    to="/organization"
+                    onClick={closeMobile}
+                    className={`w-full block text-center px-4 py-3 text-xs font-black uppercase tracking-widest rounded-xl transition-all min-h-[44px] ${
+                      isOrgActive
+                        ? "bg-cric-accent text-white"
+                        : "border border-cric-border text-cric-muted hover:text-cric-text"
+                    }`}
+                  >
+                    My Organizations
+                  </Link>
                   <button
                     onClick={() => { onLogout(); closeMobile(); }}
                     className="w-full px-4 py-3 bg-cric-accent hover:bg-orange-600 text-white text-xs font-black uppercase tracking-widest rounded-xl transition-all min-h-[44px]"

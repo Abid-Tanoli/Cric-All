@@ -1,8 +1,10 @@
-import Player from "../models/Player.js";
+﻿import Player from "../models/Player.js";
 import Team from "../models/Team.js";
 import Match from "../models/Match.js";
-import { getIO } from "../socket/socket.js";
+import { emitToAll } from "../socket/socket.js";
 import { deleteStoredFile, deleteStoredFiles } from "../utils/photoStore.js";
+import { recordAudit } from "../utils/audit.js";
+import { applyPlayerFieldPolicy, resolvePlayerWriteAccess } from "../middleware/playerAccess.js";
 
 const isTransientDbError = (error) => (
   error?.name === "MongooseError" ||
@@ -28,19 +30,27 @@ export const getPlayers = async (req, res) => {
     const query = {};
 
     if (search) {
-      query.$or = [
-        { name: { $regex: search, $options: "i" } },
-        { role: { $regex: search, $options: "i" } },
-        { organization: { $regex: search, $options: "i" } }
-      ];
+      // Escape the term: an unescaped user-supplied regex is a ReDoS vector
+      // and lets a caller inject alternations that match everything.
+      const term = String(search).trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      if (term) {
+        query.$or = [
+          { name: { $regex: term, $options: "i" } },
+          { role: { $regex: term, $options: "i" } },
+          { organization: { $regex: term, $options: "i" } }
+        ];
+      }
     }
     if (team) query.team = team;
-    if (campus) query.campus = { $regex: campus, $options: "i" };
+    // The Admin app sends `campus`; the old filter read it but wrote the regex
+    // unescaped, and `subCategory`/`organization`/`city` had the same problem.
+    const like = (value) => ({ $regex: String(value).trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), $options: "i" });
+    if (campus) query.campus = like(campus);
     if (category) query.category = category;
-    if (subCategory) query.subCategory = { $regex: subCategory, $options: "i" };
+    if (subCategory) query.subCategory = like(subCategory);
     if (ageGroup) query.ageGroup = ageGroup;
-    if (organization) query.organization = { $regex: organization, $options: "i" };
-    if (city) query["address.city"] = { $regex: city, $options: "i" };
+    if (organization) query.organization = like(organization);
+    if (city) query["address.city"] = like(city);
 
     const skip = (safePage - 1) * safeLimit;
     const [totalPlayers, players] = await Promise.all([
@@ -72,7 +82,24 @@ export const getPlayer = async (req, res) => {
   try {
     const player = await Player.findById(req.params.id).populate("team", "name");
     if (!player) return res.status(404).json({ message: "Player not found" });
-    res.json(player);
+
+    // The profile is public, so the response is the same for everybody â€” with
+    // the creator's own email and the hidden-field privacy applied first. This
+    // is a read path, so an unprivileged caller must not learn who owns it.
+    const privacy = player.privacy || {};
+    const body = player.toObject();
+    delete body.createdBy;
+    if (privacy.contactInfo === "hidden") {
+      for (const field of ["email", "phone", "contact"]) delete body[field];
+    }
+    if (privacy.socialLinks === "hidden") {
+      for (const key of Object.keys(body.socialLinks || {})) body.socialLinks[key] = "";
+    }
+    if (privacy.location === "hidden") {
+      body.address = { ...(body.address || {}), town: "", district: "", city: "", province: "" };
+    }
+
+    res.json(body);
   } catch (err) {
     res.status(500).json({ message: "Error fetching player" });
   }
@@ -119,7 +146,10 @@ export const getPlayerMatches = async (req, res) => {
 export const createPlayer = async (req, res) => {
   try {
     normalizeEmptyOptionalIds(req.body);
-    const player = await Player.create(req.body);
+    // createdBy is the whole basis of "you can edit this later". It is set from
+    // the session, never from the body, so a caller cannot claim authorship of
+    // somebody else's profile.
+    const player = await Player.create({ ...req.body, createdBy: req.user._id });
     const populated = await Player.findById(player._id).populate("team", "name");
 
     // If a team was assigned, add this player to the team's players array
@@ -130,11 +160,32 @@ export const createPlayer = async (req, res) => {
       );
     }
 
-    getIO()?.emit("players:updated");
+    await recordAudit({
+      req,
+      action: "player.created",
+      targetType: "player",
+      targetId: populated._id,
+      targetLabel: populated.name,
+    });
+
+    emitToAll("players:updated");
     res.status(201).json(populated);
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "Error creating player" });
+  }
+};
+
+/** Profiles this account created â€” the self-service list on the User site. */
+export const getMyPlayers = async (req, res) => {
+  try {
+    const players = await Player.find({ createdBy: req.user._id })
+      .populate("team", "name shortName logo")
+      .sort({ createdAt: -1 })
+      .lean();
+    res.status(200).json({ items: players, total: players.length });
+  } catch (err) {
+    res.status(500).json({ message: "Failed to load your players" });
   }
 };
 
@@ -143,19 +194,28 @@ export const updatePlayer = async (req, res) => {
     const existing = await Player.findById(req.params.id);
     if (!existing) return res.status(404).json({ message: "Player not found" });
 
+    const access = await resolvePlayerWriteAccess(req, existing);
+    if (!access.allowed) {
+      return res.status(403).json({
+        message: access.reason,
+        code: "PLAYER_WRITE_FORBIDDEN",
+      });
+    }
+
     normalizeEmptyOptionalIds(req.body);
+    const { payload, stripped } = applyPlayerFieldPolicy(req.body, access);
     const oldTeamId = existing.team?.toString();
-    const newTeamId = req.body.team?.toString();
+    const newTeamId = payload.team?.toString();
     const oldImageUrl = existing.imageUrl;
 
     const player = await Player.findByIdAndUpdate(
       req.params.id,
-      req.body,
+      payload,
       { new: true }
     ).populate("team", "name");
 
     // Remove the previous portrait once it is replaced or cleared.
-    if (oldImageUrl && req.body.imageUrl !== undefined && oldImageUrl !== req.body.imageUrl) {
+    if (oldImageUrl && payload.imageUrl !== undefined && oldImageUrl !== payload.imageUrl) {
       await deleteStoredFile(oldImageUrl).catch(() => {});
     }
 
@@ -177,8 +237,18 @@ export const updatePlayer = async (req, res) => {
       }
     }
 
-    getIO()?.emit("players:updated");
-    res.json(player);
+    await recordAudit({
+      req,
+      organization: access.organization,
+      action: "player.updated",
+      targetType: "player",
+      targetId: player._id,
+      targetLabel: player.name,
+      metadata: { via: access.via, fields: Object.keys(payload), stripped },
+    });
+
+    emitToAll("players:updated");
+    res.json(stripped.length ? { ...player.toObject(), ignoredFields: stripped } : player);
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "Error updating player" });
@@ -188,17 +258,38 @@ export const updatePlayer = async (req, res) => {
 export const deletePlayer = async (req, res) => {
   try {
     const player = await Player.findById(req.params.id);
-    if (player?.team) {
+    if (!player) return res.status(404).json({ message: "Player not found" });
+
+    const access = await resolvePlayerWriteAccess(req, player);
+    if (!access.allowed) {
+      return res.status(403).json({
+        message: access.reason,
+        code: "PLAYER_WRITE_FORBIDDEN",
+      });
+    }
+
+    if (player.team) {
       await Team.findByIdAndUpdate(
         player.team,
         { $pull: { players: player._id } }
       );
     }
     await Player.findByIdAndDelete(req.params.id);
-    if (player?.imageUrl) {
+    if (player.imageUrl) {
       await deleteStoredFile(player.imageUrl).catch(() => {});
     }
-    getIO()?.emit("players:updated");
+
+    await recordAudit({
+      req,
+      organization: access.organization,
+      action: "player.deleted",
+      targetType: "player",
+      targetId: player._id,
+      targetLabel: player.name,
+      metadata: { via: access.via },
+    });
+
+    emitToAll("players:updated");
     res.json({ message: "Deleted" });
   } catch (err) {
     console.error(err);
@@ -239,7 +330,7 @@ export const bulkDeletePlayers = async (req, res) => {
       await deleteStoredFiles(removedImageUrls).catch(() => {});
     }
 
-    getIO()?.emit("players:updated");
+    emitToAll("players:updated");
     res.json({
       message: "Players deleted successfully",
       deletedCount: result.deletedCount
@@ -322,7 +413,7 @@ export const getHeadToHead = async (req, res) => {
       dismissals,
       dismissalTypes: [...new Set(dismissalTypes)],
       strikeRate: ballsFaced > 0 ? ((runsScored / ballsFaced) * 100).toFixed(1) : "0.0",
-      average: dismissals > 0 ? (runsScored / dismissals).toFixed(2) : "—",
+      average: dismissals > 0 ? (runsScored / dismissals).toFixed(2) : "â€”",
       matchesPlayed: matches.length,
     });
   } catch (err) {

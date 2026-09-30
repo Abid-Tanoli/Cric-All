@@ -79,11 +79,35 @@ Both bugs are now fixed; the suite runs **90 tests / 90 pass / 0 fail / 0 skippe
 | Finding | Disposition |
 |---|---|
 | `googleAdminLogin` accepts `role: "scorer"` as an admin-path role. | Accepted for Phase 1 (login still requires the account to already hold that role); revisit in Phase 9 (scoring) / Phase 11 (security). |
-| `POST /players` create route lacks the admin guard applied to other player routes. | Noted, not modified — Phase 5 (players). |
+| `POST /players` create route lacks the admin guard applied to other player routes. | **Resolved in Phase 5** — see §7. |
 | Auth rate limits are per-IP, fixed-window constants in `routes/authRoutes.js` (not per-account). | Documented; per-account throttling belongs to Phase 11. |
 | Login invalid-credentials stays 400, not 401. | Intentional compatibility decision (W1). |
 | `tokenVersion` defaults to 0 for existing JWTs so nothing is logged out on deploy. | Intentional. |
 | Existing users grandfathered as `emailVerified: true` by migration (dry-run default). | Owner action: provide SMTP creds or keep `MAIL_DRIVER=console`. |
+
+---
+
+## 7. Audit findings closed by later phases
+
+Kept here so the audit stays a record of what was true when it was written,
+rather than a document that quietly stops matching the code.
+
+| Audit finding | Closed in | How |
+|---|---|---|
+| `POST /players` was reachable by unauthenticated callers and accepted arbitrary keys (not `.strict()`), so anybody could write a profile *and* smuggle a `stats` block. | Phase 5 | Route is `protect + requireVerifiedEmail`; `createPlayerSchema` is strict and has no `stats` key. `PUT /players/:id` is validated and per-player authorized (`middleware/playerAccess.js`). |
+| Player updates were mass assignment (`findByIdAndUpdate(req.params.id, req.body)`) with no field policy. | Phase 5 | Allowlist schemas plus `applyPlayerFieldPolicy`, which strips `stats`, `team` and seed provenance for everyone below platform admin and reports the ignored keys. |
+| Squad membership was editable through a profile edit. | Phase 5 | `team` is stripped from every non-admin profile write; the only entry point is `POST/DELETE /organizations/:id/teams/:teamId/players`. |
+| A profile's owner was unrecorded, so "my players" was impossible and nobody could tell who may edit what. | Phase 5 | `Player.createdBy` is stamped from the session (never the body) and indexed; `GET /players/mine` and `/my-players` read it. |
+| The public `GET /players/:id` returned `createdBy` to every caller. | Phase 5 | The owner id is removed from the read payload, along with the fields the profile's own `privacy` block marks hidden. |
+| Player list filters built `$regex` from raw user input. | Phase 5 | Search terms are escaped, so a filter can no longer inject alternations or a pathological pattern. |
+| `getIO()` throws when Socket.IO has not started, and was called *before* the response in every player write — so any write outside the long-running server process 500'd. | Phase 5 | `emitToAll()` in `src/socket/socket.js` is a no-op without an emitter; the player controller uses it. The `getIO()?.emit(...)` pattern elsewhere in the codebase has the same latent defect and is not yet swept. |
+| The Admin player filter sent `?Campus=` while the API read `?campus=`, so the filter silently did nothing. | Phase 5 | Corrected and URL-encoded in `playersSlice.js`. |
+| Matches and events belonged to no organization, so an organization could not manage its own fixtures; only the platform Admin app could. | Phase 6 | `Match.organizationRef` and `Match.event` added (indexed); org-scoped match/event CRUD, squad selection and auditing behind `create_match`. |
+| Nothing stopped an organization from declaring a match result. | Phase 6 | Self-service status is restricted to `upcoming`/`abandoned`; no org endpoint writes `innings` or `result`, and a fixture with a recorded score cannot be re-teamed or deleted. |
+| `orgTeams` returned raw player ObjectIds, so no self-service UI could name a squad. | Phase 6 | The team list now carries a `roster` of `{_id, name, playingRole, imageUrl}`, resolved in one extra query. |
+
+Scoring remains intentionally untouched: `score_match` and every ball-by-ball
+route are still platform-admin only and belong to Phase 9.
 
 ---
 

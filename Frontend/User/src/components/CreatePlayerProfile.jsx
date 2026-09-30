@@ -1,14 +1,19 @@
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
+import { Link } from "react-router-dom";
 import { api } from "../services/api";
+import { AGE_GROUPS, BATTING_STYLES, BOWLING_STYLES, PLAYER_CATEGORIES, PLAYING_ROLES } from "../lib/playerFields";
 
+// The quick "enlist" modal. It posts to the same self-service endpoint as
+// /my-players and, like it, has no team picker: squad membership is granted by a
+// manager of that team. Sending `team` here would now be rejected by the server
+// with a 400, and before Phase 5 it silently let any signed-in user drop a
+// player into an arbitrary squad.
 export default function CreatePlayerProfile({ onSuccess, onCancel }) {
-  const [teams, setTeams] = useState([]);
   const [form, setForm] = useState({
     name: "",
     playingRole: "",
     battingStyle: "",
     bowlingStyle: "",
-    team: "",
     imageUrl: "",
     category: "Other",
     subCategory: "",
@@ -22,12 +27,6 @@ export default function CreatePlayerProfile({ onSuccess, onCancel }) {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState(null);
   const [success, setSuccess] = useState(false);
-
-  useEffect(() => {
-    api.get("/teams", { timeout: 8000 })
-      .then(res => setTeams(Array.isArray(res.data) ? res.data : []))
-      .catch(() => {});
-  }, []);
 
   const set = (field) => (e) => setForm(prev => ({ ...prev, [field]: e.target.value }));
 
@@ -48,7 +47,14 @@ export default function CreatePlayerProfile({ onSuccess, onCancel }) {
       delete payload["address.district"];
       delete payload["address.city"];
       delete payload["address.province"];
-      if (!payload.team) delete payload.team;
+      // Drop the empty selects rather than sending "" for an optional enum.
+      for (const key of ["playingRole", "battingStyle", "bowlingStyle", "subCategory", "imageUrl", "organization"]) {
+        if (!payload[key]) delete payload[key];
+      }
+      for (const key of Object.keys(payload.address)) {
+        if (!payload.address[key]) delete payload.address[key];
+      }
+      if (!Object.keys(payload.address).length) delete payload.address;
       await api.post("/players", payload);
       setSuccess(true);
       setTimeout(() => onSuccess?.(), 1500);
@@ -83,12 +89,7 @@ export default function CreatePlayerProfile({ onSuccess, onCancel }) {
             <label className="block text-[9px] font-black uppercase tracking-widest text-cric-muted mb-2">Playing Role</label>
             <select value={form.playingRole} onChange={set("playingRole")} className="w-full p-3 bg-cric-bg border border-cric-border rounded-xl focus:ring-2 focus:ring-cric-accent outline-none font-bold text-cric-text">
               <option value="">Select Role</option>
-              <option value="Batsman">Batsman</option>
-              <option value="Bowler">Bowler</option>
-              <option value="All-Rounder">All-Rounder</option>
-              <option value="Batting-All-Rounder">Batting-All-Rounder</option>
-              <option value="Bowling-All-Rounder">Bowling-All-Rounder</option>
-              <option value="Wicket-Keeper">Wicket-Keeper</option>
+              {PLAYING_ROLES.map(r => <option key={r} value={r}>{r}</option>)}
             </select>
           </div>
 
@@ -96,8 +97,7 @@ export default function CreatePlayerProfile({ onSuccess, onCancel }) {
             <label className="block text-[9px] font-black uppercase tracking-widest text-cric-muted mb-2">Batting Style</label>
             <select value={form.battingStyle} onChange={set("battingStyle")} className="w-full p-3 bg-cric-bg border border-cric-border rounded-xl focus:ring-2 focus:ring-cric-accent outline-none font-bold text-cric-text">
               <option value="">Select Style</option>
-              <option value="Right-handed">Right-handed</option>
-              <option value="Left-handed">Left-handed</option>
+              {BATTING_STYLES.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
           </div>
 
@@ -105,23 +105,19 @@ export default function CreatePlayerProfile({ onSuccess, onCancel }) {
             <label className="block text-[9px] font-black uppercase tracking-widest text-cric-muted mb-2">Bowling Style</label>
             <select value={form.bowlingStyle} onChange={set("bowlingStyle")} className="w-full p-3 bg-cric-bg border border-cric-border rounded-xl focus:ring-2 focus:ring-cric-accent outline-none font-bold text-cric-text">
               <option value="">Select Style</option>
-              <option value="Right-arm Fast">Right-arm Fast</option>
-              <option value="Right-arm Fast-Medium">Right-arm Fast-Medium</option>
-              <option value="Right-arm Medium">Right-arm Medium</option>
-              <option value="Right-arm Off-break">Right-arm Off-break</option>
-              <option value="Right-arm Leg-break">Right-arm Leg-break</option>
-              <option value="Left-arm Fast">Left-arm Fast</option>
-              <option value="Left-arm Orthodox">Left-arm Orthodox</option>
-              <option value="Not Applicable">Not Applicable</option>
+              {BOWLING_STYLES.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
           </div>
 
-          <div>
-            <label className="block text-[9px] font-black uppercase tracking-widest text-cric-muted mb-2">Team Assignment</label>
-            <select value={form.team} onChange={set("team")} className="w-full p-3 bg-cric-bg border border-cric-border rounded-xl focus:ring-2 focus:ring-cric-accent outline-none font-bold text-cric-text">
-              <option value="">Agent (No Team)</option>
-              {teams.map(t => <option key={t._id} value={t._id}>{t.name}</option>)}
-            </select>
+          <div className="rounded-xl border border-cric-border bg-cric-bg px-4 py-3">
+            <p className="text-[10px] font-black uppercase tracking-widest text-cric-muted">Team assignment comes later</p>
+            <p className="mt-1 text-xs font-semibold text-cric-muted">
+              A new profile starts as a free agent. A manager of the team you want to play for adds
+              you to the squad, so rosters stay with the people who actually run them.{" "}
+              <Link to="/my-players" className="font-black text-cric-accent underline">
+                Manage your profiles
+              </Link>
+            </p>
           </div>
 
           <div>
@@ -132,11 +128,11 @@ export default function CreatePlayerProfile({ onSuccess, onCancel }) {
           <div className="bg-cric-bg p-4 rounded-xl border border-cric-border space-y-3">
             <label className="block text-[9px] font-black uppercase tracking-widest text-cric-muted mb-1">Categorization</label>
             <select value={form.category} onChange={set("category")} className="w-full p-2 bg-cric-card border border-cric-border rounded-lg text-xs font-bold text-cric-text">
-              {["School", "College", "University", "Organization", "Business", "Industry", "Club", "International", "Other"].map(c => <option key={c} value={c}>{c}</option>)}
+              {PLAYER_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
             <input value={form.subCategory} onChange={set("subCategory")} placeholder="Sub-Category (e.g. CS, Eng)" className="w-full p-2 bg-cric-card border border-cric-border rounded-lg text-xs font-bold text-cric-text" />
             <select value={form.ageGroup} onChange={set("ageGroup")} className="w-full p-2 bg-cric-card border border-cric-border rounded-lg text-xs font-bold text-cric-text">
-              {["U-10", "U-13", "U-15", "U-17", "U-19", "Open"].map(a => <option key={a} value={a}>{a}</option>)}
+              {AGE_GROUPS.map(a => <option key={a} value={a}>{a}</option>)}
             </select>
             <input value={form.organization} onChange={set("organization")} placeholder="Institution Name" className="w-full p-2 bg-cric-card border border-cric-border rounded-lg text-xs font-bold text-cric-text" />
           </div>

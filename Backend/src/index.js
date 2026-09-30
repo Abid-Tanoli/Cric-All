@@ -28,6 +28,7 @@ import internationalRoutes from "./routes/international.js";
 // New team categorization routes
 import teamCategoryRoutes from "./routes/teamCategoryRoutes.js";
 import organizationRoutes from "./routes/organizationRoutes.js";
+import invitationRoutes from "./routes/invitationRoutes.js";
 import rankingRoutes from "./routes/rankingRoutes.js";
 import syncRoutes from "./routes/syncRoutes.js";
 import settingsRoutes from "./routes/settingsRoutes.js";
@@ -185,6 +186,8 @@ app.use("/api/intl", internationalRoutes);
 // New team categorization routes
 app.use("/api/team-categories", teamCategoryRoutes);
 app.use("/api/organizations", organizationRoutes);
+// Personal invitation inbox (accept/reject an org invitation addressed to me).
+app.use("/api/invitations", invitationRoutes);
 app.use("/api/rankings-v2", rankingRoutes);
 
 // Optional external sync routes.

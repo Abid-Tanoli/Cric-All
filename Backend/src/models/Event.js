@@ -47,6 +47,11 @@ const eventSchema = new mongoose.Schema({
   // Before this field type change it was a flat free-text string — legacy events
   // must be backfilled manually (see task summary).
   organization: { type: mongoose.Schema.Types.ObjectId, ref: "TeamOrganization", default: null },
+  // Phase 6: when an event is created by the organization itself rather than
+  // approved for it, the member who created it. `managedBy` alone was not
+  // enough — it records the platform-admin approval path, so a self-service
+  // event had no trace of who put it there.
+  createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
   
   // Detailed Address
   address: {
@@ -132,5 +137,7 @@ eventSchema.pre('save', async function () {
 eventSchema.index({ eventType: 1, status: 1 });
 eventSchema.index({ teams: 1 });
 eventSchema.index({ managedBy: 1 });
+// The organization dashboard lists its own events by this key.
+eventSchema.index({ organization: 1, startDate: -1 });
 
 export default mongoose.model("Event", eventSchema);

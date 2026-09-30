@@ -110,6 +110,22 @@ export const getIO = () => {
   return io;
 };
 
+/**
+ * Fire-and-forget broadcast to every connected client.
+ *
+ * `getIO()` throwing when Socket.IO has not started is right for code that truly
+ * needs the server, and wrong for a notification: a background job, a migration,
+ * a seeder, or a test has no emitter attached and must not fail the *write* that
+ * happened to trigger the notification. The `getIO()?.emit(...)` pattern that
+ * grew up around the emitters never actually guarded anything — the call itself
+ * throws before `?.` can short-circuit — so it turned every uninitialised emit
+ * into a 500. Use this instead.
+ */
+export const emitToAll = (event, payload) => {
+  if (!io) return;
+  io.emit(event, payload);
+};
+
 // ─── SCORING EVENTS ────────────────────────────────────────────────
 
 export function emitBallRecorded(matchId, data) {

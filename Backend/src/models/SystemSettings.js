@@ -11,6 +11,26 @@ const systemSettingsSchema = new mongoose.Schema(
 const SystemSettings = mongoose.model("SystemSettings", systemSettingsSchema);
 
 export const EXTERNAL_API_KEY = "externalApi";
+export const PLATFORM_KEY = "platform";
+
+// Product rule (Phase 2 spec): organizations self-serve by default. Admin
+// approval is opt-in, because making it mandatory would put the platform Admin
+// app back on the critical path for routine club operations.
+export const DEFAULT_PLATFORM_SETTINGS = Object.freeze({
+  // When true a newly created organization starts at verificationStatus
+  // "pending" instead of "unverified" and the platform can approve it.
+  requireOrgApproval: false,
+  // When true new sign-ups with an organization intent must wait for approval
+  // before they can create teams/matches.
+  requireMemberApproval: false,
+});
+
+const envDefaultPlatformSettings = () => ({
+  requireOrgApproval:
+    String(process.env.REQUIRE_ORG_APPROVAL ?? "false").toLowerCase() === "true",
+  requireMemberApproval:
+    String(process.env.REQUIRE_MEMBER_APPROVAL ?? "false").toLowerCase() === "true",
+});
 
 const envDefaultExternalApi = () => ({
   syncEnabled:
@@ -35,6 +55,27 @@ export async function setExternalApiSettings(patch = {}) {
   const next = { ...current, ...patch };
   await SystemSettings.findOneAndUpdate(
     { key: EXTERNAL_API_KEY },
+    { $set: { value: next } },
+    { upsert: true, new: true }
+  );
+  return next;
+}
+
+export async function getPlatformSettings() {
+  const doc = await SystemSettings.findOne({ key: PLATFORM_KEY });
+  if (doc) return { ...DEFAULT_PLATFORM_SETTINGS, ...doc.value };
+  const created = await SystemSettings.create({
+    key: PLATFORM_KEY,
+    value: envDefaultPlatformSettings(),
+  });
+  return { ...DEFAULT_PLATFORM_SETTINGS, ...created.value };
+}
+
+export async function setPlatformSettings(patch = {}) {
+  const current = await getPlatformSettings();
+  const next = { ...current, ...patch };
+  await SystemSettings.findOneAndUpdate(
+    { key: PLATFORM_KEY },
     { $set: { value: next } },
     { upsert: true, new: true }
   );

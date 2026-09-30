@@ -16,6 +16,10 @@
     "db:backfill-event-org": "node src/scripts/backfillEventOrganization.js",
     "db:migrate-user-verification": "node src/scripts/migrateUserEmailVerification.js",
     "db:migrate-user-verification:apply": "node src/scripts/migrateUserEmailVerification.js --apply",
+    "db:set-org-owner": "node src/scripts/setOrgOwner.js",
+    "db:migrate-org-memberships": "node src/scripts/migrateOrgMemberships.js",
+    "db:migrate-org-memberships:apply": "node src/scripts/migrateOrgMemberships.js --apply",
+    "org:audit": "node src/scripts/auditOrgOwnership.js",
     "admin:create": "node src/scripts/createAdmin.js",
     "test": "node --test test/*.test.js",
     "test:smoke": "node scripts/api-smoke-test.cjs"

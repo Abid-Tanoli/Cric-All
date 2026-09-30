@@ -122,11 +122,18 @@ gallery: [{
     isSeed: { type: Boolean, default: false },
     seedSource: { type: String, default: "" },
     seedVersion: { type: String, default: "" },
+
+    // Phase 5: who created this profile. Any verified account may create one
+    // (a player profile is a public claim about a person, not privileged data),
+    // but the creator is recorded so they can keep editing it afterwards, and so
+    // "my players" is answerable without a second collection.
+    createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
   },
   { timestamps: true }
 );
 
 playerSchema.index({ team: 1 });
+playerSchema.index({ createdBy: 1 });
 playerSchema.index({ category: 1 });
 playerSchema.index({ "address.town": 1 });
 playerSchema.index({ "address.district": 1 });

@@ -23,6 +23,9 @@ const teamSchema = new mongoose.Schema(
       ref: "TeamCategory",
     },
     subCategory: { type: String, default: "" },
+    // Free-text profile blurb. Additive in Phase 4 so organization-owned teams
+    // can introduce themselves without reusing `fullAddress`.
+    description: { type: String, default: "", trim: true },
     ageGroup: { 
       type: String, 
       enum: ["U-10", "U-13", "U-15", "U-17", "U-19", "Open"],

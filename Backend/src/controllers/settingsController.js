@@ -1,7 +1,10 @@
 import {
   getExternalApiSettings,
   setExternalApiSettings,
+  getPlatformSettings,
+  setPlatformSettings,
 } from "../models/SystemSettings.js";
+import { recordAudit } from "../utils/audit.js";
 import cricketPolling from "../services/cricketPolling.js";
 import { startPoller, stopPoller, isPollerRunning } from "../services/internationalPoller.js";
 import { startSyncScheduler, stopSyncScheduler } from "../services/syncScheduler.js";
@@ -85,6 +88,47 @@ export const updateExternalApiSettingsHandler = async (req, res) => {
     // Apply the change immediately without waiting for the next reconcile tick.
     await evaluateExternalSync();
 
+    res.json({ success: true, data: settings });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// Platform product switches. `requireOrgApproval` is the one that matters
+// most: it is off by default so organizations never wait on the Admin app for
+// routine operations, and the platform can turn it on without a deploy.
+export const getPlatformSettingsHandler = async (req, res) => {
+  try {
+    const settings = await getPlatformSettings();
+    res.json({ success: true, data: settings });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+export const updatePlatformSettingsHandler = async (req, res) => {
+  try {
+    const patch = {};
+    if (typeof req.body?.requireOrgApproval === "boolean") {
+      patch.requireOrgApproval = req.body.requireOrgApproval;
+    }
+    if (typeof req.body?.requireMemberApproval === "boolean") {
+      patch.requireMemberApproval = req.body.requireMemberApproval;
+    }
+    if (Object.keys(patch).length === 0) {
+      return res.status(400).json({
+        message: "Nothing to update. Send requireOrgApproval and/or requireMemberApproval.",
+        code: "NO_SETTINGS_PROVIDED",
+      });
+    }
+    const settings = await setPlatformSettings(patch);
+    await recordAudit({
+      req,
+      action: "platform.settings_updated",
+      targetType: "settings",
+      targetId: "platform",
+      metadata: patch,
+    });
     res.json({ success: true, data: settings });
   } catch (err) {
     res.status(500).json({ message: err.message });

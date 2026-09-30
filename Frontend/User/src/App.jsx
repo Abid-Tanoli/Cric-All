@@ -41,6 +41,10 @@ const VerifyEmail = lazy(() => import("./pages/auth/VerifyEmail"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 const PlayerComparison = lazy(() => import("./pages/PlayerComparison"));
 const HandlerDashboard = lazy(() => import("./pages/HandlerDashboard"));
+const MyOrganization = lazy(() => import("./pages/MyOrganization"));
+const MyPlayers = lazy(() => import("./pages/MyPlayers"));
+const CreateOrganization = lazy(() => import("./pages/organization/CreateOrganization"));
+const InvitationAccept = lazy(() => import("./pages/organization/InvitationAccept"));
 
 // Single shared layout header. Previously the Header was rendered separately
 // on each page, which left several routes (News, Videos, Highlights, Match,
@@ -96,6 +100,7 @@ function App() {
           <Route path="/matches/:matchId" element={<ErrorBoundary><Match /></ErrorBoundary>} />
           <Route path="/summary/:matchId" element={<ErrorBoundary><Summary /></ErrorBoundary>} />
           <Route path="/players" element={<ErrorBoundary><Players /></ErrorBoundary>} />
+          <Route path="/my-players" element={<ErrorBoundary><MyPlayers /></ErrorBoundary>} />
           <Route path="/players/:playerId" element={<ErrorBoundary><PlayerProfile /></ErrorBoundary>} />
           <Route path="/teams" element={<ErrorBoundary><Teams /></ErrorBoundary>} />
           <Route path="/teams/international" element={<ErrorBoundary><InternationalTeams /></ErrorBoundary>} />
@@ -117,6 +122,11 @@ function App() {
           <Route path="/compare" element={<ErrorBoundary><PlayerComparison /></ErrorBoundary>} />
           <Route path="/compare/:player1Id/:player2Id?" element={<ErrorBoundary><PlayerComparison /></ErrorBoundary>} />
           <Route path="/dashboard" element={<ErrorBoundary><HandlerDashboard /></ErrorBoundary>} />
+          {/* The dashboard keeps the selected organization in ?org= rather than the
+              path, so the bare path stays the entry point. */}
+          <Route path="/organization/new" element={<ErrorBoundary><CreateOrganization /></ErrorBoundary>} />
+          <Route path="/organization/invitations/:token" element={<ErrorBoundary><InvitationAccept /></ErrorBoundary>} />
+          <Route path="/organization" element={<ErrorBoundary><MyOrganization /></ErrorBoundary>} />
           <Route path="*" element={<ErrorBoundary><NotFound /></ErrorBoundary>} />
         </Routes>
         </Suspense>

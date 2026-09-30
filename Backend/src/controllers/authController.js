@@ -1,6 +1,9 @@
 import User from "../models/User.js";
 import Player from "../models/Player.js";
+import TeamOrganization from "../models/TeamOrganization.js";
+import TeamCategory from "../models/TeamCategory.js";
 import { generateToken } from "../utils/jwt.js";
+import { generateOrgSlug, upsertMembership } from "../services/membershipService.js";
 import { validatePasswordStrength } from "../utils/password.js";
 import { sendMail } from "../utils/mailer.js";
 import {
@@ -107,6 +110,38 @@ export const registerUser = async (req, res) => {
       });
     }
 
+    // Organization admins get their organization at signup — the historical
+    // dead end was registering with an org name and getting nothing back.
+    // Best-effort: registration still succeeds if this lookup/create fails.
+    let organization = null;
+    if (requestedType === "organization_admin" && organizationName?.trim()) {
+      try {
+        let category = null;
+        if (organizationCategory) {
+          category = await TeamCategory.findOne({
+            name: { $regex: `^${organizationCategory.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, $options: "i" },
+          }).catch(() => null);
+        }
+        organization = await TeamOrganization.create({
+          name: organizationName.trim(),
+          category: category?._id,
+          slug: await generateOrgSlug(organizationName.trim()),
+          owner: newUser._id,
+          createdBy: newUser._id,
+        });
+        // The founding owner is a Membership row, not just a pointer on the
+        // org — that is what the permission layer reads.
+        await upsertMembership({
+          organization: organization._id,
+          user: newUser._id,
+          roles: ["owner"],
+          source: "signup",
+        });
+      } catch (orgErr) {
+        log.warn({ event: "register.org_create_failed", err: orgErr.message }, "signup organization creation failed");
+      }
+    }
+
     // Verification mail is best-effort: registration still succeeds if the
     // mail driver is not configured yet (the link is in the server log).
     const verification = await issueVerificationEmail(newUser, { frontendUrl: userFrontendUrl });
@@ -116,6 +151,14 @@ export const registerUser = async (req, res) => {
     res.status(201).json({
       token,
       user: publicUser(newUser),
+      organization: organization
+        ? {
+            _id: organization._id,
+            name: organization.name,
+            slug: organization.slug,
+            verificationStatus: organization.verificationStatus,
+          }
+        : null,
       requiresEmailVerification: true,
       verificationSent: verification.sent,
       verificationReason: verification.reason,
