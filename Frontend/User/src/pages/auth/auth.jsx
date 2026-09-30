@@ -78,6 +78,23 @@ export function getStoredUser() {
 }
 
 /**
+ * Announce that this account's organization memberships changed.
+ *
+ * The header decides between "My Organizations" and "Create Organization" from
+ * a `hasOrg` flag that is fetched once per signed-in session and keyed on the
+ * user id. Creating an organization — or accepting an invitation, which also
+ * creates a membership — does not change the user id, so that fetch never re-ran
+ * and the header kept offering to create an organization the account already
+ * owned until a hard reload.
+ *
+ * Anything that changes *which organizations this account belongs to* should
+ * dispatch this so the header re-reads it immediately.
+ */
+export function notifyMembershipChanged() {
+  window.dispatchEvent(new CustomEvent('bq-membership-changed'));
+}
+
+/**
  * Subscribe to the cached session instead of re-reading localStorage during
  * render.
  *

@@ -8,7 +8,7 @@ import {
   listOrgEvents,
   rejectInvitationById,
 } from "../services/organizationApi";
-import { useStoredUser } from "./auth/auth";
+import { useStoredUser, notifyMembershipChanged } from "./auth/auth";
 import { PERMISSIONS, can, formatDate, roleLabel } from "../lib/orgUi";
 import { Banner, card, eyebrow, primaryButton, secondaryButton } from "./organization/orgStyles";
 import OrgOverview from "./organization/OrgOverview";
@@ -61,7 +61,15 @@ function InboxRow({ invitation, onDone }) {
         <div className="flex gap-2">
           <button
             type="button"
-            onClick={() => act(() => acceptInvitationById(invitation._id))}
+            onClick={() =>
+              act(async () => {
+                const res = await acceptInvitationById(invitation._id);
+                // Accepting makes this account a member of that organization,
+                // which the header caches per signed-in session.
+                notifyMembershipChanged();
+                return res;
+              })
+            }
             disabled={busy}
             className="rounded-lg bg-amber-600 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-white disabled:opacity-60"
           >

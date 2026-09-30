@@ -14,9 +14,10 @@ import { z } from 'zod';
 //     somebody else's organization, so the key is not merely ignored, it is
 //     rejected outright.
 //   * anything score-related (`status: live|completed`, `result`, `innings`,
-//     `manOfMatch`). Running a match is Phase 9 / platform-admin territory
-//     (`score_match`). An organization may set a fixture up and take it away
-//     again; it may not declare the outcome of one.
+//     `manOfMatch`). An organization may set a fixture up and take it away again
+//     through these routes; declaring the outcome of one is a `score_match`
+//     action, guarded by requireMatchScoreAccess on the match routes rather than
+//     accepted as a body key here.
 
 const objectId = z.string().regex(/^[0-9a-fA-F]{24}$/, 'Must be a valid id');
 

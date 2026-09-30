@@ -44,6 +44,7 @@ const PlayerComparison = lazy(() => import("./pages/PlayerComparison"));
 const HandlerDashboard = lazy(() => import("./pages/HandlerDashboard"));
 const MyOrganization = lazy(() => import("./pages/MyOrganization"));
 const MyPlayers = lazy(() => import("./pages/MyPlayers"));
+const Account = lazy(() => import("./pages/Account"));
 const CreateOrganization = lazy(() => import("./pages/organization/CreateOrganization"));
 const InvitationAccept = lazy(() => import("./pages/organization/InvitationAccept"));
 
@@ -66,8 +67,14 @@ function AppHeader() {
     return () => window.removeEventListener("bq-auth-changed", syncUser);
   }, [location.pathname]);
 
-  // Whether the account actually belongs to an organization. Keyed on the user id
-  // so this is one request per signed-in session rather than one per navigation.
+  // Whether the account actually belongs to an organization. Refetched when the
+  // route changes and whenever a membership event fires, because creating an
+  // organization or accepting an invitation makes this account a member without
+  // changing its user id — keying this on `user._id` alone left the header
+  // offering "Create Organization" to somebody who already owned one, until a
+  // hard reload remounted this component.
+  const [membershipNonce, setMembershipNonce] = React.useState(0);
+
   React.useEffect(() => {
     let cancelled = false;
     if (!user?._id) {
@@ -84,7 +91,17 @@ function AppHeader() {
     return () => {
       cancelled = true;
     };
-  }, [user?._id]);
+  }, [user?._id, location.pathname, membershipNonce]);
+
+  React.useEffect(() => {
+    const bump = () => setMembershipNonce((n) => n + 1);
+    window.addEventListener("bq-membership-changed", bump);
+    window.addEventListener("bq-auth-changed", bump);
+    return () => {
+      window.removeEventListener("bq-membership-changed", bump);
+      window.removeEventListener("bq-auth-changed", bump);
+    };
+  }, []);
 
   const handleLogout = () => {
     clearStoredUser();
@@ -124,6 +141,7 @@ function App() {
           <Route path="/summary/:matchId" element={<ErrorBoundary><Summary /></ErrorBoundary>} />
           <Route path="/players" element={<ErrorBoundary><Players /></ErrorBoundary>} />
           <Route path="/my-players" element={<ErrorBoundary><MyPlayers /></ErrorBoundary>} />
+          <Route path="/account" element={<ErrorBoundary><Account /></ErrorBoundary>} />
           <Route path="/players/:playerId" element={<ErrorBoundary><PlayerProfile /></ErrorBoundary>} />
           <Route path="/teams" element={<ErrorBoundary><Teams /></ErrorBoundary>} />
           <Route path="/teams/international" element={<ErrorBoundary><InternationalTeams /></ErrorBoundary>} />

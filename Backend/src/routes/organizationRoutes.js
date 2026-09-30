@@ -158,10 +158,11 @@ router.put(
 );
 
 // --- matches and events this organization runs (Phase 6) --------------------
-// Reading needs membership; writing needs create_match. Scoring does not appear
-// here at all: `score_match` routes the platform Admin app uses are untouched,
-// so an organization can schedule and call off a fixture but cannot write a ball
-// or a result.
+// Reading needs membership; scheduling needs create_match. Writing a ball or a
+// result needs score_match and is served by the match routes in matchRoutes.js
+// through requireMatchScoreAccess, which resolves the tenant from
+// Match.organizationRef — so an organization can schedule, score and call off
+// its own fixture without going through the platform Admin app.
 const orgScoped = [...manage, validateObjectId('id')];
 const matchRead = [...orgScoped, requireOrgMembership];
 const matchWrite = [...orgScoped, validateObjectId('matchId'), requireOrgPermission(PERMISSIONS.CREATE_MATCH)];

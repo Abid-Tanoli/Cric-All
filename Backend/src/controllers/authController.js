@@ -18,6 +18,8 @@ import {
   issueVerificationEmail,
 } from "../utils/emailVerification.js";
 import logger from "../utils/logger.js";
+import { recordAudit } from "../utils/audit.js";
+import { deleteUserAccount, AccountDeletionError } from "../services/accountDeletionService.js";
 
 const log = logger.child({ service: "auth" });
 
@@ -358,6 +360,44 @@ export const resendVerification = async (req, res) => {
   } catch (err) {
     log.error({ event: "resend-verification.failed", err: err.message }, "resend verification failed");
     res.status(500).json({ message: "Could not resend verification email" });
+  }
+};
+
+export const deleteAccount = async (req, res) => {
+  try {
+    // `protect` also accepts platform Admin tokens. Deleting a user account is
+    // a user-only action, so an Admin token must not fall through to it.
+    if (req.principalType !== "user") {
+      return res.status(403).json({
+        message: "This endpoint deletes a user account, not an admin account.",
+        code: "WRONG_PRINCIPAL",
+      });
+    }
+
+    await deleteUserAccount(req.user.id, { email: req.user.email });
+
+    // Recorded after the delete, so it survives as the durable record that
+    // this account id was removed and why.
+    await recordAudit({
+      req,
+      action: "user.account_deleted",
+      targetType: "user",
+      targetId: req.user.id,
+      targetLabel: req.user.email,
+      metadata: { selfService: true },
+    });
+
+    res.json({ message: "Account deleted" });
+  } catch (err) {
+    if (err instanceof AccountDeletionError) {
+      return res.status(err.status).json({
+        message: err.message,
+        code: err.code,
+        ...(err.organizations ? { organizations: err.organizations } : {}),
+      });
+    }
+    log.error({ event: "account.delete_failed", err: err.message }, "account deletion failed");
+    res.status(500).json({ message: "Could not delete the account" });
   }
 };
 

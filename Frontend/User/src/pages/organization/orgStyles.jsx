@@ -4,6 +4,8 @@
 // seven components of the dashboard cannot drift apart visually, and a design
 // tweak is one edit instead of seven.
 
+import { Children, cloneElement, isValidElement, useId } from "react";
+
 export const card = "rounded-2xl border border-cric-border bg-cric-card p-6 shadow-sm";
 export const cardSubtle = "rounded-xl border border-cric-border bg-cric-bg p-4";
 
@@ -42,12 +44,66 @@ export function Stat({ label: text, value, hint }) {
   );
 }
 
+/**
+ * A labelled form control.
+ *
+ * The label is wired to the control automatically: `useId` supplies a stable
+ * id which is cloned onto a single control child, so `<label htmlFor>` points
+ * at it. An id the caller already set is left alone.
+ *
+ * Why this matters: this component is used ~70 times across the seven dashboard
+ * tabs and the player form, and every one of those fields previously rendered a
+ * <label> with no `for` next to an <input> with no `id`. A screen reader
+ * announced an unlabelled text field for all of them, and getByLabel() could
+ * not find a single field. Fixing it here rather than per-field means a new tab
+ * cannot reintroduce the bug.
+ *
+ * A Field whose child is not a single form control (the role pickers wrap a
+ * group of toggle buttons) is rendered as a labelled group instead, because
+ * `for` has nothing valid to point at there.
+ */
 export function Field({ label: text, children, hint }) {
+  const generatedId = useId();
+  const single = Children.count(children) === 1 ? Children.toArray(children)[0] : null;
+  const isSingleControl =
+    isValidElement(single) && ["input", "select", "textarea"].includes(single.type);
+
+  if (isSingleControl) {
+    // Respect an id the caller already set; only fill in a missing one.
+    const controlId = single.props.id || generatedId;
+    return (
+      <div>
+        <label className={label} htmlFor={controlId}>
+          {text}
+        </label>
+        {cloneElement(single, {
+          id: controlId,
+          "aria-describedby": hint ? `${controlId}-hint` : single.props["aria-describedby"],
+        })}
+        {hint ? (
+          <p id={`${controlId}-hint`} className="mt-1 text-[10px] font-semibold text-cric-muted">
+            {hint}
+          </p>
+        ) : null}
+      </div>
+    );
+  }
+
   return (
-    <div>
-      <label className={label}>{text}</label>
+    <div
+      role="group"
+      aria-labelledby={`${generatedId}-label`}
+      aria-describedby={hint ? `${generatedId}-hint` : undefined}
+    >
+      <span id={`${generatedId}-label`} className={label}>
+        {text}
+      </span>
       {children}
-      {hint ? <p className="mt-1 text-[10px] font-semibold text-cric-muted">{hint}</p> : null}
+      {hint ? (
+        <p id={`${generatedId}-hint`} className="mt-1 text-[10px] font-semibold text-cric-muted">
+          {hint}
+        </p>
+      ) : null}
     </div>
   );
 }

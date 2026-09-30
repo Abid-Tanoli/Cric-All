@@ -7,7 +7,8 @@ import {
   resetPassword,
   verifyEmail,
   resendVerification,
-  getProfile 
+  getProfile,
+  deleteAccount
 } from "../controllers/authController.js";
 import { googleLogin, googleAdminLogin } from "../controllers/googleAuthController.js";
 import { protect } from "../middleware/authMiddleware.js";
@@ -49,5 +50,11 @@ router.post("/google", googleLimit, validate(googleAuthSchema), googleLogin);
 router.post("/google/admin", googleLimit, validate(googleAuthSchema), googleAdminLogin);
 
 router.get("/profile", protect, getProfile);
+
+// Self-service account deletion. Deliberately `protect` only and not
+// `requireVerifiedEmail`: an unverified account that cannot prove its mailbox
+// is exactly the account that most needs a way to be removed, and requiring
+// verification here would leave those people permanently stuck.
+router.delete("/account", protect, deleteAccount);
 
 export default router;

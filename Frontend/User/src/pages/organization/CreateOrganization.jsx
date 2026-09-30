@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { createOrganization, listMyOrganizations, listOrganizationTypes } from "../../services/organizationApi";
-import { getStoredUser } from "../auth/auth";
+import { getStoredUser, notifyMembershipChanged } from "../auth/auth";
 import { Banner, Field, card, eyebrow, input, primaryButton, secondaryButton } from "./orgStyles";
 
 const emptyForm = {
@@ -83,6 +83,9 @@ export default function CreateOrganization() {
       if (parent) payload.parent = parent;
 
       const res = await createOrganization(payload);
+      // This account now belongs to an organization. The header caches that
+      // fact per signed-in session, so it has to be told before we navigate.
+      notifyMembershipChanged();
       navigate(`/organization?org=${res.organization._id}`);
     } catch (error) {
       setErr(error.message || "Could not create the organization");

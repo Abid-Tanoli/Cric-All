@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { acceptInvitation, previewInvitation, rejectInvitation } from "../../services/organizationApi";
 import { formatDate, roleLabel } from "../../lib/orgUi";
-import { useStoredUser } from "../auth/auth";
+import { useStoredUser, notifyMembershipChanged } from "../auth/auth";
 import { Banner, card, eyebrow, primaryButton, secondaryButton } from "./orgStyles";
 
 export default function InvitationAccept() {
@@ -43,6 +43,9 @@ export default function InvitationAccept() {
     try {
       const res = await acceptInvitation(token);
       setNotice(res.message);
+      // Accepting makes this account a member, which the header caches per
+      // signed-in session — tell it before the redirect so the nav is right.
+      notifyMembershipChanged();
       setTimeout(() => navigate(`/organization?org=${res.organization?._id || ""}`), 1200);
     } catch (error) {
       setErr(error.message || "Could not accept the invitation");

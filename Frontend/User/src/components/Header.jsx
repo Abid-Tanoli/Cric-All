@@ -40,6 +40,7 @@ export default function Header({ user, hasOrg, onShowLogin, onShowRegister, onLo
   const isDashboardActive = location.pathname === "/dashboard";
   const isOrgActive = location.pathname.startsWith("/organization");
   const isMyPlayersActive = location.pathname === "/my-players";
+  const isAccountActive = location.pathname === "/account";
   const needsVerification = Boolean(user && user.emailVerified === false);
   // "My Organizations" only means something once the account belongs to one. An
   // account with no organization still needs a way to create its first one, so it
@@ -140,6 +141,17 @@ export default function Header({ user, hasOrg, onShowLogin, onShowRegister, onLo
                 <div className="text-xs font-black text-cric-text uppercase tracking-tight">{user.name}</div>
                 <div className="text-[9px] text-cric-muted font-bold uppercase tracking-widest">{user.role || 'user'}</div>
               </div>
+              <Link
+                to="/account"
+                onClick={closeMobile}
+                className={`shrink-0 text-[10px] font-black uppercase tracking-widest transition-all px-4 py-2 rounded-lg min-h-[44px] flex items-center ${
+                  isAccountActive
+                    ? "text-white bg-cric-accent shadow-md"
+                    : "text-cric-muted hover:text-cric-text hover:bg-black/5 dark:hover:bg-white/5"
+                }`}
+              >
+                Account
+              </Link>
               <button
                 onClick={onLogout}
                 className="px-4 py-2 bg-cric-accent hover:bg-orange-600 text-white text-[10px] font-black uppercase tracking-widest rounded-lg transition-all shadow-lg min-h-[44px]"
@@ -226,6 +238,17 @@ export default function Header({ user, hasOrg, onShowLogin, onShowRegister, onLo
                     }`}
                   >
                     My Players
+                  </Link>
+                  <Link
+                    to="/account"
+                    onClick={closeMobile}
+                    className={`w-full block text-center px-4 py-3 text-xs font-black uppercase tracking-widest rounded-xl transition-all min-h-[44px] ${
+                      isAccountActive
+                        ? "bg-cric-accent text-white"
+                        : "border border-cric-border text-cric-muted hover:text-cric-text"
+                    }`}
+                  >
+                    Account
                   </Link>
                   <Link
                     to={orgLink.to}
