@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import ThemeToggle from "./ThemeToggle";
 import { resendVerification } from "../pages/auth/auth";
 
-export default function Header({ user, onShowLogin, onShowRegister, onLogout }) {
+export default function Header({ user, hasOrg, onShowLogin, onShowRegister, onLogout }) {
   const location = useLocation();
   const navigate = useNavigate();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -35,11 +35,18 @@ export default function Header({ user, onShowLogin, onShowRegister, onLogout }) 
   const isHandler = Boolean(user && (user.accountType === "handler" || user.accountType === "organization_admin"));
   // Membership, not account type, decides organization access. A user who was
   // invited as a coach or player owns no admin flag but still has an
-  // organization to manage, so everyone signed in gets the link.
+  // organization to manage, so membership is resolved by the caller rather than
+  // inferred from the account type here.
   const isDashboardActive = location.pathname === "/dashboard";
   const isOrgActive = location.pathname.startsWith("/organization");
   const isMyPlayersActive = location.pathname === "/my-players";
   const needsVerification = Boolean(user && user.emailVerified === false);
+  // "My Organizations" only means something once the account belongs to one. An
+  // account with no organization still needs a way to create its first one, so it
+  // gets a labelled entry point instead of an empty dashboard link.
+  const orgLink = hasOrg
+    ? { to: "/organization", label: "My Organizations" }
+    : { to: "/organization/new", label: "Create Organization" };
 
   const handleResend = async () => {
     setResendState("Sending...");
@@ -120,14 +127,14 @@ export default function Header({ user, onShowLogin, onShowRegister, onLogout }) 
                 My Players
               </Link>
               <Link
-                to="/organization"
+                to={orgLink.to}
                 className={`shrink-0 text-[10px] font-black uppercase tracking-widest transition-all px-4 py-2 rounded-lg min-h-[44px] flex items-center ${
                   isOrgActive
                     ? "text-white bg-cric-accent shadow-md"
                     : "text-cric-muted hover:text-cric-text hover:bg-black/5 dark:hover:bg-white/5"
                 }`}
               >
-                My Organizations
+                {orgLink.label}
               </Link>
               <div className="text-right">
                 <div className="text-xs font-black text-cric-text uppercase tracking-tight">{user.name}</div>
@@ -221,7 +228,7 @@ export default function Header({ user, onShowLogin, onShowRegister, onLogout }) 
                     My Players
                   </Link>
                   <Link
-                    to="/organization"
+                    to={orgLink.to}
                     onClick={closeMobile}
                     className={`w-full block text-center px-4 py-3 text-xs font-black uppercase tracking-widest rounded-xl transition-all min-h-[44px] ${
                       isOrgActive
@@ -229,7 +236,7 @@ export default function Header({ user, onShowLogin, onShowRegister, onLogout }) 
                         : "border border-cric-border text-cric-muted hover:text-cric-text"
                     }`}
                   >
-                    My Organizations
+                    {orgLink.label}
                   </Link>
                   <button
                     onClick={() => { onLogout(); closeMobile(); }}

@@ -7,6 +7,7 @@ import OfflineBanner from "./components/OfflineBanner";
 import ErrorBoundary from "../../Shared/components/ErrorBoundary";
 import SocketStatusIndicator from "../../Shared/components/SocketStatusIndicator";
 import { getSocket } from "./services/socket";
+import { listMyOrganizations } from "./services/organizationApi";
 import { getStoredUser, logout as clearStoredUser } from "./pages/auth/auth";
 
 const Home = lazy(() => import("./pages/Home").then(m => ({ default: m.Home })));
@@ -53,6 +54,7 @@ const InvitationAccept = lazy(() => import("./pages/organization/InvitationAccep
 function AppHeader() {
   const location = useLocation();
   const [user, setUser] = useState(() => getStoredUser());
+  const [hasOrg, setHasOrg] = useState(false);
 
   // Re-read the stored session whenever the route changes or an auth event fires
   // (login/register/logout write localStorage only), so the logged-in nav — and the
@@ -64,12 +66,33 @@ function AppHeader() {
     return () => window.removeEventListener("bq-auth-changed", syncUser);
   }, [location.pathname]);
 
+  // Whether the account actually belongs to an organization. Keyed on the user id
+  // so this is one request per signed-in session rather than one per navigation.
+  React.useEffect(() => {
+    let cancelled = false;
+    if (!user?._id) {
+      setHasOrg(false);
+      return undefined;
+    }
+    listMyOrganizations()
+      .then((list) => {
+        if (!cancelled) setHasOrg(Array.isArray(list) && list.length > 0);
+      })
+      .catch(() => {
+        if (!cancelled) setHasOrg(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [user?._id]);
+
   const handleLogout = () => {
     clearStoredUser();
     setUser(null);
+    setHasOrg(false);
   };
 
-  return <Header user={user} onLogout={handleLogout} />;
+  return <Header user={user} hasOrg={hasOrg} onLogout={handleLogout} />;
 }
 
 function App() {
