@@ -22,7 +22,8 @@
     "org:audit": "node src/scripts/auditOrgOwnership.js",
     "admin:create": "node src/scripts/createAdmin.js",
     "test": "node --test test/*.test.js",
-    "test:smoke": "node scripts/api-smoke-test.cjs"
+    "test:smoke": "node scripts/api-smoke-test.cjs",
+    "test:e2e": "node test/e2e/run.mjs"
   },
   "keywords": [],
   "author": "",
