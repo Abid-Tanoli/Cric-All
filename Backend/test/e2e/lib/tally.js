@@ -10,8 +10,8 @@
  *  L2.14  a Wide is one extra; any further runs on a Wide are credited as byes
  *         to the batters, and the batters may have crossed.
  *  L2.17  a No-ball is one extra; runs off the bat are credited to the batter.
- *  L2.19  Byes and leg-byes are extras *run by the fielders* - the batters do
- *         not cross, so an odd number of byes does NOT change the strike.
+ *  L2.19  Byes and leg-byes are extras credited to the batting side; the runs
+ *         are completed by the batters, so an odd completed run changes strike.
  *  L3.13  a batter is out when the wicket is taken down; a run-out is NOT
  *         charged to the bowler.
  *  L2.13  a legal delivery is one that is not a Wide or a No-ball - byes and
@@ -113,14 +113,14 @@ export function createTally({
    *  - legal: the runs
    *  - no-ball: the runs off the bat (the penalty extra was not run)
    *  - wide: the runs beyond the wide itself
-   *  - bye / leg-bye: zero - the fielders ran them, so the batters did not cross
+   *  - bye / leg-bye: completed runs, which can change ends on an odd total
    */
   function crossingRunsFor(type, d) {
     const r = Number(d.runs || 0);
     if (type === "legal") return r;
     if (type === "noBall") return r;
     if (type === "wide") return r; // extraRuns = 1 + r; the batters ran r
-    return 0; // byes / leg-byes
+    return r; // byes / leg-byes are completed by the batters
   }
 
   function teamRunsFor(type, d) {

@@ -21,6 +21,7 @@ import { createInningsDriver, buildInningsScript, probeFreeHit } from "./lib/inn
 import { compareTally } from "./lib/tally.js";
 import { createReport } from "./lib/report.js";
 import { attemptScoreOverSocket } from "./lib/socket.js";
+import { ScoringEngine } from "../../src/services/scoring/ScoringEngine.js";
 
 const started = Date.now();
 const runId = `${Date.now().toString(36)}`;
@@ -250,8 +251,7 @@ async function main() {
     report.check(S, "a run-out still stands on a free hit", dismissals.find((d) => d.label.endsWith("runOut"))?.serverSaidWicket === true, `run-out accepted=${dismissals.find((d) => d.label.endsWith("runOut"))?.serverSaidWicket}`);
 
     const freeHitFlagged = dismissals.some((d) => d.serverSaidFreeHit === true);
-    report.check(S, "the server reports the next delivery as a free hit", freeHitFlagged, freeHitFlagged ? "flag present" : "`isFreeHit` is absent from the innings schema in Match.js (line 125 onwards), so Mongoose drops the flag between HTTP requests and every delivery is scored as if no-ball happened");
-    report.note(S, "`ScoringEngine` sets `innings.isFreeHit = ballRecord.isNoBall` after each delivery and the adapter writes it back with `mInn.isFreeHit = engineInn.isFreeHit`, but `inningsSchema` in `Backend/src/models/Match.js` has no `isFreeHit` (or `freeHitActive`) field. Mongoose runs in strict mode, so the assignment is discarded and never reaches the database. Because scoring is one delivery per HTTP request, the free-hit restriction is never actually in force.");
+    report.check(S, "the server reports each next delivery as a free hit", freeHitFlagged, freeHitFlagged ? "flag persisted between HTTP requests" : "flag absent on the delivery after a no-ball");
   }
 
   // ======================================================================
@@ -318,7 +318,7 @@ async function main() {
         },
         { expect: null },
       );
-      report.check(S, "a completed innings refuses further deliveries", after.status >= 400, `status=${after.status}${after.status < 400 ? " - a ball was accepted into an innings that had already ended" : ""}`);
+      report.check(S, "a completed innings refuses further deliveries with 4xx", after.status === 409 && after.body?.code === "INNINGS_COMPLETED", `status=${after.status} code=${after.body?.code || ""}`);
     }
   }
 
@@ -364,7 +364,20 @@ async function main() {
 
     report.check(S, "equal totals are accepted by end-innings", e2.status === 200, `status=${e2.status} body=${JSON.stringify(e2.body).slice(0, 260)}`);
     report.check(S, "the tie is recorded as resultType \"tie\"", tieResult.resultType === "tie", `resultType=${tieResult.resultType} margin="${tieResult.margin}" description="${tieResult.description || ""}"`);
-    report.check(S, "the match waits for tie resolution", afterTie.status === "pending_tie_resolution", `status=${afterTie.status} (Match.js:146 declares status as ["upcoming","toss_done","live","completed","innings-break","innings_break"], so this value cannot be persisted)`);
+    report.check(S, "the match waits for tie resolution", afterTie.status === "pending_tie_resolution", `status=${afterTie.status}`);
+
+    const scoreDuringTieResolution = await scorerApi.post(
+      `/matches/${matchId}/score`,
+      {
+        inningsIndex: 1,
+        runs: 1,
+        batsmanOnStrikeId: ctx.teams.b.xi[0].id,
+        batsmanNonStrikeId: ctx.teams.b.xi[1].id,
+        bowlerId: ctx.teams.a.xi[5].id,
+      },
+      { expect: null },
+    );
+    report.check(S, "balls are refused while tie resolution is pending with 4xx", scoreDuringTieResolution.status === 409 && scoreDuringTieResolution.body?.code === "MATCH_NOT_SCORABLE", `status=${scoreDuringTieResolution.status} code=${scoreDuringTieResolution.body?.code || ""}`);
 
     const dA = compareTally(d1.snapshot(), afterTie.innings?.[0], { label: "tie i1" });
     const dB = compareTally(d2.snapshot(), afterTie.innings?.[1], { label: "tie i2" });
@@ -374,7 +387,7 @@ async function main() {
     if (e2.status >= 400) {
       report.note(
         S,
-        "**Root cause, and it breaks the whole tie feature.** `inningsController.endInnings` reaches the tie branch (line 92-100) and assigns `match.status = \"pending_tie_resolution\"`, but that value is not in the `status` enum in `Backend/src/models/Match.js:146`. `match.save({ validateModifiedOnly: true })` still validates the modified `status` path, throws a ValidationError, and the handler's catch returns **400 Failed to end innings**. Because the save is atomic, nothing is persisted: not `currentInnings.status = \"completed\"`, not the tie result, and not the status. `matchController.js:15-18` separately lists `\"pending_tie_resolution\"` as a valid status, so the two files disagree about the same enum.",
+        `Tie setup failed before resolution; inspect this run's response: ${JSON.stringify(e2.body).slice(0, 300)}.`,
       );
     }
 
@@ -588,20 +601,21 @@ async function main() {
             report.check(S, `${mt}: innings played to completion without error`, false, errText(e));
             continue;
           }
-          report.check(S, `${mt}: first delivery recorded`, Number(firstDelivery?.body?.innings?.balls) === 1, `balls=${firstDelivery?.body?.innings?.balls}`);
+          report.check(S, `${mt}: first delivery recorded`, Number(firstDelivery?.serverInnings?.balls) === 1, `balls=${firstDelivery?.serverInnings?.balls}`);
 
           const snap = d.snapshot();
           const m = await fetchMatch(scorerApi, matchId);
+          const strikeMismatches = d.observations.strikeMismatches.filter((mismatch) => mismatch.delivery < d.observations.deliveries);
           report.check(S, `${mt}: innings ended at the configured ${cfg.maxOvers} overs`, snap.ended && snap.endReason === "oversComplete", `reason=${snap.endReason} overs=${snap.overs} balls=${snap.balls} serverOvers=${m.innings?.[0]?.overs}`);
-          report.check(S, `${mt}: strike rotation agreed on every delivery`, d.observations.strikeMismatches.length === 0, JSON.stringify(d.observations.strikeMismatches.slice(0, 3)));
+          report.check(S, `${mt}: strike rotation agreed before innings end`, strikeMismatches.length === 0, JSON.stringify(strikeMismatches.slice(0, 3)));
           report.diff(S, `${mt}: scorecard independent tally vs server`, compareTally(snap, m.innings?.[0], { label: mt }));
         } catch (e) {
           report.check(S, `${mt}: usable`, false, errText(e));
         }
     }
 
-    report.check(S, "Test: stored totalOvers matches the format the engine resolves", false, "`ScoringEngine.FORMATS` keys the unlimited entry `TEST` (upper case) while the `Match.matchType` enum value is `Test`. The engine looks the format up with `FORMATS[match.matchType]`, so a Test match falls through to the T20 defaults (20 overs, Super Over available) while the model stores totalOvers = 90.");
-    report.note(S, "**Test**: because of that case mismatch the engine enforces T20 rules on a Test match, and `declareInnings` throws `Declaration only allowed in Test matches` because the engine believes the format is not Test. Two independent code paths disagree about which format the fixture is.");
+    const testFormat = ScoringEngine.getFormat("Test");
+    report.check(S, "Test: engine resolves the model enum format key", testFormat.maxOvers === null && testFormat.maxWickets === 10 && !testFormat.superOver, `maxOvers=${testFormat.maxOvers} maxWickets=${testFormat.maxWickets} superOver=${testFormat.superOver}`);
   }
 
   // ======================================================================

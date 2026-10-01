@@ -3,7 +3,7 @@ const FORMATS = {
   ODI: { maxOvers: 50, maxWickets: 10, superOver: true, maxBowlerOvers: 10, powerplayEnabled: true, powerplayOvers: 10 },
   'Tape Ball': { maxOvers: null, maxWickets: 10, superOver: false, maxBowlerOvers: null, powerplayEnabled: false, powerplayOvers: 0 },
   T10: { maxOvers: 10, maxWickets: 10, superOver: true, maxBowlerOvers: 2, powerplayEnabled: true, powerplayOvers: 3 },
-  TEST: { maxOvers: null, maxWickets: 10, superOver: false, maxBowlerOvers: null, powerplayEnabled: false, powerplayOvers: 0 },
+  Test: { maxOvers: null, maxWickets: 10, superOver: false, maxBowlerOvers: null, powerplayEnabled: false, powerplayOvers: 0 },
   '6 Overs': { maxOvers: 6, maxWickets: 10, superOver: false, maxBowlerOvers: 2, powerplayEnabled: false, powerplayOvers: 0 },
   '8 Overs': { maxOvers: 8, maxWickets: 10, superOver: false, maxBowlerOvers: 2, powerplayEnabled: false, powerplayOvers: 0 },
   'Super Over': { maxOvers: 1, maxWickets: 2, superOver: true, maxBowlerOvers: 1, powerplayEnabled: false, powerplayOvers: 0 },
@@ -88,6 +88,11 @@ class ScoringEngine {
 
     const innings = this.match.innings[inningsIndex];
     if (!innings) throw new Error(`Innings ${inningsIndex} not found`);
+
+    if (innings.status === 'completed') throw new Error('Cannot score a completed innings');
+    if (this.match.status === 'completed' || this.match.status === 'pending_tie_resolution') {
+      throw new Error(`Cannot score while match status is ${this.match.status}`);
+    }
 
     this.match.matchState = inningsIndex === 0 ? 'firstInnings' : 'secondInnings';
     this.match.status = 'live';
@@ -395,7 +400,7 @@ class ScoringEngine {
     if (ballType === 'noBall') bowl.noBalls += 1;
     if (ballType === 'wide' || ballType === 'noBall') bowl.runs += br.extraRuns + br.batsmanRuns;
     else if (ballType === 'legal') bowl.runs += br.batsmanRuns;
-    if (br.isWicket) bowl.wickets += 1;
+    if (br.isWicket && br.wicketType !== 'runOut') bowl.wickets += 1;
     const tb = bowl.balls;
     bowl.overs = Math.floor(tb / 6);
     bowl.economy = tb > 0 ? ((bowl.runs / tb) * 6).toFixed(2) : '0.00';

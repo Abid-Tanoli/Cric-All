@@ -2,6 +2,7 @@ import TeamOrganization from "../models/TeamOrganization.js";
 import TeamCategory from "../models/TeamCategory.js";
 import Team from "../models/Team.js";
 import Membership from "../models/Membership.js";
+import Invitation from "../models/Invitation.js";
 import { getPlatformSettings } from "../models/SystemSettings.js";
 import * as teamService from "../services/teamService.js";
 import { isPlatformAdmin, resolveOrgAccess } from "../middleware/orgAccess.js";
@@ -316,6 +317,8 @@ export const deleteOrganization = async (req, res) => {
     await Membership.deleteMany({ organization: req.params.id });
     const deleted = await TeamOrganization.findByIdAndDelete(req.params.id);
     if (!deleted) return res.status(404).json({ message: "Organization not found" });
+
+    await Invitation.deleteMany({ organization: deleted._id });
 
     await recordAudit({
       req,

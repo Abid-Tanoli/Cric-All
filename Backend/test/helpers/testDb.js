@@ -4,7 +4,9 @@ import mongoose from "mongoose";
 // A real, throwaway MongoDB for tests that need persistence. The binary is
 // downloaded once by mongodb-memory-server and cached outside the repo.
 export async function startTestDb() {
-  const mongod = await MongoMemoryServer.create();
+  // Windows may need more than the upstream 10s default to start the bundled
+  // mongod binary, especially while its first indexes are being initialized.
+  const mongod = await MongoMemoryServer.create({ instance: { launchTimeout: 30_000 } });
   await mongoose.connect(mongod.getUri(), { dbName: "cricall_test" });
   return mongod;
 }

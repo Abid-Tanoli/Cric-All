@@ -575,6 +575,42 @@ test("invitation lifecycle: create → invitee accepts → membership active; fo
   assert.strictEqual(reuseRes.statusCode, 410);
 });
 
+test("accepted invitation is removed when its member leaves and the organization is deleted", async () => {
+  const owner = await makeUser();
+  const invitee = await makeUser({ accountType: "viewer", role: "viewer", emailVerified: true });
+  const org = await makeOrg(owner, { name: "Invitation Cascade Org" });
+  const orgAccess = { via: "membership", roles: ["owner"], permissions: [] };
+
+  const createRes = mockRes();
+  await createOrgInvitation(
+    mockReq({ user: owner, principalType: "user", params: { id: String(org._id) }, body: { email: invitee.email, roles: ["score_handler"] }, org: await TeamOrganization.findById(org._id), orgAccess }),
+    createRes,
+  );
+  assert.equal(createRes.statusCode, 201);
+  const invitation = await Invitation.findOne({ organization: org._id, email: invitee.email });
+  const { hashInvitationToken } = await import("../src/models/Invitation.js");
+  const rawToken = "b".repeat(64);
+  invitation.tokenHash = hashInvitationToken(rawToken);
+  await invitation.save();
+
+  const acceptRes = mockRes();
+  await acceptOrgInvitation(mockReq({ user: invitee, body: { token: rawToken } }), acceptRes);
+  assert.equal(acceptRes.statusCode, 200, JSON.stringify(acceptRes.body));
+  assert.equal((await Invitation.findById(invitation._id)).status, "accepted");
+
+  const removeRes = mockRes();
+  await removeOrgMember(
+    mockReq({ user: owner, principalType: "user", params: { id: String(org._id), userId: String(invitee._id) }, org: await TeamOrganization.findById(org._id), orgAccess }),
+    removeRes,
+  );
+  assert.equal(removeRes.statusCode, 200);
+
+  const deleteRes = mockRes();
+  await deleteOrganization(mockReq({ user: owner, principalType: "user", params: { id: String(org._id) } }), deleteRes);
+  assert.equal(deleteRes.statusCode, 200, JSON.stringify(deleteRes.body));
+  assert.equal(await Invitation.countDocuments({ organization: org._id }), 0);
+});
+
 test("expired invitation is rejected; owner-role invitations cannot be created", async () => {
   const owner = await makeUser();
   const org = await makeOrg(owner, { name: "Expiry Org" });

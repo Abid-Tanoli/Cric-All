@@ -80,13 +80,15 @@ export const endInnings = async (req, res) => {
           resultType: "normal"
         };
       } else if (inn2.runs > inn1.runs) {
-        const wicketsLeft = 10 - inn2.wickets;
+        const maxWickets = match.matchType === "Super Over" ? 2 : 10;
+        const wicketsLeft = Math.max(0, maxWickets - inn2.wickets);
+        const wicketWord = wicketsLeft === 1 ? "wicket" : "wickets";
         const ballsLeft = (match.totalOvers * 6) - ((inn2.overs * 6) + inn2.balls);
 
         match.result = {
           winner: inn2.team,
-          margin: `${wicketsLeft} wickets`,
-          description: `${inn2.team.name} won by ${wicketsLeft} wickets (${ballsLeft} balls remaining)`,
+          margin: `${wicketsLeft} ${wicketWord}`,
+          description: `${inn2.team.name} won by ${wicketsLeft} ${wicketWord} (${ballsLeft} balls remaining)`,
           resultType: "normal"
         };
       } else {

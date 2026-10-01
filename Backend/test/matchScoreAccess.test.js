@@ -36,9 +36,11 @@ before(async () => {
   mongod = await startTestDb();
 
   const { default: matchRoutes } = await import("../src/routes/matchRoutes.js");
+  const { default: liveMatchRoutes } = await import("../src/routes/liveMatchRoutes.js");
   const app = express();
   app.use(express.json());
   app.use("/matches", matchRoutes);
+  app.use("/livematch", liveMatchRoutes);
 
   server = http.createServer(app);
   await new Promise((resolve) => server.listen(0, resolve));
@@ -311,6 +313,52 @@ test("a score_handler of one organization cannot score another organization's ma
   const res = await call("PUT", `/matches/${match._id}/toss`, generateToken(handler), { toss: {} });
 
   assert.strictEqual(res.status, 403, "cross-tenant scoring must be refused");
+});
+
+test("legacy live ball route uses the same tenant-scoped score_match guard", async () => {
+  const owner = await makeUser();
+  const scorer = await makeUser();
+  const nonScoringMember = await makeUser();
+  const outsider = await makeUser();
+  const org = await makeOrg(owner, "Legacy Live Club");
+  const otherOrg = await makeOrg(outsider, "Legacy Other Club");
+  await addMember(org, scorer, ["score_handler"]);
+  await addMember(org, nonScoringMember, ["social_media_handler"]);
+  const teams = [
+    await Team.create({ name: "Live XI A", organizationRef: org._id }),
+    await Team.create({ name: "Live XI B", organizationRef: org._id }),
+  ];
+  const match = await makeOrgMatch(org, teams);
+  const [striker, nonStriker, bowler] = await Player.create([
+    { name: "OPENCODE_TEST_live_striker" },
+    { name: "OPENCODE_TEST_live_non_striker" },
+    { name: "OPENCODE_TEST_live_bowler" },
+  ]);
+  const payload = {
+    inningsIndex: 0,
+    runs: 1,
+    batsmanOnStrikeId: String(striker._id),
+    batsmanNonStrikeId: String(nonStriker._id),
+    bowlerId: String(bowler._id),
+    customCommentary: true,
+    commentaryText: "OPENCODE_TEST local guard probe",
+  };
+
+  const allowed = await call("POST", `/livematch/${match._id}/ball`, generateToken(scorer), payload);
+  assert.equal(allowed.status, 200, `assigned scorer should score: ${JSON.stringify(allowed.body)}`);
+
+  for (const [user, label] of [[outsider, "no membership"], [nonScoringMember, "member without score_match"]]) {
+    const refused = await call("POST", `/livematch/${match._id}/ball`, generateToken(user), payload);
+    assert.equal(refused.status, 403, `${label} must be refused`);
+  }
+
+  const foreignTeams = [
+    await Team.create({ name: "Foreign XI A", organizationRef: otherOrg._id }),
+    await Team.create({ name: "Foreign XI B", organizationRef: otherOrg._id }),
+  ];
+  const foreignMatch = await makeOrgMatch(otherOrg, foreignTeams);
+  const crossTenant = await call("POST", `/livematch/${foreignMatch._id}/ball`, generateToken(scorer), payload);
+  assert.equal(crossTenant.status, 403, "scorer of another org must be refused");
 });
 
 test("a removed membership loses scoring access", async () => {

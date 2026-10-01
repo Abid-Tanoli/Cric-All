@@ -358,10 +358,11 @@ export async function probeFreeHit({ api, matchId, bowlerId, batterPool, fielder
     return res;
   };
 
-  // A no-ball sets the free hit for the *next* delivery.
-  await send({ isNoBall: true, runs: 0 }, "no-ball (should arm a free hit)");
-
+  // Each dismissal probe must be the very next legal ball after a no-ball.
+  // Otherwise the first attempted delivery consumes the free hit and later
+  // probes would be ordinary balls rather than tests of the restriction.
   for (const wt of ["bowled", "caught", "lbw", "runOut"]) {
+    await send({ isNoBall: true, runs: 0 }, `no-ball before ${wt} (should arm a free hit)`);
     await send(
       {
         runs: 0,

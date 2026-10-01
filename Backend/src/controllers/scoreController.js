@@ -73,6 +73,12 @@ export const updateScore = async (req, res) => {
     }
 
     const innings = match.innings[inningsIndex];
+    if (["completed", "pending_tie_resolution"].includes(match.status)) {
+      return res.status(409).json({ message: `Cannot score while match status is ${match.status}`, code: "MATCH_NOT_SCORABLE" });
+    }
+    if (innings.status === "completed") {
+      return res.status(409).json({ message: "Cannot score a completed innings", code: "INNINGS_COMPLETED" });
+    }
     wicketType = normalizeWicketType(wicketType);
 
     // Use ScoringEngine via adapter for all scoring computation
@@ -345,7 +351,7 @@ export const updateScore = async (req, res) => {
 
     // Set current bowler on innings
     innings.currentBowler = bowlerId;
-    innings.status = "live";
+    if (innings.status !== "completed") innings.status = "live";
     match.currentInnings = inningsIndex;
     if (!["completed", "pending_tie_resolution", "super_over"].includes(match.status)) {
       match.status = "live";

@@ -4,7 +4,32 @@ Commit(s): see commit hash column (HEAD = 7a9cac0)
 
 All file paths are relative to repo root. Evidence includes file:line quotes where practical.
 
-> Verification approach: read-only code inspection of models, controllers, routes, middleware, permissions, socket layer; no code changes. Tests run locally (see Part B notes).
+## Round 3 update — 2026-10-01
+
+The Phase 9 and Phase 10 rows below predate this round and contain stale claims.
+Current evidence and run results are recorded here and in
+[`Backend/docs/scoring-guards.md`](../Backend/docs/scoring-guards.md) and
+[`Backend/docs/e2e-results.md`](../Backend/docs/e2e-results.md).
+
+- Phase 9: `POST /api/livematch/:matchId/ball` now uses
+  `requireMatchScoreAccess`; no inbound Socket.IO scoring or ball-write event
+  exists. Anonymous room joins remain read-only and expose live feed data.
+- Phase 10: the E2E runner and independent tally are present. The current
+  before/after counts are recorded in the E2E report: baseline aborted before
+  scenarios; final run passed 78/78 checks with no divergences. The full backend
+  suite passed 220/220 after raising the test-only MongoMemoryServer startup
+  timeout to 30 seconds.
+- Part D: organization deletion removes its invitation rows; a separate
+  local-only orphan cleanup command defaults to dry-run and requires `--apply`.
+  Its dry run against `cric-all-e2e` found zero orphan invitations.
+
+The Round 3 baseline initially aborted during bootstrap after the local-only
+guard passed: its configured backend log path did not exist, so no verification
+token could be read. That run created no E2E report and did not execute a
+scenario. The after run used a dedicated local backend log and is documented in
+the E2E report. `Backend/.env` now names the local database `cric-all-e2e`.
+
+> Verification approach: this Round 3 addendum records source changes and local regression/E2E runs; see `Backend/docs/e2e-results.md` for current results.
 
 ## IMPORTANT CAVEAT — basis of this table
 
@@ -39,8 +64,8 @@ Commit hashes in the table are taken from `git log -- <path>`; no hash is inferr
 | 6 | PARTIAL | 9c043ff, db3a462 | Match/Event/Series/Tournament models (`Backend/src/models/Match.js:1-435`, Event, Series, Tournament); routes and controllers; organization-scoped match creation (`organizationRoutes.js` org matches section, `orgMatchesController.js`); `orgMatchesController.js:314` notes `squad15` field usage; Phase 9 added org-scoped scoring/squad gates (see Phase 9) | Tournament/series/event structures exist with organization context where applicable; org-scoped fixture creation present. |
 | 7 | PARTIAL | db3a462, 2d480ec | `Backend/src/routes/uploadRoutes.js:9-23` (multer memory, MIME filter jpeg/png/webp, 5MB); `Backend/src/routes/bulkImportRoutes.js:15-27` (Excel MIME); `Backend/src/utils/photoStore.js:9-51` (MIME→ext whitelist, writes to disk); `Backend/src/controllers/uploadController.js:12-30`; `Backend/src/models/Blog.js:1-46` (model "Blog"); `Backend/src/controllers/blogsController.js:1-66`; `Backend/src/routes/blogRoutes.js:1-15`; `Frontend/Admin/src/pages/Blogs.jsx:161`; `Frontend/User/src/pages/LeagueDetails.jsx:214`; `Frontend/Shared/services/socket.js`, `Frontend/User/src/components/PDFReport.jsx:55-99` | **Met:** Upload middleware uses Multer with MIME/extension checks and size limits. `Blog` model exists (no separate `Post`). Frontend does not use `dangerouslySetInnerHTML` anywhere (grep returned 0). Blog content rendered as plain text. PDF generation uses `document.write` with constructed strings (not injecting arbitrary user HTML into React DOM). **Missing:** **No magic-byte/file-signature validation** on uploads — only MIME/extension checks (no file-type buffer inspection). **No HTML sanitization** of user-generated content in backend or frontend (no sanitize-html/DOMPurify/xss deps; `blogsController` saves raw `req.body` with no sanitization). |
 | 8 | NOT STARTED | a3ececc (file predates phase work) | `Backend/src/models/Review.js:1-19` (DRS model: matchId/inning/overBall/decisionChallenged/outcome/reviewsRemaining); `Backend/src/routes/matchRoutes.js:116` (`GET /:id/drs`); grep for `Follow|Like|Comment|Report|Notification|Post` across Backend/src and Frontend → no models/routes/controllers found; no embedded arrays discovered; `orgPermissions.js:67` only permission name text | **Met:** `Review.js` exists and is **DRS (Decision Review System)** for match reviews, not a generic abuse report. **Missing:** **No social graph models** (Follow, Like, Comment, Report, Notification) exist. **No routes/controllers/API endpoints** for social features. **No alternative embedded implementation** found (no followers/following/likes/comments/reports/notifications fields surfaced). |
-| 9 | PARTIAL | 7a9cac0 | `Backend/src/routes/matchRoutes.js:65,86,90-104,120-172` (`scoring(...)` uses `requireMatchScoreAccess` at line 91; `squad(...)` uses `requireMatchAccess` with `CREATE_MATCH` at line 99); `Backend/src/middleware/matchAccess.js` (org-scoped guard); `Backend/src/routes/liveMatchRoutes.js:13-21` (`POST /:matchId/ball` uses `protect, requireAdmin` only, **no org-scoped matchAccess**); `Backend/src/socket/socket.js:10-252` (no inbound mutation handlers, no JWT handshake middleware, `io.on("connection")` only; emitters only); `Backend/src/index.js:80-86` (`initSocket`, `req.io`); `matchScoreAccess.test.js` (13 tests covering org-scoped behavior) | **Met:** All scoring/squad routes in `matchRoutes.js` are guarded (`scoring`/`squad`). Scoring/squad org-scoped guards confirmed; 10/10 probes in previous rounds showed matchAccess answers (0 `adminOnly`). Socket.IO contains **no inbound socket event handlers that mutate match state** — only emit helpers and room joins. **Gaps:** `Backend/src/routes/liveMatchRoutes.js:13-21` (`POST /api/livematch/:matchId/ball`) is a scoring-mutating endpoint guarded only by `protect, requireAdmin` (platform admin), **not** by `requireMatchScoreAccess` (org-scoped SCORE_MATCH). **Socket layer has no authentication on connections/handshake** (no `io.use()` JWT middleware, no `socket.data.user`, room joins client-driven) — while no mutations happen over sockets, this is a security surface note (read-only broadcasting only). |
-| 10 | NOT STARTED | — | No e2e harness found under `Backend/test/e2e/` (no such directory exists). No npm script `test:e2e` in package.json. No independent tally implementation in tests. | No implementation yet (target of Part C). |
+| 9 | CONFIRMED | Round 3 local change | `Backend/src/routes/liveMatchRoutes.js`; `Backend/src/middleware/matchAccess.js`; `Backend/test/matchScoreAccess.test.js`; `Backend/docs/scoring-guards.md` | The legacy ball route uses `requireMatchScoreAccess`; tenant scorer and forbidden-role/tenant checks pass. Socket.IO has no inbound scoring write event. Unauthenticated room joins remain a read-access concern. |
+| 10 | CONFIRMED | Round 3 local verification | `Backend/test/e2e/run.mjs`; `Backend/test/e2e/lib/tally.js`; `Backend/docs/e2e-results.md` | Full scenarios 1–7: 78 PASS, 0 FAIL, 0 DIVERGENCE. The current baseline is documented as a bootstrap abort, not inferred from historical 42/12/6. |
 | 11 | PARTIAL | 9c043ff, db3a462 | Organization models/routes (`TeamOrganization`, Membership, Invitation), audit logs (`AuditLog.js`), org access/membership controllers, permission system. | Org/tenant structures present. |
 | 12 | PARTIAL | 9c043ff, 53bc67b | Settings, external sync, system settings routes/controllers, CORS config. | Platform settings present. |
 | 13 | PARTIAL | 53bc67b, 9c043ff | Deployment configs (`Dockerfile`, `docker-compose*.yml`, `vercel.json`), deployment docs. | Deployment assets present. |
@@ -49,7 +74,7 @@ Commit hashes in the table are taken from `git log -- <path>`; no hash is inferr
 - **Phase 5 — Privacy leak (unauthenticated):** 4 list/ranking endpoints return full Player docs (including DOB, address, gallery, videos, `createdBy`). Fix needs server-side sanitization (select/project) on those paths. `GET /players/:id` partially sanitizes but misses DOB/media. No `linkedUser`/claim flow.
 - **Phase 4 — Team name uniqueness:** global, not per-org (missing compound index `{organizationRef,name}` and service-layer org-aware checks). 
 - **Phase 7 — Uploads:** MIME-only, no magic-byte validation; no HTML sanitization on user content. 
-- **Phase 9 — Security note:** legacy `liveMatchRoutes` ball route lacks org-scoped `matchAccess` (admin-only). Socket.IO has no inbound mutation handlers but also no handshake auth; all writes are via HTTP.
+- **Phase 9 — Security note:** The legacy `/api/livematch/:matchId/ball` route now uses `requireMatchScoreAccess`. Socket.IO has no inbound scoring mutation events. Unauthenticated live room subscriptions remain a read-access concern.
 - **Socket.IO auth:** No JWT verification on handshake (`io.use` absent); `socket.data.user` never set. Mutations not accepted over sockets, so HTTP guards are the enforcement point. 
 
 Deliverable: `docs/phase-status.md` created with this table + evidence.
