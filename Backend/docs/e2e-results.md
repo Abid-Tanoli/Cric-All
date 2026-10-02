@@ -1,63 +1,50 @@
 # E2E Results - Local Only
 
-## Round 3 before/after
-
-| Run | Result | Counts | Evidence |
-| --- | --- | --- | --- |
-| Before: `npm run test:e2e` as-is, before edits | **FAIL — aborted** | No scenarios / no tally counts | The API and Mongo socket checks passed for loopback, then bootstrap timed out looking for a verification token in a backend log path that did not exist. The pre-edit `.env` database was `cric-all-test`; bootstrap created one unverified `OPENCODE_TEST_` owner there before aborting. That single strictly filtered local fixture was removed after the run. |
-| After: full scenarios 1–7 against local `cric-all-e2e` | **PASS** | 78 pass, 0 fail, 0 divergence | Run `muq3oqhy`; 655 API calls; 149.4s. Guard verified the API process on loopback and established Mongo connections only to `127.0.0.1:27017`. |
-
-The historical `42/12/6` result was not treated as this round's baseline. An
-intermediate run found a tally discrepancy after an odd bye: the independent
-tally said byes and leg-byes were run by fielders and did not rotate strike.
-MCC Law 23 credits completed bye runs to the batting side; the batters complete
-those runs, so the tally now rotates on an odd completed total. The regression
-is covered by [tally.test.js](../test/e2e/tally.test.js), and the final tally and
-server scorecard agree. [MCC Laws of Cricket (2026 code)](https://www.lords.org/getmedia/a4ef9f77-2a25-4f5b-a286-4601f08e6334/Laws-of-Cricket-2017-Code-4th-Edition-%282026%29_5.pdf)
-
-The first final-run attempt also exposed two harness mistakes, not scoring
-engine defects: each free-hit dismissal probe must re-arm the free hit with a
-fresh no-ball, and format test code must read the driver's `serverInnings`
-result rather than a nonexistent `.body`. Both are corrected in the current
-runner. No divergences or failures remain in the final run.
-
-The orphan-invitation cleanup command was also run without `--apply` against
-local `cric-all-e2e`; it found zero orphan rows and performed no deletions.
-
-The full backend unit/integration suite passed **220/220** after increasing the
-test-only MongoMemoryServer launch timeout from its 10-second default to 30
-seconds. The first serial attempt had 29 failures because four test files hit
-that startup timeout; no assertion failures remained on the successful rerun.
-
-- Run id: `muq3oqhy`
-- API base: `http://127.0.0.1:5001/api` (loopback only - guard enforced)
+- Run id: `muqxpkmj`
+- API base: `http://127.0.0.1:5000/api` (loopback only - guard enforced)
 - Database: `cric-all-e2e` on `127.0.0.1:27017` (local Docker Mongo)
-- Duration: 149.4s
+- Duration: 130.9s
+- Scenarios: 7 of 7 ran
 - Overall: **PASS** (78 pass, 0 fail, 0 divergence)
 
+## Scenario coverage
+
+Every scenario in the roster appears here, including the ones that did not run.
+
+| Scenario | Status | Checks |
+| --- | --- | --- |
+| Scenario 1 - full T20 innings (20 overs, every ball type) and the chase | ran | 16 |
+| Scenario 2 - free hit (a no-ball must protect the next delivery) | ran | 4 |
+| Scenario 3 - innings bowled out inside the overs | ran | 6 |
+| Scenario 4 - tie, then Super Over | ran | 13 |
+| Scenario 5 - negative tests (HTTP authorization and Laws) | ran | 7 |
+| Scenario 6 - negative tests (Socket.IO cannot score) | ran | 3 |
+| Scenario 7 - other Match.matchType formats | ran | 29 |
+| **Total** | 7 ran, 0 skipped | **78** |
+
 Every score below was produced by sending balls to `POST /api/matches/:id/score`
-as the invited `score_handler`. Fixtures and results were written through the
-application API; the harness did not insert scoring data directly into MongoDB.
-The expected scorecard comes from a tally written from the Laws of Cricket that
-shares no code with `ScoringEngine`; agreement between the two is a real cross-check.
+as the invited `score_handler`. No result was inserted into MongoDB. The expected
+scorecard comes from a tally written from the Laws of Cricket that shares no code
+with `ScoringEngine`; agreement between the two is a real cross-check.
 
 ## Accounts and calls
 
-- Owner account: `OPENCODE_TEST_owner_muq3oqhy@example.test` (never used to score)
-- Assigned scorer, who sent every delivery: `OPENCODE_TEST_scorer_muq3oqhy@example.test`, organization role `score_handler`
+- Scenarios executed: 7 of 7 (none skipped)
+- Owner account: `OPENCODE_TEST_owner_muqxpkmj@example.test` (never used to score)
+- Assigned scorer, who sent every delivery: `OPENCODE_TEST_scorer_muqxpkmj@example.test`, organization role `score_handler`
 - Invitation accepted through `POST /invitations/accept` using the token from the console mail log
-- Organization: `6abedd57ea900fee2bc1bdee`; second tenant for the cross-tenant test: `6abedd57ea900fee2bc1be00`
+- Organization: `6abfa252626902cc26c855e7`; second tenant for the cross-tenant test: `6abfa252626902cc26c855f9`
 - HTTP calls issued by the suite: 655
 - Note: the application lower-cases e-mail addresses on save, so `OPENCODE_TEST_...` fixtures appear as `opencode_test_...` in the database and in mail. Names keep the prefix verbatim.
 
 
 ## Scenario 1 - full T20 innings (20 overs, every ball type) and the chase
 
-Fixture created through `POST /organizations/:id/matches`; every delivery sent by the invited `score_handler` (OPENCODE_TEST_scorer_muq3oqhy@example.test), never by the owner.
+Fixture created through `POST /organizations/:id/matches`; every delivery sent by the invited `score_handler` (OPENCODE_TEST_scorer_muqxpkmj@example.test), never by the owner.
 Extras split (innings 1): the independent tally follows the Laws - a wide is one extra and runs completed off a wide are byes. The server folds those runs into `wides` instead. `wides` independent=3 server=5; `byes` independent=4 server=2. The extras *total* is asserted separately and agrees.
 Innings 1: **145/8** in 20.0 overs. Extras (Laws split): wides 3, no-balls 4, byes 4, leg-byes 4, total 15.
 Chasing side: **146/0** off 49 balls (target 146).
-Result: OPENCODE_TEST_Beta_muq3oqhy won by 10 wickets (23 balls remaining).
+Result: OPENCODE_TEST_Beta_muqxpkmj won by 10 wickets (23 balls remaining).
 
 | Result | Check | Detail |
 | --- | --- | --- |
@@ -73,9 +60,9 @@ Result: OPENCODE_TEST_Beta_muq3oqhy won by 10 wickets (23 balls remaining).
 | PASS | innings 2 ended because the target was reached | reason=targetChased runs=146 target=146 balls=49 |
 | PASS | strike rotation agreed on every chase delivery | [] |
 | PASS | innings 2 scorecard: independent tally vs server | independent tally and server agree |
-| PASS | scoring alone does not settle the match | status=completed result="{"winner":{"_id":"6abedd57ea900fee2bc1be3e","name":"OPENCODE_TEST_Beta_muq3oqhy","shortName":"OPE"},"margin":"10 wickets","description":"OPENCODE_TEST_Beta_muq3oqhy won by 10 wickets (49 balls remaining)"}" - expected, the result is only written by end-innings |
+| PASS | scoring alone does not settle the match | status=completed result="{"winner":{"_id":"6abfa252626902cc26c85637","name":"OPENCODE_TEST_Beta_muqxpkmj","shortName":"OPE"},"margin":"10 wickets","description":"OPENCODE_TEST_Beta_muqxpkmj won by 10 wickets (49 balls remaining)"}" - expected, the result is only written by end-innings |
 | PASS | end-innings accepts the final innings | status=200 |
-| PASS | chasing side won by the wickets remaining | resultType=normal margin="10 wickets" description="OPENCODE_TEST_Beta_muq3oqhy won by 10 wickets (23 balls remaining)" (inningsController.js:83 hard-codes 10 as the wicket count, so a Super Over margin would be wrong here too) |
+| PASS | chasing side won by the wickets remaining | resultType=normal margin="10 wickets" description="OPENCODE_TEST_Beta_muqxpkmj won by 10 wickets (23 balls remaining)" (inningsController.js:83 hard-codes 10 as the wicket count, so a Super Over margin would be wrong here too) |
 | PASS | match marked completed | status=completed |
 
 ## Scenario 2 - free hit (a no-ball must protect the next delivery)
@@ -190,7 +177,7 @@ The socket accepts room joins only (`joinRoom`, `join-match`), so no ball can be
 ## Laws applied by the independent tally
 
 - A legal delivery is anything that is not a Wide or a No-ball (byes and leg-byes are legal).
-- A Wide is one extra, plus any runs the batters completed.
+- A wide is one extra, plus any runs the batters completed.
 - A No-ball is one extra, plus runs off the bat credited to the batter.
 - Byes and leg-byes are run by the fielders, so an odd number does not change the strike.
 - A run-out is not charged to the bowler.

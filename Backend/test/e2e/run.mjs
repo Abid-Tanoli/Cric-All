@@ -11,6 +11,18 @@
  *   6  negative tests over Socket.IO
  *   7  the other `Match.matchType` formats
  *
+ * The roster is `SCENARIOS` below, and it is the single source of truth. The
+ * report is told about every scenario before any of them runs, so one that is
+ * filtered out is rendered as SKIPPED rather than quietly disappearing - a
+ * partial run is reported as PARTIAL, never as PASS.
+ *
+ * Environment:
+ *   E2E_ONLY=1,7           run only these scenarios
+ *   E2E_RESULTS_PATH=<p>   write the report somewhere other than the canonical
+ *                          path (the usual choice for a filtered run)
+ *   E2E_ALLOW_PARTIAL_REPORT=1
+ *                          let a filtered run overwrite the canonical report
+ *
  * Usage: npm run test:e2e
  */
 
@@ -21,11 +33,18 @@ import { createInningsDriver, buildInningsScript, probeFreeHit } from "./lib/inn
 import { compareTally } from "./lib/tally.js";
 import { createReport } from "./lib/report.js";
 import { attemptScoreOverSocket } from "./lib/socket.js";
+import { SCENARIOS, parseOnly, makeSelection } from "./lib/scenarios.js";
 import { ScoringEngine } from "../../src/services/scoring/ScoringEngine.js";
 
 const started = Date.now();
 const runId = `${Date.now().toString(36)}`;
-const resultsPath = process.env.E2E_RESULTS_PATH || "docs/e2e-results.md";
+
+/**
+ * The canonical report is the project's evidence of a full-suite run. A
+ * filtered run writes elsewhere unless E2E_ALLOW_PARTIAL_REPORT is set.
+ */
+const CANONICAL_REPORT = "docs/e2e-results.md";
+const resultsPath = process.env.E2E_RESULTS_PATH || CANONICAL_REPORT;
 
 const log = (...a) => process.stdout.write(`${a.join(" ")}\n`);
 
@@ -38,17 +57,13 @@ const FORMATS = {
 };
 
 /**
- * `E2E_ONLY=1,7` runs just those scenarios. Scenarios are numbered 1-7 in the
- * order below. Useful while iterating: a single scenario finishes in seconds
- * instead of four minutes, and the fixtures are independent of each other.
+ * `E2E_ONLY=1,7` runs just those scenarios. Useful while iterating: a single
+ * scenario finishes in seconds instead of four minutes, and the fixtures are
+ * independent of each other. A filtered run may not overwrite the canonical
+ * report - see `E2E_ALLOW_PARTIAL_REPORT` below.
  */
-const ONLY = new Set(
-  String(process.env.E2E_ONLY || "")
-    .split(",")
-    .map((s) => Number(s.trim()))
-    .filter((n) => Number.isInteger(n)),
-);
-const wantScenario = (n) => ONLY.size === 0 || ONLY.has(n);
+const ONLY = parseOnly(process.env.E2E_ONLY);
+const { wantScenario, selected: selectedScenarios } = makeSelection(ONLY);
 
 const errText = (e) => `${e?.message || e} ${JSON.stringify(e?.body || "").slice(0, 300)}`;
 
@@ -57,7 +72,13 @@ async function main() {
   await assertServerIsLocal();
 
   const makeClient = (token = null) => createClient({ apiBase: API_BASE, token });
-  const report = createReport();
+  const report = createReport({
+    scenarios: SCENARIOS,
+    selected: new Set(selectedScenarios()),
+    canonicalPath: CANONICAL_REPORT,
+  });
+  log(`scenarios selected: ${selectedScenarios().join(", ") || "none"} of ${SCENARIOS.length}`);
+  if (resultsPath !== CANONICAL_REPORT) log(`report path override: ${resultsPath}`);
 
   log("--- bootstrap ---");
   const ctx = await bootstrap({ makeClient, runId });
@@ -257,7 +278,7 @@ async function main() {
   // ======================================================================
   // Scenario 3 - bowled out
   // ======================================================================
-  {
+  if (wantScenario(3)) {
     const S = "Scenario 3 - innings bowled out inside the overs";
     report.section(S, "Ten dismissals inside 14 legal deliveries, so the innings must end on wickets rather than on overs.");
 
@@ -325,7 +346,7 @@ async function main() {
   // ======================================================================
   // Scenario 4 - tie and Super Over
   // ======================================================================
-  {
+  if (wantScenario(4)) {
     const S = "Scenario 4 - tie, then Super Over";
     report.section(S, "Both sides bat to 30, then the second innings is closed by hand. Under the Laws an equal total is a tie: `end-innings` must record `resultType: \"tie\"` and leave the match awaiting resolution, and a Super Over must then be playable.");
 
@@ -431,7 +452,7 @@ async function main() {
   // ======================================================================
   // Scenario 5 - negative tests over HTTP
   // ======================================================================
-  {
+  if (wantScenario(5)) {
     const S = "Scenario 5 - negative tests (HTTP authorization and Laws)";
     report.section(S, "A score must be refused without a token, with an unverified mailbox, across a tenant boundary, into a completed innings, and for the same bowler in consecutive overs.");
 
@@ -510,7 +531,7 @@ async function main() {
   // ======================================================================
   // Scenario 6 - negative tests over Socket.IO
   // ======================================================================
-  {
+  if (wantScenario(6)) {
     const S = "Scenario 6 - negative tests (Socket.IO cannot score)";
     report.section(S, "An unauthenticated socket client joins the live match room and tries every plausible scoring event. The scorecard must not move and the server must not acknowledge.");
 
@@ -549,7 +570,7 @@ async function main() {
   // ======================================================================
   // Scenario 7 - the other formats
   // ======================================================================
-  {
+  if (wantScenario(7)) {
     const S = "Scenario 7 - other Match.matchType formats";
     report.section(S, "`Match.js` offers eight formats. Each is created through the API and, where the format is short enough to bat out, played to completion and checked against the independent tally.");
 
@@ -623,9 +644,14 @@ async function main() {
   // ======================================================================
   const durationMs = Date.now() - started;
   const counts = report.counts();
+  const cov = report.coverage();
   const extra = [
     "## Accounts and calls",
     "",
+    `- Scenarios executed: ${cov.ran} of ${cov.total}` +
+      (cov.skipped
+        ? ` (skipped: ${report.skippedScenarios().map((s) => s.n).join(", ")})`
+        : " (none skipped)"),
     `- Owner account: \`${ctx.owner.email}\` (never used to score)`,
     `- Assigned scorer, who sent every delivery: \`${ctx.scorer.email}\`, organization role \`${ctx.acceptedRoles.join(", ")}\``,
     `- Invitation accepted through \`POST /invitations/accept\` using the token from the console mail log`,
@@ -635,11 +661,16 @@ async function main() {
     "",
   ].join("\n");
 
-  const path = report.write(resultsPath, { apiBase: API_BASE, runId, durationMs, extra });
+  // A filtered iteration run may not become the record of truth. Overwrite the
+  // canonical report only on a full run, or when explicitly told to.
+  const allowPartial = process.env.E2E_ALLOW_PARTIAL_REPORT === "1";
+  const path = report.write(resultsPath, { apiBase: API_BASE, runId, durationMs, extra, allowPartial });
   log("");
   log(`=== ${report.overall()} === ${counts.PASS} pass, ${counts.FAIL} fail, ${counts.DIVERGENCE} divergence in ${(durationMs / 1000).toFixed(1)}s`);
+  log(`scenarios: ${cov.ran} of ${cov.total} ran, ${cov.skipped} skipped`);
+  for (const s of report.skippedScenarios()) log(`  SKIPPED ${s.title} - ${s.reason}`);
   log(`report: ${path}`);
-  return 0;
+  return report.overall() === "FAIL" ? 1 : 0;
 }
 
 main()
