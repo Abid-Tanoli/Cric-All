@@ -36,7 +36,7 @@ import assert from "node:assert/strict";
 import { API_BASE, assertLocalTarget, assertServerIsLocal } from "./e2e/lib/guard.js";
 import { createClient } from "./e2e/lib/http.js";
 import { bootstrap, createMatch, registerVerifiedUser, TEST_PREFIX } from "./e2e/lib/bootstrap.js";
-import { resetPlatformAdmins, setUserSuspended } from "./helpers/localFixtures.js";
+import { resetPlatformAdmins, setUserSuspended, createPlatformAdmin } from "./helpers/localFixtures.js";
 
 // Same disposable local-only fixture password the rest of the E2E suite uses.
 const FIXTURE_PASSWORD = "OpencodeLocal!2026";
@@ -191,27 +191,33 @@ before(async () => {
   suspended.memberOf = String(ctx.orgId);
   actors.suspended = suspended;
 
-  // Platform admin: first registration on an empty Admin collection is the only
-  // window that is ever open, and it yields superadmin.
+  // Platform admin: the one principal the public API cannot be relied on to
+  // produce. POST /admin/register is now gated on ALLOW_ADMIN_REGISTER, which
+  // the *server* process reads, so a test process cannot enable it for the
+  // running server. The admin is therefore written into the disposable database
+  // directly - see helpers/localFixtures.js.
+  const adminEmail = `opencode.test.admin.${runId}@example.test`;
+  const admin = await createPlatformAdmin({
+    name: `${TEST_PREFIX}PlatformAdmin_${runId}`,
+    email: adminEmail,
+    password: FIXTURE_PASSWORD,
+  });
   const adminApi = createClient({ apiBase: API_BASE });
-  const adminReg = await adminApi.post(
-    "/admin/register",
-    {
-      name: `${TEST_PREFIX}PlatformAdmin_${runId}`,
-      email: `opencode.test.admin.${runId}@example.test`,
-      password: FIXTURE_PASSWORD,
-    },
-    { expect: [200, 201] },
+  const adminLogin = await adminApi.post(
+    "/admin/login",
+    { email: adminEmail, password: FIXTURE_PASSWORD },
+    { expect: [200] },
   );
-  const adminToken = adminReg.body?.token;
-  assert.ok(adminToken, "platform admin registration returned no token");
+  const adminToken = adminLogin.body?.token;
+  assert.ok(adminToken, "platform admin login returned no token");
   adminApi.setToken(adminToken);
   actors.admin = {
     label: "admin",
-    email: `opencode.test.admin.${runId}@example.test`,
+    email: adminEmail,
     api: adminApi,
     token: adminToken,
-    userId: String(adminReg.body?.admin?._id || ""),
+    userId: admin.id,
+    role: admin.role,
   };
 
   // --- victims, all inside tenant A ---------------------------------------

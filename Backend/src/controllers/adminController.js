@@ -2,6 +2,7 @@ import Admin from "../models/Admin.js";
 import { generateToken } from "../utils/jwt.js";
 import bcrypt from "bcryptjs";
 import { validatePasswordStrength } from "../utils/password.js";
+import logger from "../utils/logger.js";
 import {
   generateResetToken,
   hashResetToken,
@@ -11,8 +12,45 @@ import {
 
 const adminFrontendUrl = process.env.ADMIN_URL || "http://localhost:5174";
 
+// One response for every way registration can be closed. The caller must not be
+// able to tell "the flag is off" from "admins already exist" from "someone beat
+// you to it", because those are exactly the probes an attacker would run to
+// decide whether to keep hammering the endpoint.
+const REGISTRATION_CLOSED = "Admin registration is closed.";
+
+const GENERIC_INTERNAL_ERROR = "Something went wrong. Please try again.";
+
+/**
+ * Logs the real cause and tells the caller nothing.
+ *
+ * A Mongoose error string can carry collection names, index definitions, the
+ * shape of a stored document and occasionally a fragment of the value that
+ * failed - none of which belongs in an unauthenticated response body.
+ */
+function internalError(res, err, message, context = {}) {
+  logger.error({ err, ...context }, message);
+  return res.status(500).json({ message: GENERIC_INTERNAL_ERROR });
+}
+
+/**
+ * The bootstrap switch. Absent, empty, "false", "0" and "no" all mean off, so a
+ * typo fails closed rather than leaving registration wide open.
+ */
+export function adminRegistrationEnabled() {
+  const raw = String(process.env.ALLOW_ADMIN_REGISTER ?? "").trim().toLowerCase();
+  return raw === "true" || raw === "1" || raw === "yes";
+}
+
+const BOOTSTRAP_CLAIM = "first-admin";
+
 export const registerAdmin = async (req, res) => {
   try {
+    // The flag is checked before anything else. Even with an empty collection,
+    // an unset flag means this endpoint does not exist.
+    if (!adminRegistrationEnabled()) {
+      return res.status(403).json({ message: REGISTRATION_CLOSED });
+    }
+
     const { name, email, password } = req.body;
     if (!name || !email || !password)
       return res.status(400).json({ message: "All fields are required" });
@@ -22,21 +60,34 @@ export const registerAdmin = async (req, res) => {
 
     const adminCount = await Admin.countDocuments();
     if (adminCount > 0) {
-      return res.status(403).json({ message: "Admin registration is closed. Login with an existing admin account." });
+      return res.status(403).json({ message: REGISTRATION_CLOSED });
     }
 
-const existing = await Admin.findOne({ email });
-    if (existing) return res.status(400).json({ message: "Admin already exists" });
+    // Make sure the unique bootstrap index actually exists before relying on it
+    // to arbitrate the race. Model.init() is memoised, so this is a one-off cost
+    // rather than a per-request index build.
+    await Admin.init();
 
-    // The very first admin created is the one-time bootstrap account.
-    // It must always be a superadmin regardless of the request body.
-    const role = adminCount === 0 ? "superadmin" : "admin";
-    const admin = await Admin.create({ name, email, password, role });
+    // The bootstrap account is always a superadmin. It is never taken from the
+    // request body, and there is no second branch to get out of step with it.
+    const admin = await Admin.create({
+      name,
+      email,
+      password,
+      role: "superadmin",
+      bootstrapClaim: BOOTSTRAP_CLAIM,
+    });
     const token = generateToken(admin);
 
+    logger.info({ event: "admin.bootstrap.created", email: admin.email }, "first admin bootstrapped via API");
     res.status(201).json({ token, user: { _id: admin._id, name: admin.name, email: admin.email, role: admin.role } });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    // Someone else won the race. The duplicate key on the bootstrap index is the
+    // authoritative answer, so it is a refusal and not a server fault.
+    if (err?.code === 11000) {
+      return res.status(403).json({ message: REGISTRATION_CLOSED });
+    }
+    return internalError(res, err, "admin bootstrap failed", { route: "POST /admin/register" });
   }
 };
 
@@ -58,7 +109,7 @@ export const createAdmin = async (req, res) => {
 
     res.status(201).json(created);
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    return internalError(res, err, "admin request failed");
   }
 };
 
@@ -78,7 +129,7 @@ export const loginAdmin = async (req, res) => {
 
     res.json({ token, user: { _id: admin._id, name: admin.name, email: admin.email, role: admin.role } });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    return internalError(res, err, "admin request failed");
   }
 };
 
@@ -89,7 +140,7 @@ export const getAdminProfile = async (req, res) => {
     res.json(admin);
 
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    return internalError(res, err, "admin request failed");
   }
 };
 
@@ -113,7 +164,7 @@ export const forgotPassword = async (req, res) => {
     // which email addresses are registered.
     res.status(200).json({ message: "If an account exists for this email, a reset link has been sent" });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    return internalError(res, err, "admin request failed");
   }
 };
 
@@ -145,7 +196,7 @@ export const resetPassword = async (req, res) => {
 
     res.status(200).json({ message: "Password reset successfully. You can now sign in." });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    return internalError(res, err, "admin request failed");
   }
 };
 
@@ -154,7 +205,7 @@ export const listAdmins = async (req, res) => {
     const admins = await Admin.find().select("-password");
     res.json(admins);
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    return internalError(res, err, "admin request failed");
   }
 };
 
@@ -194,7 +245,7 @@ export const updateAdmin = async (req, res) => {
     const updated = await Admin.findById(id).select("-password");
     res.json(updated);
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    return internalError(res, err, "admin request failed");
   }
 };
 
@@ -210,6 +261,6 @@ export const deleteAdmin = async (req, res) => {
     await Admin.findByIdAndDelete(id);
     res.json({ message: "Admin deleted" });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    return internalError(res, err, "admin request failed");
   }
 };

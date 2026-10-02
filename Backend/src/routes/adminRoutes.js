@@ -11,6 +11,7 @@ import {
   resetPassword,
 } from "../controllers/adminController.js";
 import auth from "../middleware/authMiddleware.js";
+import rateLimiter from "../middleware/rateLimiter.js";
 import CricketShot from "../models/CricketShot.js";
 import FieldingPosition from "../models/FieldingPosition.js";
 import {
@@ -21,10 +22,20 @@ import {
 
 const router = express.Router();
 
-router.post("/register", registerAdmin);
-router.post("/login", loginAdmin);
-router.post("/forgot-password", forgotPassword);
-router.post("/reset-password/:token", resetPassword);
+// Credential endpoints are brute-force and enumeration surfaces, so they are
+// throttled on the same terms as the user auth routes (see authRoutes.js) and in
+// some cases more tightly, because an admin token authorises the whole platform.
+// The registration limit is deliberately tight: it is a one-shot bootstrap that
+// should never be hit twice in a window, let alone by a script.
+const registerLimit = rateLimiter({ windowMs: 15 * 60 * 1000, max: 10 });
+const loginLimit = rateLimiter({ windowMs: 5 * 60 * 1000, max: 20 });
+const forgotLimit = rateLimiter({ windowMs: 15 * 60 * 1000, max: 5 });
+const resetLimit = rateLimiter({ windowMs: 15 * 60 * 1000, max: 10 });
+
+router.post("/register", registerLimit, registerAdmin);
+router.post("/login", loginLimit, loginAdmin);
+router.post("/forgot-password", forgotLimit, forgotPassword);
+router.post("/reset-password/:token", resetLimit, resetPassword);
 router.get("/profile", auth.protect, getAdminProfile);
 
 router.get("/", auth.protect, auth.requireAdmin, listAdmins);
