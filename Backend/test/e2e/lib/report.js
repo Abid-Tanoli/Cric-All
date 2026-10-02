@@ -171,6 +171,15 @@ export function createReport({ scenarios = [], selected = null, canonicalPath = 
         }
         out.push(`| **Total** | ${cov.ran} ran, ${cov.skipped} skipped | **${t.PASS + t.FAIL + t.DIVERGENCE}** |`);
         out.push("");
+        out.push(
+          "A filtered run counts only the checks of the scenarios that actually ran, so its",
+          "total is expected to sit well below the canonical full-suite total - the two",
+          "heaviest scenarios alone carry the majority of the checks. The table above names",
+          "every scenario that did not run and why, which is what distinguishes an",
+          "intentionally small `E2E_ONLY` run from a silent regression. A partial run is",
+          "never written over the canonical report.",
+        );
+        out.push("");
       }
 
       out.push(
