@@ -6,10 +6,15 @@ order in which rotation must happen before launch.
 **No secret values appear in this document — names, locations and procedures only.**
 
 Evidence for every row below is taken from the working tree at the time of
-writing: `Backend/.env`, `Backend/.env.example`, `Backend/.env.atlas.bak`,
-`docker-compose.yml`, `docker-compose.test.yml`, `DEPLOYMENT.md`,
+writing: `Backend/.env`, `Backend/.env.example`, `docker-compose.yml`,
+`docker-compose.test.yml`, `DEPLOYMENT.md`,
 `DEPLOYMENT_DOCKER_RENDER.md`, and `process.env` / `import.meta.env` reads across
 `Backend/src`, `Frontend/User`, `Frontend/Admin` and `scripts/`.
+
+> `Backend/.env.atlas.bak` is cited in several rows below because the compromise
+> it recorded is still real. The file itself **no longer exists** — it has been
+> deleted from the working tree. Its absence does not reduce the severity of the
+> underlying credentials.
 
 ---
 
@@ -23,9 +28,9 @@ public. Do not launch with any of them in place.
 
 | # | Credential | Env var(s) | Why it is marked compromised |
 |---|---|---|---|
-| 1 | MongoDB Atlas database-user password | `MONGODB_URI` / `MONGO_URL` / `MONGO_URI` | Real password in cleartext in `Backend/.env` **and** duplicated in `Backend/.env.atlas.bak`. The cluster is reachable from anywhere (`0.0.0.0/0` IP allow-list, per `DEPLOYMENT_DOCKER_RENDER.md` §7), so this password is the only thing protecting production data. |
-| 2 | `JWT_SECRET` | `JWT_SECRET` | A guessable placeholder default is sitting in `Backend/.env` and in the `.bak` copy. Anyone who reads the repo can forge admin and scoring tokens. |
-| 3 | RapidAPI key | `RAPIDAPI_KEY` | A real, working key value in cleartext in `Backend/.env` and in `Backend/.env.atlas.bak`. Quota is billable and the key enables the app's live-score polling. |
+| 1 | MongoDB Atlas database-user password | `MONGODB_URI` / `MONGO_URL` / `MONGO_URI` | Real password in cleartext in `Backend/.env`, and it was also duplicated in `Backend/.env.atlas.bak` (now deleted). The cluster is reachable from anywhere (`0.0.0.0/0` IP allow-list, per `DEPLOYMENT_DOCKER_RENDER.md` §7), so this password is the only thing protecting production data. |
+| 2 | `JWT_SECRET` | `JWT_SECRET` | A guessable placeholder default is sitting in `Backend/.env`, and it was in the `.bak` copy too. Anyone who reads the repo can forge admin and scoring tokens. |
+| 3 | RapidAPI key | `RAPIDAPI_KEY` | A real, working key value in cleartext in `Backend/.env`, and in `Backend/.env.atlas.bak` (now deleted). Quota is billable and the key enables the app's live-score polling. |
 | 4 | Seed / admin password | `SEED_ADMIN_PASSWORD`, `ADMIN_PASSWORD` | A real password in cleartext in `Backend/.env` and the `.bak` copy, plus an additional admin email/password pair written as a trailing comment block in the same files. The seeded `Admin` document is a `superadmin`. |
 
 **Also rotate, lower urgency:** all other credentials in §4 that hold a real
@@ -34,19 +39,27 @@ silently disable the feature it belongs to, so decide per feature: fill it in
 properly or leave it blank. Never leave a literal placeholder such as
 `your_api_key_here` in a production env file.
 
-### Git history is clean — do not rewrite it
+### Git history: no secret was ever committed, so do not rewrite it
 
-- `.gitignore` excludes `.env` and `.env.*` (keeping only `!.env.example`), so
-  `Backend/.env` and `Backend/.env.atlas.bak` were never committed.
-- `Frontend/User/.env` and `Frontend/Admin/.env` *were* tracked briefly, but the
-  only values they ever held were a localhost API URL. No secret has been
-  committed.
+Verified against all refs, not just the current branch:
+
+- `Backend/.env` and `Backend/.env.atlas.bak` — **never committed.** Confirmed by
+  `git log --all --diff-filter=A` returning nothing for either path. `.gitignore`
+  excludes `.env` and `.env.*` (keeping only `!.env.example`).
+- `Frontend/User/.env` and `Frontend/Admin/.env` — **were tracked historically**
+  (added in `22bf2a7`/`ebf8915` and `22bf2a7`/`e47d38e`/`fd3a366`/`fe60157`), then
+  untracked. Every value in every historical revision was classified as
+  `localhost`, `127.0.0.1`, a Google `googleusercontent.com` client ID, an empty
+  string, or a placeholder such as `your_...`/`example`. **No secret was ever
+  committed**, so the history is safe to keep as-is.
 - `docker-compose.test.yml:13` hardcodes a `JWT_SECRET` used only by the
   throwaway test container. It is a test fixture, not a production secret — leave
   it, do not "rotate" it, and never let it reach a production env file.
 
 Consequence: **no history rewrite, no force-push, and no credential revocation
-is needed for git.** Rotation is about the live values only.
+is needed for git.** The Frontend `.env` files being in history is a
+hygiene finding (they should not have been tracked at all), not a breach.
+Rotation is about the live values only.
 
 ---
 
@@ -91,7 +104,7 @@ half-rotated deploy happens.
 
 | Credential | Step 1: rotate at the provider | Step 2: update | Step 3: redeploy |
 |---|---|---|---|
-| Atlas password | Atlas → Project → **Access** → Database Access → Edit user → new password. Note: the old password keeps working until you edit the user. | `MONGODB_URI` (or `MONGO_URL`/`MONGO_URI`) in VPS `.env` **and** local `Backend/.env`. URL-encode special characters. Delete `Backend/.env.atlas.bak` — it is a second copy of the old secret on disk. | Backend container restart. No frontend rebuild. |
+| Atlas password | Atlas → Project → **Access** → Database Access → Edit user → new password. Note: the old password keeps working until you edit the user. | `MONGODB_URI` (or `MONGO_URL`/`MONGO_URI`) in VPS `.env` **and** local `Backend/.env`. URL-encode special characters. (`Backend/.env.atlas.bak`, which held a second copy of the old password, has already been deleted — confirm it is still gone.) | Backend container restart. No frontend rebuild. |
 | `JWT_SECRET` | Generate locally, do not use a memorable string: `node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"`. | `JWT_SECRET` in VPS `.env` and local `Backend/.env`. | Backend container restart. **Every browser session is logged out** — do this during a quiet window and tell support contacts. |
 | RapidAPI | RapidAPI dashboard → the app → **Credentials** → Regenerate key. | `RAPIDAPI_KEY` in VPS `.env` and local `Backend/.env`. The `RAPIDAPI_*_PATHS` and `RAPIDAPI_CRICKET_HOST` values are not secrets and do not change. | Backend container restart. Confirm the live poller logs no auth errors. |
 | SMTP | Mail provider → rotate the app password or client secret. If using a Google Workspace account, that is the account's **app password**, revoked in the security settings. | `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM`, and `MAIL_DRIVER=smtp` in both env files. | Backend restart. Verify a real verification email arrives (not a log line — see the known defect in §5). |
@@ -99,7 +112,7 @@ half-rotated deploy happens.
 | YouTube | Google Cloud Console → the API key → **Credentials** → regenerate. Restrict it to the YouTube Data API v3 and to your server egress IP. | `YOUTUBE_API_KEY` in both env files. | Backend restart. |
 | AI keys | Anthropic console → API key → rotate. Same for OpenAI. Revoke the old key after the new one is verified. | `ANTHROPIC_API_KEY` and/or `OPENAI_API_KEY`, plus `AI_PROVIDER` and `AI_MODEL` in both env files. | Backend restart. |
 | Seed / admin password | There is no external provider — this is a value in your own database. | `SEED_ADMIN_PASSWORD` (used by `Backend/src/seed/seedAdmin.js` and `seedAll.js`) and `ADMIN_NAME`/`ADMIN_EMAIL`/`ADMIN_PASSWORD` (used by `npm run admin:create`) in both env files. | See §6 — the `Admin` document in the database is what actually holds the credential. Changing the env file alone changes nothing. |
-| CricAPI (legacy) | cricketdata.org account → regenerate the API key. | `CRICKET_API_KEY` in both env files; `VITE_CRICAPI_KEY` in `Frontend/User/.env` if the user frontend uses it. | Backend restart. Rebuild the user frontend only if `VITE_CRICAPI_KEY` was in use. |
+| CricAPI (legacy) | cricketdata.org account → regenerate the API key. | `CRICKET_API_KEY` in both env files. **`VITE_CRICAPI_KEY` no longer exists** — the user frontend now calls the backend's `/api/international/*` proxy (see §4.2), so the key is server-side only. | Backend restart. No frontend rebuild is needed for this credential any more. |
 | Google Maps | Google Cloud Console → Maps JavaScript API key → restrict by HTTP referrer to the admin origin, then regenerate. | `VITE_GOOGLE_MAPS_KEY` in `Frontend/Admin/.env`. | **Rebuild and push the admin frontend image**, then redeploy. |
 | Sentry | Sentry → project settings → Client Keys (DSN) → rotate. | `SENTRY_DSN` in both env files. | Backend restart. |
 
@@ -119,7 +132,7 @@ Names only. "Set in" lists the files that must change for that credential.
 
 | Credential | Env var(s) | Set in | Status |
 |---|---|---|---|
-| MongoDB Atlas database user + password | `MONGODB_URI`, `MONGO_URL`, `MONGO_URI` | VPS `.env`, local `Backend/.env`, `Backend/.env.atlas.bak` | **COMPROMISED — rotate before launch** |
+| MongoDB Atlas database user + password | `MONGODB_URI`, `MONGO_URL`, `MONGO_URI` | VPS `.env`, local `Backend/.env` (was also in `Backend/.env.atlas.bak`, now deleted) | **COMPROMISED — rotate before launch** |
 | JWT signing secret | `JWT_SECRET` | VPS `.env`, local `Backend/.env` (test-only copy in `docker-compose.test.yml`) | **COMPROMISED — rotate before launch** |
 | RapidAPI (Cricbuzz) key | `RAPIDAPI_KEY` | VPS `.env`, local `Backend/.env` | **COMPROMISED — rotate before launch** |
 | Seed admin credentials | `SEED_ADMIN_EMAIL`, `SEED_ADMIN_PASSWORD` | VPS `.env`, local `Backend/.env` (consumed by `Backend/src/seed/seedAdmin.js`, `seedAll.js`) | **COMPROMISED — rotate before launch** |
@@ -144,7 +157,7 @@ be rotated by editing an env file on a running container.
 | Socket.IO base URL | `VITE_SOCKET_URL` | build arg in `docker-compose.yml:25,45`; both frontend env files | Not a secret. Backend origin, no `/api` |
 | Google OAuth client ID (User) | `VITE_GOOGLE_CLIENT_ID` | build arg in `docker-compose.yml:26`; `Frontend/User/.env` | Public by design; must equal backend `GOOGLE_CLIENT_ID` |
 | Google OAuth client ID (Admin) | `VITE_GOOGLE_CLIENT_ID` | build arg in `docker-compose.yml:46`; `Frontend/Admin/.env` | Same value as the User frontend |
-| CricAPI key (User) | `VITE_CRICAPI_KEY` | `Frontend/User/.env` | **A real API key in a public bundle.** Do not ship this; proxy through the backend instead, then remove the var |
+| ~~CricAPI key (User)~~ | ~~`VITE_CRICAPI_KEY`~~ | removed from `Frontend/User/.env` and `Frontend/User/.env.example` | **RESOLVED — no longer shipped.** The user frontend now fetches cricket data from the backend's `/api/international/*` proxy, which reads `CRICKET_API_KEY` server-side. Do not reintroduce this variable; Vite inlines `VITE_*` into the public bundle |
 | Google Maps key (Admin) | `VITE_GOOGLE_MAPS_KEY` | `Frontend/Admin/.env` | Restrict by HTTP referrer before shipping |
 
 ### 4.3 Non-secret configuration in the same files
@@ -156,7 +169,8 @@ sweep still confirms they were reviewed: `PORT`, `NODE_ENV`, `CORS_ORIGINS`,
 `MONGO_MAX_POOL_SIZE`, `MONGO_MIN_POOL_SIZE`, `EMAIL_VERIFICATION_HOURS`,
 `INVITATION_TTL_HOURS`, `ALLOW_DESTRUCTIVE_DB_SEED`,
 `ALLOW_PRODUCTION_DB_RESET`, `ALLOW_DB_RESET`, `REQUIRE_ORG_APPROVAL`,
-`REQUIRE_MEMBER_APPROVAL`, `ENABLE_EXTERNAL_SYNC`, `ENABLE_ESPN_SYNC`,
+`REQUIRE_MEMBER_APPROVAL`, `ALLOW_ADMIN_REGISTER`, `ENABLE_EXTERNAL_SYNC`,
+`ENABLE_ESPN_SYNC`,
 `EXTERNAL_SYNC_BASE_URL`, `SYNC_INTERVAL`, `ENABLE_FREE_CRICBUZZ`,
 `FREE_CRICBUZZ_BASE_URL`, `ENABLE_DEMO_CRICKET_DATA`, `CRICKET_POLL_INTERVAL`,
 `CRICKET_NEWS_FEEDS`, the `RAPIDAPI_*_PATHS` path lists, `BACKUP_DIR`,
@@ -166,6 +180,13 @@ Confirm all three destructive-op opt-ins (`ALLOW_DB_RESET`,
 `ALLOW_DESTRUCTIVE_DB_SEED`, `ALLOW_PRODUCTION_DB_RESET`) are `false` on the
 VPS before launch. They are not secrets, but they are the highest-consequence
 values in the file.
+
+**`ALLOW_ADMIN_REGISTER` is a fourth opt-in of the same kind, and it must be
+`false` on the VPS.** It gates public self-registration into the *admin* role.
+Absent or `false` means closed, which is the correct production posture — the
+first admin is created deliberately with `npm run admin:create` instead. See
+`Backend/docs/first-admin-bootstrap.md`. The only safe place to set it `true` is
+a local or throwaway test database.
 
 ---
 
@@ -181,10 +202,10 @@ succeeded when it did not. Fix them in the same pass.
    behaviour in `Backend/.env.example`: without valid `SMTP_*` values the server
    falls back to the console driver. **A verification email landing in the server
    log instead of an inbox is a failed smoke test, not a passing one.**
-2. **`Backend/.env.atlas.bak` is a second, unencrypted copy of every compromised
-   value.** Delete it as part of step 2 of the Atlas rotation. `.gitignore`
-   covers `.env.*`, so it is not tracked — but it is still a plaintext copy on
-   disk.
+2. ~~**`Backend/.env.atlas.bak` is a second, unencrypted copy of every compromised
+   value.**~~ **RESOLVED — the file has been deleted from the working tree.** It
+   was never tracked by git, so nothing further is needed for git; just confirm
+   it has not been re-created and is not present in any backup of the machine.
 3. **The trailing comment block in the env files holds a second admin
    email/password pair.** Remove it and change that password too if it has ever
    been used.
@@ -245,7 +266,7 @@ Ordered so that a failure tells you which step broke.
 | 5 | Login and scoring work | Log in as the rotated admin, score a ball | Admin dashboard loads, a ball commits, the scorecard updates |
 | 6 | Google sign-in still offered | Open both frontends | The Google button is **visible** and completes. A missing button means `GOOGLE_CLIENT_ID` and the frontend build arg disagree |
 | 7 | Old sessions really are dead | Reuse a token captured before the rotation | `401`/unauthorized. If it still works, the new secret did not reach the running container |
-| 8 | Automated suites | `npm test` in `Backend/`, then `npm run test:smoke` | Both green. Full suite baseline is 220/220, E2E baseline is 78/78 — see `Backend/docs/e2e-results.md` and `docs/phase-status.md` |
+| 8 | Automated suites | `npm test` in `Backend/`, then `npm run test:e2e` in `Backend/` | Both green. Full suite baseline is **306/306**, E2E baseline is **78/78** across 7/7 scenarios — see `Backend/docs/e2e-results.md` and `docs/phase-status.md` |
 
 **Test suites need their own env.** `Backend/test` and the E2E runner use
 `mongodb-memory-server`; they must not be pointed at the production cluster or
@@ -260,7 +281,7 @@ Do not launch until every row is checked and dated.
 
 | Item | Owner | Done (date) | Verified by |
 |---|---|---|---|
-| Atlas password rotated, old user removed, `.env.atlas.bak` deleted | | | |
+| Atlas password rotated, old user removed, `.env.atlas.bak` still absent | | | |
 | Atlas IP allow-list restricted from `0.0.0.0/0` if a fixed egress IP exists | | | |
 | `JWT_SECRET` replaced with a random value | | | |
 | RapidAPI key regenerated, old key revoked | | | |
@@ -269,11 +290,84 @@ Do not launch until every row is checked and dated.
 | Duplicate `MAIL_DRIVER` and `SMTP_*` placeholders fixed; real mail verified | | | |
 | Google OAuth client ID consistent across backend env and both frontend images | | | |
 | YouTube / AI / CricAPI / Sentry keys rotated **or** deliberately left blank | | | |
-| `VITE_CRICAPI_KEY` removed from the user frontend bundle, or accepted as public | | | |
+| `VITE_CRICAPI_KEY` absent from the user frontend env files and bundle | ✅ Done — proxied through the backend, var removed | | Re-verify on the next build |
+| `ALLOW_ADMIN_REGISTER` confirmed absent/`false` on the VPS | | | |
+| `xlsx` dependency exposure accepted or remediated — see §9 | | | |
 | All three destructive-op opt-ins confirmed `false` on the VPS | | | |
 | VPS `.env` and local `Backend/.env` compared line by line; no drift | | | |
 | Smoke tests §7 rows 1–8 all pass | | | |
 | Old sessions confirmed rejected; users told to re-authenticate | | | |
+
+---
+
+## 9. Dependency audit — `npm audit` results and open decisions
+
+`npm audit fix` was run in each package **without** `--force`. That resolved every
+non-breaking finding; three remain and all three need a human decision.
+
+| Package | Before | After | High / Critical after |
+|---|---|---|---|
+| `Backend` | 12 (9 high) | **1** (1 high) | 1 high, 0 critical |
+| `Frontend/User` | 23 (15 high) | **2** (0 high) | 0 |
+| `Frontend/Admin` | 17 (9 high) | **4** (0 high) | 0 |
+
+No `package.json` manifest was changed — only lockfiles moved, and only within
+each package's existing semver ranges. Verified afterwards: Backend `306/306`,
+E2E `78/78`, Admin `10/10`, both frontend builds succeed.
+
+Notably, the two dependencies flagged for a possible breaking upgrade turned out
+to need nothing: **`multer` reported no advisory at all** (it moved
+`1.4.5-lts.1` → `1.4.5-lts.2` in-range), and **both `vite` advisories were fixed
+by in-range patch bumps**, not a major upgrade.
+
+### Open decision 1 — `xlsx` (Backend, high, no fix on npm)
+
+- **Advisory:** prototype pollution (`GHSA-4r6h-8v6p-xvw6`) and ReDoS
+  (`GHSA-5pgg-2g8v-p4x9`). Installed `xlsx@0.18.5`.
+- **Reachable, not theoretical.** `Backend/src/controllers/bulkImportController.js`
+  calls `xlsx.read(req.file.buffer)` on an uploaded spreadsheet at lines 12 and
+  99, so a crafted `.xlsx` reaches the parser. The routes are admin-authenticated,
+  which limits this to a malicious or compromised admin — but that is exactly the
+  account this document assumes is compromised.
+- **Why it is stuck:** SheetJS stopped publishing to the public npm registry.
+  Every npm version is affected and `npm audit` reports "No fix available". The
+  patched builds (0.19.3+ / 0.20.x) are only on SheetJS's own CDN.
+- **Options:** (a) install from the official SheetJS CDN tarball
+  (`https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz`) — this is the real fix
+  but adds a non-npm install source, which is a supply-chain decision, not a
+  routine bump; (b) accept the risk and record why, given the route is
+  admin-only; (c) disable bulk `.xlsx` upload until it is decided. **Not decided
+  here — pick one before launch.**
+
+### Open decision 2 — `vitest` 4.x → 5.x (both frontends, moderate)
+
+`GHSA-82fw-gwwq-j7x9`, path traversal / arbitrary file read via
+`@vitest/mocker`. **Moderate, dev-only** — it affects the test runner, not
+anything shipped to users, so it does not block launch. The only fix is
+`vitest@5.0.3`, a semver-major bump that will need the test suites updated.
+
+### Open decision 3 — `react-router-dom` (Admin, moderate)
+
+Open-redirect and arbitrary-constructor advisories, fixed in `7.18.4`, also a
+semver-major bump. Dev-facing severity in this app because the affected paths are
+SSR/hydration and RSC redirect handling that this SPA does not use — but the
+router is a direct dependency of every page, so a major upgrade needs real
+regression testing of navigation.
+
+### Known pre-existing test gap (not a dependency issue)
+
+`Frontend/User` has 2 of 7 vitest suites that cannot even be collected:
+`Account.test.jsx` and `CreateOrganizationLabels.test.jsx` fail with
+`Failed to resolve import "socket.io-client" from "../Shared/services/socket.js"`.
+Cause: `Frontend/Shared/` has no `package.json` and no `node_modules`, so the
+bare `socket.io-client` import inside it resolves relative to `Frontend/Shared/`
+— outside the vitest root — and finds nothing, even though the package is
+correctly installed in `Frontend/User/node_modules`. Production builds are
+unaffected (Vite resolves it), only the test runner is. Fixing it means either
+giving `Frontend/Shared` its own manifest or adding a vitest resolution alias;
+that is a structural decision and was left alone.
+
+---
 
 ### Non-negotiables
 

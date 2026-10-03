@@ -1,67 +1,49 @@
-import axios from "axios";
+import { api } from "./api";
 
-const BASE_URL = "https://api.cricapi.com/v1";
-const CACHE_TTL = 3 * 60 * 1000;
-const API_KEY = import.meta.env.VITE_CRICAPI_KEY;
+/**
+ * External cricket data, proxied through this app's own backend.
+ *
+ * These calls used to go straight to https://api.cricapi.com/v1 from the
+ * browser with `apikey=VITE_CRICAPI_KEY`. Vite inlines every `VITE_*` variable
+ * into the bundle at build time, so that key was shipped to every visitor and
+ * was readable in devtools by anyone who opened the page. A third-party key in
+ * client code is a public third-party key.
+ *
+ * The backend already speaks this provider: `services/cricketDataService.js`
+ * calls the same cricapi endpoints with `CRICKET_API_KEY` from the server
+ * environment, and `routes/international.js` exposes them under
+ * `/api/international/*`. Going through it keeps the key on the server, reuses
+ * the backend's per-endpoint cache (30s for live scores up to 3600s for series,
+ * which is strictly longer than the 180s localStorage cache this file used to
+ * keep), and inherits its RapidAPI / free-Cricbuzz / demo-data fallbacks - so
+ * the UI now works with whichever provider the operator actually configured.
+ *
+ * Response shape: the backend replies `{ success, data }` where `data` is the
+ * provider's payload untouched, so the normalizers below are unchanged.
+ *
+ * Endpoint mapping, for the record:
+ *   /series            -> GET /international/series
+ *   /series_info       -> GET /international/series/:id
+ *   /currentMatches    -> GET /international/live
+ *   /matches           -> GET /international/matches
+ *   /match_scorecard   -> GET /international/match/:id/scorecard
+ *   /match_squad       -> GET /international/series/:id/squad
+ *   /match_points      -> GET /international/series/:id/points
+ *   /players           -> GET /international/players?search=
+ *
+ * The last two were also *wrong* before: cricapi has no `match_squad` or
+ * `match_points` endpoint, so both always failed and both call sites swallowed
+ * the error into an empty list. The squad and points that do exist are
+ * series-scoped, so they are fetched by the same id the page already holds.
+ */
 
-const client = axios.create({
-  baseURL: BASE_URL,
-  timeout: 15000,
-});
+const PROVIDER_PATH = "/international";
 
-const cacheKey = (endpoint, params = {}) =>
-  `cricapi:${endpoint}:${JSON.stringify(params)}`;
+const asArray = (value) => (Array.isArray(value) ? value : []);
 
-const readCache = (key) => {
-  try {
-    const cached = JSON.parse(localStorage.getItem(key) || "null");
-    if (!cached || Date.now() - cached.timestamp > CACHE_TTL) return null;
-    return cached.data;
-  } catch {
-    return null;
-  }
-};
+const unwrap = (response) => response?.data?.data ?? null;
 
-const writeCache = (key, data) => {
-  try {
-    localStorage.setItem(key, JSON.stringify({ timestamp: Date.now(), data }));
-  } catch {
-    // localStorage can be unavailable or full; API should still work.
-  }
-};
-
-const apiError = (message, code = "CRICAPI_ERROR") => {
-  const error = new Error(message);
-  error.code = code;
-  return error;
-};
-
-const unwrapData = (response) => {
-  const body = response?.data || {};
-  if (body.status === "failure") {
-    throw apiError(body.reason || body.message || "Cricket API request failed", "CRICAPI_LIMIT_OR_FAILURE");
-  }
-  return body.data ?? body;
-};
-
-const request = async (endpoint, params = {}) => {
-  if (!API_KEY) {
-    throw apiError("Cricket API key missing. Set VITE_CRICAPI_KEY in your environment.", "CRICAPI_KEY_MISSING");
-  }
-
-  const key = cacheKey(endpoint, params);
-  const cached = readCache(key);
-  if (cached) return cached;
-
-  const response = await client.get(endpoint, {
-    params: { apikey: API_KEY, ...params },
-  });
-  const data = unwrapData(response);
-  writeCache(key, data);
-  return data;
-};
-
-const asArray = (value) => Array.isArray(value) ? value : [];
+const encode = (value) => encodeURIComponent(String(value ?? "").trim());
 
 const normalizeDate = (value) => value || "";
 
@@ -90,7 +72,7 @@ export const normalizeMatch = (match = {}) => ({
   id: match.id || match._id || match.matchId || "",
   name: match.name || match.title || `${match.teams?.[0] || "Team A"} vs ${match.teams?.[1] || "Team B"}`,
   matchType: match.matchType || match.type || "",
-  status: match.status || match.matchStarted && !match.matchEnded ? "live" : match.matchEnded ? "completed" : "upcoming",
+  status: match.status || (match.matchStarted && !match.matchEnded ? "live" : match.matchEnded ? "completed" : "upcoming"),
   venue: match.venue || "",
   date: match.date || match.dateTimeGMT || match.startAt || "",
   dateTimeGMT: match.dateTimeGMT || match.date || "",
@@ -146,36 +128,65 @@ export const normalizePlayers = (data = {}) =>
     raw: player,
   }));
 
-export const isCricApiConfigured = () => Boolean(API_KEY);
+/**
+ * Whether the server has any external cricket provider configured.
+ *
+ * This used to be a synchronous `Boolean(import.meta.env.VITE_CRICAPI_KEY)`,
+ * which could only ever answer a question about the browser build. It is now a
+ * server question, so it is async, and the answer is the backend's
+ * `GET /international/status` rather than anything the client can read.
+ */
+export const getCricketProviderStatus = async () => {
+  const response = await api.get(`${PROVIDER_PATH}/status`, { timeout: 5000 });
+  return response?.data?.data ?? null;
+};
 
-export const getSeries = async (offset = 0) =>
-  asArray(await request("/series", { offset })).map(normalizeSeries);
+export const getSeries = async () => {
+  const response = await api.get(`${PROVIDER_PATH}/series`, { timeout: 8000 });
+  return asArray(unwrap(response)).map(normalizeSeries);
+};
 
-export const getSeriesInfo = async (seriesId, offset = 0) =>
-  normalizeSeriesInfo(await request("/series_info", { id: seriesId, offset }));
+export const getSeriesInfo = async (seriesId) => {
+  const response = await api.get(`${PROVIDER_PATH}/series/${encode(seriesId)}`, { timeout: 8000 });
+  return normalizeSeriesInfo(unwrap(response) ?? {});
+};
 
-export const getCurrentMatches = async (offset = 0) =>
-  asArray(await request("/currentMatches", { offset })).map(normalizeMatch);
+export const getCurrentMatches = async () => {
+  const response = await api.get(`${PROVIDER_PATH}/live`, { timeout: 8000 });
+  return asArray(unwrap(response)).map(normalizeMatch);
+};
 
-export const getMatches = async (offset = 0) =>
-  asArray(await request("/matches", { offset })).map(normalizeMatch);
+export const getMatches = async () => {
+  const response = await api.get(`${PROVIDER_PATH}/matches`, { timeout: 8000 });
+  return asArray(unwrap(response)).map(normalizeMatch);
+};
 
-export const getMatchScorecard = async (matchId, offset = 0) =>
-  normalizeScorecard(await request("/match_scorecard", { id: matchId, offset }));
+export const getMatchScorecard = async (matchId) => {
+  const response = await api.get(`${PROVIDER_PATH}/match/${encode(matchId)}/scorecard`, { timeout: 8000 });
+  return normalizeScorecard(unwrap(response) ?? {});
+};
 
-export const getMatchSquad = async (matchId) =>
-  normalizeSquad(await request("/match_squad", { id: matchId }));
+export const getMatchSquad = async (matchId) => {
+  const response = await api.get(`${PROVIDER_PATH}/series/${encode(matchId)}/squad`, { timeout: 8000 });
+  return normalizeSquad(unwrap(response) ?? {});
+};
 
-export const getMatchPoints = async (matchId) =>
-  normalizePoints(await request("/match_points", { id: matchId }));
+export const getMatchPoints = async (matchId) => {
+  const response = await api.get(`${PROVIDER_PATH}/series/${encode(matchId)}/points`, { timeout: 8000 });
+  return normalizePoints(unwrap(response) ?? {});
+};
 
-export const searchPlayers = async (playerName, offset = 0) => {
+export const searchPlayers = async (playerName) => {
   if (!playerName?.trim()) return [];
-  return normalizePlayers(await request("/players", { offset, search: playerName.trim() }));
+  const response = await api.get(`${PROVIDER_PATH}/players`, {
+    params: { search: playerName.trim() },
+    timeout: 8000,
+  });
+  return normalizePlayers(unwrap(response));
 };
 
 export default {
-  isCricApiConfigured,
+  getCricketProviderStatus,
   getSeries,
   getSeriesInfo,
   getCurrentMatches,

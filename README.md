@@ -113,9 +113,14 @@ Create `Frontend/User/.env`:
 ```env
 VITE_API_URL=http://localhost:5000/api
 VITE_SOCKET_URL=http://localhost:5000
-VITE_CRICAPI_KEY=your_api_key_here
 VITE_GOOGLE_CLIENT_ID=your_google_client_id.apps.googleusercontent.com
 ```
+
+External cricket data (live scores, series, squads) is fetched through the
+backend at `/api/international/*`, which reads `CRICKET_API_KEY` /
+`RAPIDAPI_KEY` from the *backend* environment. There is no frontend cricket key:
+Vite inlines `VITE_*` variables into the browser bundle, so one there would be
+published to every visitor.
 
 ### Run Development Servers
 
@@ -194,7 +199,6 @@ VITE_GOOGLE_CLIENT_ID=...                 # Google OAuth client ID (optional)
 ```
 VITE_API_URL=http://localhost:5000/api    # Backend API URL (or "/api" for proxy)
 VITE_SOCKET_URL=http://localhost:5000     # WebSocket server URL
-VITE_CRICAPI_KEY=...                      # CricAPI key (optional)
 VITE_GOOGLE_CLIENT_ID=...                 # Google OAuth client ID (optional)
 ```
 

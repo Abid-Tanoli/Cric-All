@@ -2,8 +2,8 @@ import React from "react";
 
 export default function ErrorState({ title = "Cricket API unavailable", message, onRetry }) {
   const friendlyMessage =
-    message?.includes("key missing")
-      ? "Add VITE_CRICAPI_KEY to enable live series and match data."
+    message?.includes("provider is not configured") || message?.includes("key missing")
+      ? "Live cricket data is not configured on the server yet. Set CRICKET_API_KEY (or RAPIDAPI_KEY) in the backend environment - it is fetched server-side, never from the browser."
       : message || "The free cricket API may be rate limited right now. Cached or local CricAll data will still be used where available.";
 
   return (

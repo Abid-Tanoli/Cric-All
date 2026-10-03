@@ -41,7 +41,6 @@ Optional:
 
 ```env
 VITE_GOOGLE_CLIENT_ID=
-VITE_CRICAPI_KEY=
 ```
 
 ## Admin frontend
