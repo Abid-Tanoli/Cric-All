@@ -92,3 +92,33 @@ export async function setUserActive(email) {
     await disconnectLocal();
   }
 }
+
+/**
+ * Creates the platform-admin principal for the cross-tenant suite.
+ *
+ * This used to go through POST /admin/register. That route is now gated on
+ * ALLOW_ADMIN_REGISTER, which is read by the *server* process - a test process
+ * setting the variable for itself changes nothing about the running server. So
+ * the admin is written straight into the disposable database instead, which also
+ * matches how the suspended actor is built.
+ *
+ * `Admin.create` runs the model's pre-save hook, so the password is bcrypt
+ * hashed exactly as a real registration would be, and the bootstrap claim is set
+ * so this account also closes the HTTP bootstrap window.
+ */
+export async function createPlatformAdmin({ name, email, password }) {
+  assertDisposableDb();
+  await connectLocal();
+  try {
+    const admin = await Admin.create({
+      name,
+      email: String(email).toLowerCase(),
+      password,
+      role: "superadmin",
+      bootstrapClaim: "first-admin",
+    });
+    return { id: String(admin._id), email: admin.email, role: admin.role };
+  } finally {
+    await disconnectLocal();
+  }
+}

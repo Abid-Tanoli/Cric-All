@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import LiveScoreCard from "./LiveScoreCard";
 import Loader from "./Loader";
 import ErrorState from "./ErrorState";
-import { getCurrentMatches, isCricApiConfigured } from "../../services/cricApi";
+import { getCurrentMatches, getCricketProviderStatus } from "../../services/cricApi";
 
 export default function LiveMatchesSection() {
   const [matches, setMatches] = useState([]);
@@ -10,16 +10,23 @@ export default function LiveMatchesSection() {
   const [error, setError] = useState(null);
 
   const loadLiveMatches = useCallback(async () => {
-    if (!isCricApiConfigured()) {
-      setError("Live cricket API key missing. Set VITE_CRICAPI_KEY to enable external live scores.");
-      setLoading(false);
-      return;
-    }
-
     try {
       setLoading(true);
       setError(null);
-      const data = await getCurrentMatches(0);
+
+      // Whether a live provider exists is now a question for the backend, which
+      // owns the key. A status endpoint that is itself unreachable is not proof
+      // that no provider is configured, so only an explicit `configured: false`
+      // short-circuits - otherwise we try the real call and let it answer.
+      const status = await getCricketProviderStatus().catch(() => null);
+      if (status && status.configured === false) {
+        setMatches([]);
+        setError("No live cricket provider is configured on the server.");
+        setLoading(false);
+        return;
+      }
+
+      const data = await getCurrentMatches();
       setMatches(data.filter((match) => match.matchStarted && !match.matchEnded));
     } catch (err) {
       setError(err.message || "Failed to load external live matches");

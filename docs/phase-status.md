@@ -19,6 +19,10 @@ Current evidence and run results are recorded here and in
   scenarios; final run passed 78/78 checks with no divergences. The full backend
   suite passed 220/220 after raising the test-only MongoMemoryServer startup
   timeout to 30 seconds.
+- Round 4B: the full backend suite baseline is now **306/306** (the 220 above plus
+  the platform-security, org-isolation and cross-tenant suites added since), and
+  E2E remains **78/78** across 7/7 scenarios. External cricket data is now proxied
+  through the backend, so `VITE_CRICAPI_KEY` is no longer shipped to browsers.
 - Part D: organization deletion removes its invitation rows; a separate
   local-only orphan cleanup command defaults to dry-run and requires `--apply`.
   Its dry run against `cric-all-e2e` found zero orphan invitations.

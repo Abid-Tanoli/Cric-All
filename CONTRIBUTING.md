@@ -189,7 +189,6 @@ This controls both HTTP CORS and Socket.IO CORS.
 |----------|----------|---------|-------------|
 | `VITE_API_URL` | No | `/api` (proxy) | Backend API URL |
 | `VITE_SOCKET_URL` | No | — | WebSocket server URL |
-| `VITE_CRICAPI_KEY` | No | — | CricAPI key |
 | `VITE_GOOGLE_CLIENT_ID` | No | — | Google OAuth client ID |
 
 ## Common Issues

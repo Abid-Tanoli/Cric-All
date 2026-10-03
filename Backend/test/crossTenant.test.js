@@ -36,7 +36,7 @@ import assert from "node:assert/strict";
 import { API_BASE, assertLocalTarget, assertServerIsLocal } from "./e2e/lib/guard.js";
 import { createClient } from "./e2e/lib/http.js";
 import { bootstrap, createMatch, registerVerifiedUser, TEST_PREFIX } from "./e2e/lib/bootstrap.js";
-import { resetPlatformAdmins, setUserSuspended } from "./helpers/localFixtures.js";
+import { resetPlatformAdmins, setUserSuspended, createPlatformAdmin } from "./helpers/localFixtures.js";
 
 // Same disposable local-only fixture password the rest of the E2E suite uses.
 const FIXTURE_PASSWORD = "OpencodeLocal!2026";
@@ -191,32 +191,41 @@ before(async () => {
   suspended.memberOf = String(ctx.orgId);
   actors.suspended = suspended;
 
-  // Platform admin: first registration on an empty Admin collection is the only
-  // window that is ever open, and it yields superadmin.
+  // Platform admin: the one principal the public API cannot be relied on to
+  // produce. POST /admin/register is now gated on ALLOW_ADMIN_REGISTER, which
+  // the *server* process reads, so a test process cannot enable it for the
+  // running server. The admin is therefore written into the disposable database
+  // directly - see helpers/localFixtures.js.
+  const adminEmail = `opencode.test.admin.${runId}@example.test`;
+  const admin = await createPlatformAdmin({
+    name: `${TEST_PREFIX}PlatformAdmin_${runId}`,
+    email: adminEmail,
+    password: FIXTURE_PASSWORD,
+  });
   const adminApi = createClient({ apiBase: API_BASE });
-  const adminReg = await adminApi.post(
-    "/admin/register",
-    {
-      name: `${TEST_PREFIX}PlatformAdmin_${runId}`,
-      email: `opencode.test.admin.${runId}@example.test`,
-      password: FIXTURE_PASSWORD,
-    },
-    { expect: [200, 201] },
+  const adminLogin = await adminApi.post(
+    "/admin/login",
+    { email: adminEmail, password: FIXTURE_PASSWORD },
+    { expect: [200] },
   );
-  const adminToken = adminReg.body?.token;
-  assert.ok(adminToken, "platform admin registration returned no token");
+  const adminToken = adminLogin.body?.token;
+  assert.ok(adminToken, "platform admin login returned no token");
   adminApi.setToken(adminToken);
   actors.admin = {
     label: "admin",
-    email: `opencode.test.admin.${runId}@example.test`,
+    email: adminEmail,
     api: adminApi,
     token: adminToken,
-    userId: String(adminReg.body?.admin?._id || ""),
+    userId: admin.id,
+    role: admin.role,
   };
 
   // --- victims, all inside tenant A ---------------------------------------
   const match = await createMatch({ ctx, title: "Victim" });
   const throwawayMatch = await createMatch({ ctx, title: "Disposable" });
+  // A second throwaway fixture, so the permitted-delete cells can be asserted for
+  // two different principals without one of them consuming the other's.
+  const throwawayAdminMatch = await createMatch({ ctx, title: "DisposableAdmin" });
 
   const ownerPlayer = await ctx.owner.api.post(
     "/players",
@@ -257,6 +266,7 @@ before(async () => {
     },
     disposable: {
       matchId: throwawayMatch.matchId,
+      adminMatchId: throwawayAdminMatch.matchId,
     },
   };
 });
@@ -848,6 +858,273 @@ describe("Phase 11 - cross-tenant authorization matrix", () => {
       for (const actorName of ACTORS) {
         assert.ok(world.actors[actorName], `actor ${actorName} was never built`);
         assert.ok(world.actors[actorName].api, `actor ${actorName} has no client`);
+      }
+    });
+  });
+
+  // --- Round 4B: cells the original matrix recorded but never asserted --------
+  //
+  // Everything above attacks a victim from outside its tenant. Four cells were
+  // left unasserted, and all four are real rather than pedantic:
+  //
+  //   1. A member of tenant A was never probed against tenant A's *own*
+  //      privileged reads. Every `requireOrgPermission` on the read routes could
+  //      be widened to `requireOrgMembership` and the suite would stay green,
+  //      which would hand the invitation list and the audit log to every
+  //      score_handler in every club.
+  //   2. The entitled readers - the owner and the platform admin - were only ever
+  //      used as snapshot *ground truth*. A snapshot tolerates a 403 (it just
+  //      stringifies the error body), so a regression that locked the owner or
+  //      the whole Admin app out of every organization screen would not fail one
+  //      assertion in the file.
+  //   3. `isPlatformAdmin` is a blanket bypass over every org-scoped route, and
+  //      no test asserted that the bypass still works. The Admin app's entire
+  //      reason to exist is that access, so a regression here breaks the product
+  //      silently.
+  //   4. Three create routes were only ever exercised on their success path, so
+  //      their gates were never shown to actually gate.
+  //
+  // These blocks are appended, not interleaved: every snapshot-based denial above
+  // has already run against an intact victim by the time they execute, so the
+  // permitted writes below may consume the victims without invalidating a
+  // recorded verdict.
+
+  describe("intra-tenant privilege boundary", () => {
+    test("a score_handler reads its own roster and overview, but not invitations, the audit log or the team manage view", async () => {
+      // orgAMember holds exactly [score_match, view_analytics]. Reading is a
+      // membership-level right; the three surfaces below are permission-gated, so
+      // this is the boundary between "our member" and "our manager".
+      const { orgId } = v();
+      const api = world.actors.orgAMember.api;
+
+      for (const suffix of ["/members", "/overview"]) {
+        await assertPermitted({
+          api,
+          method: "get",
+          path: `/organizations/${orgId}${suffix}`,
+          label: `own-tenant read ${suffix} as orgAMember`,
+        });
+      }
+
+      for (const suffix of ["/invitations", "/audit-log", "/teams/manage"]) {
+        await assertRefused({
+          api,
+          method: "get",
+          path: `/organizations/${orgId}${suffix}`,
+          label: `own-tenant privileged read ${suffix} as orgAMember`,
+        });
+      }
+    });
+  });
+
+  describe("entitled readers", () => {
+    test("the owner and the platform admin can still read every org-scoped surface", async () => {
+      // The complement of the denials above. Without this, "the snapshot helper
+      // quietly stopped working" is indistinguishable from "the owner was locked
+      // out".
+      const { orgId } = v();
+      const surfaces = ["/members", "/invitations", "/audit-log", "/teams/manage", "/access", "/overview"];
+      for (const actorName of ["owner", "admin"]) {
+        const api = world.actors[actorName].api;
+        for (const suffix of surfaces) {
+          await assertPermitted({
+            api,
+            method: "get",
+            path: `/organizations/${orgId}${suffix}`,
+            label: `entitled read ${suffix} as ${actorName}`,
+          });
+        }
+      }
+    });
+  });
+
+  describe("platform supervision", () => {
+    test("the platform admin may write inside a tenant it holds no membership in", async () => {
+      const { orgId, memberUserId, teamId, playerId } = v();
+
+      await assertPermitted({
+        api: world.actors.admin.api,
+        method: "put",
+        path: `/organizations/${orgId}`,
+        body: { description: `${TEST_PREFIX}AdminSupervisedOrg` },
+        label: "organization update as admin",
+      });
+
+      await assertPermitted({
+        api: world.actors.admin.api,
+        method: "patch",
+        path: `/organizations/${orgId}/members/${memberUserId}`,
+        body: { roles: ["player", "score_handler"] },
+        label: "membership update as admin",
+      });
+
+      // Team, created and renamed through the tenant-scoped routes. If the
+      // platform-admin bypass in orgAccess.js stopped applying, these 403.
+      const created = await assertPermitted({
+        api: world.actors.admin.api,
+        method: "post",
+        path: `/organizations/${orgId}/teams`,
+        body: { name: `${TEST_PREFIX}AdminSupervised_${world.runId}` },
+        label: "team create as admin",
+      });
+      const supervisedId = String(created.body?.team?._id || created.body?._id || "");
+      assert.ok(supervisedId, `admin team create returned no id: ${JSON.stringify(created.body)}`);
+
+      await assertPermitted({
+        api: world.actors.admin.api,
+        method: "patch",
+        path: `/organizations/${orgId}/teams/${supervisedId}`,
+        body: { name: `${TEST_PREFIX}AdminRenamed_${world.runId}` },
+        label: "team update as admin",
+      });
+
+      // The global, non-org-scoped write routes, which the suite already proves
+      // are refused to every other principal. Same gate, other side of it.
+      await assertPermitted({
+        api: world.actors.admin.api,
+        method: "put",
+        path: `/teams/${teamId}`,
+        body: { name: `${TEST_PREFIX}AdminGlobalTeam_${world.runId}` },
+        label: "global team update as admin",
+      });
+      await assertPermitted({
+        api: world.actors.admin.api,
+        method: "put",
+        path: `/matches/${v().matchId}`,
+        body: { title: `${TEST_PREFIX}AdminGlobalMatch_${world.runId}` },
+        label: "global match update as admin",
+      });
+      await assertPermitted({
+        api: world.actors.admin.api,
+        method: "put",
+        path: `/players/${playerId}`,
+        body: { name: `${TEST_PREFIX}AdminGlobalPlayer_${world.runId}` },
+        label: "global player update as admin",
+      });
+      await assertPermitted({
+        api: world.actors.admin.api,
+        method: "put",
+        path: `/tournaments/${v().tournamentId}`,
+        body: { name: `${TEST_PREFIX}AdminTournament_${world.runId}` },
+        label: "tournament update as admin",
+      });
+    });
+
+    test("the platform admin may add a member to any tenant", async () => {
+      // `requireOrgPermission(INVITE_MEMBERS)` is bypassed for platform admins,
+      // which is what lets the Admin app fix a club that invited nobody.
+      const { orgId } = v();
+      const res = await world.actors.admin.api.post(
+        `/organizations/${orgId}/members`,
+        { email: world.actors.verified.email, roles: ["player"] },
+      );
+      assert.ok(res.status < 500, `membership create as admin returned ${res.status}`);
+      assert.ok(
+        res.status >= 200 && res.status < 300,
+        `FAIL platform admin was refused membership management: POST /organizations/${orgId}/members answered ${res.status} - ${JSON.stringify(res.body)}`,
+      );
+    });
+
+    test("a destructive verb is still reachable for the principals entitled to it", async () => {
+      // The suite is non-destructive everywhere else, so the success side of
+      // DELETE is only asserted here, against fixtures nothing else reads. Two
+      // throwaway matches exist precisely so the tenant-scoped owner path and the
+      // global platform-admin path can both be proven without one eating the
+      // other's fixture.
+      await assertPermitted({
+        api: world.actors.owner.api,
+        method: "delete",
+        path: `/organizations/${v().orgId}/matches/${world.disposable.matchId}`,
+        label: "tenant match delete as owner",
+      });
+
+      await assertPermitted({
+        api: world.actors.admin.api,
+        method: "delete",
+        path: `/matches/${world.disposable.adminMatchId}`,
+        label: "global match delete as admin",
+      });
+
+      // Tournaments are platform-wide, so the entitled principal is the platform
+      // admin on every verb. Created and removed here rather than reusing the
+      // victim tournament, whose snapshot the denial blocks still need.
+      const created = await assertPermitted({
+        api: world.actors.admin.api,
+        method: "post",
+        path: "/tournaments",
+        body: {
+          name: `${TEST_PREFIX}P11_Throwaway_${world.runId}`,
+          shortName: `P11X${world.runId}`.slice(0, 12),
+          type: "league",
+          startDate: "2026-01-01",
+          endDate: "2026-02-01",
+          teams: [v().teamId, v().otherTeamId],
+        },
+        label: "tournament create as admin",
+      });
+      const throwawayId = String(created.body?.tournament?._id || created.body?._id || "");
+      assert.ok(throwawayId, `admin tournament create returned no id: ${JSON.stringify(created.body)}`);
+
+      await assertPermitted({
+        api: world.actors.admin.api,
+        method: "delete",
+        path: `/tournaments/${throwawayId}`,
+        label: "tournament delete as admin",
+      });
+    });
+  });
+
+  describe("creation gates", () => {
+    test("only an organization_admin account or a platform admin may create an organization", async () => {
+      // Every actor below is a `player` account type or unauthenticated, so
+      // requireOrgAdminType must refuse all of them - including a suspended one,
+      // which is an account-status question that the route-level check would
+      // otherwise never reach.
+      for (const actorName of ["anonymous", "verified", "orgAMember", "orgBMember", "suspended"]) {
+        await assertRefused({
+          api: world.actors[actorName].api,
+          method: "post",
+          path: "/organizations",
+          body: { name: `${TEST_PREFIX}P11_OrgCreate_${world.runId}_${actorName}`, type: "club" },
+          label: `organization create as ${actorName}`,
+        });
+      }
+    });
+
+    test("only a platform admin may create a tournament", async () => {
+      // Tournaments are platform-wide, not tenant-owned, so even the owner of a
+      // club cannot mint one. The existing block proves PUT and DELETE are gated;
+      // POST was only ever exercised on its success path.
+      for (const actorName of ["anonymous", "verified", "orgAMember", "orgBMember", "owner", "suspended"]) {
+        await assertRefused({
+          api: world.actors[actorName].api,
+          method: "post",
+          path: "/tournaments",
+          body: {
+            name: `${TEST_PREFIX}P11_Tourn_${world.runId}_${actorName}`,
+            shortName: `P11T${world.runId}`.slice(0, 12),
+            type: "league",
+            startDate: "2026-01-01",
+            endDate: "2026-02-01",
+            teams: [v().teamId, v().otherTeamId],
+          },
+          label: `tournament create as ${actorName}`,
+        });
+      }
+    });
+
+    test("a player profile needs an authenticated, unsuspended account", async () => {
+      // Self-service profile creation was open to anybody until the schema split;
+      // only the permitted path was covered, never the two principals that must
+      // be turned away.
+      for (const actorName of ["anonymous", "suspended"]) {
+        await assertRefused({
+          api: world.actors[actorName].api,
+          method: "post",
+          path: "/players",
+          body: { name: `${TEST_PREFIX}P11_AnonPlayer_${world.runId}_${actorName}` },
+          label: `player create as ${actorName}`,
+        });
       }
     });
   });

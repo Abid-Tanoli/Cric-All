@@ -39,8 +39,15 @@ async function createAdmin() {
     return;
   }
 
-  const admin = await Admin.create({ name, email, password });
-  console.log(`Admin created: ${admin.email}`);
+  // This is the bootstrap account, so it is a superadmin - the same role the
+  // HTTP route grants. Creating a plain "admin" here would leave the platform
+  // with nobody able to mint another admin, because /admin/create is itself
+  // superadmin-only.
+  //
+  // bootstrapClaim is claimed here too, so the same unique index that closes
+  // POST /admin/register also protects this path against a concurrent run.
+  const admin = await Admin.create({ name, email, password, role: "superadmin", bootstrapClaim: "first-admin" });
+  console.log(`Admin created: ${admin.email} (role: ${admin.role})`);
 }
 
 createAdmin()
