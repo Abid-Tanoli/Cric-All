@@ -23,7 +23,7 @@ import { sleep } from "./guard.js";
 export const TEST_PREFIX = "OPENCODE_TEST_";
 const LOG_PATH =
   process.env.E2E_BACKEND_LOG ||
-  "C:\\Users\\ABIDTA~1\\AppData\\Local\\Temp\\opencode\\local-backend\\backend.log";
+  "backend.log";
 
 let logCursor = 0;
 

@@ -31,19 +31,24 @@ jobs:
         run: npm ci
         working-directory: Backend
 
+      - name: Start server
+        run: |
+          MONGO_URL="mongodb://localhost:27017/cric-all-e2e" \
+          JWT_SECRET="ci-only-secret" \
+          LOG_LEVEL=info \
+          MAIL_DRIVER=console \
+          PORT=5000 \
+          node src/index.js > backend.log 2>&1 &
+          echo "PID=$!" >> $GITHUB_ENV
+          curl --fail --retry-connrefused --retry 10 --retry-delay 2 http://localhost:5000/api/health
+        working-directory: Backend
+
       - name: Run scoring tests
         run: npm test
         working-directory: Backend
-
-      - name: Start server
-        run: |
-          MONGO_URL="mongodb://localhost:27017/cric-all-test" \
-          JWT_SECRET="ci-only-secret" \
-          LOG_LEVEL=error \
-          node src/index.js &
-          echo "PID=$!" >> $GITHUB_ENV
-          sleep 3
-        working-directory: Backend
+        env:
+          BASE_URL: http://localhost:5000/api
+          E2E_BACKEND_LOG: backend.log
 
       - name: Run smoke tests
         run: npm run test:smoke
@@ -52,6 +57,7 @@ jobs:
           BASE_URL: http://localhost:5000/api
 
       - name: Stop server
+        if: always()
         run: kill ${{ env.PID }} || true
 
   frontend-admin:
