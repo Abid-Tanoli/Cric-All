@@ -4,7 +4,16 @@ import Match from "../models/Match.js";
 import { emitToAll } from "../socket/socket.js";
 import { deleteStoredFile, deleteStoredFiles } from "../utils/photoStore.js";
 import { recordAudit } from "../utils/audit.js";
+import * as playerService from "../services/playerService.js";
 import { applyPlayerFieldPolicy, resolvePlayerWriteAccess } from "../middleware/playerAccess.js";
+import {
+  PLAYER_ROSTER_SELECT,
+  playerSelectFor,
+  playerTeamSelectFor,
+  resolveViewerContext,
+  sanitizePlayerPublic,
+  sanitizePlayersPublic,
+} from "../utils/publicProjection.js";
 
 const isTransientDbError = (error) => (
   error?.name === "MongooseError" ||
@@ -53,19 +62,26 @@ export const getPlayers = async (req, res) => {
     if (city) query["address.city"] = like(city);
 
     const skip = (safePage - 1) * safeLimit;
+    // Resolve the viewer before querying: the projection depends on whether
+    // anyone is identified at all.
+    const viewer = await resolveViewerContext(req);
     const [totalPlayers, players] = await Promise.all([
       Player.countDocuments(query).maxTimeMS(5000),
+      // Round 5: load only what the caller is entitled to, instead of loading
+      // everything and stripping afterwards. `.lean()` on a bare `find()` used
+      // to ship birthInfo/address/gallery/videos/createdBy to anonymous callers.
       Player.find(query)
-        .populate("team", "name")
+        .select(playerSelectFor(viewer))
+        .populate("team", playerTeamSelectFor(viewer))
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(safeLimit)
         .maxTimeMS(5000)
-        .lean()
+        .lean(),
     ]);
 
     res.json({
-      players,
+      players: sanitizePlayersPublic(players, { viewer }),
       totalPlayers,
       totalPages: Math.ceil(totalPlayers / safeLimit),
       currentPage: safePage,
@@ -80,28 +96,43 @@ export const getPlayers = async (req, res) => {
 
 export const getPlayer = async (req, res) => {
   try {
-    const player = await Player.findById(req.params.id).populate("team", "name");
+    const viewer = await resolveViewerContext(req);
+    const player = await Player.findById(req.params.id)
+      .select(playerSelectFor(viewer))
+      .populate("team", playerTeamSelectFor(viewer));
     if (!player) return res.status(404).json({ message: "Player not found" });
 
-    // The profile is public, so the response is the same for everybody â€” with
-    // the creator's own email and the hidden-field privacy applied first. This
-    // is a read path, so an unprivileged caller must not learn who owns it.
-    const privacy = player.privacy || {};
-    const body = player.toObject();
-    delete body.createdBy;
-    if (privacy.contactInfo === "hidden") {
-      for (const field of ["email", "phone", "contact"]) delete body[field];
-    }
-    if (privacy.socialLinks === "hidden") {
-      for (const key of Object.keys(body.socialLinks || {})) body.socialLinks[key] = "";
-    }
-    if (privacy.location === "hidden") {
-      body.address = { ...(body.address || {}), town: "", district: "", city: "", province: "" };
-    }
-
-    res.json(body);
+    // Round 5: the whole body-shaping that used to live here was a partial,
+    // hand-rolled blacklist — it deleted `email`/`phone`/`contact`, none of
+    // which exist on the Player schema (a dead branch), left `address.country`
+    // behind, and never touched `birthInfo`, `gallery` or `videos`.
+    // `sanitizePlayerPublic` is a whitelist that honours the privacy flags and
+    // still shows the creator and the owning organization's managers the full
+    // document.
+    res.json(sanitizePlayerPublic(player, { viewer }));
   } catch (err) {
     res.status(500).json({ message: "Error fetching player" });
+  }
+};
+
+/**
+ * GET /api/players/free-agents
+ *
+ * Round 5: this used to be an inline route handler that returned
+ * `playerService.getFreeAgents()` verbatim, so it was the one public player read
+ * that never went through a projection - the narrowed `.select()` stopped the
+ * worst of it, but `address` and `socialLinks` still ignored the privacy flags.
+ * It lives here now so the behaviour is covered by the same tests as every other
+ * public read.
+ */
+export const listFreeAgents = async (req, res) => {
+  try {
+    const viewer = await resolveViewerContext(req);
+    const { search } = req.query;
+    const result = await playerService.getFreeAgents(search);
+    res.status(200).json({ ...result, items: sanitizePlayersPublic(result.items, { viewer }) });
+  } catch (err) {
+    res.status(500).json({ message: "Error fetching free agents" });
   }
 };
 
@@ -341,18 +372,43 @@ export const bulkDeletePlayers = async (req, res) => {
   }
 };
 
+// Round 5: this used to be `Player.find()` with no filter, no `.select()` and no
+// `.limit()`, then `res.json` of every document with `...p._doc` spread in. On
+// the local database that was a single response carrying all 1,324 players
+// including date of birth and address. It is now paginated and projected.
 export const getPlayerRanking = async (req, res) => {
-  const players = await Player.find().populate("team", "name");
+  try {
+    const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 200);
+    const page = Math.max(Number(req.query.page) || 1, 1);
+    const viewer = await resolveViewerContext(req);
+    const filter = {};
 
-  const ranked = players.map(p => {
-    const points =
-      (p.stats.runs * 1) +
-      (p.stats.wickets * 25);
-    return { ...p._doc, rankingPoints: points };
-  });
+    const [total, players] = await Promise.all([
+      Player.countDocuments(filter).maxTimeMS(5000),
+      Player.find(filter)
+        .select(playerSelectFor(viewer))
+        .populate("team", playerTeamSelectFor(viewer))
+        .sort({ "stats.runs": -1, "stats.wickets": -1, updatedAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .maxTimeMS(5000)
+        .lean(),
+    ]);
 
-  ranked.sort((a, b) => b.rankingPoints - a.rankingPoints);
-  res.json(ranked);
+    const ranked = sanitizePlayersPublic(players, { viewer }).map((p) => ({
+      ...p,
+      rankingPoints: (p.stats?.runs || 0) * 1 + (p.stats?.wickets || 0) * 25,
+    }));
+
+    res.json({
+      items: ranked,
+      total,
+      totalPages: Math.ceil(total / limit),
+      currentPage: page,
+    });
+  } catch (err) {
+    res.status(500).json({ message: "Error fetching player ranking" });
+  }
 };
 
 export const getHeadToHead = async (req, res) => {

@@ -1,5 +1,5 @@
 import express from 'express';
-import { protect, requireAdmin } from '../middleware/authMiddleware.js';
+import { protect, optionalProtect, requireAdmin } from '../middleware/authMiddleware.js';
 import validateObjectId from '../middleware/validateObjectId.js';
 import {
   getOverallRankings,
@@ -18,7 +18,9 @@ router.get('/overall', getOverallRankings);
 router.get('/category/:categoryId', validateObjectId('categoryId'), getCategoryRankings);
 router.get('/cross-category', getCrossCategoryRankings);
 router.get('/players', getPlayerRankings);
-router.get('/players/team/:teamId', validateObjectId('teamId'), getTeamPlayerRankings);
+// Round 5: `players/team/:teamId` embeds each player, so it identifies the
+// caller when it can. `optionalProtect` never rejects.
+router.get('/players/team/:teamId', optionalProtect, validateObjectId('teamId'), getTeamPlayerRankings);
 router.post('/recompute', ...adminOnly, recomputeRankings);
 router.post('/recompute/:teamId', ...adminOnly, validateObjectId('teamId'), recomputeTeamRanking);
 

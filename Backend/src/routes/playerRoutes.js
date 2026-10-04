@@ -10,6 +10,7 @@ import {
   deletePlayer,
   bulkDeletePlayers,
   getHeadToHead,
+  listFreeAgents,
 } from "../controllers/playerController.js";
 import {
   getBattingRankings,
@@ -27,7 +28,7 @@ import {
   adminUpdatePlayerSchema,
 } from "../validators/playerValidators.js";
 import * as playerService from "../services/playerService.js";
-import { protect, requireAdmin, requireVerifiedEmail } from "../middleware/authMiddleware.js";
+import { protect, optionalProtect, requireAdmin, requireVerifiedEmail } from "../middleware/authMiddleware.js";
 import { isPlatformAdmin } from "../middleware/orgAccess.js";
 import validateObjectId from "../middleware/validateObjectId.js";
 
@@ -46,17 +47,15 @@ const createBody = (req, res, next) =>
 const updateBody = (req, res, next) =>
   validate(isPlatformAdmin(req) ? adminUpdatePlayerSchema : updatePlayerSchema)(req, res, next);
 
-router.get("/", getPlayers);
-router.get("/ranking", getPlayerRanking);
-router.get("/free-agents", async (req, res) => {
-  try {
-    const { search } = req.query;
-    const freeAgents = await playerService.getFreeAgents(search);
-    res.status(200).json(freeAgents);
-  } catch (error) {
-    res.status(500).json({ message: "Failed to fetch free agents", error: error.message });
-  }
-});
+// Round 5 — `optionalProtect` on the reads whose shape is viewer-dependent.
+// It never rejects: an absent or invalid token simply means "anonymous".
+router.get("/", optionalProtect, getPlayers);
+router.get("/ranking", optionalProtect, getPlayerRanking);
+// Round 5: this read was left inline in the route file and returned the service
+// result verbatim, so the privacy flags were never applied and `address` /
+// `socialLinks` reached anonymous callers. It now goes through the controller so
+// the projection is testable like every other public read.
+router.get("/free-agents", optionalProtect, listFreeAgents);
 // Must be declared before "/:id" — Express matches in registration order, so a
 // "/mine" declared after the id route is swallowed by it and 400s on
 // validateObjectId.
@@ -68,7 +67,7 @@ router.get("/rankings/fielder", getFielderRankings);
 router.get("/rankings/wicket-keeper", getWicketKeeperRankings);
 router.get("/rankings", getPlayerRankings);
 router.get("/:id/matches", validateObjectId("id"), getPlayerMatches);
-router.get("/:id", validateObjectId("id"), getPlayer);
+router.get("/:id", optionalProtect, validateObjectId("id"), getPlayer);
 router.get("/head-to-head/:batsmanId/:bowlerId", validateObjectId("batsmanId"), validateObjectId("bowlerId"), getHeadToHead);
 
 // A player profile is a public claim about a person rather than privileged

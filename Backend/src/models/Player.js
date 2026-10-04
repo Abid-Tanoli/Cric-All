@@ -117,7 +117,9 @@ gallery: [{
     privacy: {
       contactInfo: { type: String, enum: ["public", "hidden"], default: "public" },
       socialLinks: { type: String, enum: ["public", "hidden"], default: "public" },
-      location: { type: String, enum: ["public", "hidden"], default: "public" }
+      location: { type: String, enum: ["public", "hidden"], default: "public" },
+      gallery: { type: String, enum: ["public", "hidden"], default: "public" },
+      videos: { type: String, enum: ["public", "hidden"], default: "public" }
     },
     isSeed: { type: Boolean, default: false },
     seedSource: { type: String, default: "" },

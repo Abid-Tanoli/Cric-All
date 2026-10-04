@@ -5,6 +5,7 @@ import TeamCategory from "../models/TeamCategory.js";
 import Player from "../models/Player.js";
 import Match from "../models/Match.js";
 import mongoose from "mongoose";
+import { PLAYER_PUBLIC_SELECT, playerSelectFor, sanitizePlayerPublic } from "../utils/publicProjection.js";
 
 export async function computeTeamRanking(teamId) {
   const team = await Team.findById(teamId);
@@ -233,20 +234,33 @@ export async function getCrossCategoryRankings() {
   return result;
 }
 
-export async function getTeamPlayerRankings(teamId) {
-  const players = await Player.find({ team: teamId })
-    .sort({ "stats.runs": -1 });
+// Round 5: `player: p` embedded the whole Player document — birthInfo, address,
+// gallery, videos, createdBy — into an unauthenticated response. The roster
+// projection plus `sanitizePlayerPublic` now bound it, and the owning
+// organization is resolved from the team so that organization's managers still
+// see their own players in full.
+export async function getTeamPlayerRankings(teamId, viewer = null) {
+  const team = await Team.findById(teamId).select("organizationRef").lean();
+  const playerOrgId = team?.organizationRef ? String(team.organizationRef) : null;
 
-  const rankings = players.map((p, i) => ({
-    player: p,
-    teamBattingRank: i + 1,
-    teamRuns: p.stats?.runs || 0,
-    teamBattingAvg: p.stats?.average || 0,
-    teamBattingSr: p.stats?.strikeRate || 0,
-    teamHighestScore: p.stats?.highScore || 0,
-    teamFifties: p.stats?.fifties || 0,
-    teamHundreds: p.stats?.hundreds || 0,
-  }));
+  const players = await Player.find({ team: teamId })
+    .select(playerSelectFor(viewer))
+    .sort({ "stats.runs": -1 })
+    .lean();
+
+  const rankings = players.map((p, i) => {
+    const safe = sanitizePlayerPublic(p, { viewer, playerOrgId });
+    return {
+      player: safe,
+      teamBattingRank: i + 1,
+      teamRuns: p.stats?.runs || 0,
+      teamBattingAvg: p.stats?.average || 0,
+      teamBattingSr: p.stats?.strikeRate || 0,
+      teamHighestScore: p.stats?.highScore || 0,
+      teamFifties: p.stats?.fifties || 0,
+      teamHundreds: p.stats?.hundreds || 0,
+    };
+  });
 
   rankings.sort((a, b) => b.teamRuns - a.teamRuns);
   rankings.forEach((r, i) => (r.teamBattingRank = i + 1));

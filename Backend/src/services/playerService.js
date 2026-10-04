@@ -1,5 +1,6 @@
 import Player from "../models/Player.js";
 import Team from "../models/Team.js";
+import { PLAYER_PUBLIC_SELECT, playerSelectFor, playerTeamSelectFor } from "../utils/publicProjection.js";
 
 export async function assignPlayerToTeam(playerId, teamId, role = "player", jerseyNumber) {
   const player = await Player.findById(playerId);
@@ -64,28 +65,47 @@ export async function removePlayerFromTeam(playerId) {
 export async function getFreeAgents(search = "") {
   const query = { team: { $exists: false } };
   if (search) {
+    const term = String(search).trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     query.$or = [
-      { name: { $regex: search, $options: "i" } },
-      { role: { $regex: search, $options: "i" } },
+      { name: { $regex: term, $options: "i" } },
+      { role: { $regex: term, $options: "i" } },
     ];
   }
-  return Player.find(query).sort({ name: 1 });
+  // Round 5: bounded and projected. This is an unauthenticated endpoint and
+  // `find(query)` with no `.select()` returned each free agent's full document.
+  const limit = 200;
+  const [total, players] = await Promise.all([
+    Player.countDocuments(query),
+    Player.find(query)
+      .select(PLAYER_PUBLIC_SELECT)
+      .sort({ name: 1 })
+      .limit(limit)
+      .lean(),
+  ]);
+  return { items: players, total, truncated: total > limit };
 }
 
-export async function getTeamPlayers(teamId, filters = {}) {
+// Round 5: same treatment for the roster behind GET /teams/:id/players, which is
+// also unauthenticated and also used to return whole player documents.
+//
+// `viewer` widens the `.select()` for an identified caller. Without it the query
+// loads only public columns, so a manager of the owning organization would be
+// recognised by the sanitizer and then handed a document with nothing extra in
+// it - the escalation would compile, pass review and never actually show anyone
+// their own squad's date of birth.
+export async function getTeamPlayers(teamId, filters = {}, viewer = null) {
   const query = { team: teamId };
   if (filters.role) query.role = filters.role;
   if (filters.search) {
-    query.$or = [
-      { name: { $regex: filters.search, $options: "i" } },
-    ];
+    const term = String(filters.search).trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    query.$or = [{ name: { $regex: term, $options: "i" } }];
   }
 
-  const players = await Player.find(query)
-    .populate("team", "name shortName")
-    .sort({ role: -1, name: 1 });
-
-  return players;
+  return Player.find(query)
+    .select(playerSelectFor(viewer))
+    .populate("team", playerTeamSelectFor(viewer))
+    .sort({ role: -1, name: 1 })
+    .lean();
 }
 
 export async function getPlayerTeamHistory(playerId) {

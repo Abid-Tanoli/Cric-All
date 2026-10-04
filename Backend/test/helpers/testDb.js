@@ -36,5 +36,8 @@ export function mockRes() {
 }
 
 export function mockReq(overrides = {}) {
-  return { body: {}, params: {}, headers: {}, ...overrides };
+  // `query` is included because the controllers read filters straight off it
+  // (req.query.something); without this default a test that omits `query` fails
+  // on a TypeError instead of on the behaviour it is meant to check.
+  return { body: {}, params: {}, query: {}, headers: {}, ...overrides };
 }

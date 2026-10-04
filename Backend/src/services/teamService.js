@@ -7,6 +7,10 @@ import TeamPlayerRanking from "../models/TeamPlayerRanking.js";
 import Match from "../models/Match.js";
 import { getIO } from "../socket/socket.js";
 import { deleteStoredFile, deleteStoredFiles } from "../utils/photoStore.js";
+import {
+  PLAYER_ROSTER_SELECT,
+  TEAM_PUBLIC_SELECT,
+} from "../utils/publicProjection.js";
 
 // Pure diff used to decide which team media uploads are no longer referenced
 // after an update. Returns the subset of old URLs that are gone from `newMedia`.
@@ -16,10 +20,51 @@ export function computeRemovedMediaUrls(oldMediaUrls = [], newMedia) {
   return oldMediaUrls.filter((url) => url && !newUrls.has(url));
 }
 
+// Round 5 — cross-tenant exposure of organization-owned teams.
+//
+// `GET /api/teams` is unauthenticated and used to accept `organizationRef` only
+// as an optional filter, so with no query parameters it returned every team in
+// the platform: organization-owned tenants' rosters, branches and locations
+// included, to anyone. Two ways to ask for those teams, both explicit:
+//
+//   * `?scope=organization`         — organization-owned teams are in scope.
+//   * `?organizationRef=<id>`      — one organization's teams, named outright.
+//
+// The default is the platform/public catalogue: teams with no `organizationRef`,
+// which is what an org-less team is. An organization that wants its own listing
+// uses the org-scoped route (`GET /api/organizations/:id/teams`), which is where
+// the Teams tab already reads from.
 export async function listTeams(filters = {}) {
   const query = {};
   const limit = Math.min(Math.max(Number(filters.limit) || 120, 1), 500);
   const page = Math.max(Number(filters.page) || 1, 1);
+  const scope = String(filters.scope || "").toLowerCase();
+  const wantsAll = scope === "all";
+  const wantsOrgOwned = wantsAll || scope === "organization" || Boolean(filters.organizationRef);
+
+  // Clauses that must hold *together* go in `$and`, never in `query.$or`.
+  //
+  // Round 5: the tenancy filter and the free-text filter are both `$or` shaped,
+  // and they used to share the single `query.$or` key — so passing `?search=`
+  // overwrote the tenancy filter and returned every organization's teams to an
+  // anonymous caller, `isPublic` notwithstanding. Two `$or` clauses that both have
+  // to apply is exactly what `$and` is for.
+  const andClauses = [];
+
+  // For public listing (no org scope), include org-owned teams only if they are
+  // explicitly published (`Team.isPublic`, which defaults to false).
+  if (!wantsOrgOwned) {
+    andClauses.push({
+      $or: [
+        { organizationRef: { $in: [null, undefined] } },
+        { organizationRef: { $exists: true, $ne: null }, isPublic: true },
+      ],
+    });
+  } else if (!filters.organizationRef && !wantsAll && scope === "organization") {
+    // "all organization-owned teams" across tenants is a supervisory read; it is
+    // reachable only with the explicit scope and is sanitized like any other.
+    andClauses.push({ organizationRef: { $exists: true, $ne: null } });
+  }
 
   if (filters.category) query.category = filters.category;
   if (filters.categoryRef) query.categoryRef = filters.categoryRef;
@@ -27,18 +72,27 @@ export async function listTeams(filters = {}) {
   if (filters.type) query.type = filters.type;
   if (filters.city) query["address.city"] = { $regex: filters.city, $options: "i" };
   if (filters.search) {
-    query.$or = [
-      { name: { $regex: filters.search, $options: "i" } },
-      { shortName: { $regex: filters.search, $options: "i" } },
-      { branchName: { $regex: filters.search, $options: "i" } },
-      { organization: { $regex: filters.search, $options: "i" } },
-      { "address.city": { $regex: filters.search, $options: "i" } },
-    ];
+    const term = String(filters.search).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    andClauses.push({
+      $or: [
+        { name: { $regex: term, $options: "i" } },
+        { shortName: { $regex: term, $options: "i" } },
+        { branchName: { $regex: term, $options: "i" } },
+        { organization: { $regex: term, $options: "i" } },
+        { "address.city": { $regex: term, $options: "i" } },
+      ],
+    });
   }
   if (filters.isActive !== undefined) query.isActive = filters.isActive;
+  if (filters.isPublic !== undefined) query.isPublic = filters.isPublic === 'true' || filters.isPublic === true;
+
+  if (andClauses.length > 0) query.$and = andClauses;
 
   const teamsQuery = Team.find(query)
-    .select("name shortName logo type category categoryRef organization organizationRef branchName address area city players teamColorPrimary teamColorSecondary isActive profileComplete")
+    // `city` was in this projection but is not a Team field — city lives in
+    // `address.city`, which is projected as part of `address`. Selecting a
+    // nonexistent path was harmless but misleading.
+    .select("name shortName logo type category categoryRef organization organizationRef branchName address area players teamColorPrimary teamColorSecondary isActive profileComplete isPublic description establishedYear homeGround ageGroup")
     .populate("categoryRef", "name slug icon")
     .populate("organizationRef", "name slug type")
     .sort({ name: 1 })
@@ -48,18 +102,24 @@ export async function listTeams(filters = {}) {
     .lean();
 
   if (filters.includePlayers === "true" || filters.includePlayers === true) {
-    teamsQuery.populate("players", "name role playingRole imageUrl");
+    teamsQuery.populate("players", PLAYER_ROSTER_SELECT);
   }
 
   return teamsQuery;
 }
 
-export async function getTeamProfile(teamId) {
+// Round 5: `.populate("players")` with no argument loaded whole Player
+// documents — date of birth, address, gallery, videos and the creating account —
+// into `GET /api/teams/:id`, which is unauthenticated. The roster is now a
+// named projection and the team body is projected too. `viewer` is supplied by
+// the controller so a manager of the owning organization still sees their team
+// in full.
+export async function getTeamProfile(teamId, viewer = null) {
   const team = await Team.findById(teamId)
-    .populate("players")
-    .populate("categoryRef")
-    .populate("organizationRef");
-
+    .select(viewer?.userId ? `${TEAM_PUBLIC_SELECT} managedBy` : TEAM_PUBLIC_SELECT)
+    .populate("players", PLAYER_ROSTER_SELECT)
+    .populate("categoryRef", "name slug icon")
+    .populate("organizationRef", "name slug type");
   if (!team) return null;
 
   const ranking = await TeamRanking.findOne({ team: teamId });
@@ -79,7 +139,9 @@ export async function getTeamProfile(teamId) {
       _id: { $ne: teamId },
       isActive: true,
     })
-      .select("name branchName city logo shortName")
+      // Round 5: `city` was in this projection but is not a Team field - city lives
+    // in `address.city`, which `address` already brings along.
+    .select("name branchName address logo shortName")
       .populate("organizationRef", "name");
   }
 
@@ -95,9 +157,106 @@ export async function getTeamProfile(teamId) {
   };
 }
 
+// Round 5 — team name uniqueness is per organization, not global.
+//
+// Previously `name` carried a bare `unique: true` on the schema and both service
+// checks matched on `{ name }` alone, so two unrelated organizations could not
+// both own a "Rising Stars". The rule now is:
+//
+//   * a team that belongs to an organization is unique by (organization, name);
+//   * an org-less (platform) team keeps global uniqueness, because there is no
+//     organization to scope it to.
+//
+// Case is ignored on both sides so "Strikers" and "strikers" still collide —
+// matching the collation on the compound index in Team.js.
+function teamNameQuery(name, organizationRef, excludeId = null) {
+  const escaped = String(name).trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const filter = { name: { $regex: `^${escaped}$`, $options: "i" } };
+  if (organizationRef) filter.organizationRef = organizationRef;
+  else filter.organizationRef = { $in: [null, undefined] };
+  if (excludeId) filter._id = { $ne: excludeId };
+  return filter;
+}
+
+async function assertTeamNameAvailable(name, organizationRef, excludeId = null) {
+  if (!name) return;
+  const existing = await Team.findOne(teamNameQuery(name, organizationRef, excludeId))
+    .select("_id name organizationRef")
+    .lean();
+  if (existing) {
+    const error = new Error("Team with this name already exists");
+    error.code = "TEAM_NAME_TAKEN";
+    throw error;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Organization ownership changes (Round 5)
+// ---------------------------------------------------------------------------
+
+export const ORG_CHANGE_FIELD = "allowOrganizationChange";
+
+/**
+ * Re-attaching a team to a different organization, or detaching it into an
+ * org-less platform team, is a supervisory act: it moves the roster, the
+ * fixture history and every org permission that reaches those players.
+ *
+ * `orgTeamsController` has always refused it for members (it deliberately omits
+ * `organizationRef` from the editable body). The platform-admin route
+ * `PUT /api/teams/:id` had no such rule, so any admin could silently re-parent a
+ * tenant's team or orphan it. Now the change has to be asked for by name.
+ *
+ * @returns {null|{code:string,message:string,from:string|null,to:string|null}}
+ *          null when the request is not an ownership change.
+ */
+export function checkOrganizationChangeRequest(team, data) {
+  if (data.organizationRef === undefined) return null;
+
+  const from = team?.organizationRef ? String(team.organizationRef) : null;
+  const raw = data.organizationRef;
+  const to = raw === null || raw === "" || raw === undefined ? null : String(raw);
+  if (from === to) return null;
+
+  if (data[ORG_CHANGE_FIELD] !== true) {
+    return {
+      code: "TEAM_ORG_CHANGE_REQUIRES_FLAG",
+      message:
+        "Changing a team's organization is a supervisory action. Resend with " +
+        `"${ORG_CHANGE_FIELD}": true to confirm; the change is written to the audit log.`,
+      from,
+      to,
+    };
+  }
+  return null;
+}
+
+/** Strip the supervisory flag so it is never written to the document. */
+export function stripOrganizationChangeFlag(data) {
+  const { [ORG_CHANGE_FIELD]: _ignored, ...rest } = data || {};
+  void _ignored;
+  return rest;
+}
+
 export async function createTeam(data) {
-  const existing = await Team.findOne({ name: data.name });
-  if (existing) throw new Error("Team with this name already exists");
+  // Round 5: the duplicate check runs before the insert and is org-scoped, so a
+  // collision inside one organization is a 409 while the same name in a
+  // different organization is allowed.
+  await assertTeamNameAvailable(data.name, data.organizationRef);
+
+  // Round 5: `city` used to be assigned to a top-level `team.city`, which Team.js
+  // does not declare, so Mongoose's strict mode dropped it and a create-time city
+  // was silently lost - the same latent bug the location endpoint had. City lives
+  // in `address.city`. An explicit `address` object wins; the flat `city` is only
+  // used to fill a gap it leaves, so the two cannot clobber each other.
+  const address = {
+    town: "",
+    district: "",
+    city: "",
+    province: "",
+    country: "Pakistan",
+    ...(data.address || {}),
+  };
+  if (!address.city && data.city !== undefined) address.city = data.city || "";
 
   const team = new Team({
     name: data.name,
@@ -114,9 +273,8 @@ export async function createTeam(data) {
     ownername: data.ownername || "",
     logo: data.logo || "",
     fullAddress: data.fullAddress || "",
-    address: data.address || { town: "", district: "", city: "", province: "", country: "Pakistan" },
+    address,
     area: data.area || "",
-    city: data.city || (data.address?.city || ""),
     latitude: data.latitude,
     longitude: data.longitude,
     googleMapsUrl: data.googleMapsUrl || "",
@@ -156,10 +314,15 @@ export async function createTeam(data) {
 }
 
 export async function updateTeam(teamId, data) {
-  if (data.name) {
-    const existing = await Team.findOne({ name: data.name, _id: { $ne: teamId } });
-    if (existing) throw new Error("Team with this name already exists");
-  }
+  // Round 5: the uniqueness probe follows the team's *resulting* organization,
+  // so a rename is checked against the organization the team will end up in.
+  // `updateTeam` refuses to move a team between organizations (see
+  // assertNoOrgMove) unless a supervisory caller asks for it explicitly, in
+  // which case the check uses the requested target.
+  const existingTeam = await Team.findById(teamId).select("organizationRef").lean();
+  const targetOrg =
+    data.organizationRef !== undefined ? data.organizationRef || null : existingTeam?.organizationRef || null;
+  await assertTeamNameAvailable(data.name, targetOrg, teamId);
 
   const team = await Team.findById(teamId);
   if (!team) throw new Error("Team not found");
@@ -174,7 +337,7 @@ export async function updateTeam(teamId, data) {
     "googleMapsUrl", "placeId", "phone", "email", "website",
     "establishedYear", "homeGround", "teamColorPrimary", "teamColorSecondary",
     "isActive", "profileComplete", "isInternal", "tags", "media",
-    "videos", "socialLinks", "privacy",
+    "videos", "socialLinks", "privacy", "isPublic",
   ];
 
   const objectIdFields = ["categoryRef", "organizationRef", "incubationGroup"];

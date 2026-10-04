@@ -1,4 +1,5 @@
 import * as rankingService from "../services/rankingService.js";
+import { resolveViewerContext } from "../utils/publicProjection.js";
 
 const isTransientDbError = (error) => (
   error?.name === "MongooseError" ||
@@ -39,7 +40,12 @@ export const getCrossCategoryRankings = async (req, res) => {
 export const getTeamPlayerRankings = async (req, res) => {
   try {
     const { teamId } = req.params;
-    const rankings = await rankingService.getTeamPlayerRankings(teamId);
+    // Round 5: the route now identifies the caller when it can, so a manager of
+    // the owning organization (or a platform admin) sees their own squad's full
+    // player documents embedded in the ranking; everyone else gets the public
+    // projection. The ranking arithmetic reads `stats` either way.
+    const viewer = await resolveViewerContext(req);
+    const rankings = await rankingService.getTeamPlayerRankings(teamId, viewer);
     res.status(200).json(rankings);
   } catch (error) {
     res.status(500).json({ message: "Failed to fetch player rankings", error: error.message });

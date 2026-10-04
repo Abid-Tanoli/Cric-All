@@ -4,6 +4,11 @@ import Player from "../models/Player.js";
 import TeamCategory from "../models/TeamCategory.js";
 import * as teamService from "../services/teamService.js";
 import { recordAudit } from "../utils/audit.js";
+import {
+  PLAYER_ROSTER_SELECT,
+  resolveViewerContext,
+  sanitizeTeamPublic,
+} from "../utils/publicProjection.js";
 
 // Phase 4: teams that an organization owns.
 //
@@ -31,31 +36,21 @@ async function loadOwnedTeam(req, res) {
   return team;
 }
 
-const teamPayload = (team) => ({
-  _id: team._id,
-  name: team.name,
-  shortName: team.shortName,
-  type: team.type,
-  category: team.category,
-  ageGroup: team.ageGroup,
-  description: team.description,
-  homeGround: team.homeGround,
-  establishedYear: team.establishedYear,
-  logo: team.logo,
-  website: team.website,
-  phone: team.phone,
-  email: team.email,
-  address: team.address,
-  teamColorPrimary: team.teamColorPrimary,
-  teamColorSecondary: team.teamColorSecondary,
-  socialLinks: team.socialLinks,
-  privacy: team.privacy,
-  players: team.players || [],
-  isActive: team.isActive,
-  playerCount: (team.players || []).length,
-  createdAt: team.createdAt,
-  updatedAt: team.updatedAt,
-});
+// Round 5: this was a hand-written whitelist that still returned `phone`, `email`
+// and `socialLinks` regardless of the team's own `privacy` flags, and passed
+// `players` straight through — in `addOrgTeamPlayers`/`removeOrgTeamPlayers` that
+// array is fully populated, so the response carried whole Player documents.
+// Delegating to the shared sanitizer means one place decides what a team payload
+// may contain.
+//
+// These routes are already gated on `manage_teams` by the route middleware, so
+// the caller is by definition a manager of the owning organization and gets the
+// full team (and its full roster) — the "org member with manage permission" tier.
+// `playerCount` is kept because three existing tests assert it.
+const teamPayload = (team, viewer = null) => {
+  const safe = sanitizeTeamPublic(team, { viewer, canViewPrivate: true });
+  return { ...safe, playerCount: (safe.players || []).length };
+};
 
 // A team category is a configuration concern, not a free string. Same rule as
 // organization `type`: the value must exist in the platform's TeamCategory

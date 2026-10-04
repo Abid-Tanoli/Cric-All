@@ -1,5 +1,5 @@
 import express from 'express';
-import { protect, requireVerifiedEmail } from '../middleware/authMiddleware.js';
+import { protect, optionalProtect, requireVerifiedEmail } from '../middleware/authMiddleware.js';
 import {
   requireAnyOrgPermission,
   requireOrgAdminType,
@@ -96,7 +96,11 @@ router.delete('/:id', ...manage, validateObjectId('id'), requireOrgPermission(PE
 router.get('/:id', validateObjectId('id'), getOrganization);
 router.get('/:id/children', validateObjectId('id'), getOrganizationChildren);
 router.get('/:id/chain', validateObjectId('id'), getOrganizationChain);
-router.get('/:id/teams', validateObjectId('id'), getOrganizationTeams);
+// Round 5: public by design (organization profile pages read it), but the teams
+// it returns are sanitized, and the response shape depends on whether the caller
+// manages the owning organization. `optionalProtect` identifies them when it can
+// and never rejects an anonymous reader.
+router.get('/:id/teams', optionalProtect, validateObjectId('id'), getOrganizationTeams);
 
 // --- members -----------------------------------------------------------------
 // Read: any active member. Write: manage_members (or invite_members to add).

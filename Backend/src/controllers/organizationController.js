@@ -9,6 +9,13 @@ import { isPlatformAdmin, resolveOrgAccess } from "../middleware/orgAccess.js";
 import { generateOrgSlug, upsertMembership } from "../services/membershipService.js";
 import { permissionsForRoles } from "../permissions/orgPermissions.js";
 import { recordAudit } from "../utils/audit.js";
+import {
+  PLAYER_ROSTER_SELECT,
+  TEAM_PUBLIC_SELECT,
+  resolveViewerContext,
+  sanitizeTeamPublic,
+  sanitizeTeamsPublic,
+} from "../utils/publicProjection.js";
 
 // Fields a self-service org owner/admin may change. isActive, parent, category
 // and verificationStatus are supervisory — only the platform Admin app may set
@@ -398,12 +405,22 @@ export const getMyOrganizations = async (req, res) => {
   }
 };
 
+// Round 5: `GET /api/organizations/:id/teams` is deliberately public (the
+// organization profile page reads it), and it used to run
+// `.populate("players")` with no argument — returning a whole Player document
+// per roster entry, with date of birth, address, gallery, videos and the
+// creating account, to an unauthenticated caller. The roster is now a named
+// projection and each team goes through the shared sanitizer, so the team's own
+// privacy flags are honoured on this path too.
 export const getOrganizationTeams = async (req, res) => {
   try {
+    const viewer = await resolveViewerContext(req);
     const teams = await Team.find({ organizationRef: req.params.id, isActive: true })
-      .populate("players")
+      .select(viewer?.userId ? `${TEAM_PUBLIC_SELECT} managedBy` : TEAM_PUBLIC_SELECT)
+      .populate("players", PLAYER_ROSTER_SELECT)
       .populate("categoryRef", "name slug icon");
-    res.status(200).json(teams);
+
+    res.status(200).json(sanitizeTeamsPublic(teams, { viewer }));
   } catch (error) {
     res.status(500).json({ message: "Failed to fetch organization teams", error: error.message });
   }

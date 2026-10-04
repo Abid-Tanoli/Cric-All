@@ -6,7 +6,6 @@ const teamSchema = new mongoose.Schema(
       type: String,
       required: true,
       trim: true,
-      unique: true
     },
     type: {
       type: String,
@@ -109,6 +108,10 @@ const teamSchema = new mongoose.Schema(
       socialLinks: { type: String, enum: ["public", "hidden"], default: "public" },
       location: { type: String, enum: ["public", "hidden"], default: "public" }
     },
+    // `isPublic` controls whether an organization-owned team appears in the
+    // cross-tenant public catalogue. New teams are public by default; owners
+    // with manage_teams and platform admins can toggle visibility.
+    isPublic: { type: Boolean, default: true },
     players: [{
       type: mongoose.Schema.Types.ObjectId,
       ref: "Player"
@@ -162,6 +165,53 @@ teamSchema.index({ type: 1 });
 teamSchema.index({ category: 1 });
 teamSchema.index({ categoryRef: 1 });
 teamSchema.index({ organizationRef: 1 });
+
+// Round 5 (Phase 4): team names are unique *per organization*, not globally.
+// The old `unique: true` on `name` meant two unrelated organizations could not
+// both own a "Rising Stars". Two partial unique indexes replace it:
+//
+//   * organization-owned teams collide on (organizationRef, name);
+//   * org-less platform teams keep a global uniqueness on name, because there is
+//     no organization to scope them to.
+//
+// `collation: { locale: "en", strength: 2 }` makes both case- and
+// accent-insensitive, so "Strikers" and "strikers" are the same name.
+//
+// The partial filter matches on the BSON type Mongoose actually stores.
+// `organizationRef` is declared `Schema.Types.ObjectId`, so a saved reference is
+// a BSON ObjectId and nothing else. A filter of `{ $type: "string" }` looks
+// plausible but matches *zero* documents, which silently turns this into a
+// no-op index and leaves per-organization uniqueness to the application check
+// alone - so the type here is load-bearing, not cosmetic.
+//
+// The org-less index below filters on `{ organizationRef: null }`, which in a
+// partial filter matches both an explicit null and an absent field; between them
+// the two indexes cover every team. Legacy documents that stored the reference as
+// a string are reported by the migrateTeamNameUniqueness script before anything
+// is applied.
+teamSchema.index(
+  { organizationRef: 1, name: 1 },
+  {
+    unique: true,
+    collation: { locale: "en", strength: 2 },
+    partialFilterExpression: { organizationRef: { $type: "objectId" } },
+    name: "organizationRef_1_name_1_unique",
+  },
+);
+teamSchema.index(
+  { name: 1 },
+  {
+    unique: true,
+    collation: { locale: "en", strength: 2 },
+    // `{ field: null }` in a partial filter also matches documents where the
+    // field is absent, which is every org-less team written before
+    // organizationRef existed.
+    partialFilterExpression: { organizationRef: null },
+    name: "name_1_orgless_unique",
+  },
+);
+
+teamSchema.index({ isPublic: 1 });
 teamSchema.index({ incubationGroup: 1 });
 teamSchema.index({ shortName: 1 });
 teamSchema.index({ organization: 1 });
