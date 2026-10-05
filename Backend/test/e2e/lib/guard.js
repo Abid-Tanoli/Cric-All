@@ -10,6 +10,8 @@
  */
 
 import { execFileSync } from "node:child_process";
+import { readdirSync, readFileSync, readlinkSync } from "node:fs";
+import { join } from "node:path";
 
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "::1", "[::1]"]);
 
@@ -144,8 +146,9 @@ function isLoopback(address) {
   return false;
 }
 
-/** Lists the established peers of the process listening on `port`. Windows only. */
+/** Lists established peers of the process listening on `port`. */
 function inspectSockets(port) {
+  if (process.platform === "linux") return inspectLinuxProcNet(port);
   if (process.platform !== "win32") return null;
   try {
     const ps = `\$l = Get-NetTCPConnection -LocalPort ${port} -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1; ` +
@@ -172,6 +175,160 @@ function inspectSockets(port) {
   } catch {
     return null;
   }
+}
+
+/**
+ * Parses a Linux /proc/net/tcp or tcp6 table. Socket inodes are used to match
+ * table rows to the file descriptors held by the API process.
+ */
+export function parseProcNetTable(contents, family) {
+  if (family !== "tcp" && family !== "tcp6") {
+    throw new Error(`Unsupported proc net family: ${family}`);
+  }
+  const addressLength = family === "tcp" ? 8 : 32;
+  const sockets = [];
+
+  for (const line of contents.split(/\r?\n/).slice(1)) {
+    if (!line.trim()) continue;
+    const fields = line.trim().split(/\s+/);
+    if (fields.length < 10) throw new Error(`Malformed /proc/net/${family} row`);
+    const local = parseProcEndpoint(fields[1], addressLength, family);
+    const remote = parseProcEndpoint(fields[2], addressLength, family);
+    if (!/^[0-9A-Fa-f]{2}$/.test(fields[3]) || !/^\d+$/.test(fields[9])) {
+      throw new Error(`Malformed /proc/net/${family} row`);
+    }
+    sockets.push({
+      localAddress: local.address,
+      localPort: local.port,
+      remoteAddress: remote.address,
+      remotePort: remote.port,
+      state: fields[3].toUpperCase(),
+      inode: fields[9],
+    });
+  }
+  return sockets;
+}
+
+function parseProcEndpoint(value, addressLength, family) {
+  const match = new RegExp(`^([0-9A-Fa-f]{${addressLength}}):([0-9A-Fa-f]{4})$`).exec(value);
+  if (!match) throw new Error("Malformed /proc/net endpoint");
+  const addressBytes = match[1].match(/../g).map((byte) => Number.parseInt(byte, 16));
+  if (family === "tcp") addressBytes.reverse();
+  else {
+    for (let offset = 0; offset < addressBytes.length; offset += 4) {
+      addressBytes.splice(offset, 4, ...addressBytes.slice(offset, offset + 4).reverse());
+    }
+  }
+  return {
+    address: family === "tcp" ? addressBytes.join(".") : formatProcIPv6(addressBytes),
+    port: Number.parseInt(match[2], 16),
+  };
+}
+
+function formatProcIPv6(bytes) {
+  const groups = [];
+  for (let i = 0; i < bytes.length; i += 2) {
+    groups.push((bytes[i] * 256 + bytes[i + 1]).toString(16));
+  }
+  if (groups.slice(0, 5).every((group) => group === "0") && groups[5] === "ffff") {
+    return `::ffff:${bytes.slice(12).join(".")}`;
+  }
+
+  let bestStart = -1;
+  let bestLength = 1;
+  for (let start = 0; start < groups.length;) {
+    if (groups[start] !== "0") {
+      start += 1;
+      continue;
+    }
+    let end = start + 1;
+    while (end < groups.length && groups[end] === "0") end += 1;
+    if (end - start > bestLength) {
+      bestStart = start;
+      bestLength = end - start;
+    }
+    start = end;
+  }
+  if (bestStart === -1) return groups.join(":");
+  const left = groups.slice(0, bestStart).join(":");
+  const right = groups.slice(bestStart + bestLength).join(":");
+  if (!left && !right) return "::";
+  if (!left) return `::${right}`;
+  if (!right) return `${left}::`;
+  return `${left}::${right}`;
+}
+
+/**
+ * Returns established peers belonging to the process that owns the listener.
+ * A missing listener-owner match is uncertainty; an owned listener with no
+ * established connections is a known-empty peer list.
+ */
+export function peersForProcSockets(port, tables, processSocketInodes) {
+  const ownedInodes = new Set(processSocketInodes);
+  const ownsListener = tables.some(
+    (socket) => socket.localPort === port && socket.state === "0A" && ownedInodes.has(socket.inode),
+  );
+  if (!ownsListener) return null;
+  return tables
+    .filter((socket) => socket.state === "01" && ownedInodes.has(socket.inode))
+    .map(({ remoteAddress, remotePort }) => ({ remoteAddress, remotePort }));
+}
+
+export function inspectLinuxProcNet(port, procRoot = "/proc") {
+  try {
+    const tables = [
+      ...parseProcNetTable(readFileSync(join(procRoot, "net", "tcp"), "utf8"), "tcp"),
+      ...readProcNetIPv6(procRoot),
+    ];
+    const listenerInodes = new Set(
+      tables.filter((socket) => socket.localPort === port && socket.state === "0A").map((socket) => socket.inode),
+    );
+    if (!listenerInodes.size) return null;
+
+    for (const entry of readdirSync(procRoot, { withFileTypes: true })) {
+      if (!entry.isDirectory() || !/^\d+$/.test(entry.name)) continue;
+      let socketInodes;
+      try {
+        socketInodes = readProcessSocketInodes(join(procRoot, entry.name, "fd"));
+      } catch {
+        // Processes can exit or be inaccessible while /proc is being inspected.
+        continue;
+      }
+      if (![...listenerInodes].some((inode) => socketInodes.has(inode))) continue;
+
+      const peers = peersForProcSockets(port, tables, socketInodes);
+      if (!peers) return null;
+      return { pid: entry.name, peers };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function readProcNetIPv6(procRoot) {
+  try {
+    return parseProcNetTable(readFileSync(join(procRoot, "net", "tcp6"), "utf8"), "tcp6");
+  } catch (error) {
+    if (error.code === "ENOENT") return [];
+    throw error;
+  }
+}
+
+function readProcessSocketInodes(fdPath) {
+  const inodes = new Set();
+  for (const descriptor of readdirSync(fdPath)) {
+    let target;
+    try {
+      target = readlinkSync(join(fdPath, descriptor));
+    } catch (error) {
+      if (error.code === "ENOENT") continue;
+      throw error;
+    }
+    const match = /^socket:\[(\d+)\]$/.exec(target);
+    if (match) inodes.add(match[1]);
+  }
+  return inodes;
 }
 
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

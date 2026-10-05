@@ -33,7 +33,7 @@ jobs:
 
       - name: Start server
         run: |
-          MONGO_URL="mongodb://localhost:27017/cric-all-e2e" \
+          MONGO_URL="mongodb://127.0.0.1:27017/cric-all-e2e" \
           JWT_SECRET="ci-only-secret" \
           LOG_LEVEL=info \
           MAIL_DRIVER=console \
@@ -48,6 +48,7 @@ jobs:
         working-directory: Backend
         env:
           BASE_URL: http://localhost:5000/api
+          E2E_API_BASE: http://127.0.0.1:5000/api
           E2E_BACKEND_LOG: backend.log
 
       - name: Run smoke tests
