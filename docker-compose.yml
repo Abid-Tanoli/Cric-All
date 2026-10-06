@@ -15,7 +15,7 @@ services:
     networks:
       - cricall-net
 
-user-frontend:
+  user-frontend:
     image: abidtanoli/cricall-user-frontend:v1
     build:
       context: ./Frontend
@@ -35,7 +35,7 @@ user-frontend:
     networks:
       - cricall-net
 
-admin-frontend:
+  admin-frontend:
     image: abidtanoli/cricall-admin-frontend:v1
     build:
       context: ./Frontend

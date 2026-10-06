@@ -1,10 +1,16 @@
 /**
- * Minimal Socket.IO (Engine.IO v4) client built on Node's global WebSocket.
+ * Minimal Socket.IO (Engine.IO v4) client built on Node's WebSocket client.
  *
  * Written by hand rather than pulled from npm because the backend already has
  * `socket.io` as a server dependency but not `socket.io-client`, and the brief
  * asks for no new project dependencies for the harness. It speaks just enough
  * of the protocol to connect, join a match room, and try to score.
+ *
+ * Transport: Node only exposes a global `WebSocket` from v22 on, while CI runs
+ * Node 20, where referencing it throws ReferenceError at call time. `ws` is
+ * already installed as engine.io's own transport dependency, so it is used as
+ * the fallback - both expose the same onopen/onmessage/onclose/onerror shape
+ * this file relies on. Neither present is a harness bug, not a server bug.
  *
  * Used by the negative tests: the brief requires that a score cannot be
  * recorded through the socket, so the suite joins a live match as an
@@ -14,6 +20,11 @@
 
 const CONNECT_TIMEOUT_MS = 8000;
 
+const WebSocketImpl =
+  typeof globalThis.WebSocket === "function"
+    ? globalThis.WebSocket
+    : (await import("ws")).default;
+
 export function socketUrl(apiBase, path = "/socket.io/") {
   const url = new URL(apiBase);
   const scheme = url.protocol === "https:" ? "wss:" : "ws:";
@@ -22,7 +33,7 @@ export function socketUrl(apiBase, path = "/socket.io/") {
 
 export function connectSocket(apiBase, { label = "anon" } = {}) {
   return new Promise((resolve, reject) => {
-    const ws = new WebSocket(socketUrl(apiBase));
+    const ws = new WebSocketImpl(socketUrl(apiBase));
     const received = [];
     const ackWaiters = [];
     let connected = false;

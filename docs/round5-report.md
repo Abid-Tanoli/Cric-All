@@ -1,6 +1,6 @@
 # Round 5 Report — Public data projection & team tenancy
 
-**Status:** complete locally, uncommitted
+**Status:** complete; committed in `a6d4b60`
 **Target:** local only (`127.0.0.1:27017`, database `cric-all-e2e`)
 **Baseline before this round:** backend `306/306`, E2E `78 pass / 7 of 7 scenarios`
 **Status now:** backend `344/344`, E2E `78 pass / 7 of 7 scenarios`, both frontend builds pass
@@ -18,7 +18,7 @@
 |---|---|
 | Local `cric-all-e2e` only | Migration takes an explicit `--uri`; the E2E guard proves loopback-ness at the socket layer. `Backend/.env` points at a public Atlas cluster and was **never read or printed**. |
 | Guard must pass | `test/e2e/lib/guard.js` passed before the E2E run and before the backend restart. |
-| No commit / no push | All work is left in the working tree for review. |
+| No commit / no push | Worked in the working tree for review at the time; since landed in `a6d4b60`. |
 | No `npm audit fix --force` | Never run. |
 | Report, do not silently delete data | The migration renames and deletes nothing. |
 

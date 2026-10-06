@@ -1,9 +1,9 @@
 # E2E Results - Local Only
 
-- Run id: `mutrgnjc`
+- Run id: `muwm43km`
 - API base: `http://127.0.0.1:5000/api` (loopback only - guard enforced)
 - Database: `cric-all-e2e` on `127.0.0.1:27017` (local Docker Mongo)
-- Duration: 155.3s
+- Duration: 226.7s
 - Scenarios: 7 of 7 ran
 - Overall: **PASS** (78 pass, 0 fail, 0 divergence)
 
@@ -37,21 +37,21 @@ with `ScoringEngine`; agreement between the two is a real cross-check.
 ## Accounts and calls
 
 - Scenarios executed: 7 of 7 (none skipped)
-- Owner account: `OPENCODE_TEST_owner_mutrgnjc@example.test` (never used to score)
-- Assigned scorer, who sent every delivery: `OPENCODE_TEST_scorer_mutrgnjc@example.test`, organization role `score_handler`
+- Owner account: `OPENCODE_TEST_owner_muwm43km@example.test` (never used to score)
+- Assigned scorer, who sent every delivery: `OPENCODE_TEST_scorer_muwm43km@example.test`, organization role `score_handler`
 - Invitation accepted through `POST /invitations/accept` using the token from the console mail log
-- Organization: `6ac23deb0543416227da4a05`; second tenant for the cross-tenant test: `6ac23deb0543416227da4a09`
+- Organization: `6ac4df690cb649a27578bce6`; second tenant for the cross-tenant test: `6ac4df690cb649a27578bcea`
 - HTTP calls issued by the suite: 655
 - Note: the application lower-cases e-mail addresses on save, so `OPENCODE_TEST_...` fixtures appear as `opencode_test_...` in the database and in mail. Names keep the prefix verbatim.
 
 
 ## Scenario 1 - full T20 innings (20 overs, every ball type) and the chase
 
-Fixture created through `POST /organizations/:id/matches`; every delivery sent by the invited `score_handler` (OPENCODE_TEST_scorer_mutrgnjc@example.test), never by the owner.
+Fixture created through `POST /organizations/:id/matches`; every delivery sent by the invited `score_handler` (OPENCODE_TEST_scorer_muwm43km@example.test), never by the owner.
 Extras split (innings 1): the independent tally follows the Laws - a wide is one extra and runs completed off a wide are byes. The server folds those runs into `wides` instead. `wides` independent=3 server=5; `byes` independent=4 server=2. The extras *total* is asserted separately and agrees.
 Innings 1: **145/8** in 20.0 overs. Extras (Laws split): wides 3, no-balls 4, byes 4, leg-byes 4, total 15.
 Chasing side: **146/0** off 49 balls (target 146).
-Result: OPENCODE_TEST_Beta_mutrgnjc won by 10 wickets (23 balls remaining).
+Result: OPENCODE_TEST_Beta_muwm43km won by 10 wickets (23 balls remaining).
 
 | Result | Check | Detail |
 | --- | --- | --- |
@@ -67,9 +67,9 @@ Result: OPENCODE_TEST_Beta_mutrgnjc won by 10 wickets (23 balls remaining).
 | PASS | innings 2 ended because the target was reached | reason=targetChased runs=146 target=146 balls=49 |
 | PASS | strike rotation agreed on every chase delivery | [] |
 | PASS | innings 2 scorecard: independent tally vs server | independent tally and server agree |
-| PASS | scoring alone does not settle the match | status=completed result="{"winner":{"_id":"6ac23dec0543416227da4a18","name":"OPENCODE_TEST_Beta_mutrgnjc","shortName":"OPE"},"margin":"10 wickets","description":"OPENCODE_TEST_Beta_mutrgnjc won by 10 wickets (49 balls remaining)"}" - expected, the result is only written by end-innings |
+| PASS | scoring alone does not settle the match | status=completed result="{"winner":{"_id":"6ac4df6a0cb649a27578bcf9","name":"OPENCODE_TEST_Beta_muwm43km","shortName":"OPE"},"margin":"10 wickets","description":"OPENCODE_TEST_Beta_muwm43km won by 10 wickets (49 balls remaining)"}" - expected, the result is only written by end-innings |
 | PASS | end-innings accepts the final innings | status=200 |
-| PASS | chasing side won by the wickets remaining | resultType=normal margin="10 wickets" description="OPENCODE_TEST_Beta_mutrgnjc won by 10 wickets (23 balls remaining)" (inningsController.js:83 hard-codes 10 as the wicket count, so a Super Over margin would be wrong here too) |
+| PASS | chasing side won by the wickets remaining | resultType=normal margin="10 wickets" description="OPENCODE_TEST_Beta_muwm43km won by 10 wickets (23 balls remaining)" (inningsController.js:83 hard-codes 10 as the wicket count, so a Super Over margin would be wrong here too) |
 | PASS | match marked completed | status=completed |
 
 ## Scenario 2 - free hit (a no-ball must protect the next delivery)
