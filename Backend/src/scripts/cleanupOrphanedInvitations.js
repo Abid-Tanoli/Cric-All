@@ -9,14 +9,29 @@ import { getMongoTarget } from "../utils/mongoTarget.js";
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(scriptDir, "../../.env") });
 
+function argValue(flag) {
+  const withEquals = process.argv.find((a) => a.startsWith(`${flag}=`));
+  if (withEquals) return withEquals.slice(flag.length + 1);
+  const index = process.argv.indexOf(flag);
+  if (index !== -1 && process.argv[index + 1] && !process.argv[index + 1].startsWith("--")) {
+    return process.argv[index + 1];
+  }
+  return undefined;
+}
+
 async function main() {
   const url = process.env.MONGO_URL || process.env.MONGODB_URI || process.env.MONGO_URI;
   if (!url) throw new Error("MONGO_URL / MONGODB_URI / MONGO_URI is required.");
 
   const { host, databaseName } = getMongoTarget(url);
   const hostname = host.replace(/^.*@/, "").split(":")[0].replace(/^\[|\]$/g, "");
-  if (!["127.0.0.1", "localhost", "::1"].includes(hostname)) {
-    throw new Error("Refusing to inspect or modify a non-local MongoDB target.");
+  const allowedHostname = argValue("--allow-host");
+  if (!["127.0.0.1", "localhost", "::1", allowedHostname].includes(hostname)) {
+    throw new Error(
+      `Refusing to inspect or modify a non-local MongoDB target: "${hostname}". ` +
+        "Loopback only by default. Pass --allow-host=<name> if you really mean " +
+        "another host, e.g. a Docker service name on an internal network.",
+    );
   }
 
   const apply = process.argv.includes("--apply");

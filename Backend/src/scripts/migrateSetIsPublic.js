@@ -26,8 +26,8 @@
 // Safety
 // ------
 //   * Refuses to run without an explicit --uri. This script does not read .env.
-//   * Refuses any non-loopback host, and any database other than cric-all-e2e
-//     unless --allow-database names it.
+//   * Refuses any non-loopback host, and any database other than cric-all-e2e,
+//     unless --allow-host / --allow-database name them deliberately.
 //   * Deletes nothing, ever. The only writes are a single updateMany that sets
 //     one boolean.
 //   * Dry run by default: without --apply it only counts and prints.
@@ -38,6 +38,12 @@
 //   node src/scripts/migrateSetIsPublic.js --uri <mongodb-uri> --set-public --apply
 //   node src/scripts/migrateSetIsPublic.js --uri <mongodb-uri> --force-private --apply
 //   node src/scripts/migrateSetIsPublic.js --uri <mongodb-uri> --force-private --apply --allow-database <name>
+//
+// Containerized deployments (the database hostname is a Docker service name
+// such as `mongodb`, not loopback) must name it deliberately:
+//
+//   node src/scripts/migrateSetIsPublic.js \
+//     --uri "$MONGO_URL" --allow-host mongodb --allow-database cric-all --set-public --apply
 
 import mongoose from "mongoose";
 import Team from "../models/Team.js";
@@ -104,10 +110,13 @@ async function resolveMode() {
   }
 
   const { host, databaseName } = getMongoTarget(url);
-  const hostname = host.replace(/^.*@/, "").split(":")[0].replace(/\[|\]/g, "");
-  if (!["127.0.0.1", "localhost", "::1"].includes(hostname)) {
+  const hostname = host.replace(/^.*@/, "").split(":")[0].replace(/\[|\]$/g, "");
+  const allowedHostname = argValue("--allow-host");
+  if (!["127.0.0.1", "localhost", "::1", allowedHostname].includes(hostname)) {
     throw new Error(
-      `Refusing to run: host ${hostname} is not loopback. This script only touches the local database.`,
+      `Refusing to run: host ${hostname} is not loopback. This script only touches a ` +
+        "known local database. Pass --allow-host=<name> if you really mean another " +
+        "host, e.g. a Docker service name on an internal network.",
     );
   }
 

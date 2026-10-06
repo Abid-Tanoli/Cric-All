@@ -183,22 +183,40 @@ node src/scripts/migrateSetIsPublic.js --uri <mongodb-uri>                  # re
 node src/scripts/migrateSetIsPublic.js --uri <mongodb-uri> --set-public --apply
 ```
 
-> **Both scripts are loopback-locked by design and will refuse a production
-> database.** Each parses the URI and throws unless the host is exactly
-> `127.0.0.1`, `localhost` or `::1`
-> (`migrateTeamNameUniqueness.js:80-82`, `migrateSetIsPublic.js:108-112`).
-> `--allow-database <name>` relaxes **only** the database-name check — it never
-> relaxes the host check. The Atlas URI in `DEPLOYMENT.md`
-> (`mongodb+srv://…`) is therefore rejected on the spot.
+> **The Round 5 scripts are loopback-locked by design and will refuse a
+> production database by default.** Each parses the URI and throws unless the
+> host is exactly `127.0.0.1`, `localhost` or `::1`
+> (`migrateTeamNameUniqueness.js:87-88`, `migrateSetIsPublic.js:114-115`,
+> `cleanupOrphanedInvitations.js:28-29`). The Atlas URI in `DEPLOYMENT.md`
+> (`mongodb+srv://…`) is therefore rejected on the spot. Two flags relax this,
+> and each one names exactly what it relaxes:
+>
+> - `--allow-database <name>` relaxes **only** the database-name check.
+> - `--allow-host <name>` relaxes **only** the host check.
+>
+> Nothing relaxes both by omission: without `--allow-host`, the guard still
+> refuses `mongodb`, `db.internal` and every Atlas host even when
+> `--allow-database` is correct, and the check is a plain string comparison of
+> `new URL(uri).host` — no DNS resolution and no private-range test, so it never
+> widens to an arbitrary internal host.
 >
 > Neither script reads `.env`; the URI must be passed explicitly on the command
-> line.
+> line (except `cleanupOrphanedInvitations.js`, which reads `process.env.MONGO_URL`).
 >
-> To run them against a remote database, tunnel it onto loopback first — e.g.
+> **For a Docker Compose deployment**, where Mongo is reachable from the app
+> container but not from your shell, pass the container hostname and database
+> together — the pair names one specific database on one specific internal host:
+>
+> ```sh
+> docker exec cricall-backend node src/scripts/migrateTeamNameUniqueness.js \
+>   --uri "$MONGO_URL" --allow-host mongodb --allow-database cric-all --apply
+> ```
+>
+> For a database that is **not** on your own network — Atlas, or any shared
+> cluster — keep the guard as-is and tunnel it onto loopback first: e.g.
 > `ssh -L 27017:<cluster-host>:27017 <host>` and then pass
-> `--uri mongodb://127.0.0.1:27017/<db>`. The alternative is editing the guard,
-> which is a deliberate code change and should be reviewed as one. Confirm the
-> tunnel reaches the intended cluster before `--apply`.
+> `--uri mongodb://127.0.0.1:27017/<db>` with no allow flags. Confirm the tunnel
+> reaches the intended cluster before `--apply`.
 
 **Why each is needed — what actually breaks if you skip it:**
 
@@ -253,7 +271,8 @@ Conditional, only if the data shows the problem:
 ```text
 0. git pull on the deploy host, and confirm the working tree is clean
 1. BACKUP the database (backupDb.js) — before any migration, not after
-2. MIGRATE, on loopback via the tunnel described above:
+2. MIGRATE — inside the backend container via `--allow-host`/`--allow-database`,
+   or on loopback via the tunnel described above:
      migrateTeamNameUniqueness (dry run, then --apply)
      migrateSetIsPublic        (report, then --set-public --apply)
 3. BUILD the backend image and the two frontend images

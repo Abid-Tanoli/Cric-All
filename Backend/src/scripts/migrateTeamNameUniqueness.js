@@ -20,6 +20,12 @@ import { getMongoTarget } from "../utils/mongoTarget.js";
 //   node src/scripts/migrateTeamNameUniqueness.js --uri <mongodb-uri>           # dry run (default)
 //   node src/scripts/migrateTeamNameUniqueness.js --uri <mongodb-uri> --apply   # drop old index, create new ones
 //
+// Containerized deployments (the database hostname is a Docker service name
+// such as `mongodb`, not loopback) must name it deliberately:
+//
+//   node src/scripts/migrateTeamNameUniqueness.js \
+//     --uri "$MONGO_URL" --allow-host mongodb --allow-database cric-all --apply
+//
 // The URI is passed explicitly on the command line. This script deliberately does
 // NOT load .env: it is run by hand against one known local database, and reading
 // the application's environment file to discover a connection string would both
@@ -27,7 +33,8 @@ import { getMongoTarget } from "../utils/mongoTarget.js";
 // risk printing a credential into a terminal or a CI log.
 //
 // Two guards, both of which must pass:
-//   1. the host must be local (127.0.0.1 / localhost / ::1);
+//   1. the host must be local (127.0.0.1 / localhost / ::1), or be named
+//      explicitly with --allow-host=<name>;
 //   2. the database must be cric-all-e2e, unless --allow-database=<name> is
 //      passed deliberately. Any *local* database is still not automatically the
 //      right one, and the previous "any localhost will do" guard was too loose.
@@ -77,8 +84,13 @@ async function main() {
 
   const { host, databaseName } = getMongoTarget(url);
   const hostname = host.replace(/^.*@/, "").split(":")[0].replace(/^\[|\]$/g, "");
-  if (!["127.0.0.1", "localhost", "::1"].includes(hostname)) {
-    throw new Error("Refusing to inspect or modify a non-local MongoDB target.");
+  const allowedHostname = argValue("--allow-host");
+  if (!["127.0.0.1", "localhost", "::1", allowedHostname].includes(hostname)) {
+    throw new Error(
+      `Refusing to inspect or modify a non-local MongoDB target: "${hostname}". ` +
+        "Loopback only by default. Pass --allow-host=<name> if you really mean " +
+        "another host, e.g. a Docker service name on an internal network.",
+    );
   }
 
   const allowedDatabase = argValue("--allow-database") || EXPECTED_DATABASE;
