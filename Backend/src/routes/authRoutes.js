@@ -7,6 +7,8 @@ import {
   resetPassword,
   verifyEmail,
   resendVerification,
+  verifyPhone,
+  resendPhoneOtp,
   getProfile,
   deleteAccount
 } from "../controllers/authController.js";
@@ -22,6 +24,8 @@ import {
   googleAuthSchema,
   verifyEmailSchema,
   resendVerificationSchema,
+  verifyPhoneSchema,
+  resendPhoneOtpSchema,
 } from "../validators/authValidators.js";
 
 const router = express.Router();
@@ -45,6 +49,12 @@ router.post("/reset-password/:token", resetLimit, validate(resetPasswordSchema),
 
 router.post("/verify-email", verifyLimit, validate(verifyEmailSchema), verifyEmail);
 router.post("/resend-verification", resendLimit, validate(resendVerificationSchema), resendVerification);
+
+// Phone verification: same rate-limit + per-account cool-down design as the
+// email endpoints; OTP guessing is additionally capped per account inside the
+// controller (5 wrong attempts burns the code).
+router.post("/verify-phone", verifyLimit, validate(verifyPhoneSchema), verifyPhone);
+router.post("/resend-phone-otp", resendLimit, validate(resendPhoneOtpSchema), resendPhoneOtp);
 
 router.post("/google", googleLimit, validate(googleAuthSchema), googleLogin);
 router.post("/google/admin", googleLimit, validate(googleAuthSchema), googleAdminLogin);

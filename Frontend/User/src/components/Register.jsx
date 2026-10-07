@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { GoogleLogin } from '@react-oauth/google';
-import { register, loginWithGoogle } from '../pages/auth/auth';
+import { register, loginWithGoogle, verifyPhoneOtp, resendPhoneOtp, formatPhone } from '../pages/auth/auth';
 import PlayerForm from './PlayerForm';
 
 const hasGoogleClientId = Boolean(import.meta.env.VITE_GOOGLE_CLIENT_ID && import.meta.env.VITE_GOOGLE_CLIENT_ID !== 'your_google_client_id.apps.googleusercontent.com');
@@ -48,13 +48,18 @@ export default function Register({ onSuccess, onCancel, embedded = false }) {
   const [err, setErr] = useState(null);
   const [loading, setLoading] = useState(false);
   const [postSignup, setPostSignup] = useState(null);
+  const [otp, setOtp] = useState('');
+  const [otpMsg, setOtpMsg] = useState(null);
+  const [otpErr, setOtpErr] = useState(null);
+  const [otpLoading, setOtpLoading] = useState(false);
 
   const submitPlayerForm = async (data) => {
     setErr(null);
     setLoading(true);
     try {
-      const user = await register(data.name, data.email, data.password, {
+      const { user, phoneVerification, requiresPhoneVerification } = await register(data.name, data.email, data.password, {
         accountType: 'player',
+        phone: data.phone || '',
         playerProfile: {
           playingRole: data.playingRole,
           battingStyle: data.battingStyle,
@@ -71,7 +76,14 @@ export default function Register({ onSuccess, onCancel, embedded = false }) {
           },
         },
       });
-      onSuccess?.(user);
+      if (requiresPhoneVerification && user && user.phoneVerified !== true) {
+        setOtp('');
+        setOtpMsg(null);
+        setOtpErr(null);
+        setPostSignup({ user, type: 'player', phoneVerification, requiresPhoneVerification });
+      } else {
+        onSuccess?.(user);
+      }
     } catch (error) {
       setErr(error.response?.data?.message || 'Registration failed');
     } finally {
@@ -84,18 +96,57 @@ export default function Register({ onSuccess, onCancel, embedded = false }) {
     setErr(null);
     setLoading(true);
     try {
-      const user = await register(name, email, password, {
+      const data = await register(name, email, password, {
         accountType,
         organizationCategory,
         organizationName,
         phone,
         joinIntent,
       });
-      setPostSignup({ user, type: accountType });
+      setOtp('');
+      setOtpMsg(null);
+      setOtpErr(null);
+      setPostSignup({
+        user: data.user,
+        type: accountType,
+        phoneVerification: data.phoneVerification,
+        requiresPhoneVerification: data.requiresPhoneVerification,
+      });
     } catch (error) {
       setErr(error.response?.data?.message || 'Registration failed');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const submitOtp = async (e) => {
+    e.preventDefault();
+    setOtpLoading(true);
+    setOtpMsg(null);
+    setOtpErr(null);
+    try {
+      const data = await verifyPhoneOtp(postSignup.user.phone, otp.trim());
+      setOtpMsg(data.message || 'Phone number verified.');
+      setPostSignup(s => (s ? { ...s, user: data.user || s.user } : s));
+      setOtp('');
+    } catch (error) {
+      setOtpErr(error.response?.data?.message || 'Invalid or expired code.');
+    } finally {
+      setOtpLoading(false);
+    }
+  };
+
+  const resendOtp = async () => {
+    setOtpLoading(true);
+    setOtpMsg(null);
+    setOtpErr(null);
+    try {
+      const data = await resendPhoneOtp(postSignup.user.phone);
+      setOtpMsg(data.message || 'A new code is on its way.');
+    } catch (error) {
+      setOtpErr(error.response?.data?.message || 'Could not resend the code.');
+    } finally {
+      setOtpLoading(false);
     }
   };
 
@@ -121,7 +172,7 @@ export default function Register({ onSuccess, onCancel, embedded = false }) {
               <p className="text-[10px] font-black uppercase tracking-widest text-white/70">Join CricAll</p>
               <h3 className="mt-1 text-2xl font-black uppercase tracking-tight">Choose how you want to join</h3>
               <p className="mt-2 max-w-2xl text-sm font-semibold text-white/80">
-                CricAll provides the platform. Create your account, verify your email, and manage your cricket from one place.
+                CricAll provides the platform. Create your account with an email address or phone number, verify it, and manage your cricket from one place.
               </p>
             </div>
             {onCancel && (
@@ -141,13 +192,70 @@ export default function Register({ onSuccess, onCancel, embedded = false }) {
             <div className="rounded-xl border border-cric-accent/30 bg-cric-bg p-8 text-center">
               <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-cric-accent/20 text-2xl text-cric-accent">✓</div>
               <h4 className="text-xl font-black uppercase tracking-tight text-cric-text">Thanks, {postSignup.user.name}!</h4>
-              <p className="mx-auto mt-3 max-w-md text-sm font-semibold leading-relaxed text-cric-muted">
-                Your account is ready. We sent a verification link to{' '}
-                <span className="font-black text-cric-accent">{postSignup.user.email}</span>.
-                Verify your email to unlock organizations, teams and matches.
-              </p>
+
+              {postSignup.user.email && (
+                <p className="mx-auto mt-3 max-w-md text-sm font-semibold leading-relaxed text-cric-muted">
+                  Your account is ready. We sent a verification link to{' '}
+                  <span className="font-black text-cric-accent">{postSignup.user.email}</span>.
+                  Verify your email to unlock organizations, teams and matches.
+                </p>
+              )}
+
+              {postSignup.requiresPhoneVerification && !postSignup.user.phoneVerified && (
+                <div className="mx-auto mt-5 max-w-md rounded-xl border border-cric-border bg-cric-card p-5 text-left">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-cric-muted">
+                    Verify your phone number
+                  </p>
+                  <p className="mt-2 text-sm font-semibold leading-relaxed text-cric-muted">
+                    Enter the 6-digit code sent to{' '}
+                    <span className="font-black text-cric-accent">{formatPhone(postSignup.user.phone)}</span>.
+                  </p>
+                  {postSignup.phoneVerification?.message && (
+                    <p className="mt-2 text-xs font-semibold text-cric-muted">
+                      {postSignup.phoneVerification.message}
+                    </p>
+                  )}
+                  <form onSubmit={submitOtp} className="mt-4 flex flex-col gap-3">
+                    <input
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      maxLength={6}
+                      placeholder="123456"
+                      value={otp}
+                      onChange={e => setOtp(e.target.value.replace(/\D/g, ''))}
+                      className="w-full rounded-lg border border-cric-border bg-cric-bg px-3 py-3 text-center text-lg font-black tracking-[0.4em] text-cric-text focus:outline-none focus:ring-2 focus:ring-cric-accent/30 focus:border-cric-accent"
+                    />
+                    {otpMsg && <p className="text-sm font-bold text-green-600">{otpMsg}</p>}
+                    {otpErr && <p className="text-sm font-bold text-red-500">{otpErr}</p>}
+                    <div className="flex flex-wrap items-center gap-3">
+                      <button
+                        type="submit"
+                        disabled={otpLoading || otp.trim().length !== 6}
+                        className="rounded-lg bg-cric-accent px-6 py-3 text-[10px] font-black uppercase tracking-widest text-white shadow-sm transition hover:bg-orange-600 disabled:opacity-60"
+                      >
+                        {otpLoading ? 'Verifying...' : 'Verify Phone'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={resendOtp}
+                        disabled={otpLoading}
+                        className="rounded-lg bg-cric-bg px-6 py-3 text-[10px] font-black uppercase tracking-widest text-cric-muted transition hover:bg-cric-border disabled:opacity-60"
+                      >
+                        Resend Code
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              )}
+
+              {!postSignup.user.email && !postSignup.requiresPhoneVerification && (
+                <p className="mx-auto mt-3 max-w-md text-sm font-semibold leading-relaxed text-cric-muted">
+                  Your account is ready.
+                </p>
+              )}
+
               <p className="mx-auto mt-2 max-w-md text-xs font-semibold text-cric-muted">
-                (In development the link is printed in the backend server log.)
+                (In development the link/code is printed in the backend server log.)
               </p>
               <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
                 <button
@@ -189,7 +297,7 @@ export default function Register({ onSuccess, onCancel, embedded = false }) {
                   <div className="w-full border-t border-cric-border" />
                 </div>
                 <div className="relative flex justify-center text-xs uppercase">
-                  <span className="bg-cric-card px-4 text-cric-muted font-bold">or sign up with email</span>
+                  <span className="bg-cric-card px-4 text-cric-muted font-bold">or sign up with email or phone</span>
                 </div>
               </div>
             </div>
@@ -236,16 +344,31 @@ export default function Register({ onSuccess, onCancel, embedded = false }) {
                 className="w-full rounded-lg border border-cric-border px-3 py-3 text-sm font-semibold text-cric-text bg-cric-card focus:outline-none focus:ring-2 focus:ring-cric-accent/30 focus:border-cric-accent"
               />
 
-              <label className="text-[10px] font-black uppercase tracking-widest text-cric-muted">Email</label>
-              <input
-                placeholder="Email"
-                type="email"
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                className="w-full rounded-lg border border-cric-border px-3 py-3 text-sm font-semibold text-cric-text bg-cric-card focus:outline-none focus:ring-2 focus:ring-cric-accent/30 focus:border-cric-accent"
-              />
+              <div className="grid gap-4 md:grid-cols-2">
+                <div>
+                  <label className="block text-[10px] font-black uppercase tracking-widest text-cric-muted mb-2">Email</label>
+                  <input
+                    placeholder="your@email.com"
+                    type="email"
+                    value={email}
+                    onChange={e => setEmail(e.target.value)}
+                    className="w-full rounded-lg border border-cric-border px-3 py-3 text-sm font-semibold text-cric-text bg-cric-card focus:outline-none focus:ring-2 focus:ring-cric-accent/30 focus:border-cric-accent"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black uppercase tracking-widest text-cric-muted mb-2">Phone number</label>
+                  <input
+                    placeholder="0300 1234567"
+                    type="tel"
+                    autoComplete="tel"
+                    value={phone}
+                    onChange={e => setPhone(e.target.value)}
+                    className="w-full rounded-lg border border-cric-border px-3 py-3 text-sm font-semibold text-cric-text bg-cric-card focus:outline-none focus:ring-2 focus:ring-cric-accent/30 focus:border-cric-accent"
+                  />
+                </div>
+              </div>
 
-              <label className="text-[10px] font-black uppercase tracking-widest text-cric-muted">Password</label>
+              <label className="block text-[10px] font-black uppercase tracking-widest text-cric-muted">Password</label>
               <input
                 placeholder="Password (minimum 8 characters)"
                 type="password"
@@ -273,13 +396,7 @@ export default function Register({ onSuccess, onCancel, embedded = false }) {
                     className="w-full rounded-lg border border-cric-border bg-cric-card px-3 py-3 text-sm font-semibold text-cric-text focus:outline-none focus:ring-2 focus:ring-cric-accent/30 focus:border-cric-accent"
                   />
                 </div>
-                <div className="mt-4 grid gap-4 md:grid-cols-2">
-                  <input
-                    placeholder="Phone (optional)"
-                    value={phone}
-                    onChange={e => setPhone(e.target.value)}
-                    className="w-full rounded-lg border border-cric-border bg-cric-card px-3 py-3 text-sm font-semibold text-cric-text focus:outline-none focus:ring-2 focus:ring-cric-accent/30 focus:border-cric-accent"
-                  />
+                <div className="mt-4">
                   <input
                     placeholder="What will you manage? e.g. school league, club tournament"
                     value={joinIntent}
@@ -292,7 +409,7 @@ export default function Register({ onSuccess, onCancel, embedded = false }) {
               {err && <p className="text-red-500 text-sm font-bold">{err}</p>}
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <p className="text-xs font-semibold text-cric-muted">
-                  One account per email. Verify your address to unlock all features.
+                  One account per email or phone. Verify your email or phone to unlock all features.
                 </p>
                 <button
                   type="submit"

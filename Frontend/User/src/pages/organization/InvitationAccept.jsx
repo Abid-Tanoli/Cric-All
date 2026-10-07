@@ -132,7 +132,7 @@ export default function InvitationAccept() {
             )}
             {invitation.forAccount && !invitation.emailVerified && (
               <Banner kind="error">
-                Verify your email address before accepting — check your inbox, then reload this page.
+                Verify your email address or phone number before accepting — check your inbox (or code), then reload this page.
               </Banner>
             )}
 

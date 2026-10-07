@@ -17,6 +17,13 @@ import {
   isVerificationExpired,
   issueVerificationEmail,
 } from "../utils/emailVerification.js";
+import { normalizePhone } from "../utils/phone.js";
+import {
+  hashOtp,
+  isOtpExpired,
+  issuePhoneOtp,
+  MAX_OTP_ATTEMPTS,
+} from "../utils/phoneVerification.js";
 import logger from "../utils/logger.js";
 import { recordAudit } from "../utils/audit.js";
 import { deleteUserAccount, AccountDeletionError } from "../services/accountDeletionService.js";
@@ -30,12 +37,14 @@ function publicUser(user, extra = {}) {
   return {
     _id: user._id,
     name: user.name,
-    email: user.email,
+    email: user.email || "",
+    phone: user.phone || "",
     role: user.role,
     accountType: user.accountType,
     organizationCategory: user.organizationCategory,
     organizationName: user.organizationName,
     emailVerified: user.emailVerified === true,
+    phoneVerified: user.phoneVerified === true,
     status: user.status || "active",
     ...extra,
   };
@@ -54,23 +63,44 @@ export const registerUser = async (req, res) => {
       accountType = "viewer",
       organizationCategory = "",
       organizationName = "",
-      phone = "",
+      phone,
       joinIntent = "",
       playerProfile
     } = req.body;
 
-    if (!name || !email || !password) {
+    // Phone and email are alternative identifiers: signup needs a name, a
+    // password, and at least one of email/phone (the register schema enforces
+    // the same rule before this runs).
+    const phoneInput = typeof phone === "string" ? phone.trim() : "";
+    const normalizedPhone = phoneInput ? normalizePhone(phoneInput) : null;
+    if (phoneInput && !normalizedPhone) {
+      return res.status(400).json({ message: "Please provide a valid phone number" });
+    }
+    if (!name || !password || (!email && !normalizedPhone)) {
       return res.status(400).json({ message: "All fields are required" });
     }
 
-    // Email setters (lowercase/trim) normalize both sides of this lookup.
-    const userExists = await User.findOne({ email });
-    if (userExists) {
-      // Explicit, actionable message on the register form (requested UX).
-      return res.status(409).json({
-        message: "An account with this email already exists. Please sign in instead.",
-        code: "EMAIL_TAKEN",
-      });
+    // Email setters (lowercase/trim) normalize both sides of this lookup, and
+    // phone is stored pre-normalized, so both duplicate checks compare
+    // canonical values.
+    if (email) {
+      const emailExists = await User.findOne({ email });
+      if (emailExists) {
+        // Explicit, actionable message on the register form (requested UX).
+        return res.status(409).json({
+          message: "An account with this email already exists. Please sign in instead.",
+          code: "EMAIL_TAKEN",
+        });
+      }
+    }
+    if (normalizedPhone) {
+      const phoneExists = await User.findOne({ phone: normalizedPhone });
+      if (phoneExists) {
+        return res.status(409).json({
+          message: "An account with this phone number already exists. Please sign in instead.",
+          code: "PHONE_TAKEN",
+        });
+      }
     }
 
     const requestedType = ["player", "handler", "organization_admin", "viewer"].includes(accountType)
@@ -80,15 +110,16 @@ export const registerUser = async (req, res) => {
 
     const newUser = await User.create({
       name,
-      email,
+      ...(email ? { email } : {}),
+      ...(normalizedPhone ? { phone: normalizedPhone } : {}),
       password,
       role,
       accountType: requestedType,
       organizationCategory,
       organizationName,
-      phone,
       joinIntent,
       emailVerified: false,
+      phoneVerified: false,
       authProviders: [{ provider: "password" }],
     });
 
@@ -144,9 +175,15 @@ export const registerUser = async (req, res) => {
       }
     }
 
-    // Verification mail is best-effort: registration still succeeds if the
-    // mail driver is not configured yet (the link is in the server log).
-    const verification = await issueVerificationEmail(newUser, { frontendUrl: userFrontendUrl });
+    // Both verification steps are best-effort: registration still succeeds if
+    // the mail/SMS drivers are not configured yet (the link/code is in the
+    // server log). The account itself is usable immediately either way.
+    const verification = email
+      ? await issueVerificationEmail(newUser, { frontendUrl: userFrontendUrl })
+      : { sent: false, reason: "no_email" };
+    const phoneVerification = normalizedPhone
+      ? await issuePhoneOtp(newUser, { force: true })
+      : null;
 
     const token = generateToken(newUser);
 
@@ -161,16 +198,27 @@ export const registerUser = async (req, res) => {
             verificationStatus: organization.verificationStatus,
           }
         : null,
-      requiresEmailVerification: true,
+      requiresEmailVerification: Boolean(newUser.email),
       verificationSent: verification.sent,
       verificationReason: verification.reason,
+      requiresPhoneVerification: Boolean(normalizedPhone),
+      phoneVerification,
     });
   } catch (err) {
     if (isDuplicateKeyError(err)) {
-      return res.status(409).json({
-        message: "An account with this email already exists. Please sign in instead.",
-        code: "EMAIL_TAKEN",
-      });
+      // Race on a unique index: `keyPattern` says which identifier was taken.
+      const phoneRace = Boolean(err.keyPattern?.phone) || /phone/i.test(err.message || "");
+      return res.status(409).json(
+        phoneRace
+          ? {
+              message: "An account with this phone number already exists. Please sign in instead.",
+              code: "PHONE_TAKEN",
+            }
+          : {
+              message: "An account with this email already exists. Please sign in instead.",
+              code: "EMAIL_TAKEN",
+            },
+      );
     }
     log.error({ event: "register.failed", err: err.message }, "registration failed");
     res.status(500).json({ message: "Registration failed" });
@@ -179,13 +227,20 @@ export const registerUser = async (req, res) => {
 
 export const loginUser = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    // Login by email or by phone — same password either way. OTP is for
+    // verifying the number, not for every login.
+    const { email, phone, identifier, password } = req.body;
+    const loginId = (identifier || email || phone || "").trim();
 
-    if (!email || !password) {
+    if (!loginId || !password) {
       return res.status(400).json({ message: "All fields are required" });
     }
 
-    const user = await User.findOne({ email }).select("+password");
+    const lookup = [{ email: loginId.toLowerCase() }];
+    const normalizedPhone = normalizePhone(loginId);
+    if (normalizedPhone) lookup.push({ phone: normalizedPhone });
+
+    const user = await User.findOne({ $or: lookup }).select("+password");
 
     // Google-only accounts have no password: comparePassword would throw, so
     // short-circuit into the same generic failure as a wrong password.
@@ -360,6 +415,118 @@ export const resendVerification = async (req, res) => {
   } catch (err) {
     log.error({ event: "resend-verification.failed", err: err.message }, "resend verification failed");
     res.status(500).json({ message: "Could not resend verification email" });
+  }
+};
+
+/**
+ * POST /api/auth/verify-phone { phone, otp }
+ * Mirrors verifyEmail: single-use (the stored hash is cleared on match),
+ * expiring, and now attempt-limited — a 6-digit code must not be guessable.
+ * The response is intentionally generic for unknown phones (no enumeration).
+ */
+export const verifyPhone = async (req, res) => {
+  try {
+    const { phone, otp } = req.body;
+    const normalized = typeof phone === "string" ? normalizePhone(phone) : null;
+    if (!normalized || !otp) {
+      return res.status(400).json({ message: "Phone number and verification code are required" });
+    }
+
+    const invalid = {
+      message: "This verification code is invalid or has expired.",
+      code: "OTP_INVALID",
+    };
+
+    const user = await User.findOne({ phone: normalized })
+      .select("+phoneVerificationOtp");
+    if (!user || !user.phoneVerificationOtp || isOtpExpired(user.phoneVerificationExpires)) {
+      return res.status(400).json(invalid);
+    }
+    if ((user.phoneVerificationAttempts || 0) >= MAX_OTP_ATTEMPTS) {
+      return res.status(400).json({
+        message: "Too many incorrect attempts. Request a new code.",
+        code: "OTP_INVALID",
+      });
+    }
+
+    if (user.phoneVerificationOtp !== hashOtp(otp)) {
+      user.phoneVerificationAttempts = (user.phoneVerificationAttempts || 0) + 1;
+      const exhausted = user.phoneVerificationAttempts >= MAX_OTP_ATTEMPTS;
+      if (exhausted) {
+        // Burn the code so it cannot be tried again.
+        user.phoneVerificationOtp = undefined;
+        user.phoneVerificationExpires = undefined;
+      }
+      await user.save();
+      return res.status(400).json(
+        exhausted
+          ? {
+              message: "Too many incorrect attempts. Request a new code.",
+              code: "OTP_INVALID",
+            }
+          : invalid,
+      );
+    }
+
+    user.phoneVerified = true;
+    user.phoneVerifiedAt = new Date();
+    user.phoneVerificationOtp = undefined;
+    user.phoneVerificationExpires = undefined;
+    user.phoneVerificationAttempts = 0;
+    await user.save();
+
+    res.status(200).json({
+      message: "Phone number verified. You can now use all account features.",
+      user: publicUser(user),
+    });
+  } catch (err) {
+    log.error({ event: "verify-phone.failed", err: err.message }, "phone verification failed");
+    res.status(500).json({ message: "Phone verification failed" });
+  }
+};
+
+/**
+ * POST /api/auth/resend-phone-otp { phone }
+ * Same contract as resend-verification: generic 200 for unknown or already
+ * verified numbers (no enumeration) plus a per-account cool-down. The one
+ * non-generic case is when the code genuinely could not be delivered anywhere
+ * — that says so instead of silently pretending it was sent.
+ */
+export const resendPhoneOtp = async (req, res) => {
+  try {
+    const { phone } = req.body;
+    const normalized = typeof phone === "string" ? normalizePhone(phone) : null;
+    if (!normalized) return res.status(400).json({ message: "Phone number is required" });
+
+    const user = await User.findOne({ phone: normalized });
+
+    const generic = {
+      message: "If an account exists for that phone number and is unverified, a new code has been sent.",
+    };
+
+    if (!user || user.phoneVerified === true) {
+      return res.status(200).json(generic);
+    }
+
+    const result = await issuePhoneOtp(user);
+
+    if (result.reason === "cooldown") {
+      return res.status(429).json({
+        message: "A verification code was sent recently. Please wait a minute before requesting another.",
+        code: "RESEND_COOLDOWN",
+      });
+    }
+    if (!result.sent) {
+      return res.status(400).json({
+        message: result.message,
+        code: "NO_DELIVERY_CHANNEL",
+      });
+    }
+
+    res.status(200).json(generic);
+  } catch (err) {
+    log.error({ event: "resend-phone-otp.failed", err: err.message }, "resend phone OTP failed");
+    res.status(500).json({ message: "Could not resend verification code" });
   }
 };
 

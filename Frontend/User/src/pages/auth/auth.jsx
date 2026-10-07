@@ -31,14 +31,29 @@ function clearAuth() {
 }
 
 export async function register(name, email, password, profile = {}) {
-  const res = await api.post('/auth/register', { name, email, password, ...profile });
+  // `email` and `profile.phone` may be empty when signing up with the other
+  // identifier instead — the backend accepts either (or both), so empty
+  // strings are dropped rather than sent.
+  //
+  // Returns the FULL register response (`{ token, user, phoneVerification,
+  // … }`), not just the user: the phone-signup screen needs to know where the
+  // OTP was delivered. Callers that only want the account take `.user`.
+  const { phone = "", ...rest } = profile;
+  const payload = { name, password, ...rest };
+  if (email && email.trim()) payload.email = email.trim();
+  if (phone && phone.trim()) payload.phone = phone.trim();
+  const res = await api.post('/auth/register', payload);
   const { token, user } = res.data;
   persistAuth(token, user);
-  return user;
+  return res.data;
 }
 
-export async function login(email, password) {
-  const res = await api.post('/auth/login', { email, password });
+/**
+ * Login with an email address or a phone number — the backend looks the value
+ * up as whichever it is. One `identifier` field covers both.
+ */
+export async function login(identifier, password) {
+  const res = await api.post('/auth/login', { identifier, password });
   const { token, user } = res.data;
   persistAuth(token, user);
   return user;
@@ -65,6 +80,33 @@ export async function verifyEmailToken(token) {
 export async function resendVerification(email) {
   const res = await api.post('/auth/resend-verification', { email });
   return res.data;
+}
+
+/**
+ * Submit the 6-digit code sent to `phone`. On success the cached user is
+ * refreshed so the verification banner disappears, exactly like verifyEmailToken.
+ */
+export async function verifyPhoneOtp(phone, otp) {
+  const res = await api.post('/auth/verify-phone', { phone, otp });
+  const { user } = res.data || {};
+  if (user) {
+    localStorage.setItem('bq_user', JSON.stringify(user));
+    window.dispatchEvent(new CustomEvent('bq-auth-changed'));
+  }
+  return res.data;
+}
+
+export async function resendPhoneOtp(phone) {
+  const res = await api.post('/auth/resend-phone-otp', { phone });
+  return res.data;
+}
+
+/**
+ * Display form for a stored phone number ("923001234567" → "+923001234567").
+ * Storage is digits-only + country code (see Backend/src/utils/phone.js).
+ */
+export function formatPhone(stored) {
+  return typeof stored === 'string' && /^\d{7,15}$/.test(stored) ? `+${stored}` : stored || '';
 }
 
 export function logout() {

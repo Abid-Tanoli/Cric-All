@@ -6,7 +6,7 @@ import { login, loginWithGoogle } from '../pages/auth/auth';
 const hasGoogleClientId = Boolean(import.meta.env.VITE_GOOGLE_CLIENT_ID && import.meta.env.VITE_GOOGLE_CLIENT_ID !== 'your_google_client_id.apps.googleusercontent.com');
 
 export default function Login({ onSuccess, onCancel, embedded = false }) {
-  const [email, setEmail] = useState('');
+  const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [err, setErr] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -16,7 +16,7 @@ export default function Login({ onSuccess, onCancel, embedded = false }) {
     setErr(null);
     setLoading(true);
     try {
-      const user = await login(email, password);
+      const user = await login(identifier, password);
       onSuccess?.(user);
     } catch (error) {
       setErr(error.response?.data?.message || 'Login failed');
@@ -75,7 +75,7 @@ export default function Login({ onSuccess, onCancel, embedded = false }) {
                 <div className="w-full border-t border-cric-border" />
               </div>
               <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-cric-card px-4 text-cric-muted font-bold">or continue with email</span>
+                <span className="bg-cric-card px-4 text-cric-muted font-bold">or continue with your account</span>
               </div>
             </div>
           </>
@@ -83,12 +83,13 @@ export default function Login({ onSuccess, onCancel, embedded = false }) {
 
         <form onSubmit={submit} className="space-y-4">
           <div>
-            <label className="block text-[10px] font-black uppercase tracking-widest text-cric-muted mb-2">Email</label>
+            <label className="block text-[10px] font-black uppercase tracking-widest text-cric-muted mb-2">Email or phone number</label>
             <input
-              placeholder="your@email.com"
-              type="email"
-              value={email}
-              onChange={e => setEmail(e.target.value)}
+              placeholder="your@email.com or 0300 1234567"
+              type="text"
+              autoComplete="username"
+              value={identifier}
+              onChange={e => setIdentifier(e.target.value)}
               className="w-full p-3 bg-cric-bg border border-cric-border rounded-xl focus:ring-2 focus:ring-cric-accent outline-none font-bold text-cric-text transition-all"
             />
           </div>

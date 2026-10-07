@@ -128,18 +128,25 @@ export const optionalProtect = async (req, res, next) => {
 };
 
 // Privileged actions (creating organizations/teams/matches, publishing,
-// inviting members) require a proven email address. Platform Admin principals
-// (Admin collection) are not email-verified accounts and pass straight through.
+// inviting members) require a proven identity: a verified email OR a verified
+// phone number is enough — the two channels gate exactly the same actions, so
+// an account never needs both. Platform Admin principals (Admin collection)
+// are not verified accounts and pass straight through.
+export const isIdentityVerified = (user) =>
+  user?.emailVerified === true || user?.phoneVerified === true;
+
 export const requireVerifiedEmail = (req, res, next) => {
   if (!req.user) return res.status(401).json({ message: "Not authorized" });
   if (req.principalType === "admin") return next();
-  if (req.user.emailVerified !== true) {
+  if (!isIdentityVerified(req.user)) {
     return res.status(403).json({
-      message: "Please verify your email address before performing this action.",
+      message: "Please verify your email address or phone number before performing this action.",
+      // Kept as EMAIL_NOT_VERIFIED for compatibility with existing clients;
+      // it now means "identity not verified" (either channel).
       code: "EMAIL_NOT_VERIFIED",
     });
   }
   next();
 };
 
-export default { protect, optionalProtect, requireAdmin, requireSuperAdmin, requireVerifiedEmail };
+export default { protect, optionalProtect, requireAdmin, requireSuperAdmin, requireVerifiedEmail, isIdentityVerified };

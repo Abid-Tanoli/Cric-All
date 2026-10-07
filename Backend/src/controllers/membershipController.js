@@ -12,6 +12,7 @@ import Invitation, {
 import AuditLog from "../models/AuditLog.js";
 import { recordAudit } from "../utils/audit.js";
 import { sendMail } from "../utils/mailer.js";
+import { isIdentityVerified } from "../middleware/authMiddleware.js";
 import { isPlatformAdmin } from "../middleware/orgAccess.js";
 import {
   ORG_ROLE_LABELS,
@@ -131,9 +132,9 @@ export const addOrgMember = async (req, res) => {
     if (invitee.status === "suspended") {
       return res.status(409).json({ message: "That account is suspended.", code: "ACCOUNT_SUSPENDED" });
     }
-    if (invitee.emailVerified !== true) {
+    if (!isIdentityVerified(invitee)) {
       return res.status(422).json({
-        message: "That account has not verified its email yet. Send an invitation instead.",
+        message: "That account has not verified its email or phone yet. Send an invitation instead.",
         code: "EMAIL_NOT_VERIFIED",
       });
     }
@@ -558,7 +559,9 @@ export const previewInvitation = async (req, res) => {
       // The address is echoed so the invitee can see which of their accounts
       // the invitation belongs to — it is their own address, already known.
       forAccount: req.user ? String(req.user.email).toLowerCase() === invitation.email : false,
-      emailVerified: req.user?.emailVerified === true,
+      // Same rule as the acceptance gate below: either identifier verified.
+      // The field name is kept because the invitation UI reads `emailVerified`.
+      emailVerified: isIdentityVerified(req.user),
       expiresAt: invitation.expiresAt,
     });
   } catch (error) {
@@ -599,9 +602,9 @@ const loadInvitationForActor = async (req, selector) => {
 
 /** Shared by the token and the id entry points. */
 const completeAcceptance = async (req, res, invitation) => {
-  if (req.user.emailVerified !== true) {
+  if (!isIdentityVerified(req.user)) {
     return res.status(403).json({
-      message: "Verify your email address before accepting an invitation.",
+      message: "Verify your email address or phone number before accepting an invitation.",
       code: "EMAIL_NOT_VERIFIED",
     });
   }
@@ -699,9 +702,9 @@ export const acceptOrgInvitation = async (req, res) => {
     if (token.length < 16) {
       return res.status(400).json({ message: "Invalid invitation link", code: "INVITATION_INVALID" });
     }
-    if (req.user.emailVerified !== true) {
+    if (!isIdentityVerified(req.user)) {
       return res.status(403).json({
-        message: "Verify your email address before accepting an invitation.",
+        message: "Verify your email address or phone number before accepting an invitation.",
         code: "EMAIL_NOT_VERIFIED",
       });
     }

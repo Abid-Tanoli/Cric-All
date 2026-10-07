@@ -41,7 +41,13 @@ export default function Header({ user, hasOrg, onShowLogin, onShowRegister, onLo
   const isOrgActive = location.pathname.startsWith("/organization");
   const isMyPlayersActive = location.pathname === "/my-players";
   const isAccountActive = location.pathname === "/account";
-  const needsVerification = Boolean(user && user.emailVerified === false);
+  // Banner only while NEITHER identifier is verified: email OR phone being
+  // verified satisfies the account (see isIdentityVerified on the backend).
+  // `!== true` (not `=== false`) so users whose cached profile predates the
+  // phone fields still see the banner.
+  const needsVerification = Boolean(user && user.emailVerified !== true && user.phoneVerified !== true);
+  const missingEmail = Boolean(user && user.email && user.emailVerified !== true);
+  const missingPhone = Boolean(user && user.phone && user.phoneVerified !== true);
   // "My Organizations" only means something once the account belongs to one. An
   // account with no organization still needs a way to create its first one, so it
   // gets a labelled entry point instead of an empty dashboard link.
@@ -64,15 +70,30 @@ export default function Header({ user, hasOrg, onShowLogin, onShowRegister, onLo
       {needsVerification && (
         <div className="bg-cric-accent/15 border-b border-cric-accent/40 px-4 py-2 flex flex-wrap items-center justify-center gap-3 text-center">
           <p className="text-[10px] font-black uppercase tracking-widest text-cric-text">
-            Verify your email to create organizations, teams and matches.
+            {missingEmail && missingPhone
+              ? "Verify your email or phone number to create organizations, teams and matches."
+              : missingPhone
+                ? "Verify your phone number to create organizations, teams and matches."
+                : "Verify your email to create organizations, teams and matches."}
           </p>
-          <button
-            type="button"
-            onClick={handleResend}
-            className="rounded-lg bg-cric-accent px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-white hover:bg-orange-600 transition-colors"
-          >
-            Resend link
-          </button>
+          {missingEmail && (
+            <button
+              type="button"
+              onClick={handleResend}
+              className="rounded-lg bg-cric-accent px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-white hover:bg-orange-600 transition-colors"
+            >
+              Resend link
+            </button>
+          )}
+          {missingPhone && (
+            <button
+              type="button"
+              onClick={() => navigate("/verify-phone")}
+              className="rounded-lg bg-cric-accent px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-white hover:bg-orange-600 transition-colors"
+            >
+              Verify phone
+            </button>
+          )}
           {resendState && <span className="text-[10px] font-bold text-cric-muted">{resendState}</span>}
         </div>
       )}

@@ -259,6 +259,20 @@ import TeamCategory from "./models/TeamCategory.js";
   }
 })();
 
+// Phone-signup identity indexes: rebuild the email index as unique+sparse and
+// ensure the phone index on databases created before phone signup existed.
+// Best-effort — never blocks startup. See utils/identityIndexes.js.
+import { ensureUserIdentityIndexes } from "./utils/identityIndexes.js";
+(async () => {
+  try {
+    const connection = await dbReadyPromise;
+    if (!connection) return;
+    await ensureUserIdentityIndexes();
+  } catch (e) {
+    // logged inside; never fatal
+  }
+})();
+
 // Seed master data (cricket shots & fielding positions) on startup
 import { seedCricketShots } from "./seed/cricketShots.js";
 import { seedFieldingPositions } from "./seed/fieldingPositions.js";

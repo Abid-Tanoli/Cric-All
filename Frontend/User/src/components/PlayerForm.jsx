@@ -7,6 +7,7 @@ const userSchema = z.object({
   name: z.string().min(1, "Full name is required"),
   email: z.string().email("Invalid email address"),
   password: z.string().min(8, "Password must be at least 8 characters"),
+  phone: z.string().optional(),
   playingRole: z.string().min(1, "Playing role is required"),
   battingStyle: z.string().min(1, "Batting style is required"),
   bowlingStyle: z.string().min(1, "Bowling style is required"),
@@ -124,6 +125,9 @@ export default function PlayerForm({
         <>
           <FormField label="Email Address">
             <Input register={register} name="email" type="email" placeholder="your@email.com" error={errors.email?.message} />
+          </FormField>
+          <FormField label="Phone Number (optional)">
+            <Input register={register} name="phone" type="tel" placeholder="0300 1234567" error={errors.phone?.message} />
           </FormField>
           <FormField label="Password">
             <Input register={register} name="password" type="password" placeholder="Minimum 8 characters" error={errors.password?.message} />
