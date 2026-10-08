@@ -217,13 +217,20 @@ export async function listMembers(organizationId, { page = 1, limit = 50, role =
   if (search) {
     const escaped = String(search).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const matching = await Membership.find({ ...query, user: { $exists: true } })
-      .populate("user", "name email accountType")
+      .populate("user", "name email phone accountType")
       .lean();
     const hits = matching.filter((m) => {
       const needle = escaped.toLowerCase();
+      // Phone-only accounts have no email, so a name-or-email search would
+      // make them unfindable in their own organization's roster. The digits of
+      // the query are compared against the digits on file, so "+92 300 1234"
+      // finds "923001234" regardless of how the roster row was written.
+      const searchDigits = escaped.replace(/\D/g, "");
+      const phoneDigits = String(m.user?.phone || "").replace(/\D/g, "");
       return (
         (m.user?.name || "").toLowerCase().includes(needle) ||
-        (m.user?.email || "").toLowerCase().includes(needle)
+        (m.user?.email || "").toLowerCase().includes(needle) ||
+        (searchDigits.length >= 3 && phoneDigits.includes(searchDigits))
       );
     });
     const ids = hits.map((m) => m._id);
@@ -234,7 +241,7 @@ export async function listMembers(organizationId, { page = 1, limit = 50, role =
 
   const [items, total] = await Promise.all([
     Membership.find(query)
-      .populate("user", "name email accountType emailVerified")
+      .populate("user", "name email phone accountType emailVerified phoneVerified")
       .populate("invitedBy", "name email")
       .sort({ createdAt: 1 })
       .skip((safePage - 1) * safeLimit)
@@ -261,8 +268,10 @@ export function memberSummary(membership) {
           _id: membership.user._id,
           name: membership.user.name,
           email: membership.user.email,
+          phone: membership.user.phone || "",
           accountType: membership.user.accountType,
           emailVerified: membership.user.emailVerified,
+          phoneVerified: membership.user.phoneVerified,
         }
       : null,
     roles,

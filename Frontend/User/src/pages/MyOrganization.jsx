@@ -56,7 +56,10 @@ function InboxRow({ invitation, onDone }) {
         <p className="text-xs font-bold text-amber-900">
           {invitation.inviter?.name || "Somebody"} invited you to join{" "}
           <strong>{invitation.organization?.name}</strong> as{" "}
-          {(invitation.roles || []).map(roleLabel).join(", ")} · expires {formatDate(invitation.expiresAt)}
+          {(invitation.roles || []).map(roleLabel).join(", ")}
+          {invitation.addressedTo ? ` · sent to ${invitation.addressedTo}` : ""}
+          {invitation.channel === "phone" ? " · by SMS" : ""}
+          {" "}· expires {formatDate(invitation.expiresAt)}
         </p>
         <div className="flex gap-2">
           <button

@@ -31,7 +31,7 @@ export class AccountDeletionError extends Error {
  *   - Player profiles, Teams and Events. Those are public records that other
  *     people's scorecards depend on; we only drop the pointer to the creator.
  */
-export async function deleteUserAccount(userId, { email = "" } = {}) {
+export async function deleteUserAccount(userId, { email = "", phone = "" } = {}) {
   if (!mongoose.Types.ObjectId.isValid(userId)) {
     throw new AccountDeletionError(400, "INVALID_USER_ID", "Invalid account id");
   }
@@ -92,8 +92,15 @@ export async function deleteUserAccount(userId, { email = "" } = {}) {
   const cleanup = {
     // Registrations and unanswered invitations addressed to this address, so a
     // deleted account does not leave a live invite that can never be accepted.
+    // Phone-addressed invitations count too: a phone-only account has no email,
+    // and an invite sent to its number would otherwise survive the deletion.
     invitations: await Invitation.deleteMany({
-      $or: [{ invitee: userId }, { inviter: userId }, ...(email ? [{ email }] : [])],
+      $or: [
+        { invitee: userId },
+        { inviter: userId },
+        ...(email ? [{ email }] : []),
+        ...(phone ? [{ phone }] : []),
+      ],
     }).then((r) => r.deletedCount || 0),
     handlerRequests: await HandlerRequest.deleteMany({ user: userId }).then((r) => r.deletedCount || 0),
     matchOfficials: await MatchOfficial.deleteMany({ userId }).then((r) => r.deletedCount || 0),

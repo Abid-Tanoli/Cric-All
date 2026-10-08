@@ -113,9 +113,11 @@ router.delete('/:id/members/:userId', ...manage, validateObjectId('id'), validat
 // self-granted nor handed out by invitation.
 router.post('/:id/members/:userId/owner', ...manage, validateObjectId('id'), validateObjectId('userId'), requireOrgOwner, transferOwnership);
 
+import { invitationCreateRateLimit } from '../middleware/invitationRateLimit.js';
+
 // --- invitations -------------------------------------------------------------
 router.get('/:id/invitations', ...manage, validateObjectId('id'), requireOrgPermission(PERMISSIONS.INVITE_MEMBERS), listOrgInvitations);
-router.post('/:id/invitations', ...manage, validateObjectId('id'), requireOrgPermission(PERMISSIONS.INVITE_MEMBERS), validate(createInvitationSchema), createOrgInvitation);
+router.post('/:id/invitations', ...manage, validateObjectId('id'), requireOrgPermission(PERMISSIONS.INVITE_MEMBERS), invitationCreateRateLimit(), validate(createInvitationSchema), createOrgInvitation);
 router.delete('/:id/invitations/:invitationId', ...manage, validateObjectId('id'), requireOrgPermission(PERMISSIONS.INVITE_MEMBERS), validateObjectId('invitationId'), revokeOrgInvitation);
 
 // --- teams owned by this organization (Phase 4) ------------------------------

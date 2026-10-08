@@ -126,13 +126,15 @@ export default function InvitationAccept() {
 
             {!invitation.forAccount && (
               <Banner kind="error">
-                This invitation was sent to a different email address. Sign in with the account it was
+                This invitation was sent to a different address. Sign in with the account it was
                 sent to in order to accept it.
               </Banner>
             )}
             {invitation.forAccount && !invitation.emailVerified && (
               <Banner kind="error">
-                Verify your email address or phone number before accepting — check your inbox (or code), then reload this page.
+                {invitation.channel === "phone"
+                  ? "Verify the phone number this invitation was sent to — enter the code, then reload this page."
+                  : "Verify your email address before accepting — check your inbox, then reload this page."}
               </Banner>
             )}
 

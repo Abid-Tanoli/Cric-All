@@ -32,8 +32,8 @@ export const listOrgAuditLog = (orgId, params = {}) =>
 export const listOrgMembers = (orgId, params = {}) =>
   unwrap(api.get(`/organizations/${orgId}/members`, { params }));
 
-export const addOrgMember = (orgId, { email, roles }) =>
-  unwrap(api.post(`/organizations/${orgId}/members`, { email, roles }));
+export const addOrgMember = (orgId, { email, phone, roles }) =>
+  unwrap(api.post(`/organizations/${orgId}/members`, { email, phone, roles }));
 
 export const updateOrgMemberRoles = (orgId, userId, roles) =>
   unwrap(api.patch(`/organizations/${orgId}/members/${userId}`, { roles }));
@@ -48,8 +48,10 @@ export const transferOwnership = (orgId, userId) =>
 export const listOrgInvitations = (orgId, params = {}) =>
   unwrap(api.get(`/organizations/${orgId}/invitations`, { params }));
 
-export const createOrgInvitation = (orgId, { email, roles, message }) =>
-  unwrap(api.post(`/organizations/${orgId}/invitations`, { email, roles, message }));
+// An invitation is addressed to an email, a phone number, or both — the server
+// insists on at least one and normalizes the phone itself.
+export const createOrgInvitation = (orgId, { email, phone, roles, message }) =>
+  unwrap(api.post(`/organizations/${orgId}/invitations`, { email, phone, roles, message }));
 
 export const revokeOrgInvitation = (orgId, invitationId) =>
   unwrap(api.delete(`/organizations/${orgId}/invitations/${invitationId}`));

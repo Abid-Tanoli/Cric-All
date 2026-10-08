@@ -263,11 +263,17 @@ import TeamCategory from "./models/TeamCategory.js";
 // ensure the phone index on databases created before phone signup existed.
 // Best-effort — never blocks startup. See utils/identityIndexes.js.
 import { ensureUserIdentityIndexes } from "./utils/identityIndexes.js";
+// Invitation addressing indexes: databases created before invitations could be
+// addressed by phone hold the old {organization, email} partial index, which
+// treats two phone-only invites as a duplicate key. Best-effort too — see
+// utils/invitationIndexes.js.
+import { ensureInvitationAddressIndexes } from "./utils/invitationIndexes.js";
 (async () => {
   try {
     const connection = await dbReadyPromise;
     if (!connection) return;
     await ensureUserIdentityIndexes();
+    await ensureInvitationAddressIndexes();
   } catch (e) {
     // logged inside; never fatal
   }

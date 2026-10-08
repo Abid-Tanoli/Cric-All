@@ -541,7 +541,7 @@ export const deleteAccount = async (req, res) => {
       });
     }
 
-    await deleteUserAccount(req.user.id, { email: req.user.email });
+    await deleteUserAccount(req.user.id, { email: req.user.email, phone: req.user.phone });
 
     // Recorded after the delete, so it survives as the durable record that
     // this account id was removed and why.

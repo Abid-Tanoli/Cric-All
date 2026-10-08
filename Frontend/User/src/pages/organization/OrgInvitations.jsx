@@ -15,6 +15,10 @@ import { Banner, Field, card, cardSubtle, dangerButton, eyebrow, input, primaryB
 
 const STATUSES = ["pending", "accepted", "rejected", "expired", "revoked"];
 
+/** The address an invitation row is addressed to: email, else the phone. */
+const addressOf = (invitation) =>
+  invitation?.email || (invitation?.phone ? `+${invitation.phone}` : "unknown address");
+
 export default function OrgInvitations({ orgId, access }) {
   const [items, setItems] = useState([]);
   const [status, setStatus] = useState("pending");
@@ -24,12 +28,14 @@ export default function OrgInvitations({ orgId, access }) {
   const [notice, setNotice] = useState("");
 
   const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
   const [roles, setRoles] = useState(["player"]);
   const [message, setMessage] = useState("");
 
   const permissions = access?.permissions || [];
   const canInvite = can(permissions, PERMISSIONS.INVITE_MEMBERS);
   const grantable = grantableRoles(access?.grantableRoles).filter((role) => role !== "owner");
+  const hasAddress = Boolean(email.trim() || phone.trim());
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -55,15 +61,16 @@ export default function OrgInvitations({ orgId, access }) {
     try {
       const res = await createOrgInvitation(orgId, {
         email: email.trim(),
+        phone: phone.trim(),
         roles,
         message: message.trim(),
       });
-      setNotice(
-        res.mailDelivered
-          ? res.message
-          : `${res.message} Email delivery is not configured, so share the link from the server log.`
-      );
+      // The server says in one message whether the invitation was created and
+      // whether it actually reached the address; only add the "grab it from
+      // the log" hint when nothing was delivered.
+      setNotice(res.delivered === false ? `${res.message} Share the link from the server log.` : res.message);
       setEmail("");
+      setPhone("");
       setMessage("");
       setRoles(["player"]);
       await load();
@@ -80,7 +87,7 @@ export default function OrgInvitations({ orgId, access }) {
     setNotice("");
     try {
       await revokeOrgInvitation(orgId, invitation._id);
-      setNotice(`Invitation to ${invitation.email} revoked.`);
+      setNotice(`Invitation to ${addressOf(invitation)} revoked.`);
       await load();
     } catch (error) {
       setErr(error.message || "Could not revoke the invitation");
@@ -105,24 +112,36 @@ export default function OrgInvitations({ orgId, access }) {
       <form onSubmit={send} className={card}>
         <h2 className={sectionTitle}>Invite somebody</h2>
         <p className="mt-1 text-xs font-semibold text-cric-muted">
-          They receive a single-use link, join with the roles you pick, and the invitation expires in
-          14 days. Ownership is never granted by invitation.
+          Give an email address, a phone number, or both. They receive a single-use link, join with
+          the roles you pick, and the invitation expires in 14 days. Ownership is never granted by
+          invitation.
         </p>
 
         {err ? <div className="mt-4"><Banner kind="error">{err}</Banner></div> : null}
         {notice ? <div className="mt-4"><Banner kind="success">{notice}</Banner></div> : null}
 
         <div className="mt-4 grid gap-4 md:grid-cols-2">
-          <Field label="Email address *">
+          <Field label="Email address" hint="Leave empty if you are inviting a phone number instead.">
             <input
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="person@example.com"
               className={input}
-              required
             />
           </Field>
+          <Field label="Phone number" hint="Leave empty if you are inviting an email instead.">
+            <input
+              type="tel"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              placeholder="0300 1234567"
+              className={input}
+            />
+          </Field>
+        </div>
+
+        <div className="mt-4">
           <Field label="A short note (optional)">
             <input
               value={message}
@@ -157,7 +176,7 @@ export default function OrgInvitations({ orgId, access }) {
         </div>
 
         <div className="mt-4 flex justify-end">
-          <button type="submit" disabled={busy || !email.trim() || roles.length === 0} className={primaryButton}>
+          <button type="submit" disabled={busy || !hasAddress || roles.length === 0} className={primaryButton}>
             {busy ? "Sending…" : "Send invitation"}
           </button>
         </div>
@@ -198,8 +217,9 @@ export default function OrgInvitations({ orgId, access }) {
                 <div key={inv._id} className={cardSubtle}>
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-black text-cric-text">{inv.email}</p>
+                      <p className="truncate text-sm font-black text-cric-text">{addressOf(inv)}</p>
                       <p className="truncate text-[10px] font-bold uppercase tracking-wider text-cric-muted">
+                        {inv.channel === "phone" ? "by SMS" : "by email"} ·{" "}
                         {(inv.roles || []).map(roleLabel).join(", ")} · invited {formatDate(inv.createdAt)}
                         {inv.inviter?.name ? ` by ${inv.inviter.name}` : ""}
                       </p>

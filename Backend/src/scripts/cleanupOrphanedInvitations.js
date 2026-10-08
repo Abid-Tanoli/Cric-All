@@ -39,11 +39,22 @@ async function main() {
   try {
     const organizations = await TeamOrganization.find({}, { _id: 1 }).lean();
     const existingIds = new Set(organizations.map((org) => String(org._id)));
-    const invitations = await Invitation.find({}, { _id: 1, organization: 1, email: 1, status: 1 }).lean();
+    const invitations = await Invitation.find(
+      {},
+      { _id: 1, organization: 1, email: 1, phone: 1, status: 1 },
+    ).lean();
     const orphans = invitations.filter((invitation) => !existingIds.has(String(invitation.organization)));
+
+    // The report has to name the address an invitation was sent to, and
+    // phone-only invitations have no email to show (see Fix A).
+    const addressOf = (invitation) =>
+      invitation.email || (invitation.phone ? `+${invitation.phone}` : "(no address)");
 
     console.log(`Target: local MongoDB database ${databaseName || "(unnamed)"}`);
     console.log(`Orphan invitations found: ${orphans.length}`);
+    for (const invitation of orphans) {
+      console.log(`  - ${invitation.status}: ${addressOf(invitation)}`);
+    }
     if (!apply) {
       console.log("Dry run only. Re-run with --apply to delete these rows.");
       return;

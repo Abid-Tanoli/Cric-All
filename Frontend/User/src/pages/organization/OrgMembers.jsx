@@ -110,7 +110,7 @@ export default function OrgMembers({ orgId, access, currentUserId, onChanged }) 
   const [confirmRemove, setConfirmRemove] = useState(null);
   const [confirmTransfer, setConfirmTransfer] = useState(null);
 
-  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteAddress, setInviteAddress] = useState("");
   const [inviteRoles, setInviteRoles] = useState(["player"]);
 
   const permissions = access?.permissions || [];
@@ -161,12 +161,21 @@ export default function OrgMembers({ orgId, access, currentUserId, onChanged }) 
 
   const addDirect = async (event) => {
     event.preventDefault();
+    // One field, two shapes: anything with an "@" is treated as an email, the
+    // rest is sent as a phone number for the server to normalize.
+    const raw = inviteAddress.trim();
+    const looksLikeEmail = raw.includes("@");
     const result = await run(
-      () => addOrgMember(orgId, { email: inviteEmail.trim(), roles: inviteRoles }),
+      () =>
+        addOrgMember(orgId, {
+          email: looksLikeEmail ? raw : "",
+          phone: looksLikeEmail ? "" : raw,
+          roles: inviteRoles,
+        }),
       "Member added."
     );
     if (result) {
-      setInviteEmail("");
+      setInviteAddress("");
       setInviteRoles(["player"]);
     }
   };
@@ -202,7 +211,7 @@ export default function OrgMembers({ orgId, access, currentUserId, onChanged }) 
           <div>
             <h2 className={sectionTitle}>Members</h2>
             <p className="mt-1 text-xs font-semibold text-cric-muted">
-              {data.total} active member{data.total === 1 ? "" : "s"} · a person can hold several roles
+              {data.total} active member{data.total === 1 ? "" : "s"} Â· a person can hold several roles
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -212,7 +221,7 @@ export default function OrgMembers({ orgId, access, currentUserId, onChanged }) 
                 setSearch(e.target.value);
                 setPage(1);
               }}
-              placeholder="Search name or email"
+              placeholder="Search name, email or phone"
               className="w-56 rounded-lg border border-cric-border bg-cric-bg px-3 py-2 text-xs font-semibold text-cric-text focus:outline-none focus:border-cric-accent"
             />
             <select
@@ -238,7 +247,7 @@ export default function OrgMembers({ orgId, access, currentUserId, onChanged }) 
 
         <div className="mt-5 space-y-3">
           {loading ? (
-            <p className="text-sm font-semibold text-cric-muted">Loading members…</p>
+            <p className="text-sm font-semibold text-cric-muted">Loading membersâ€¦</p>
           ) : data.items.length === 0 ? (
             <div className="rounded-xl border border-dashed border-cric-border bg-cric-bg p-6 text-center">
               <p className="text-sm font-bold text-cric-text">No members match</p>
@@ -259,7 +268,9 @@ export default function OrgMembers({ orgId, access, currentUserId, onChanged }) 
                         {isSelf ? " (you)" : ""}
                       </p>
                       <p className="truncate text-[10px] font-bold uppercase tracking-wider text-cric-muted">
-                        {member.user?.email || "email unavailable"} · joined {formatDate(member.joinedAt || member.createdAt)}
+                        {member.user?.email ||
+                          (member.user?.phone ? `+${member.user.phone}` : "no contact on file")}{" "}
+                        · joined {formatDate(member.joinedAt || member.createdAt)}
                         {member.source ? ` · via ${member.source}` : ""}
                       </p>
                     </div>
@@ -383,16 +394,16 @@ export default function OrgMembers({ orgId, access, currentUserId, onChanged }) 
           <h2 className={sectionTitle}>Add an existing account</h2>
           <p className="mt-1 text-xs font-semibold text-cric-muted">
             This joins somebody immediately, so the address must already have a CricAll account with a
-            verified email. For anybody else use the Invitations tab.
+            verified email or phone number. For anybody else use the Invitations tab.
           </p>
 
           <div className="mt-4 grid gap-4 md:grid-cols-[1fr_2fr_auto] md:items-end">
-            <Field label="Account email *">
+            <Field label="Account email or phone *" hint="Contains @ means email; anything else is read as a phone number.">
               <input
-                type="email"
-                value={inviteEmail}
-                onChange={(e) => setInviteEmail(e.target.value)}
-                placeholder="teammate@example.com"
+                type="text"
+                value={inviteAddress}
+                onChange={(e) => setInviteAddress(e.target.value)}
+                placeholder="teammate@example.com or 0300 1234567"
                 className={input}
                 required
               />
@@ -422,8 +433,8 @@ export default function OrgMembers({ orgId, access, currentUserId, onChanged }) 
                   ))}
               </div>
             </Field>
-            <button type="submit" disabled={busy || !inviteEmail.trim() || inviteRoles.length === 0} className={primaryButton}>
-              {busy ? "Adding…" : "Add member"}
+            <button type="submit" disabled={busy || !inviteAddress.trim() || inviteRoles.length === 0} className={primaryButton}>
+              {busy ? "Addingâ€¦" : "Add member"}
             </button>
           </div>
 

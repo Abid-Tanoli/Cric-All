@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { ORG_ROLES } from "../permissions/orgPermissions.js";
+import { isValidPhone } from "../utils/phone.js";
 
 // Organization, membership and invitation request validation.
 //
@@ -103,26 +104,52 @@ export const createOrganizationSchema = z
 
 export const updateOrganizationSchema = createOrganizationSchema.partial();
 
-const emailAddress = z
+const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// Both addressing modes are optional on their own — the object-level
+// superRefine below is what insists on at least one. `.optional()` has to sit
+// OUTSIDE the transform: without it zod treats a missing key as "Required" and
+// a phone-only invitation never reaches the controller.
+const optionalEmail = z
   .string()
   .trim()
   .toLowerCase()
   .max(254)
-  .refine((v) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v), "Please use a valid email format");
+  .refine((v) => v === "" || emailRe.test(v), "Please use a valid email format")
+  .transform((v) => (v === "" ? undefined : v))
+  .optional();
 
 const rolesArray = z
   .array(z.enum(ORG_ROLES))
   .min(1, "Pick at least one role")
   .max(6, "Too many roles");
 
-// Direct add: an existing, email-verified account joins immediately. This is
+const optionalPhone = z
+  .string()
+  .trim()
+  .max(40)
+  .refine((v) => v === "" || isValidPhone(v), "Please use a valid phone number")
+  .transform((v) => (v === "" ? undefined : v))
+  .optional();
+
+// Direct add: an existing, identity-verified account joins immediately. This is
 // the convenience path; the invitation flow is the default in the UI.
 export const addMemberSchema = z
   .object({
-    email: emailAddress,
+    email: optionalEmail,
+    phone: optionalPhone,
     roles: rolesArray.default(["player"]),
   })
-  .strict();
+  .strict()
+  .superRefine((v, ctx) => {
+    if (!v.email && !v.phone) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["email"],
+        message: "An email address or a phone number is required",
+      });
+    }
+  });
 
 export const updateMemberSchema = z
   .object({
@@ -132,11 +159,21 @@ export const updateMemberSchema = z
 
 export const createInvitationSchema = z
   .object({
-    email: emailAddress,
+    email: optionalEmail,
+    phone: optionalPhone,
     roles: rolesArray.default(["player"]),
     message: z.string().trim().max(500).default(""),
   })
-  .strict();
+  .strict()
+  .superRefine((v, ctx) => {
+    if (!v.email && !v.phone) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["email"],
+        message: "An email address or a phone number is required",
+      });
+    }
+  });
 
 export const listQuerySchema = z.object({
   page: z.coerce.number().int().min(1).max(10000).default(1),
