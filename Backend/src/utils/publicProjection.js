@@ -515,7 +515,32 @@ export function sanitizeTeamWithRoster(doc, opts = {}) {
   return sanitizeTeamPublic(doc, { ...opts, playerOrgId: orgId });
 }
 
+
+// Test name reservation (defense in depth).
+//
+// Fix B: test and fixture data must never surface in public reads, while real
+// organizations stay public by default. This is the single shared predicate
+// every public read path applies so the reserved prefixes cannot drift apart
+// between endpoints.
+const TEST_NAME_PREFIXES = [
+  "OPENCODE_TEST_",
+  "OPENCODE-TEST_",
+  "E2E_",
+  "TEST_",
+  "CRICALL_TEST_",
+];
+
+export function isReservedTestName(value) {
+  if (!value) return false;
+  const s = String(value).trim();
+  for (const p of TEST_NAME_PREFIXES) {
+    if (s.startsWith(p)) return true;
+  }
+  return false;
+}
+
 export default {
+  isReservedTestName,
   PLAYER_PUBLIC_FIELDS,
   PLAYER_ROSTER_FIELDS,
   TEAM_PUBLIC_FIELDS,
