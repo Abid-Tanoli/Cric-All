@@ -101,6 +101,10 @@ export const createOrgTeamSchema = z
       .default({}),
     privacy: privacy.default({}),
     players: z.array(objectIdString).max(120).default([]),
+    // Fix B: a new real team is public by default. An organization standing up a
+    // test squad sends `isPublic: false` here; `PATCH /teams/:id/visibility`
+    // (and the update schema, which derives from this one) keeps it reversible.
+    isPublic: z.boolean().default(true),
   })
   .strict();
 

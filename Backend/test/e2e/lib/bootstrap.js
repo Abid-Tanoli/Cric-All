@@ -230,14 +230,18 @@ export async function bootstrap({ makeClient, runId }) {
   process.stdout.write(`  scorer accepted invitation with roles: ${acceptedRoles.join(", ")}\n`);
 
   // --- teams + players ----------------------------------------------------
+  // Fix B: every bootstrap team is a fixture, so each is created private
+  // explicitly. The reserved-name filter would hide them anyway; setting the
+  // flag too means the e2e world exercises the same privacy path a real
+  // organization uses when it stands up a test squad.
   const teamARes = await owner.api.post(
     `/organizations/${orgId}/teams`,
-    { name: `${TEST_PREFIX}Alpha_${runId}` },
+    { name: `${TEST_PREFIX}Alpha_${runId}`, isPublic: false },
     { expect: [200, 201] },
   );
   const teamBRes = await owner.api.post(
     `/organizations/${orgId}/teams`,
-    { name: `${TEST_PREFIX}Beta_${runId}` },
+    { name: `${TEST_PREFIX}Beta_${runId}`, isPublic: false },
     { expect: [200, 201] },
   );
   const teamAId = String(teamARes.body?.team?._id || teamARes.body?._id);
@@ -254,12 +258,12 @@ export async function bootstrap({ makeClient, runId }) {
   // belongs to somebody else, rather than a second fixture in the same org.
   const otherTeamARes = await outsider.api.post(
     `/organizations/${otherOrgId}/teams`,
-    { name: `${TEST_PREFIX}OtherAlpha_${runId}` },
+    { name: `${TEST_PREFIX}OtherAlpha_${runId}`, isPublic: false },
     { expect: [200, 201] },
   );
   const otherTeamBRes = await outsider.api.post(
     `/organizations/${otherOrgId}/teams`,
-    { name: `${TEST_PREFIX}OtherBeta_${runId}` },
+    { name: `${TEST_PREFIX}OtherBeta_${runId}`, isPublic: false },
     { expect: [200, 201] },
   );
   const otherTeamAId = String(otherTeamARes.body?.team?._id || otherTeamARes.body?._id);

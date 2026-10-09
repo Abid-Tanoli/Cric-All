@@ -96,6 +96,12 @@ export const removeOrgTeamPlayers = (orgId, teamId, playerIds) =>
 export const updateOrgTeamPlayerRole = (orgId, teamId, playerId, payload) =>
   unwrap(api.put(`/organizations/${orgId}/teams/${teamId}/players/${playerId}`, payload));
 
+// Fix B: publish/hide a team. The server flips the stored `isPublic` and returns
+// the new value; the org's own members with `manage_teams` are authorized to
+// change it (platform admins too).
+export const toggleTeamVisibility = (teamId) =>
+  unwrap(api.patch(`/teams/${teamId}/visibility`));
+
 // --- matches and events (Phase 6) --------------------------------------------
 // Fixtures and competitions the organization runs itself. Scoring is not here:
 // ball-by-ball stays in the platform Admin app, so these endpoints can schedule

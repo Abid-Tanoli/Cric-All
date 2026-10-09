@@ -1,6 +1,13 @@
 import Player from "../models/Player.js";
 import Team from "../models/Team.js";
-import { PLAYER_PUBLIC_SELECT, playerSelectFor, playerTeamSelectFor } from "../utils/publicProjection.js";
+import {
+  PLAYER_PUBLIC_SELECT,
+  playerSelectFor,
+  playerTeamSelectFor,
+  reservedNamesMongoClause,
+  isHiddenTeamDoc,
+  canViewTeamPrivate,
+} from "../utils/publicProjection.js";
 
 export async function assignPlayerToTeam(playerId, teamId, role = "player", jerseyNumber) {
   const player = await Player.findById(playerId);
@@ -62,8 +69,9 @@ export async function removePlayerFromTeam(playerId) {
   return player;
 }
 
-export async function getFreeAgents(search = "") {
+export async function getFreeAgents(search = "", opts = {}) {
   const query = { team: { $exists: false } };
+  if (opts.excludeReservedTestNames) Object.assign(query, reservedNamesMongoClause("name"));
   if (search) {
     const term = String(search).trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     query.$or = [
@@ -94,6 +102,12 @@ export async function getFreeAgents(search = "") {
 // it - the escalation would compile, pass review and never actually show anyone
 // their own squad's date of birth.
 export async function getTeamPlayers(teamId, filters = {}, viewer = null) {
+  // Fix B: a hidden team's roster is not readable by a public caller — the team
+  // page itself answers 404 for them, and this endpoint was the other way to
+  // reach the same list. Members and platform admins still see it.
+  const team = await Team.findById(teamId).select("name organizationRef isPublic").lean();
+  if (team && isHiddenTeamDoc(team) && !canViewTeamPrivate(viewer, team)) return [];
+
   const query = { team: teamId };
   if (filters.role) query.role = filters.role;
   if (filters.search) {

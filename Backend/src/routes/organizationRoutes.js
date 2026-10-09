@@ -85,16 +85,20 @@ const manage = [protect, requireVerifiedEmail];
 // NOTE: /my must be registered before /:id, otherwise "my" matches the
 // ObjectId parameter route and gets rejected by validateObjectId.
 router.get('/my', ...manage, getMyOrganizations);
-router.get('/', listOrganizations);
-router.get('/tree', getOrganizationTree);
-router.get('/roots', getRootOrganizations);
+// Fix B: the directory endpoints below are public reads whose *content* is now
+// viewer-dependent (fixtures and hidden branches are withheld unless the caller
+// is a platform admin, or manages the organization for `/:id`), so each one
+// identifies a token when present and continues anonymously when not.
+router.get('/', optionalProtect, listOrganizations);
+router.get('/tree', optionalProtect, getOrganizationTree);
+router.get('/roots', optionalProtect, getRootOrganizations);
 
 router.post('/', ...manage, requireOrgAdminType, validate(createOrganizationSchema), createOrganization);
 router.put('/:id', ...manage, validateObjectId('id'), requireOrgPermission(PERMISSIONS.MANAGE_ORG), validate(updateOrganizationSchema), updateOrganization);
 router.delete('/:id', ...manage, validateObjectId('id'), requireOrgPermission(PERMISSIONS.MANAGE_ORG), deleteOrganization);
 
-router.get('/:id', validateObjectId('id'), getOrganization);
-router.get('/:id/children', validateObjectId('id'), getOrganizationChildren);
+router.get('/:id', optionalProtect, validateObjectId('id'), getOrganization);
+router.get('/:id/children', optionalProtect, validateObjectId('id'), getOrganizationChildren);
 router.get('/:id/chain', validateObjectId('id'), getOrganizationChain);
 // Round 5: public by design (organization profile pages read it), but the teams
 // it returns are sanitized, and the response shape depends on whether the caller

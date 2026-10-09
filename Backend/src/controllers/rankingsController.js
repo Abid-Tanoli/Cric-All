@@ -1,6 +1,11 @@
 import mongoose from 'mongoose';
 import Player from '../models/Player.js';
 import Team from '../models/Team.js';
+import {
+  hiddenTeamIds,
+  reservedNamesMongoClause,
+  publicTeamClause,
+} from '../utils/publicProjection.js';
 
 const toNumber = (value, fallback = 0) => {
   const parsed = Number(value);
@@ -29,12 +34,20 @@ const buildScopeQuery = async (queryParams = {}, type = 'all') => {
     if (isObjectId(value)) {
       query.team = value;
     } else {
+      // Fix B: a name lookup over Team must not resolve to a hidden team or a
+      // fixture — otherwise `?scope=team&scopeValue=...` would re-introduce the
+      // very teams the rankings are meant to leave out.
       const teams = await Team.find({
-        $or: [
-          { name: textRegex(value) },
-          { shortName: textRegex(value) },
-          { organization: textRegex(value) },
-          { branchName: textRegex(value) },
+        $and: [
+          publicTeamClause(),
+          {
+            $or: [
+              { name: textRegex(value) },
+              { shortName: textRegex(value) },
+              { organization: textRegex(value) },
+              { branchName: textRegex(value) },
+            ],
+          },
         ],
       }).select('_id').limit(1000).maxTimeMS(5000).lean();
       query.team = { $in: teams.map((team) => team._id) };
@@ -132,6 +145,15 @@ const rankPlayer = (player, type) => {
 const buildRankings = async (req, type) => {
   const limit = toLimit(req.query.limit);
   const query = await buildScopeQuery(req.query, type);
+
+  // Fix B: these routes are public, so the ranking omits fixtures and the
+  // players of hidden teams. No viewer exemption is needed — a platform admin
+  // reads rankings from the same public boards as everyone else.
+  const excluded = await hiddenTeamIds();
+  const andClauses = [reservedNamesMongoClause('name')];
+  if (excluded.length) andClauses.push({ team: { $nin: excluded } });
+  query.$and = [...(query.$and || []), ...andClauses];
+
   const players = await Player.aggregate([
     { $match: query },
     { $addFields: { rankingPoints: rankingExpression(type) } },

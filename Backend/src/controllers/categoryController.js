@@ -6,14 +6,22 @@ import IncubationGroup from "../models/IncubationGroup.js";
 import Event from "../models/Event.js";
 import Blog from "../models/Blog.js";
 import Player from "../models/Player.js";
+import {
+  publicTeamClause,
+  sanitizeTeamsPublic,
+  filterHiddenTeams,
+  TEAM_PUBLIC_SELECT,
+} from "../utils/publicProjection.js";
 
 // Get all team categories with counts
 export const getCategories = async (req, res) => {
   try {
+    // Fix B: the category counts are public, so they count only what a public
+    // visitor can actually open — hidden branches and fixtures excluded.
     const [internationalCount, leagueCount, incubationCount] = await Promise.all([
-      Team.countDocuments({ type: "international_team" }),
-      Team.countDocuments({ type: "league_team" }),
-      Team.countDocuments({ type: "incubation_team" })
+      Team.countDocuments({ type: "international_team", ...publicTeamClause() }),
+      Team.countDocuments({ type: "league_team", ...publicTeamClause() }),
+      Team.countDocuments({ type: "incubation_team", ...publicTeamClause() })
     ]);
 
     const incubationGroups = await IncubationGroup.find({ status: "active" }).select("name slug parentOrganization logo description");
@@ -69,11 +77,15 @@ export const getTeamsByType = async (req, res) => {
       return res.status(400).json({ message: "Invalid team type" });
     }
 
-    const teams = await Team.find({ type: teamType })
+    // Fix B: these are public discovery pages — hidden branches and fixtures are
+    // withheld, and the payload goes through the shared sanitizer so a roster
+    // here cannot become a second player directory.
+    const teams = await Team.find({ type: teamType, ...publicTeamClause() })
+      .select(TEAM_PUBLIC_SELECT)
       .populate("players", "name role")
       .sort({ name: 1 });
 
-    res.json(teams);
+    res.json(sanitizeTeamsPublic(teams));
   } catch (error) {
     console.error("Error fetching teams by type:", error);
     res.status(500).json({ message: "Failed to fetch teams", error: error.message });
@@ -87,7 +99,10 @@ export const getLeagues = async (req, res) => {
       .populate("teams", "name shortName logo")
       .sort({ name: 1 });
 
-    res.json(leagues);
+    res.json(leagues.map((league) => ({
+      ...league.toObject(),
+      teams: filterHiddenTeams(league.teams || []),
+    })));
   } catch (error) {
     console.error("Error fetching leagues:", error);
     res.status(500).json({ message: "Failed to fetch leagues", error: error.message });
@@ -110,6 +125,12 @@ export const getLeagueDetails = async (req, res) => {
     if (!league) {
       return res.status(404).json({ message: "League not found" });
     }
+
+    // Fix B: a league page that a guest opens shows the teams a guest may see.
+    league.teams = filterHiddenTeams(league.teams || []);
+    league.eventSquads = (league.eventSquads || []).filter(
+      (squad) => !squad.team || filterHiddenTeams([squad.team]).length > 0,
+    );
 
     // Get blogs related to this league (by tag or category)
     const blogs = await Blog.find({ 
@@ -141,7 +162,10 @@ export const getIncubationGroups = async (req, res) => {
       .populate("blogs", "title category isLive")
       .sort({ name: 1 });
 
-    res.json(groups);
+    res.json(groups.map((group) => ({
+      ...group.toObject(),
+      teams: filterHiddenTeams(group.teams || []),
+    })));
   } catch (error) {
     console.error("Error fetching incubation groups:", error);
     res.status(500).json({ message: "Failed to fetch incubation groups", error: error.message });

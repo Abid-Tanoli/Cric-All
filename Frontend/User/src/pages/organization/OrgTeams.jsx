@@ -5,6 +5,7 @@ import {
   deleteOrgTeam,
   listOrgTeamsManaged,
   listOrganizationTypes,
+  toggleTeamVisibility,
   updateOrgTeam,
 } from "../../services/organizationApi";
 import { PERMISSIONS, can, formatDate } from "../../lib/orgUi";
@@ -169,6 +170,25 @@ export default function OrgTeams({ orgId, access, onChanged }) {
     }
   };
 
+  const toggleVisibility = async (team) => {
+    setBusy(true);
+    setErr("");
+    setNotice("");
+    try {
+      const res = await toggleTeamVisibility(team._id);
+      const nowPublic = res?.isPublic ?? !team.isPublic;
+      setNotice(
+        `"${team.name}" is now ${nowPublic ? "public — visible to everyone" : "hidden — visible only to this organization"}.`,
+      );
+      await load();
+      onChanged?.();
+    } catch (error) {
+      setErr(error.message || "Could not change the team's visibility");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <div className="space-y-4">
       <div className={card}>
@@ -276,6 +296,13 @@ export default function OrgTeams({ orgId, access, onChanged }) {
                           {Array.isArray(team.players) ? team.players.length : 0} player(s) · created{" "}
                           {formatDate(team.createdAt)}
                         </p>
+                        <p className="mt-1 text-[10px] font-black uppercase tracking-wider">
+                          {team.isPublic === false ? (
+                            <span className="text-amber-600">Hidden from public</span>
+                          ) : (
+                            <span className="text-emerald-600">Public</span>
+                          )}
+                        </p>
                       </div>
                       <div className="flex flex-wrap items-center gap-2">
                         <Link
@@ -286,6 +313,14 @@ export default function OrgTeams({ orgId, access, onChanged }) {
                         </Link>
                         {canManageTeams && (
                           <>
+                            <button
+                              type="button"
+                              disabled={busy}
+                              onClick={() => toggleVisibility(team)}
+                              className="rounded-lg border border-cric-border bg-cric-bg px-3 py-2 text-[10px] font-black uppercase tracking-widest text-cric-muted hover:text-cric-text disabled:opacity-60"
+                            >
+                              {team.isPublic === false ? "Make public" : "Hide"}
+                            </button>
                             <button
                               type="button"
                               onClick={() => {

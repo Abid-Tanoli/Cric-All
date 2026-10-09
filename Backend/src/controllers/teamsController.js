@@ -8,6 +8,8 @@ import {
   sanitizeTeamPublic,
   sanitizeTeamsPublic,
   sanitizePlayersPublic,
+  isHiddenTeamDoc,
+  canViewTeamPrivate,
 } from "../utils/publicProjection.js";
 
 const isTransientDbError = (error) => (
@@ -16,6 +18,27 @@ const isTransientDbError = (error) => (
   error?.name === "MongoNetworkTimeoutError" ||
   /timed out|buffering|not connected/i.test(error?.message || "")
 );
+
+/**
+ * Fix B — the shared "may this caller read this team by id" probe.
+ *
+ * A team the owner has hidden, or a fixture, is answered 404 to anyone who
+ * could not have found it through a listing: members/managers of the owning
+ * organization and platform admins stay entitled (the manage screen and the
+ * admin app need the same id to resolve), everybody else — including an
+ * authenticated stranger — gets the same body an unknown id would produce, so
+ * the response does not confirm the team exists.
+ */
+async function teamIsReadableBy(viewer, teamId) {
+  const team = await Team.findById(teamId)
+    .select("name organizationRef isPublic")
+    .lean();
+  if (!team) return { found: false, team: null };
+  if (isHiddenTeamDoc(team) && !canViewTeamPrivate(viewer, team)) {
+    return { found: true, readable: false, team };
+  }
+  return { found: true, readable: true, team };
+}
 
 export const listTeams = async (req, res) => {
   try {
@@ -46,6 +69,11 @@ export const listTeams = async (req, res) => {
       includePlayers,
       scope: wantsOrgOwned ? (viewer.isPlatformAdmin ? "all" : "organization") : "",
       isPublic: req.query.isPublic,
+      // Fix B: hidden teams and fixtures are withheld from anyone who is not a
+      // platform admin. A manager who needs their own hidden team uses the org
+      // manage route, which lists by organization and is not filtered.
+      publicOnly: !viewer.isPlatformAdmin,
+      excludeReservedTestNames: !viewer.isPlatformAdmin,
     });
 
     res.status(200).json(sanitizeTeamsPublic(teams, { viewer, canViewPrivate: viewer.isPlatformAdmin }));
@@ -268,6 +296,11 @@ export const getTeamPlayers = async (req, res) => {
 
 export const getTeamRanking = async (req, res) => {
   try {
+    const viewer = await resolveViewerContext(req);
+    const gate = await teamIsReadableBy(viewer, req.params.id);
+    if (gate.found && gate.readable === false) {
+      return res.status(404).json({ message: "Team not found" });
+    }
     const { default: TeamRanking } = await import("../models/TeamRanking.js");
     const ranking = await TeamRanking.findOne({ team: req.params.id })
       .populate("team", "name shortName logo");
@@ -282,6 +315,11 @@ export const getTeamRanking = async (req, res) => {
 
 export const getTeamMatches = async (req, res) => {
   try {
+    const viewer = await resolveViewerContext(req);
+    const gate = await teamIsReadableBy(viewer, req.params.id);
+    if (gate.found && gate.readable === false) {
+      return res.status(404).json({ message: "Team not found" });
+    }
     const { default: Match } = await import("../models/Match.js");
     const matches = await Match.find({ teams: req.params.id })
       .populate("teams", "name shortName logo")

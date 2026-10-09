@@ -3,6 +3,11 @@ import Match from '../models/Match.js';
 import Event from '../models/Event.js';
 import Team from '../models/Team.js';
 import mongoose from 'mongoose';
+import {
+  filterHiddenTeams,
+  hiddenTeamIds,
+  reservedNamesMongoClause,
+} from '../utils/publicProjection.js';
 
 const idOf = (value) => String(value?._id || value || "");
 const sameId = (a, b) => idOf(a) && idOf(a) === idOf(b);
@@ -11,6 +16,15 @@ const number = (value, fallback = 0) => {
   return Number.isFinite(parsed) ? parsed : fallback;
 };
 const normalStatus = (status = "upcoming") => (status === "innings-break" ? "innings_break" : status);
+
+/** Drops matches that involve a hidden team (ids or populated docs). */
+const filterHiddenMatches = (matches, hiddenSet) => {
+  if (!Array.isArray(matches)) return matches;
+  return matches.filter((match) => {
+    const teams = match?.teams || [];
+    return !teams.some((team) => hiddenSet.has(String(team?._id || team)));
+  });
+};
 const formatOvers = (balls = 0) => `${Math.floor(number(balls) / 6)}.${number(balls) % 6}`;
 const formatBowlerOvers = (row = {}) => {
   if (number(row.balls) > 0) return formatOvers(row.balls);
@@ -290,10 +304,15 @@ const aggregateSeriesSquads = async (entity, matches) => {
 
 export const getSeries = async (req, res) => {
   try {
-    const series = await Series.find()
+    // Fix B: the public series board omits fixtures and series whose teams are
+    // all hidden; embedded team lists drop the hidden ones either way.
+    const series = await Series.find({ $and: [reservedNamesMongoClause("name")] })
       .populate('teams', 'name shortName logo')
       .sort({ startDate: -1 });
-    res.json(series);
+    res.json(series.map((entry) => ({
+      ...entry.toObject(),
+      teams: filterHiddenTeams(entry.teams || []),
+    })));
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -302,6 +321,9 @@ export const getSeries = async (req, res) => {
 export const getSeriesById = async (req, res) => {
   try {
     const { id } = req.params;
+    // Fix B: detail-by-id stays reachable, but the embedded team lists and the
+    // points table drop hidden teams for a guest.
+    const hidden = new Set(await hiddenTeamIds());
     const seriesQuery = mongoose.isValidObjectId(id) ? { _id: id } : { slug: id };
     const series = await Series.findOne(seriesQuery).populate('teams', 'name shortName logo');
     
@@ -316,7 +338,7 @@ export const getSeriesById = async (req, res) => {
           .populate('teams', 'name shortName logo')
           .populate('result.winner', 'name')
           .sort({ startAt: 1 });
-        return res.json({
+        const payload = {
           _id: event._id,
           slug: event.slug,
           name: event.name,
@@ -332,7 +354,9 @@ export const getSeriesById = async (req, res) => {
           venue: event.venue,
           logo: event.logo,
           totalMatches: event.totalMatches
-        });
+        };
+        stripHiddenTeamRefs(payload, hidden);
+        return res.json(payload);
       }
       return res.status(404).json({ message: 'Series not found' });
     }
@@ -341,8 +365,10 @@ export const getSeriesById = async (req, res) => {
       .populate('teams', 'name shortName logo')
       .populate('result.winner', 'name')
       .sort({ startAt: 1 });
-    
-    res.json({ ...series.toObject(), matches });
+
+    const payload = { ...series.toObject(), teams: filterHiddenTeams(series.teams || []), matches: filterHiddenMatches(matches, hidden) };
+    stripHiddenTeamRefs(payload, hidden);
+    res.json(payload);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

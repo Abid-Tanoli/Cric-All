@@ -3,6 +3,12 @@ import Match from "../models/Match.js";
 import Team from "../models/Team.js";
 import { getIO } from "../socket/socket.js";
 import mongoose from "mongoose";
+import {
+  hiddenTeamIds,
+  reservedNamesMongoClause,
+  stripHiddenTeamRefs,
+  PLAYER_ROSTER_SELECT,
+} from "../utils/publicProjection.js";
 
 const isTransientDbError = (error) => (
   error?.name === "MongooseError" ||
@@ -15,7 +21,14 @@ export const getTournaments = async (req, res) => {
   try {
     const limit = Math.min(Math.max(Number(req.query.limit) || 100, 1), 500);
     const page = Math.max(Number(req.query.page) || 1, 1);
-    const tournaments = await Tournament.find()
+
+    // Fix B: the public tournament board omits fixtures and tournaments that
+    // only involve hidden teams.
+    const excluded = await hiddenTeamIds();
+    const query = { $and: [reservedNamesMongoClause("name")] };
+    if (excluded.length) query.$and.push({ teams: { $nin: excluded } });
+
+    const tournaments = await Tournament.find(query)
       .populate("teams", "name shortName logo")
       .populate("winner", "name shortName logo")
       .populate("runnerUp", "name shortName logo")
@@ -43,7 +56,7 @@ export const getTournament = async (req, res) => {
     const { id } = req.params;
     const query = mongoose.isValidObjectId(id) ? { _id: id } : { slug: id };
     const tournament = await Tournament.findOne(query)
-      .populate("teams", "name shortName logo players")
+      .populate("teams", "name shortName logo")
       .populate("matches")
       .populate("pointsTable.team", "name shortName logo")
       .populate("winner", "name shortName logo")
@@ -52,6 +65,11 @@ export const getTournament = async (req, res) => {
     if (!tournament) {
       return res.status(404).json({ message: "Tournament not found" });
     }
+
+    // Fix B: detail-by-id stays reachable (ids are unguessable) but a guest's
+    // tournament page does not carry a hidden team's standings, matches or
+    // honour. The roster used to be populated with whole Player documents here.
+    stripHiddenTeamRefs(tournament, new Set(await hiddenTeamIds()));
 
     res.status(200).json(tournament);
   } catch (error) {

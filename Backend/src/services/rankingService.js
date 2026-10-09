@@ -5,7 +5,24 @@ import TeamCategory from "../models/TeamCategory.js";
 import Player from "../models/Player.js";
 import Match from "../models/Match.js";
 import mongoose from "mongoose";
-import { PLAYER_PUBLIC_SELECT, playerSelectFor, sanitizePlayerPublic } from "../utils/publicProjection.js";
+import {
+  PLAYER_PUBLIC_SELECT,
+  playerSelectFor,
+  sanitizePlayerPublic,
+  hiddenTeamIds,
+  reservedNamesMongoClause,
+  isHiddenTeamDoc,
+  canViewTeamPrivate,
+} from "../utils/publicProjection.js";
+
+// Fix B: every ranking board is a public read, so fixtures and hidden teams are
+// omitted from each one. `$and` rather than a `team` key of its own: several of
+// these queries already scope `team` by id, and two clauses on one key would
+// clobber each other instead of intersecting.
+async function hiddenTeamExclusionClause() {
+  const excluded = await hiddenTeamIds();
+  return excluded.length ? [{ team: { $nin: excluded } }] : [];
+}
 
 export async function computeTeamRanking(teamId) {
   const team = await Team.findById(teamId);
@@ -200,6 +217,9 @@ export async function getOverallRankings(filters = {}) {
     rankingQuery.team = { $in: teams.map((team) => team._id) };
   }
 
+  const exclusions = await hiddenTeamExclusionClause();
+  if (exclusions.length) rankingQuery.$and = exclusions;
+
   return TeamRanking.find(rankingQuery)
     .populate("team", "name shortName logo category branchName address area")
     .populate("category", "name slug icon")
@@ -210,24 +230,27 @@ export async function getOverallRankings(filters = {}) {
 }
 
 export async function getCategoryRankings(categoryId) {
-  return TeamRanking.find({ category: categoryId })
+  const exclusions = await hiddenTeamExclusionClause();
+  return TeamRanking.find({ category: categoryId, ...(exclusions.length ? { $and: exclusions } : {}) })
     .populate("team", "name shortName logo branchName city")
     .sort({ categoryRank: 1 });
 }
 
 export async function getCrossCategoryRankings() {
+  const exclusions = await hiddenTeamExclusionClause();
+  const exclusionFilter = exclusions.length ? { $and: exclusions } : {};
   const categories = await TeamCategory.find({ isActive: true });
   const result = [];
 
   for (const cat of categories) {
-    const topTeam = await TeamRanking.findOne({ category: cat._id })
+    const topTeam = await TeamRanking.findOne({ category: cat._id, ...exclusionFilter })
       .populate("team", "name shortName logo branchName city")
       .sort({ categoryRank: 1 });
 
     result.push({
       category: cat,
       topTeam,
-      teamCount: await TeamRanking.countDocuments({ category: cat._id }),
+      teamCount: await TeamRanking.countDocuments({ category: cat._id, ...exclusionFilter }),
     });
   }
 
@@ -240,7 +263,11 @@ export async function getCrossCategoryRankings() {
 // organization is resolved from the team so that organization's managers still
 // see their own players in full.
 export async function getTeamPlayerRankings(teamId, viewer = null) {
-  const team = await Team.findById(teamId).select("organizationRef").lean();
+  const team = await Team.findById(teamId).select("name organizationRef isPublic").lean();
+  // Fix B: a hidden team's player rankings are not public. Members and platform
+  // admins still get them; everyone else gets the same "no such team" answer
+  // the team page gives.
+  if (team && isHiddenTeamDoc(team) && !canViewTeamPrivate(viewer, team)) return null;
   const playerOrgId = team?.organizationRef ? String(team.organizationRef) : null;
 
   const players = await Player.find({ team: teamId })
@@ -288,7 +315,14 @@ export async function getTeamPlayerRankings(teamId, viewer = null) {
 }
 
 export async function computePlayerRankings() {
-  const players = await Player.find({ team: { $exists: true, $ne: null } })
+  // Fix B: the player ranking boards are public — fixtures and the players of
+  // hidden teams are omitted here too, for the same reason the team boards are.
+  const exclusions = await hiddenTeamExclusionClause();
+  const players = await Player.find({
+    team: { $exists: true, $ne: null },
+    ...(exclusions.length ? { $and: exclusions } : {}),
+    ...reservedNamesMongoClause("name"),
+  })
     .populate("team", "name shortName");
 
   const battingRanked = players

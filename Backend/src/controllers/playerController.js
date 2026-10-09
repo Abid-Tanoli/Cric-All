@@ -13,6 +13,8 @@ import {
   resolveViewerContext,
   sanitizePlayerPublic,
   sanitizePlayersPublic,
+  hiddenTeamIds,
+  reservedNamesMongoClause,
 } from "../utils/publicProjection.js";
 
 const isTransientDbError = (error) => (
@@ -65,6 +67,19 @@ export const getPlayers = async (req, res) => {
     // Resolve the viewer before querying: the projection depends on whether
     // anyone is identified at all.
     const viewer = await resolveViewerContext(req);
+
+    // Fix B: the public player directory does not list fixtures, nor the players
+    // of a team the owner has hidden. A `?team=` filter still works — a hidden
+    // team's roster is simply empty for a public caller, which is the same
+    // answer `GET /teams/:id/players` gives. Platform admins (the Admin app's
+    // player manager) are exempt.
+    if (!viewer.isPlatformAdmin) {
+      const excluded = await hiddenTeamIds();
+      const andClauses = [reservedNamesMongoClause("name")];
+      if (excluded.length) andClauses.push({ team: { $nin: excluded } });
+      query.$and = [...(query.$and || []), ...andClauses];
+    }
+
     const [totalPlayers, players] = await Promise.all([
       Player.countDocuments(query).maxTimeMS(5000),
       // Round 5: load only what the caller is entitled to, instead of loading
@@ -129,7 +144,10 @@ export const listFreeAgents = async (req, res) => {
   try {
     const viewer = await resolveViewerContext(req);
     const { search } = req.query;
-    const result = await playerService.getFreeAgents(search);
+    // Fix B: a fixture player is never offered as a free agent to the public.
+    const result = await playerService.getFreeAgents(search, {
+      excludeReservedTestNames: !viewer.isPlatformAdmin,
+    });
     res.status(200).json({ ...result, items: sanitizePlayersPublic(result.items, { viewer }) });
   } catch (err) {
     res.status(500).json({ message: "Error fetching free agents" });
@@ -382,6 +400,14 @@ export const getPlayerRanking = async (req, res) => {
     const page = Math.max(Number(req.query.page) || 1, 1);
     const viewer = await resolveViewerContext(req);
     const filter = {};
+
+    // Fix B: same rule as the directory — fixtures and the players of hidden
+    // teams are not ranked in public.
+    if (!viewer.isPlatformAdmin) {
+      const excluded = await hiddenTeamIds();
+      filter.$and = [reservedNamesMongoClause("name")];
+      if (excluded.length) filter.$and.push({ team: { $nin: excluded } });
+    }
 
     const [total, players] = await Promise.all([
       Player.countDocuments(filter).maxTimeMS(5000),

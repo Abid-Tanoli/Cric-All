@@ -532,15 +532,126 @@ const TEST_NAME_PREFIXES = [
 
 export function isReservedTestName(value) {
   if (!value) return false;
-  const s = String(value).trim();
+  const s = String(value).trim().toUpperCase();
   for (const p of TEST_NAME_PREFIXES) {
     if (s.startsWith(p)) return true;
   }
   return false;
 }
 
+const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/**
+ * One anchored, case-insensitive alternation over every reserved prefix, so a
+ * query can exclude all test names with a single `$not` rather than stacking one
+ * clause per prefix. Shared by every public read path for the same reason
+ * `isReservedTestName` is: the prefixes must not drift between endpoints.
+ */
+export function reservedNamesRegex() {
+  return new RegExp(`^(?:${TEST_NAME_PREFIXES.map(escapeRegExp).join("|")})`, "i");
+}
+
+/**
+ * A clause excluding documents whose `field` holds a reserved test name. Safe to
+ * `$and` into an existing query or to push onto an `$or` branch list — it is a
+ * single-field object, never a top-level `$and`/`$or` of its own.
+ */
+export function reservedNamesMongoClause(field = "name") {
+  return { [field]: { $not: reservedNamesRegex() } };
+}
+
+/**
+ * The clause for "a public viewer may see this team": published, and not a
+ * fixture. `{ isPublic: { $ne: false } }` rather than `isPublic: true` so teams
+ * written before the field existed (or by a path that never set it) still count
+ * as public — the flag opts a team *out* of the public catalogue, it does not
+ * opt it in.
+ */
+export function publicTeamClause() {
+  return { isPublic: { $ne: false }, ...reservedNamesMongoClause("name") };
+}
+
+/**
+ * Ids of every team a public view must not mention: private (`isPublic: false`)
+ * or a fixture by name. One query per request, used to strip embedded team
+ * references (`matches.teams`, `tournament.pointsTable`, ranking rows, ...) that
+ * a `$nin` cannot express from the other side.
+ *
+ * Callers that serve a platform admin must not call this — the admin exemption
+ * lives at the call site because only the caller knows who is asking.
+ */
+export async function hiddenTeamIds() {
+  const rows = await Team.find({
+    $or: [{ isPublic: false }, { name: reservedNamesRegex() }],
+  })
+    .select("_id")
+    .lean();
+  return rows.map((row) => String(row._id));
+}
+
+/** True when a team document must be withheld from a public view. */
+export function isHiddenTeamDoc(doc) {
+  const plain = typeof doc?.toObject === "function" ? doc.toObject() : doc;
+  if (!plain) return false;
+  if (plain.isPublic === false) return true;
+  return isReservedTestName(plain.name);
+}
+
+/** Post-query filter for populated team arrays, where a `$nin` cannot apply. */
+export function filterHiddenTeams(docs) {
+  if (!Array.isArray(docs)) return docs;
+  return docs.filter((doc) => !isHiddenTeamDoc(doc));
+}
+
+/**
+ * Strips hidden-team references out of an already-loaded tournament/series/event
+ * payload: the `teams` array, `pointsTable` rows, `winner`/`runnerUp`, embedded
+ * `matches` and `eventSquads`. Detail-by-id stays reachable by design (ids are
+ * unguessable), but a tournament page a guest opens must not show a hidden
+ * team's standings, and `populate("teams", "... players")` used to carry whole
+ * Player documents here too.
+ */
+export function stripHiddenTeamRefs(payload, hiddenIdSet) {
+  if (!payload || typeof payload !== "object") return payload;
+  const hidden =
+    hiddenIdSet instanceof Set
+      ? hiddenIdSet
+      : new Set((hiddenIdSet || []).map((value) => String(value?._id || value)));
+  if (hidden.size === 0) return payload;
+
+  const isHiddenRef = (value) => {
+    if (!value) return false;
+    return hidden.has(String(value._id || value));
+  };
+
+  if (Array.isArray(payload.teams)) {
+    payload.teams = payload.teams.filter((team) => !isHiddenRef(team));
+  }
+  if (Array.isArray(payload.pointsTable)) {
+    payload.pointsTable = payload.pointsTable.filter((row) => !isHiddenRef(row?.team));
+  }
+  if (isHiddenRef(payload.winner)) payload.winner = null;
+  if (isHiddenRef(payload.runnerUp)) payload.runnerUp = null;
+  if (Array.isArray(payload.matches)) {
+    payload.matches = payload.matches.filter(
+      (match) => !(Array.isArray(match?.teams) && match.teams.some(isHiddenRef)),
+    );
+  }
+  if (Array.isArray(payload.eventSquads)) {
+    payload.eventSquads = payload.eventSquads.filter((squad) => !isHiddenRef(squad?.team));
+  }
+  return payload;
+}
+
 export default {
   isReservedTestName,
+  reservedNamesRegex,
+  reservedNamesMongoClause,
+  publicTeamClause,
+  hiddenTeamIds,
+  isHiddenTeamDoc,
+  filterHiddenTeams,
+  stripHiddenTeamRefs,
   PLAYER_PUBLIC_FIELDS,
   PLAYER_ROSTER_FIELDS,
   TEAM_PUBLIC_FIELDS,

@@ -2,6 +2,7 @@ import Event from "../models/Event.js";
 import Match from "../models/Match.js";
 import Team from "../models/Team.js";
 import { getIO } from "../socket/socket.js";
+import { hiddenTeamIds, reservedNamesMongoClause } from "../utils/publicProjection.js";
 
 const isTransientDbError = (error) => (
   error?.name === "MongooseError" ||
@@ -70,6 +71,13 @@ export const getEvents = async (req, res) => {
         { "address.town": { $regex: search, $options: "i" } }
       ];
     }
+
+    // Fix B: an event that only involves hidden teams (or is itself a fixture)
+    // is not on the public event board. Org-scoped reads stay unfiltered.
+    const excluded = await hiddenTeamIds();
+    const andClauses = [reservedNamesMongoClause("name")];
+    if (excluded.length) andClauses.push({ teams: { $nin: excluded } });
+    query.$and = andClauses;
 
     const events = await Event.find(query)
       .populate("teams", "name shortName logo")

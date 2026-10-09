@@ -46,6 +46,9 @@ export const getTeamPlayerRankings = async (req, res) => {
     // projection. The ranking arithmetic reads `stats` either way.
     const viewer = await resolveViewerContext(req);
     const rankings = await rankingService.getTeamPlayerRankings(teamId, viewer);
+    if (rankings === null) {
+      return res.status(404).json({ message: "Team not found" });
+    }
     res.status(200).json(rankings);
   } catch (error) {
     res.status(500).json({ message: "Failed to fetch player rankings", error: error.message });

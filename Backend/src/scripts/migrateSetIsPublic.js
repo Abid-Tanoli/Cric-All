@@ -22,6 +22,10 @@
 //   --force-private     isPublic: false on every team currently published.
 //                       Destructive to visibility, so it must be asked for by
 //                       name and is never implied by --set-public.
+//   --hide-test-names   isPublic: false on any still-public team whose name
+//                       matches a reserved fixture prefix (OPENCODE_TEST_,
+//                       E2E_, TEST_, …). The surgical version of
+//                       --force-private: leaves real teams published.
 //
 // Safety
 // ------
@@ -37,6 +41,7 @@
 //   node src/scripts/migrateSetIsPublic.js --uri <mongodb-uri>
 //   node src/scripts/migrateSetIsPublic.js --uri <mongodb-uri> --set-public --apply
 //   node src/scripts/migrateSetIsPublic.js --uri <mongodb-uri> --force-private --apply
+//   node src/scripts/migrateSetIsPublic.js --uri <mongodb-uri> --hide-test-names --apply
 //   node src/scripts/migrateSetIsPublic.js --uri <mongodb-uri> --force-private --apply --allow-database <name>
 //
 // Containerized deployments (the database hostname is a Docker service name
@@ -48,12 +53,14 @@
 import mongoose from "mongoose";
 import Team from "../models/Team.js";
 import { getMongoTarget } from "../utils/mongoTarget.js";
+import { reservedNamesRegex } from "../utils/publicProjection.js";
 
 const EXPECTED_DATABASE = "cric-all-e2e";
 const ORG_LESS = "(no organization)";
 
 const SET_PUBLIC = "--set-public";
 const FORCE_PRIVATE = "--force-private";
+const HIDE_TEST_NAMES = "--hide-test-names";
 
 function argValue(flag) {
   const a = process.argv.find((x) => x.startsWith(flag + "="));
@@ -68,13 +75,17 @@ function argValue(flag) {
 function parseMode() {
   const setPublic = process.argv.includes(SET_PUBLIC);
   const forcePrivate = process.argv.includes(FORCE_PRIVATE);
-  if (setPublic && forcePrivate) {
-    throw new Error(
-      `Refusing to run: ${SET_PUBLIC} and ${FORCE_PRIVATE} are opposite intents. Pick one.`,
-    );
+  const hideTestNames = process.argv.includes(HIDE_TEST_NAMES);
+  const chosen = [setPublic && SET_PUBLIC, forcePrivate && FORCE_PRIVATE, hideTestNames && HIDE_TEST_NAMES].filter(
+    Boolean,
+  );
+  if (chosen.length > 1) {
+    throw new Error(`Refusing to run: ${chosen.join(" and ")} are different intents. Pick one.`);
   }
-  if (!setPublic && !forcePrivate) return "report";
-  return setPublic ? "set-public" : "force-private";
+  if (setPublic) return "set-public";
+  if (forcePrivate) return "force-private";
+  if (hideTestNames) return "hide-test-names";
+  return "report";
 }
 
 /** What a mode would write, and what it deliberately leaves alone. */
@@ -95,6 +106,15 @@ function planFor(mode) {
       update: { $set: { isPublic: false } },
       touches: "every team with isPublic: true",
       leaves: "teams already private",
+    };
+  }
+  if (mode === "hide-test-names") {
+    return {
+      label: `${HIDE_TEST_NAMES} — un-publish fixture teams by reserved name prefix`,
+      filter: { isPublic: { $ne: false }, name: reservedNamesRegex() },
+      update: { $set: { isPublic: false } },
+      touches: "teams still public whose name matches a reserved test prefix",
+      leaves: "real teams, and fixtures that are already isPublic: false",
     };
   }
   return null;
@@ -136,7 +156,7 @@ async function resolveMode() {
   const apply = process.argv.includes("--apply");
   if (apply && mode === "report") {
     throw new Error(
-      `Refusing to run: --apply needs a mode. Pass ${SET_PUBLIC} or ${FORCE_PRIVATE}. ` +
+      `Refusing to run: --apply needs a mode. Pass ${SET_PUBLIC}, ${FORCE_PRIVATE} or ${HIDE_TEST_NAMES}. ` +
         "Run without --apply first to see the counts.",
     );
   }
@@ -236,8 +256,9 @@ async function main() {
     if (!plan) {
       console.log("No mode selected, so nothing was changed.");
       console.log(
-        `To publish legacy teams:  --set-public --apply\n` +
-          `To un-publish everything: --force-private --apply`,
+        `To publish legacy teams:    --set-public --apply\n` +
+          `To hide fixture-named teams: --hide-test-names --apply\n` +
+          `To un-publish everything:   --force-private --apply`,
       );
       return;
     }

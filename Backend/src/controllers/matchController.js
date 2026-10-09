@@ -5,6 +5,7 @@ import Tournament from "../models/Tournament.js";
 import Partnership from "../models/Partnership.js";
 import { getIO } from "../socket/socket.js";
 import { getBallRunText, normalizeBallRunText } from "../utils/cricketHelpers.js";
+import { hiddenTeamIds, reservedNamesMongoClause } from "../utils/publicProjection.js";
 
 const normalStatus = (status = "upcoming") => (status === "innings-break" ? "innings_break" : status);
 const legalMatchStatuses = [
@@ -156,6 +157,14 @@ export const getMatches = async (req, res) => {
     const seriesFilter = req.query.series || req.query.seriesId;
     if (seriesFilter) query.series = seriesFilter;
     if (req.query.tournament) query.tournament = req.query.tournament;
+
+    // Fix B: the public match feed omits matches that involve a hidden team or
+    // a fixture. Org-scoped reads (`GET /organizations/:id/matches`) live in
+    // `orgMatchesController` and are not filtered — that is a member's view.
+    const excluded = await hiddenTeamIds();
+    const andClauses = [reservedNamesMongoClause("title")];
+    if (excluded.length) andClauses.push({ teams: { $nin: excluded } });
+    query.$and = andClauses;
 
     const matches = await populateMatchList(Match.find(query))
       .sort({ startAt: -1, updatedAt: -1 })

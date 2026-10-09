@@ -15,6 +15,8 @@ import {
   resolveViewerContext,
   sanitizeTeamPublic,
   sanitizeTeamsPublic,
+  reservedNamesMongoClause,
+  publicTeamClause,
 } from "../utils/publicProjection.js";
 
 // Fields a self-service org owner/admin may change. isActive, parent, category
@@ -53,7 +55,11 @@ async function assertTypeIsConfigured(type) {
 export const listOrganizations = async (req, res) => {
   try {
     const { category, type, search, page, limit } = req.query;
+    const viewer = await resolveViewerContext(req);
     const query = { isActive: true };
+    // Fix B: the public directory does not list fixtures. The Admin app (which
+    // is where an operator looks for them) authenticates and is exempt.
+    if (!viewer.isPlatformAdmin) Object.assign(query, reservedNamesMongoClause("name"));
     if (category) query.category = category;
     if (type) query.type = String(type).toLowerCase();
     if (search) {
@@ -76,15 +82,20 @@ export const listOrganizations = async (req, res) => {
       TeamOrganization.countDocuments(query),
     ]);
 
+    // The summary counts follow the same rule as the list: a guest is not told
+    // how many hidden branches an organization keeps, only how many it shows.
+    const branchQuery = (orgId) => {
+      const q = { organizationRef: orgId, isActive: true };
+      if (!viewer.isPlatformAdmin) Object.assign(q, publicTeamClause());
+      return q;
+    };
+
     const counts = await membershipCounts(orgs.map((o) => o._id));
     const orgsWithCounts = await Promise.all(
       orgs.map(async (org) => {
-        const branchCount = await Team.countDocuments({
-          organizationRef: org._id,
-          isActive: true,
-        });
+        const branchCount = await Team.countDocuments(branchQuery(org._id));
         const totalPlayers = await Team.aggregate([
-          { $match: { organizationRef: org._id, isActive: true } },
+          { $match: branchQuery(org._id) },
           { $project: { playerCount: { $size: { $ifNull: ["$players", []] } } } },
           { $group: { _id: null, total: { $sum: "$playerCount" } } },
         ]);
@@ -127,8 +138,20 @@ export const getOrganization = async (req, res) => {
       .lean();
     if (!org) return res.status(404).json({ message: "Organization not found" });
 
-    const branches = await Team.find({ organizationRef: org._id, isActive: true })
-      .populate("players")
+    const viewer = await resolveViewerContext(req);
+    const canSeePrivate =
+      viewer.isPlatformAdmin || viewer.managedOrgIds.has(String(org._id));
+
+    // Fix B: the public organization page shows the branches the owner chose to
+    // publish — hidden teams and fixtures included only for someone who could
+    // manage them. The roster is a named projection (it used to load whole
+    // Player documents here) and the branches go through the shared sanitizer,
+    // so this path cannot become the one place privacy flags are ignored.
+    const branchQuery = { organizationRef: org._id, isActive: true };
+    if (!canSeePrivate) Object.assign(branchQuery, publicTeamClause());
+    const branches = await Team.find(branchQuery)
+      .select(canSeePrivate ? undefined : TEAM_PUBLIC_SELECT)
+      .populate("players", PLAYER_ROSTER_SELECT)
       .populate("categoryRef", "name slug icon");
 
     const members = await Membership.find({ organization: org._id, status: "active" })
@@ -138,7 +161,7 @@ export const getOrganization = async (req, res) => {
 
     res.status(200).json({
       organization: { ...org, memberCount: members.length },
-      branches,
+      branches: canSeePrivate ? branches : sanitizeTeamsPublic(branches, { viewer }),
       members: members.map((m) => ({
         _id: m._id,
         roles: m.roles,
@@ -415,7 +438,17 @@ export const getMyOrganizations = async (req, res) => {
 export const getOrganizationTeams = async (req, res) => {
   try {
     const viewer = await resolveViewerContext(req);
-    const teams = await Team.find({ organizationRef: req.params.id, isActive: true })
+    const canSeePrivate =
+      viewer.isPlatformAdmin || viewer.managedOrgIds.has(String(req.params.id));
+
+    // Fix B: this is the organization profile's Teams tab, so it lists what the
+    // public may see — published, non-fixture branches. A manager who needs the
+    // hidden ones uses `GET /organizations/:id/teams/manage` instead, which is
+    // what the management screen reads.
+    const query = { organizationRef: req.params.id, isActive: true };
+    if (!canSeePrivate) Object.assign(query, publicTeamClause());
+
+    const teams = await Team.find(query)
       .select(viewer?.userId ? `${TEAM_PUBLIC_SELECT} managedBy` : TEAM_PUBLIC_SELECT)
       .populate("players", PLAYER_ROSTER_SELECT)
       .populate("categoryRef", "name slug icon");
@@ -429,7 +462,9 @@ export const getOrganizationTeams = async (req, res) => {
 export const getRootOrganizations = async (req, res) => {
   try {
     const { category } = req.query;
+    const viewer = await resolveViewerContext(req);
     const query = { parent: null, isActive: true };
+    if (!viewer.isPlatformAdmin) Object.assign(query, reservedNamesMongoClause("name"));
     if (category) {
       const catDoc = await TeamCategory.findOne({
         $or: [{ _id: category }, { slug: String(category).toLowerCase() }, { name: category }]
@@ -462,7 +497,10 @@ export const getOrganizationChain = async (req, res) => {
 
 export const getOrganizationChildren = async (req, res) => {
   try {
-    const children = await TeamOrganization.find({ parent: req.params.id, isActive: true }).sort({ name: 1 });
+    const viewer = await resolveViewerContext(req);
+    const query = { parent: req.params.id, isActive: true };
+    if (!viewer.isPlatformAdmin) Object.assign(query, reservedNamesMongoClause("name"));
+    const children = await TeamOrganization.find(query).sort({ name: 1 });
     res.status(200).json(children);
   } catch (error) {
     res.status(500).json({ message: "Failed to fetch children", error: error.message });
@@ -471,7 +509,8 @@ export const getOrganizationChildren = async (req, res) => {
 
 export const getOrganizationTree = async (req, res) => {
   try {
-    const tree = await teamService.getOrganizationTree();
+    const viewer = await resolveViewerContext(req);
+    const tree = await teamService.getOrganizationTree(viewer);
     res.status(200).json(tree);
   } catch (error) {
     res.status(500).json({ message: "Failed to fetch organization tree", error: error.message });

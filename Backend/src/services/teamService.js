@@ -10,6 +10,10 @@ import { deleteStoredFile, deleteStoredFiles } from "../utils/photoStore.js";
 import {
   PLAYER_ROSTER_SELECT,
   TEAM_PUBLIC_SELECT,
+  publicTeamClause,
+  reservedNamesMongoClause,
+  isHiddenTeamDoc,
+  canViewTeamPrivate,
 } from "../utils/publicProjection.js";
 
 // Pure diff used to decide which team media uploads are no longer referenced
@@ -30,10 +34,11 @@ export function computeRemovedMediaUrls(oldMediaUrls = [], newMedia) {
 //   * `?scope=organization`         — organization-owned teams are in scope.
 //   * `?organizationRef=<id>`      — one organization's teams, named outright.
 //
-// The default is the platform/public catalogue: teams with no `organizationRef`,
-// which is what an org-less team is. An organization that wants its own listing
-// uses the org-scoped route (`GET /api/organizations/:id/teams`), which is where
-// the Teams tab already reads from.
+// The default is the platform/public catalogue: published teams only — which
+// covers org-less teams (a team with no `organizationRef` is a platform team)
+// and organization-owned teams the owner has not hidden. An organization that
+// wants its own listing, hidden teams included, uses the org-scoped manage
+// route (`GET /api/organizations/:id/teams/manage`).
 export async function listTeams(filters = {}) {
   const query = {};
   const limit = Math.min(Math.max(Number(filters.limit) || 120, 1), 500);
@@ -51,19 +56,22 @@ export async function listTeams(filters = {}) {
   // to apply is exactly what `$and` is for.
   const andClauses = [];
 
-  // For public listing (no org scope), include org-owned teams only if they are
-  // explicitly published (`Team.isPublic`, which defaults to false).
-  if (!wantsOrgOwned) {
-    andClauses.push({
-      $or: [
-        { organizationRef: { $in: [null, undefined] } },
-        { organizationRef: { $exists: true, $ne: null }, isPublic: true },
-      ],
-    });
-  } else if (!filters.organizationRef && !wantsAll && scope === "organization") {
-    // "all organization-owned teams" across tenants is a supervisory read; it is
-    // reachable only with the explicit scope and is sanitized like any other.
+  // "all organization-owned teams" across tenants is a supervisory read; it is
+  // reachable only with the explicit scope and is sanitized like any other.
+  if (wantsOrgOwned && !filters.organizationRef && !wantsAll && scope === "organization") {
     andClauses.push({ organizationRef: { $exists: true, $ne: null } });
+  }
+
+  // Fix B: published and non-fixture, for every read that is not an entitled
+  // one. `publicOnly` is set by the controller for anyone who is not a platform
+  // admin; the default catalogue (no org scope) applies the same rule on its own
+  // so an org-less private team cannot sit in the public team browser either.
+  // The org manage path (`GET /organizations/:id/teams/manage`) passes neither
+  // flag, which is what keeps it able to list a team the owner has hidden.
+  if (filters.publicOnly || !wantsOrgOwned) {
+    andClauses.push(publicTeamClause());
+  } else if (filters.excludeReservedTestNames) {
+    andClauses.push(reservedNamesMongoClause("name"));
   }
 
   if (filters.category) query.category = filters.category;
@@ -122,6 +130,12 @@ export async function getTeamProfile(teamId, viewer = null) {
     .populate("organizationRef", "name slug type");
   if (!team) return null;
 
+  // Fix B: a team the owner has hidden, or a fixture, is not addressable by id
+  // for anyone who could not have found it through a listing anyway. Members and
+  // platform admins still get it — which is also why `GET /teams/:id` now runs
+  // `optionalProtect`, so an authenticated caller is not mistaken for a guest.
+  if (isHiddenTeamDoc(team) && !canViewTeamPrivate(viewer, team)) return null;
+
   const ranking = await TeamRanking.findOne({ team: teamId });
 
   const recentMatches = await Match.find({
@@ -134,11 +148,16 @@ export async function getTeamProfile(teamId, viewer = null) {
 
   let branches = [];
   if (team.organizationRef) {
-    branches = await Team.find({
+    const branchQuery = {
       organizationRef: team.organizationRef,
       _id: { $ne: teamId },
       isActive: true,
-    })
+    };
+    // Sibling branches follow the same rule as the organization's public team
+    // list: a guest browsing one published branch does not learn the names of
+    // the branches the owner hid.
+    if (!canViewTeamPrivate(viewer, team)) Object.assign(branchQuery, publicTeamClause());
+    branches = await Team.find(branchQuery)
       // Round 5: `city` was in this projection but is not a Team field - city lives
     // in `address.city`, which `address` already brings along.
     .select("name branchName address logo shortName")
@@ -293,6 +312,10 @@ export async function createTeam(data) {
     socialLinks: data.socialLinks || {},
     privacy: data.privacy || {},
     players: data.players || [],
+    // A new real team is public by default (Team.js default). An org that is
+    // standing up a test squad asks for `isPublic: false` explicitly — the
+    // field used to be accepted by `updateTeam` and silently dropped on create.
+    ...(data.isPublic !== undefined ? { isPublic: Boolean(data.isPublic) } : {}),
   });
 
   await team.save();
@@ -477,17 +500,28 @@ export async function updatePlayerRole(teamId, playerId, data) {
   return player;
 }
 
-export async function getOrganizationTree() {
-  const organizations = await TeamOrganization.find({ isActive: true })
+export async function getOrganizationTree(viewer = null) {
+  // The Admin app's Teams page reads this tree to *manage* teams, so a platform
+  // admin sees fixtures and hidden branches; everybody else gets the public
+  // shape of the same tree.
+  const canSeePrivate = Boolean(viewer?.isPlatformAdmin);
+
+  const orgQuery = { isActive: true };
+  if (!canSeePrivate) Object.assign(orgQuery, reservedNamesMongoClause("name"));
+
+  const organizations = await TeamOrganization.find(orgQuery)
     .populate("category", "name slug icon")
     .sort({ name: 1 });
 
   const result = [];
 
   for (const org of organizations) {
-    const branches = await Team.find({ organizationRef: org._id, isActive: true })
-      .populate("players")
-      .populate("categoryRef");
+    const branchQuery = { organizationRef: org._id, isActive: true };
+    if (!canSeePrivate) Object.assign(branchQuery, publicTeamClause());
+
+    const branches = await Team.find(branchQuery)
+      .populate("players", PLAYER_ROSTER_SELECT)
+      .populate("categoryRef", "name slug icon");
 
     const branchCount = branches.length;
     const totalPlayers = branches.reduce((sum, b) => sum + (b.players?.length || 0), 0);

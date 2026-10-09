@@ -155,22 +155,36 @@ These were not in the original audit. Each is now covered by a test.
 
 ### 3.5 The tenancy rule was cancelled by its own default flag
 
-`Team.isPublic` defaulted to `true`, and `listTeams` admits an organization-owned
-team to the public list when `isPublic` is true. Those two facts together meant
-the filter matched **every team in the database**: the "public" catalogue was a
-cross-tenant directory of all 147 local teams, which is the precise thing item 4
-of the brief asked me to prevent. A test written to check the rule —
-`GET /teams — anonymous list carries no organization-owned teams` — was
+> **Correction (Fix B pre-deploy pass).** This section originally described the
+> *intermediate* state in which `Team.isPublic` defaulted to `false` and the
+> toggle route was `PUT /api/teams/:id/toggle-visibility`. Neither is true of the
+> shipped code: Round 5b, inside the same `a6d4b60` commit, set the schema default
+> back to **`true`** (`Backend/src/models/Team.js:114`, "New teams are public by
+> default") and the route is **`PATCH /teams/:id/visibility`**
+> (`Backend/src/routes/teamRoutes.js:40`). The paragraph below is rewritten to
+> match the code; the historical narrative is kept in the sub-bullet.
+
+At the time this bug was found, `Team.isPublic` defaulted to `true`, and
+`listTeams` admits an organization-owned team to the public list when that flag is
+true. Those two facts together meant the filter matched **every team in the
+database**: the "public" catalogue was a cross-tenant directory of all local teams,
+the precise thing item 4 of the brief asked me to prevent. A test written to check
+the rule — `GET /teams — anonymous list carries no organization-owned teams` — was
 **failing** in the tree this report was written against.
 
-Publication is now opt-in: `isPublic` defaults to `false`, and `isPublic` is the
-"list me publicly" switch. The visibility toggle that already existed
-(`PUT /api/teams/:id/toggle-visibility`) is how a team gets published, so no new
-surface was added. `migrateSetIsPublic.js` — which backfilled the flag onto
-pre-existing documents — wrote `true`, i.e. it published every legacy team; it
-now writes `false`, matching the schema default. Confirmed live: 13 teams created
-after the change carry `isPublic: false`, while the 169 rows the *old* backfill
-published are still public — see §5 for why that needs a data decision.
+**As shipped**, publication is opt-*out* per team: new teams are public by default
+(`Team.js:114`) and an owner or manager uses `PATCH /teams/:id/visibility` to hide
+one. The tenancy boundary is not the default flag alone — it is the reserved-name
+and private-team filtering added across every public read path in the Fix B pass,
+covered in the regression suite and `Backend/test/testDataVisibility.test.js`.
+`migrateSetIsPublic.js` backfills `true` only under an explicit `--set-public`
+(report-only by default), and gained `--hide-test-names` in Fix B to un-publish
+any still-public fixture.
+
+- *Earlier (first Round 5 review) reading:* the default was `false` and the toggle
+  was `PUT …/toggle-visibility`, so the report said publication was opt-in. That
+  was true only for the intermediate tree; Round 5b reversed the default to `true`
+  before the commit landed.
 
 ### 3.6 `?search=` bypassed the tenancy filter entirely
 
@@ -230,7 +244,8 @@ schema field is not exposed, privacy flags on and off (including the gallery and
 video flags that previously did nothing), creator / org-manager / platform-admin
 / stranger visibility, every public endpoint, cross-organization name reuse,
 case-insensitive uniqueness, the org-move guard and its audit, the city fix on
-all three paths, that `isPublic` is private by default, and that a search term
+all three paths, the opt-out `isPublic` contract (public by default, hidden on
+request), and that a search term
 cannot see past the tenancy filter.
 
 ### A note on the backend being down

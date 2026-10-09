@@ -38,7 +38,7 @@ router.delete('/:id/players', ...adminOnly, validateObjectId('id'), removePlayer
 router.put('/:id/players/:playerId', ...adminOnly, validateObjectId('id'), validateObjectId('playerId'), updatePlayerRoleInTeam);
 
 router.patch('/:id/visibility', protect, requireVerifiedEmail, validateObjectId('id'), toggleTeamVisibility);
-router.get('/:id/ranking', validateObjectId('id'), getTeamRanking);
-router.get('/:id/matches', validateObjectId('id'), getTeamMatches);
+router.get('/:id/ranking', optionalProtect, validateObjectId('id'), getTeamRanking);
+router.get('/:id/matches', optionalProtect, validateObjectId('id'), getTeamMatches);
 
 export default router;

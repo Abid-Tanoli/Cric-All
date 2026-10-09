@@ -448,6 +448,9 @@ test("GET /rankings-v2/players/team/:teamId — embedded player is projected", a
 });
 
 test("GET /teams — anonymous list includes public, but not private, organization-owned teams", async () => {
+  // Create the admin first: `makeAdmin` advances the shared fixture counter, so
+  // building it after the teams would make the assertion look for the wrong name.
+  const admin = await makeAdmin("catalogue");
   const owner = await makeUser();
   const org = await makeOrg(owner, "Tenant Org");
   await Team.create({
@@ -469,17 +472,63 @@ test("GET /teams — anonymous list includes public, but not private, organizati
   assert.ok(names.includes(`Public Tenant ${counter}`), "public org-owned teams are in the public list");
   assert.ok(names.includes(`Public Platform ${counter}`), "org-less platform teams are");
 
-  // Intent brings them back.
+  // Naming the scope or the organization describes *which* teams, not *whether*
+  // private ones are revealed. Fix B pins that: a stranger never sees a private
+  // team, no matter which query shape they use.
   const scoped = mockRes();
   await listTeams(anon({ query: { scope: "organization" } }), scoped);
-  assert.ok(scoped.body.some((t) => t.name.startsWith("Private Tenant")), "?scope=organization is explicit intent");
+  assert.ok(
+    !scoped.body.some((t) => t.name.startsWith("Private Tenant")),
+    "?scope=organization does not reveal a private team to a stranger",
+  );
 
-  // Naming an organization is intent too.
   const byOrg = mockRes();
   await listTeams(anon({ query: { organizationRef: String(org._id) } }), byOrg);
-  assert.deepStrictEqual(
-    new Set(byOrg.body.map((team) => team.name)),
-    new Set([`Private Tenant ${counter}`, `Public Tenant ${counter}`]),
+  assert.ok(
+    !byOrg.body.some((t) => t.name.startsWith("Private Tenant")),
+    "naming an organization does not reveal a private team to a stranger",
+  );
+  assert.ok(
+    byOrg.body.some((t) => t.name === `Public Tenant ${counter}`),
+    "the organization's public teams are still visible",
+  );
+
+  // The platform admin is the one viewer the visibility filter does not apply
+  // to — the Admin app's own catalogue depends on it.
+  const adminRes = mockRes();
+  await listTeams(mockReq({ user: admin, principalType: "admin", query: {} }), adminRes);
+  assert.ok(
+    adminRes.body.some((t) => t.name === `Private Tenant ${counter}`),
+    "a platform admin still sees private teams",
+  );
+});
+
+test("GET /teams — a reserved fixture name is hidden from the public list and search", async () => {
+  // Fix B: the e2e/bootstrap fixtures carry reserved prefixes. They must not
+  // surface on any public read even though they are otherwise ordinary teams.
+  await Team.create({ name: `E2E_Leaky_XI_${counter}`, isPublic: true });
+
+  const listed = mockRes();
+  await listTeams(anon(), listed);
+  assert.ok(
+    !listed.body.some((t) => t.name.startsWith("E2E_Leaky_XI_")),
+    "a reserved-name team is absent from the anonymous catalogue",
+  );
+
+  const searched = mockRes();
+  await listTeams(anon({ query: { search: "E2E_Leaky" } }), searched);
+  assert.ok(
+    !searched.body.some((t) => t.name.startsWith("E2E_Leaky_XI_")),
+    "searching its name does not surface a reserved fixture",
+  );
+
+  // A platform admin still sees it, so the fixtures remain debuggable.
+  const admin = await makeAdmin("fixture");
+  const adminRes = mockRes();
+  await listTeams(mockReq({ user: admin, principalType: "admin", query: {} }), adminRes);
+  assert.ok(
+    adminRes.body.some((t) => t.name.startsWith("E2E_Leaky_XI_")),
+    "a platform admin can still see fixture teams",
   );
 });
 

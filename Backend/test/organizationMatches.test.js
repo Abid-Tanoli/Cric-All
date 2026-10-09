@@ -82,7 +82,7 @@ async function makeOrg(owner, name = "Fixtures Org") {
 let teamCounter = 0;
 async function makeOrgTeam(org, name = "XI") {
   teamCounter += 1;
-  return Team.create({ name: `${name} ${teamCounter}`, organizationRef: org._id, organization: org.name });
+  return Team.create({ name: `${name} ${teamCounter}`, organizationRef: org._id, organization: org.name, isPublic: false });
 }
 
 const parsed = (schema, payload) => schema.parse(payload);

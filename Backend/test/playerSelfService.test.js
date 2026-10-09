@@ -61,7 +61,7 @@ async function makeOrg(owner, name = "Players Org") {
 }
 
 async function makeOrgTeam(org, name = "Org XI") {
-  return Team.create({ name, organizationRef: org._id, organization: org.name, type: "local_team" });
+  return Team.create({ name, organizationRef: org._id, organization: org.name, type: "local_team", isPublic: false });
 }
 
 const parsed = (schema, payload) => schema.parse(payload);
