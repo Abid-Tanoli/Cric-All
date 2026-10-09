@@ -340,7 +340,6 @@ export function Home() {
                 {[
                   { label: "Live Scores", accent: "bg-red-500", path: "/live" },
                   { label: "Rankings", accent: "bg-amber-500", path: "/rankings" },
-                  { label: "Points Table", accent: "bg-blue-500", path: "/points-table" },
                   { label: "International", accent: "bg-indigo-500", path: "/international" },
                   { label: "Teams", accent: "bg-emerald-500", path: "/teams" },
                   { label: "Players", accent: "bg-orange-500", path: "/players" },

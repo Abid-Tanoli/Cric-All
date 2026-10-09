@@ -6,6 +6,7 @@ import Partnership from "../models/Partnership.js";
 import { getIO } from "../socket/socket.js";
 import { getBallRunText, normalizeBallRunText } from "../utils/cricketHelpers.js";
 import { hiddenTeamIds, reservedNamesMongoClause } from "../utils/publicProjection.js";
+import { getPlatformSettings } from "../models/SystemSettings.js";
 
 const normalStatus = (status = "upcoming") => (status === "innings-break" ? "innings_break" : status);
 const legalMatchStatuses = [
@@ -75,6 +76,9 @@ const populateMatch = (query) => {
     .populate("squad15.wicketKeepers", "name playingRole role")
     .populate("twelfthMan.team", "name shortName logo")
     .populate("twelfthMan.player", "name playingRole role")
+    .populate("impactPlayers.team", "name shortName logo")
+    .populate("impactPlayers.player", "name playingRole role")
+    .populate("impactPlayers.replaces", "name playingRole role")
     .populate("bowlingXI.players", "name playingRole role")
     .populate("bowlingXI.team", "name shortName logo")
     .populate("teamRoles.captain", "name playingRole role")
@@ -1130,6 +1134,89 @@ export const setTwelfthMan = async (req, res) => {
     console.error("Error setting 12th man:", error);
     res.status(400).json({
       message: "Failed to set 12th man",
+      error: error.message
+    });
+  }
+};
+
+// Task 6 — Super Sub (Impact Player). While the platform enables the rule, a
+// team's 12th man may replace one of its playing XI exactly once. The swap is
+// applied to `playingXI` so the incoming player is a full participant (they can
+// bat and bowl like anyone in the XI), and `impactPlayers` keeps the audit trail
+// of who came in for whom.
+export const setImpactPlayer = async (req, res) => {
+  try {
+    const { matchId } = req.params;
+    const { teamId, playerId, replacesPlayerId } = req.body;
+
+    const settings = await getPlatformSettings();
+    if (!settings?.enableSuperSub) {
+      return res.status(403).json({
+        message: "The Super Sub rule is disabled for this platform.",
+        code: "SUPER_SUB_DISABLED",
+      });
+    }
+
+    const match = await Match.findById(matchId);
+    if (!match) {
+      return res.status(404).json({ message: "Match not found" });
+    }
+
+    if (!match.teams.some((team) => sameId(team, teamId))) {
+      return res.status(400).json({ message: "Team is not part of this match" });
+    }
+
+    if ((match.impactPlayers || []).some((entry) => sameId(entry.team, teamId))) {
+      return res.status(400).json({
+        message: "This team has already used its Super Sub.",
+        code: "SUPER_SUB_ALREADY_USED",
+      });
+    }
+
+    const twelfth = (match.twelfthMan || []).find((entry) => sameId(entry.team, teamId));
+    if (!twelfth || !sameId(twelfth.player, playerId)) {
+      return res.status(400).json({
+        message: "The Super Sub must be the team's nominated 12th man.",
+        code: "SUPER_SUB_NOT_TWELFTH_MAN",
+      });
+    }
+
+    const xi = (match.playingXI || []).find((entry) => sameId(entry.team, teamId));
+    if (!xi || !xi.players.some((player) => sameId(player, replacesPlayerId))) {
+      return res.status(400).json({
+        message: "The replaced player must be in the team's playing XI.",
+        code: "SUPER_SUB_REPLACED_NOT_IN_XI",
+      });
+    }
+
+    xi.players = xi.players.map((player) => (sameId(player, replacesPlayerId) ? playerId : player));
+    match.impactPlayers.push({
+      team: teamId,
+      player: playerId,
+      replaces: replacesPlayerId,
+      usedAt: new Date(),
+    });
+
+    await match.save({ validateModifiedOnly: true });
+    await match.populate("impactPlayers.team", "name shortName logo");
+    await match.populate("impactPlayers.player", "name playingRole role");
+    await match.populate("impactPlayers.replaces", "name playingRole role");
+
+    try {
+      const io = getIO();
+      io.to(matchRoom(matchId)).emit("match:impactPlayerUpdated", match);
+    } catch (socketError) {
+      console.log("Socket not available:", socketError.message);
+    }
+
+    res.status(200).json({
+      match,
+      message: "Super Sub applied successfully"
+    });
+  } catch (error) {
+    console.error("Error applying Super Sub:", error);
+    res.status(400).json({
+      message: "Failed to apply Super Sub",
       error: error.message
     });
   }

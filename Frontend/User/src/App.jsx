@@ -22,7 +22,6 @@ const LeagueDetails = lazy(() => import("./pages/LeagueDetails"));
 const IncubationTeams = lazy(() => import("./pages/IncubationTeams"));
 const TeamProfile = lazy(() => import("./pages/TeamProfile"));
 const Rankings = lazy(() => import("./pages/Rankings"));
-const PointsTable = lazy(() => import("./pages/PointsTable"));
 const Live = lazy(() => import("./pages/Live"));
 const News = lazy(() => import("./pages/News"));
 const Videos = lazy(() => import("./pages/Videos"));
@@ -152,7 +151,6 @@ function App() {
           <Route path="/teams/incubation" element={<ErrorBoundary><IncubationTeams /></ErrorBoundary>} />
           <Route path="/teams/:id" element={<ErrorBoundary><TeamProfile /></ErrorBoundary>} />
           <Route path="/rankings" element={<ErrorBoundary><Rankings /></ErrorBoundary>} />
-          <Route path="/points-table" element={<ErrorBoundary><PointsTable /></ErrorBoundary>} />
           <Route path="/news" element={<ErrorBoundary><News /></ErrorBoundary>} />
           <Route path="/videos" element={<ErrorBoundary><Videos /></ErrorBoundary>} />
           <Route path="/intl" element={<ErrorBoundary><International /></ErrorBoundary>} />

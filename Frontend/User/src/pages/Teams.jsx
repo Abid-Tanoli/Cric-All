@@ -1,6 +1,30 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../services/api";
+
+// Task 3: browse teams by the type of the organization that owns them
+// (club, school, college, academy, league, …). The type lives on
+// TeamOrganization and is populated onto each team as `organizationRef.type`.
+const ORG_TYPE_ICONS = {
+  club: "🏏",
+  school: "🏫",
+  college: "🎓",
+  university: "🏛️",
+  academy: "⭐",
+  league: "🏆",
+  organization: "🏢",
+  business: "💼",
+  industry: "🏭",
+  corporate: "🏢",
+  international: "🌍",
+  other: "📋",
+};
+
+const orgTypeLabel = (type) => String(type || "")
+  .split(/[_\s-]+/)
+  .filter(Boolean)
+  .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+  .join(" ");
 
 const ICONS = {
   School: "🏫", College: "🎓", University: "🏛️",
@@ -14,11 +38,24 @@ export default function Teams() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [activeCategory, setActiveCategory] = useState("all");
+  const [activeOrgType, setActiveOrgType] = useState("all");
   const [searchTerm, setSearchTerm] = useState("");
 
   useEffect(() => {
     fetchTeams();
   }, [activeCategory, searchTerm]);
+
+  // Options are derived from the teams actually loaded, so the filter always
+  // reflects real organization types instead of a hardcoded enum. "all" is the
+  // mixed view.
+  const orgTypeOptions = useMemo(() => {
+    const types = new Set();
+    teams.forEach((team) => {
+      const type = team.organizationRef?.type;
+      if (type) types.add(String(type).toLowerCase());
+    });
+    return Array.from(types).sort();
+  }, [teams]);
 
   const fetchTeams = async () => {
     try {
@@ -44,6 +81,7 @@ export default function Teams() {
   };
 
   const filteredTeams = teams.filter(t => {
+    if (activeOrgType !== "all" && String(t.organizationRef?.type || "").toLowerCase() !== activeOrgType) return false;
     if (activeCategory !== "all" && t.category !== activeCategory) return false;
     if (searchTerm && !t.name.toLowerCase().includes(searchTerm.toLowerCase()) &&
         !t.organization?.toLowerCase().includes(searchTerm.toLowerCase()) &&
@@ -95,6 +133,28 @@ export default function Teams() {
                 {ICONS[cat] || "📋"} {cat}
               </button>
             ))}
+          </div>
+          <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center">
+            <label
+              htmlFor="org-type-filter"
+              className="text-[10px] font-black uppercase tracking-widest text-cric-muted"
+            >
+              Organization type
+            </label>
+            <select
+              id="org-type-filter"
+              aria-label="Filter by organization type"
+              value={activeOrgType}
+              onChange={(e) => setActiveOrgType(e.target.value)}
+              className="w-full rounded-xl border border-cric-border bg-cric-bg px-4 py-3 text-sm font-bold text-cric-text focus:outline-none focus:ring-2 focus:ring-cric-accent sm:w-64"
+            >
+              <option value="all">All types</option>
+              {orgTypeOptions.map((type) => (
+                <option key={type} value={type}>
+                  {ORG_TYPE_ICONS[type] || "📋"} {orgTypeLabel(type)}
+                </option>
+              ))}
+            </select>
           </div>
           <input
             type="text"

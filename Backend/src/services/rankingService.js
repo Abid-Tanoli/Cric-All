@@ -2,15 +2,14 @@ import Team from "../models/Team.js";
 import TeamRanking from "../models/TeamRanking.js";
 import TeamPlayerRanking from "../models/TeamPlayerRanking.js";
 import TeamCategory from "../models/TeamCategory.js";
+import TeamOrganization from "../models/TeamOrganization.js";
 import Player from "../models/Player.js";
 import Match from "../models/Match.js";
 import mongoose from "mongoose";
 import {
-  PLAYER_PUBLIC_SELECT,
   playerSelectFor,
   sanitizePlayerPublic,
   hiddenTeamIds,
-  reservedNamesMongoClause,
   isHiddenTeamDoc,
   canViewTeamPrivate,
 } from "../utils/publicProjection.js";
@@ -168,16 +167,40 @@ const isObjectId = (value) => mongoose.Types.ObjectId.isValid(String(value || ""
 const escapeRegex = (value) => String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const textRegex = (value) => ({ $regex: escapeRegex(value), $options: "i" });
 
-function buildTeamScopeQuery(filters = {}) {
-  const { scope = "", scopeValue = "", category, city, district, town, country } = filters;
+async function buildTeamScopeQuery(filters = {}) {
+  const {
+    scope = "",
+    scopeValue = "",
+    category,
+    city,
+    district,
+    town,
+    country,
+    orgType,
+    teamType,
+  } = filters;
   const value = String(scopeValue || "").trim();
   const query = {};
 
   if (category) query.category = category;
+  if (teamType) query.type = String(teamType).trim();
   if (city) query["address.city"] = textRegex(city);
   if (district) query["address.district"] = textRegex(district);
   if (town) query["address.town"] = textRegex(town);
   if (country) query["address.country"] = textRegex(country);
+
+  // Task 4: browse team rankings by the organization type already stored on
+  // TeamOrganization.type (free-form: club, school, university, ...). Types with
+  // no organizations resolve to an empty $in, which correctly yields no rows.
+  const orgTypeValue = String(orgType || "").trim();
+  if (orgTypeValue) {
+    const orgs = await TeamOrganization.find({ type: orgTypeValue })
+      .select("_id")
+      .limit(5000)
+      .maxTimeMS(5000)
+      .lean();
+    query.organizationRef = { $in: orgs.map((org) => org._id) };
+  }
 
   if (value) {
     if (scope === "team") {
@@ -209,7 +232,7 @@ function buildTeamScopeQuery(filters = {}) {
 
 export async function getOverallRankings(filters = {}) {
   const limit = rankingLimit(filters.limit);
-  const teamScopeQuery = buildTeamScopeQuery(filters);
+  const teamScopeQuery = await buildTeamScopeQuery(filters);
   const rankingQuery = {};
 
   if (Object.keys(teamScopeQuery).length) {
@@ -312,66 +335,4 @@ export async function getTeamPlayerRankings(teamId, viewer = null) {
   });
 
   return fullRankings;
-}
-
-export async function computePlayerRankings() {
-  // Fix B: the player ranking boards are public — fixtures and the players of
-  // hidden teams are omitted here too, for the same reason the team boards are.
-  const exclusions = await hiddenTeamExclusionClause();
-  const players = await Player.find({
-    team: { $exists: true, $ne: null },
-    ...(exclusions.length ? { $and: exclusions } : {}),
-    ...reservedNamesMongoClause("name"),
-  })
-    .populate("team", "name shortName");
-
-  const battingRanked = players
-    .map((p) => ({
-      _id: p._id,
-      name: p.name,
-      role: p.role,
-      playingRole: p.playingRole,
-      imageUrl: p.imageUrl,
-      team: p.team,
-      stats: p.stats,
-      rankingPoints: (p.stats?.runs || 0) * 1 + (p.stats?.fifties || 0) * 25 + (p.stats?.hundreds || 0) * 50,
-    }))
-    .sort((a, b) => b.rankingPoints - a.rankingPoints)
-    .map((p, i) => ({ ...p, rank: i + 1 }));
-
-  const bowlingRanked = players
-    .map((p) => ({
-      _id: p._id,
-      name: p.name,
-      role: p.role,
-      playingRole: p.playingRole,
-      imageUrl: p.imageUrl,
-      team: p.team,
-      stats: p.stats,
-      rankingPoints: (p.stats?.wickets || 0) * 25 + (p.stats?.fourWickets || 0) * 50 + (p.stats?.fiveWickets || 0) * 100,
-    }))
-    .sort((a, b) => b.rankingPoints - a.rankingPoints)
-    .map((p, i) => ({ ...p, rank: i + 1 }));
-
-  const allRounderRanked = players
-    .map((p) => {
-      const battingPoints = (p.stats?.runs || 0) * 1 + (p.stats?.fifties || 0) * 25 + (p.stats?.hundreds || 0) * 50;
-      const bowlingPoints = (p.stats?.wickets || 0) * 20 + (p.stats?.fourWickets || 0) * 25 + (p.stats?.fiveWickets || 0) * 50;
-      return {
-        _id: p._id,
-        name: p.name,
-        role: p.role,
-        playingRole: p.playingRole,
-        imageUrl: p.imageUrl,
-        team: p.team,
-        stats: p.stats,
-        battingPoints,
-        bowlingPoints,
-        rankingPoints: battingPoints + bowlingPoints,
-      };
-    })
-    .sort((a, b) => b.rankingPoints - a.rankingPoints)
-    .map((p, i) => ({ ...p, rank: i + 1 }));
-
-  return { battingRanked, bowlingRanked, allRounderRanked };
 }

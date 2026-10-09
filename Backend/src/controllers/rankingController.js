@@ -55,15 +55,6 @@ export const getTeamPlayerRankings = async (req, res) => {
   }
 };
 
-export const getPlayerRankings = async (req, res) => {
-  try {
-    const result = await rankingService.computePlayerRankings();
-    res.status(200).json(result);
-  } catch (error) {
-    res.status(500).json({ message: "Failed to compute player rankings", error: error.message });
-  }
-};
-
 export const recomputeRankings = async (req, res) => {
   try {
     await rankingService.computeAllRankings();

@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import ThemeToggle from "./ThemeToggle";
 import { resendVerification } from "../pages/auth/auth";
+import { featureFlags } from "../config/features";
 
 export default function Header({ user, hasOrg, onShowLogin, onShowRegister, onLogout }) {
   const location = useLocation();
@@ -9,17 +10,21 @@ export default function Header({ user, hasOrg, onShowLogin, onShowRegister, onLo
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [resendState, setResendState] = useState("");
 
+  // Task 3: sections backed only by third-party feeds (International →
+  // RapidAPI/Cricbuzz, Highlights → YouTube, News → RSS) are hidden by default
+  // and restored with a VITE_SHOW_* env flag, no code change. The platform-owned
+  // pages (Videos, and the blog-backed News page at /news) are untouched.
+  const flags = featureFlags();
   const navItems = [
     { name: "Matches", path: "/" },
     { name: "Series", path: "/series" },
-    { name: "International", path: "/international" },
+    ...(flags.international ? [{ name: "International", path: "/international" }] : []),
     { name: "Teams", path: "/teams" },
     { name: "Players", path: "/players" },
-    { name: "Highlights", path: "/highlights" },
-    { name: "News", path: "/cricket-news" },
+    ...(flags.highlights ? [{ name: "Highlights", path: "/highlights" }] : []),
+    ...(flags.cricketNews ? [{ name: "News", path: "/cricket-news" }] : []),
     { name: "Videos", path: "/videos" },
     { name: "Rankings", path: "/rankings" },
-    { name: "Standings", path: "/points-table" },
   ];
 
   const closeMobile = () => setMobileMenuOpen(false);

@@ -115,9 +115,13 @@ export const updatePlatformSettingsHandler = async (req, res) => {
     if (typeof req.body?.requireMemberApproval === "boolean") {
       patch.requireMemberApproval = req.body.requireMemberApproval;
     }
+    if (typeof req.body?.enableSuperSub === "boolean") {
+      patch.enableSuperSub = req.body.enableSuperSub;
+    }
     if (Object.keys(patch).length === 0) {
       return res.status(400).json({
-        message: "Nothing to update. Send requireOrgApproval and/or requireMemberApproval.",
+        message:
+          "Nothing to update. Send requireOrgApproval, requireMemberApproval and/or enableSuperSub.",
         code: "NO_SETTINGS_PROVIDED",
       });
     }

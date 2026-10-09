@@ -1,162 +1,172 @@
 import React, { useEffect, useState } from "react";
 import { api } from "../services/api";
 
-export default function PointsTable() {
+// Task 5: this is no longer a standalone page that guesses "the first
+// tournament". It only renders the standings for the tournament (or event) it
+// is given, so a points table always belongs to the competition being viewed.
+
+const formLetter = (value) => {
+  const ch = String(value || "").toUpperCase();
+  if (ch === "W") return "W";
+  if (ch === "L") return "L";
+  if (ch === "T" || ch === "D") return "T";
+  return "NR";
+};
+
+const formClass = (letter) => {
+  if (letter === "W") return "bg-green-500";
+  if (letter === "L") return "bg-red-500";
+  if (letter === "T") return "bg-slate-400";
+  return "bg-amber-500";
+};
+
+const normalizeForm = (seriesForm) => {
+  if (Array.isArray(seriesForm)) return seriesForm;
+  if (typeof seriesForm === "string") return seriesForm.split("").filter(Boolean);
+  return [];
+};
+
+export default function PointsTable({ tournamentId, eventId, title = "Standings" }) {
   const [table, setTable] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [tournamentName, setTournamentName] = useState("");
-  const [tournamentType, setTournamentType] = useState("");
+  const [loading, setLoading] = useState(Boolean(tournamentId || eventId));
 
   useEffect(() => {
-    const fetchPointsTable = async () => {
+    let cancelled = false;
+
+    if (!tournamentId && !eventId) {
+      setTable([]);
+      setLoading(false);
+      return undefined;
+    }
+
+    setLoading(true);
+    const load = async () => {
       try {
-        // Fetch all tournaments and events
-        const [tournamentsRes, eventsRes] = await Promise.all([
-          api.get("/tournaments"),
-          api.get("/events")
-        ]);
-
-        const tournaments = tournamentsRes.data || [];
-        const events = eventsRes.data || [];
-
-        // Filter for tournament/league/tri-series only
-        const validTypes = ['tournament', 'league', 'tri-series'];
-        const validTournaments = tournaments.filter(t => validTypes.includes(t.type?.toLowerCase()));
-        const validEvents = events.filter(e => validTypes.includes(e.eventType?.toLowerCase()));
-
-        // Use first valid tournament/event
-        const activeTournament = validTournaments[0] || validEvents[0];
-
-        if (activeTournament) {
-          setTournamentName(activeTournament.name);
-          setTournamentType(activeTournament.type || activeTournament.eventType);
-
-          // Fetch points table
-          let pointsData;
-          if (activeTournament.type) {
-            const pointsRes = await api.get(`/tournaments/${activeTournament._id}/points-table`);
-            pointsData = pointsRes.data;
-          } else {
-            // It's an event
-            const eventDetail = await api.get(`/events/${activeTournament._id}`);
-            pointsData = eventDetail.data.pointsTable || [];
-          }
-
-          setTable(Array.isArray(pointsData) ? pointsData : []);
+        let rows;
+        if (tournamentId) {
+          const res = await api.get(`/tournaments/${tournamentId}/points-table`);
+          rows = res.data;
         } else {
-          setTable([]);
+          const res = await api.get(`/events/${eventId}`);
+          rows = res.data?.pointsTable || [];
         }
-        setLoading(false);
-      } catch (err) {
-        console.error("Failed to fetch points table:", err);
-        setLoading(false);
-        setTable([]);
+        if (!cancelled) setTable(Array.isArray(rows) ? rows : []);
+      } catch {
+        if (!cancelled) setTable([]);
+      } finally {
+        if (!cancelled) setLoading(false);
       }
     };
+    load();
 
-    fetchPointsTable();
-  }, []);
+    return () => {
+      cancelled = true;
+    };
+  }, [tournamentId, eventId]);
 
-  // Only show for tournament/league/tri-series
-  const isValidType = ['tournament', 'league', 'tri-series'].includes(tournamentType?.toLowerCase());
+  const sorted = [...table].sort(
+    (a, b) => (b.points || 0) - (a.points || 0) || (b.netRunRate || 0) - (a.netRunRate || 0)
+  );
+
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12">
+        <div className="mb-4 h-10 w-10 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
+        <p className="text-xs font-black uppercase tracking-widest text-cric-muted">Fetching Standings...</p>
+      </div>
+    );
+  }
+
+  if (sorted.length === 0) {
+    return (
+      <div className="py-12 text-center">
+        <h4 className="mb-2 text-lg font-black text-cric-accent">No Points Table Available</h4>
+        <p className="text-xs text-cric-muted">
+          Standings appear once matches begin for this competition.
+        </p>
+      </div>
+    );
+  }
 
   return (
-    <div className="min-h-screen bg-cric-bg text-cric-text font-sans">
-
-      {/* Hero Section */}
-      <div className="bg-cric-accent text-white py-16 relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-96 h-96 bg-blue-600/10 rounded-full -mr-48 -mt-48 blur-3xl" />
-        <div className="max-w-7xl mx-auto px-4 relative">
-          <h1 className="text-5xl font-black uppercase tracking-tighter italic mb-4">Points Table</h1>
-          <p className="text-blue-200/60 font-black uppercase tracking-widest text-sm">
-            {tournamentName ? `${tournamentName} • ${tournamentType}` : 'Official League Standings'}
-          </p>
-        </div>
-      </div>
-
-      <div className="max-w-7xl mx-auto px-4 py-12">
-        {!isValidType && !loading ? (
-          <div className="bg-amber-50 border border-amber-200 rounded-2xl p-12 text-center">
-            <p className="text-xl font-black text-amber-800 mb-2">Points Table Not Available</p>
-            <p className="text-sm text-amber-600">Points tables are only available for Tournaments, Leagues, and Tri-Series competitions.</p>
-          </div>
-        ) : loading ? (
-          <div className="flex flex-col items-center justify-center py-24">
-            <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-4" />
-            <p className="text-cric-muted font-black uppercase tracking-widest text-xs">Fetching Standings...</p>
-          </div>
-        ) : (
-          <div className="bg-cric-card rounded-[2.5rem] shadow-xl border border-cric-border overflow-hidden overflow-x-auto">
-            <table className="w-full text-left min-w-[800px]">
-              <thead>
-                <tr className="bg-cric-accent text-white">
-                  <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest">Pos</th>
-                  <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest">Team</th>
-                  <th className="px-4 py-6 text-[10px] font-black uppercase tracking-widest text-center">M</th>
-                  <th className="px-4 py-6 text-[10px] font-black uppercase tracking-widest text-center text-green-400">W</th>
-                  <th className="px-4 py-6 text-[10px] font-black uppercase tracking-widest text-center text-red-400">L</th>
-                  <th className="px-4 py-6 text-[10px] font-black uppercase tracking-widest text-center">T/NR</th>
-                  <th className="px-4 py-6 text-[10px] font-black uppercase tracking-widest text-center">NRR</th>
-                  <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest text-center bg-blue-600/20">PTS</th>
-                  <th className="px-4 py-6 text-[10px] font-black uppercase tracking-widest">Form</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-cric-bg">
-                {table.length > 0 ? table
-                  .sort((a, b) => (b.points || 0) - (a.points || 0) || (b.netRunRate || 0) - (a.netRunRate || 0))
-                  .map((t, i) => (
-                    <tr key={t._id || t.team?._id} className="group hover:bg-cric-bg transition-colors">
-                      <td className="px-8 py-6 font-black text-cric-muted text-lg">{i + 1}</td>
-                      <td className="px-8 py-6">
-                        <div className="flex items-center gap-4">
-                          <div className="w-10 h-10 rounded-xl bg-cric-bg border border-cric-border flex items-center justify-center p-2">
-                            {t.team?.logo ? <img src={t.team.logo} className="w-full h-full object-contain" /> : <div className="w-full h-full bg-cric-accent rounded-lg flex items-center justify-center font-black text-white text-xs">{t.team?.name?.charAt(0) || 'T'}</div>}
+    <div>
+      <h3 className="mb-4 text-lg font-black uppercase tracking-tight text-cric-accent">{title}</h3>
+      <div className="overflow-hidden overflow-x-auto rounded-2xl border border-cric-border bg-cric-card">
+        <table className="w-full min-w-[720px] text-left">
+          <thead>
+            <tr className="bg-cric-accent text-white">
+              <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest">Pos</th>
+              <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest">Team</th>
+              <th className="px-4 py-5 text-center text-[10px] font-black uppercase tracking-widest">M</th>
+              <th className="px-4 py-5 text-center text-[10px] font-black uppercase tracking-widest text-green-300">W</th>
+              <th className="px-4 py-5 text-center text-[10px] font-black uppercase tracking-widest text-red-300">L</th>
+              <th className="px-4 py-5 text-center text-[10px] font-black uppercase tracking-widest">T/NR</th>
+              <th className="px-4 py-5 text-center text-[10px] font-black uppercase tracking-widest">NRR</th>
+              <th className="px-6 py-5 text-center text-[10px] font-black uppercase tracking-widest">PTS</th>
+              <th className="px-4 py-5 text-[10px] font-black uppercase tracking-widest">Form</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-cric-bg">
+            {sorted.map((row, index) => {
+              const form = normalizeForm(row.seriesForm);
+              return (
+                <tr key={row._id || row.team?._id || index} className="transition-colors hover:bg-cric-bg">
+                  <td className="px-6 py-5 text-lg font-black text-cric-muted">{index + 1}</td>
+                  <td className="px-6 py-5">
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-cric-border bg-cric-bg p-2">
+                        {row.team?.logo ? (
+                          <img src={row.team.logo} alt="" className="h-full w-full object-contain" />
+                        ) : (
+                          <div className="flex h-full w-full items-center justify-center rounded-lg bg-cric-accent text-xs font-black text-white">
+                            {row.team?.name?.charAt(0) || "T"}
                           </div>
-                          <span className="font-bold text-cric-text">{t.team?.name || t.team || 'Team'}</span>
-                        </div>
-                      </td>
-                      <td className="px-4 py-6 font-bold text-cric-muted text-center">{t.matchesPlayed || 0}</td>
-                      <td className="px-4 py-6 font-bold text-green-600 text-center">{t.won || 0}</td>
-                      <td className="px-4 py-6 font-bold text-red-600 text-center">{t.lost || 0}</td>
-                      <td className="px-4 py-6 font-bold text-cric-muted text-center">{(t.tied || 0) + (t.noResult || 0)}</td>
-                      <td className="px-4 py-6 font-bold text-cric-accent text-center">{(t.netRunRate || 0).toFixed(3)}</td>
-                      <td className="px-8 py-6 font-black text-cric-accent text-2xl text-center bg-cric-bg/50">{t.points || 0}</td>
-                      <td className="px-4 py-6">
-                        <div className="flex gap-1">
-                          {(t.seriesForm || []).map((f, i) => (
-                            <span key={i} className={`w-6 h-6 rounded flex items-center justify-center text-xs font-bold text-white ${f === "W" ? "bg-green-500" : f === "L" ? "bg-red-500" : "bg-slate-400"}`}>
-                              {f}
-                            </span>
-                          ))}
-                          {(!t.seriesForm || t.seriesForm.length === 0) && <span className="text-xs text-cric-muted">-</span>}
-                        </div>
-                      </td>
-                    </tr>
-                  )) : (
-                  <tr>
-                    <td colSpan="9" className="px-8 py-32 text-center">
-                      <div className="w-20 h-20 bg-cric-bg rounded-full flex items-center justify-center mx-auto mb-6">
-                        <svg className="w-10 h-10 text-cric-muted/40" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                        )}
                       </div>
-                      <h4 className="text-xl font-black text-cric-accent mb-2">No Points Table Available</h4>
-                      <p className="text-cric-muted text-xs">Points tables will be available once matches begin for tournaments, leagues, or tri-series.</p>
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        )}
+                      <span className="font-bold text-cric-text">{row.team?.name || "Team"}</span>
+                    </div>
+                  </td>
+                  <td className="px-4 py-5 text-center font-bold text-cric-muted">{row.matchesPlayed || 0}</td>
+                  <td className="px-4 py-5 text-center font-bold text-green-600">{row.won || 0}</td>
+                  <td className="px-4 py-5 text-center font-bold text-red-600">{row.lost || 0}</td>
+                  <td className="px-4 py-5 text-center font-bold text-cric-muted">
+                    {(row.tied || 0) + (row.noResult || 0)}
+                  </td>
+                  <td className="px-4 py-5 text-center font-bold text-cric-accent">
+                    {Number(row.netRunRate || 0).toFixed(3)}
+                  </td>
+                  <td className="px-6 py-5 text-center text-2xl font-black text-cric-accent">{row.points || 0}</td>
+                  <td className="px-4 py-5">
+                    {form.length ? (
+                      <div className="flex gap-1">
+                        {form.map((result, i) => {
+                          const letter = formLetter(result);
+                          return (
+                            <span
+                              key={i}
+                              className={`flex h-6 w-6 items-center justify-center rounded text-xs font-bold text-white ${formClass(letter)}`}
+                            >
+                              {letter}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <span className="text-xs text-cric-muted">-</span>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
       </div>
-
-      {isValidType && table.length > 0 && (
-        <div className="max-w-7xl mx-auto px-4 pb-12">
-          <div className="bg-cric-card border border-cric-border rounded-2xl p-6">
-            <p className="text-xs font-bold text-cric-accent">ℹ️ Qualification Rules</p>
-            <p className="text-xs text-cric-accent mt-1">Top 4 teams qualify for playoffs. In case of tied points, Net Run Rate (NRR) is the primary tie-breaker.</p>
-          </div>
-        </div>
-      )}
+      <div className="mt-4 rounded-2xl border border-cric-border bg-cric-card p-4">
+        <p className="text-xs font-bold text-cric-accent">Qualification Rules</p>
+        <p className="mt-1 text-xs text-cric-accent">
+          Top 4 teams qualify for playoffs. When points are tied, Net Run Rate (NRR) is the primary tie-breaker.
+        </p>
+      </div>
     </div>
   );
 }

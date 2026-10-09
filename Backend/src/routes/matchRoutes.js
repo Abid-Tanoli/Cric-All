@@ -19,6 +19,7 @@ import {
   updateToss,
   setSquad15,
   setTwelfthMan,
+  setImpactPlayer,
   setBowlingXI,
   setTeamRoles,
   toggleMatchFeatured
@@ -166,6 +167,7 @@ router.put("/:matchId/format", ...adminOnly, validateObjectId("matchId"), async 
 router.put("/:matchId/toss", ...scoring("matchId"), updateToss);
 router.put("/:matchId/squad15", ...squad("matchId"), setSquad15);
 router.put("/:matchId/twelfth-man", ...squad("matchId"), setTwelfthMan);
+router.put("/:matchId/impact-player", ...squad("matchId"), setImpactPlayer);
 router.put("/:matchId/bowling-xi", ...squad("matchId"), setBowlingXI);
 router.put("/:matchId/team-roles", ...squad("matchId"), setTeamRoles);
 

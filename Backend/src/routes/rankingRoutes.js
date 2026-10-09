@@ -6,7 +6,6 @@ import {
   getCategoryRankings,
   getCrossCategoryRankings,
   getTeamPlayerRankings,
-  getPlayerRankings,
   recomputeRankings,
   recomputeTeamRanking,
 } from '../controllers/rankingController.js';
@@ -17,7 +16,9 @@ const adminOnly = [protect, requireAdmin];
 router.get('/overall', getOverallRankings);
 router.get('/category/:categoryId', validateObjectId('categoryId'), getCategoryRankings);
 router.get('/cross-category', getCrossCategoryRankings);
-router.get('/players', getPlayerRankings);
+// Task 4: the generic player leaderboard lives at `GET /players/rankings/*`
+// (rankingsController). The old duplicate `/rankings-v2/players` board was
+// retired so there is a single player-ranking implementation.
 // Round 5: `players/team/:teamId` embeds each player, so it identifies the
 // caller when it can. `optionalProtect` never rejects.
 router.get('/players/team/:teamId', optionalProtect, validateObjectId('teamId'), getTeamPlayerRankings);

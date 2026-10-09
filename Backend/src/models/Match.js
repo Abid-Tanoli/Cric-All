@@ -319,6 +319,16 @@ const matchSchema = new mongoose.Schema(
       team: { type: mongoose.Schema.Types.ObjectId, ref: "Team" },
       player: { type: mongoose.Schema.Types.ObjectId, ref: "Player" }
     }],
+    // Task 6 "Super Sub" / Impact Player: when the platform enables the rule, a
+    // team may bring its 12th man on for one of its playing XI. We keep the trace
+    // here (who came in, who they replaced) while the swap itself is applied to
+    // playingXI so the incoming player can bat and bowl like any other XI member.
+    impactPlayers: [{
+      team: { type: mongoose.Schema.Types.ObjectId, ref: "Team" },
+      player: { type: mongoose.Schema.Types.ObjectId, ref: "Player" },
+      replaces: { type: mongoose.Schema.Types.ObjectId, ref: "Player" },
+      usedAt: { type: Date, default: Date.now }
+    }],
     bowlingXI: [{
       team: { type: mongoose.Schema.Types.ObjectId, ref: "Team" },
       players: [{ type: mongoose.Schema.Types.ObjectId, ref: "Player" }]

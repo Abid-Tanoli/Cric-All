@@ -1,4 +1,5 @@
 import React from 'react';
+import ImpactPlayerSetup from './ImpactPlayerSetup';
 
 const FORMATS = [
   { value: 'Tape Ball', label: 'Tape Ball', overs: 8, maxBowlerOvers: null, powerplayDefault: false, powerplayOvers: 2 },
@@ -170,6 +171,8 @@ const MatchSetupWizard = ({
                             ))}
                         </div>
                         <button onClick={handleSavePlayingXI} className="score-touch-btn w-full py-4 sm:py-6 lg:py-8 rounded-2xl sm:rounded-[2rem] lg:rounded-[2.5rem] bg-cric-accent text-white font-black font-raj text-lg sm:text-2xl italic tracking-tighter uppercase shadow-[0_20px_50px_rgba(255,107,53,0.3)] hover:scale-[1.02] transition-all">Save Playing XIs</button>
+
+                        <ImpactPlayerSetup match={selectedMatch} matchId={selectedMatch._id} />
                     </div>
                 )}
 

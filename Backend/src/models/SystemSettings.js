@@ -23,6 +23,10 @@ export const DEFAULT_PLATFORM_SETTINGS = Object.freeze({
   // When true new sign-ups with an organization intent must wait for approval
   // before they can create teams/matches.
   requireMemberApproval: false,
+  // Task 6: the "Super Sub" (Impact Player) rule. Off by default — a match may
+  // only name a 12th man as an impact player for a top-11 player when the
+  // platform turns this on, mirroring how the IPL-style rule is opt-in.
+  enableSuperSub: false,
 });
 
 const envDefaultPlatformSettings = () => ({
@@ -30,6 +34,8 @@ const envDefaultPlatformSettings = () => ({
     String(process.env.REQUIRE_ORG_APPROVAL ?? "false").toLowerCase() === "true",
   requireMemberApproval:
     String(process.env.REQUIRE_MEMBER_APPROVAL ?? "false").toLowerCase() === "true",
+  enableSuperSub:
+    String(process.env.SUPER_SUB_ENABLED ?? "false").toLowerCase() === "true",
 });
 
 const envDefaultExternalApi = () => ({

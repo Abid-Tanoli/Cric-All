@@ -87,6 +87,9 @@ export const populateFullMatch = async (match) => {
     { path: "squad15.team", select: "name shortName logo" },
     { path: "twelfthMan.team", select: "name shortName logo" },
     { path: "twelfthMan.player", select: "name role playingRole bowlingStyle" },
+    { path: "impactPlayers.team", select: "name shortName logo" },
+    { path: "impactPlayers.player", select: "name role playingRole bowlingStyle" },
+    { path: "impactPlayers.replaces", select: "name role playingRole bowlingStyle" },
     { path: "result.winner", select: "name shortName logo" },
     { path: "tossWinner", select: "name shortName" }
   ]);
