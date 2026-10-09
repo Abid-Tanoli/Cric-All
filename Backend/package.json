@@ -21,7 +21,7 @@
     "db:migrate-org-memberships:apply": "node src/scripts/migrateOrgMemberships.js --apply",
     "org:audit": "node src/scripts/auditOrgOwnership.js",
     "admin:create": "node src/scripts/createAdmin.js",
-    "test": "node --test test/*.test.js test/e2e/guardProcNet.test.js",
+    "test": "node --test --test-concurrency=1 test/*.test.js test/e2e/guardProcNet.test.js",
     "test:smoke": "node scripts/api-smoke-test.cjs",
     "test:e2e": "node test/e2e/run.mjs"
   },
