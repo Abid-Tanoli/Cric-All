@@ -159,6 +159,30 @@ Optional but commonly needed: `CLIENT_URL`, `ADMIN_URL`, `FRONTEND_URL`,
 Never set `ALLOW_*_RESET`/`ALLOW_*_SEED` to `true` in production — they are
 the guards that keep a boot-time seed from wiping real data.
 
+**New or changed on this branch** (names only). Every one has a safe default, so
+a stock deployment that ignores them keeps working — set them only to change
+behaviour or to turn on the phone/cricket integrations:
+
+```text
+ALLOW_ADMIN_REGISTER=…            # public first-admin switch; DEFAULT off
+DEFAULT_PHONE_COUNTRY_CODE=…      # default 92; prefix for numbers typed without +
+PHONE_OTP_MINUTES=…               # default 10; phone OTP lifetime
+SMS_DRIVER=…                      # console (default) | http
+SMS_API_URL=…                     # needed only when SMS_DRIVER=http
+SMS_API_KEY=…                     # needed only when SMS_DRIVER=http
+SMS_SENDER_ID=…                   # needed only when SMS_DRIVER=http
+EMAIL_VERIFICATION_HOURS=…        # default 24; email-verification link lifetime
+CRICKET_API_KEY=…                 # backend-only cricket data key
+RAPIDAPI_KEY=…                    # backend-only cricket data key (alternate)
+```
+
+`ALLOW_ADMIN_REGISTER` **must stay `false` (or unset) in production** — while it
+is on, the first caller of `POST /api/admin/register` on an empty Admin
+collection becomes superadmin. Use `npm run admin:create` instead; full
+procedure in `Backend/docs/first-admin-bootstrap.md`. Leave `SMS_DRIVER=console`
+unless a real SMS provider is configured: `http` without `SMS_API_URL` falls back
+to the console and prints the OTP to the server log.
+
 ### 2. Frontends — required
 
 ```text
@@ -168,26 +192,69 @@ VITE_SOCKET_URL=…                # absolute backend origin, no /api
 
 Optional: `VITE_GOOGLE_CLIENT_ID`, `VITE_GOOGLE_MAPS_KEY`.
 
+**Removed on this branch: `VITE_CRICAPI_KEY`.** Vite inlines every `VITE_*`
+value into the browser bundle, so the third-party cricket key was published to
+every visitor. Cricket data is now proxied by the backend against
+`CRICKET_API_KEY` / `RAPIDAPI_KEY` (server env). A deploy that still carries the
+old variable should delete it — it is ignored, but it is dead weight and a
+reminder of the leak. No cricket secret belongs in any `VITE_*` variable.
+
 ### 3. Migrations — read this before running anything
 
-Two migrations are mandatory for any upgrade from `7a9cac0` (the deployed
-revision, an ancestor of `HEAD`); both came in `a6d4b60`:
+**Three migrations are mandatory** for any upgrade from `7a9cac0` (the deployed
+revision, an ancestor of `HEAD`). Run them **in this order**, each one dry first
+and read the output before `--apply`:
 
 ```sh
-# 1. Team-name uniqueness: drops the old global unique index, builds two partial ones.
-node src/scripts/migrateTeamNameUniqueness.js --uri <mongodb-uri>           # dry run
+# 1. Team-name uniqueness (a6d4b60): drops the old global unique index, builds two partial ones.
+node src/scripts/migrateTeamNameUniqueness.js --uri <mongodb-uri>                            # dry run
 node src/scripts/migrateTeamNameUniqueness.js --uri <mongodb-uri> --apply
 
-# 2. Team publication: backfills the isPublic field.
-node src/scripts/migrateSetIsPublic.js --uri <mongodb-uri>                  # report only
+# 2. Team publication (a6d4b60): backfills the isPublic field so legacy teams stop being invisible.
+node src/scripts/migrateSetIsPublic.js --uri <mongodb-uri>                                   # report only
 node src/scripts/migrateSetIsPublic.js --uri <mongodb-uri> --set-public --apply
+
+# 3. Phone-signup identity (this branch): normalize legacy phone values, rebuild email_1 as
+#    unique+sparse, create the partial unique phone_1 index.
+node src/scripts/migrateUserPhoneIdentity.js --uri <mongodb-uri>                             # dry run
+node src/scripts/migrateUserPhoneIdentity.js --uri <mongodb-uri> --apply
 ```
 
-> **The Round 5 scripts are loopback-locked by design and will refuse a
-> production database by default.** Each parses the URI and throws unless the
-> host is exactly `127.0.0.1`, `localhost` or `::1`
-> (`migrateTeamNameUniqueness.js:87-88`, `migrateSetIsPublic.js:114-115`,
-> `cleanupOrphanedInvitations.js:28-29`). The Atlas URI in `DEPLOYMENT.md`
+Optional, only to un-publish leftover fixture teams (surgical form of
+`--force-private`; never touches a real team):
+
+```sh
+node src/scripts/migrateSetIsPublic.js --uri <mongodb-uri> --hide-test-names          # report only
+node src/scripts/migrateSetIsPublic.js --uri <mongodb-uri> --hide-test-names --apply
+```
+
+**Containerized deployment (Compose), where Mongo is a service hostname and not
+loopback** — all three guarded scripts accept the same pair of flags. Name one
+host and one database, dry-run, then apply:
+
+```sh
+docker exec cricall-backend node src/scripts/migrateTeamNameUniqueness.js \
+  --uri "$MONGO_URL" --allow-host mongodb --allow-database cric-all            # dry run
+docker exec cricall-backend node src/scripts/migrateTeamNameUniqueness.js \
+  --uri "$MONGO_URL" --allow-host mongodb --allow-database cric-all --apply
+
+docker exec cricall-backend node src/scripts/migrateSetIsPublic.js \
+  --uri "$MONGO_URL" --allow-host mongodb --allow-database cric-all            # report
+docker exec cricall-backend node src/scripts/migrateSetIsPublic.js \
+  --uri "$MONGO_URL" --allow-host mongodb --allow-database cric-all --set-public --apply
+
+docker exec cricall-backend node src/scripts/migrateUserPhoneIdentity.js \
+  --uri "$MONGO_URL" --allow-host mongodb --allow-database cric-all            # dry run
+docker exec cricall-backend node src/scripts/migrateUserPhoneIdentity.js \
+  --uri "$MONGO_URL" --allow-host mongodb --allow-database cric-all --apply
+```
+
+> **The Round 5 / phone-signup migration scripts are loopback-locked by design
+> and will refuse a production database by default.** Each parses the URI and
+> throws unless the host is exactly `127.0.0.1`, `localhost` or `::1`
+> (`migrateTeamNameUniqueness.js:87-88`, `migrateSetIsPublic.js:132-138`,
+> `migrateUserPhoneIdentity.js:73-77`, `cleanupOrphanedInvitations.js:28-29`).
+> The Atlas URI in `DEPLOYMENT.md`
 > (`mongodb+srv://…`) is therefore rejected on the spot. Two flags relax this,
 > and each one names exactly what it relaxes:
 >
@@ -200,8 +267,9 @@ node src/scripts/migrateSetIsPublic.js --uri <mongodb-uri> --set-public --apply
 > `new URL(uri).host` — no DNS resolution and no private-range test, so it never
 > widens to an arbitrary internal host.
 >
-> Neither script reads `.env`; the URI must be passed explicitly on the command
-> line (except `cleanupOrphanedInvitations.js`, which reads `process.env.MONGO_URL`).
+> None of these scripts read `.env`; the URI must be passed explicitly on the
+> command line (except `cleanupOrphanedInvitations.js`, which reads
+> `process.env.MONGO_URL`).
 >
 > **For a Docker Compose deployment**, where Mongo is reachable from the app
 > container but not from your shell, pass the container hostname and database
@@ -251,8 +319,52 @@ node src/scripts/migrateSetIsPublic.js --uri <mongodb-uri> --set-public --apply
   (`--force-private` is the opposite and is destructive to visibility; `--apply`
   requires a mode, so a bare `--apply` is rejected.)
 
-Back up first: `node src/scripts/backupDb.js`. Run both scripts dry and read the
+- **`migrateUserPhoneIdentity` (skip ⇒ phone signup can collide).** Phone signup
+  makes `email` optional, so the old plain-unique `email_1` counts two
+  email-less documents as a duplicate, and the new `phone_1` must be unique over
+  the *normalized* number. Legacy rows store whatever was typed
+  (`"0300-1234567"`); the script normalizes them first, so the same number in two
+  formats cannot slip past the unique index. It **reports** duplicate phone
+  numbers and refuses to build `phone_1` while any remain — which of two accounts
+  sharing a number is real is a business decision, so it never deletes or merges.
+  The server also performs the same `email_1` rebuild and `phone_1` creation
+  automatically at boot (next section); this script exists so an operator can see
+  and apply it deliberately, and to normalize legacy values.
+
+Back up first: `node src/scripts/backupDb.js`. Run every script dry and read the
 output before `--apply`.
+
+### 3b. Index changes applied automatically at backend boot
+
+Two best-effort self-checks run at startup (`Backend/src/index.js:271-280`).
+They matter because MongoDB refuses to change an index's options in place, and
+Mongoose's automatic index build fails on the spec conflict — so a plain boot
+would otherwise leave a pre-phone-signup database mis-indexed. Both are
+**idempotent**, use the exact spec `autoIndex` wants (so either winning the race
+gives the same final state), and **never throw** — a failure is logged and the
+API stays up. No operator action is needed; they are listed here so the boot log
+is understood.
+
+```text
+ensureUserIdentityIndexes()        src/utils/identityIndexes.js
+  users.email  email_1   old unique            → REBUILT as unique + sparse
+                         (a plain unique index collides once two phone-only
+                          accounts both omit email)
+  users.phone  phone_1   missing or mismatched → CREATED/rebuilt as partial unique
+                         (partialFilterExpression: phone is a non-empty string)
+
+ensureInvitationAddressIndexes()   src/utils/invitationIndexes.js
+  invitations.organization_1_email_1  old partial (status only)
+                                       → REBUILT, partialFilterExpression narrowed
+                                         to { status: "pending", email: non-empty }
+  invitations.organization_1_phone_1  missing/mismatched → CREATED as partial unique
+                                       (one pending invitation per org+phone)
+```
+
+If a boot log shows `identity_check_failed` or `invitation_check_failed`, a
+duplicate key is blocking the rebuild — run `migrateUserPhoneIdentity.js` (or
+list/revoke the duplicate invitation) and restart. The boot check retries every
+start, so no state is lost.
 
 Conditional, only if the data shows the problem:
 
@@ -271,17 +383,24 @@ Conditional, only if the data shows the problem:
 ```text
 0. git pull on the deploy host, and confirm the working tree is clean
 1. BACKUP the database (backupDb.js) — before any migration, not after
-2. MIGRATE — inside the backend container via `--allow-host`/`--allow-database`,
-   or on loopback via the tunnel described above:
-     migrateTeamNameUniqueness (dry run, then --apply)
-     migrateSetIsPublic        (report, then --set-public --apply)
+2. MIGRATE, in this order — inside the backend container via
+   `--allow-host`/`--allow-database`, or on loopback via the tunnel above:
+     2a. migrateTeamNameUniqueness (dry run, then --apply)
+     2b. migrateSetIsPublic        (report, then --set-public --apply)
+         optional: --hide-test-names if fixture teams exist in this database
+     2c. migrateUserPhoneIdentity  (dry run, then --apply)
 3. BUILD the backend image and the two frontend images
-4. RELEASE the backend container first; wait on GET /api/health → 200
+4. RELEASE the backend container first; wait on GET /api/health → 200.
+   The boot-time index self-checks (§3b) then run; confirm the log shows the
+   email/invitation rebuild (or that it was already correct), not a
+   `*_check_failed` warning
 5. RELEASE Frontend/User, then Frontend/Admin
 6. SMOKE — /api/health, login, a scored delivery, a live score update,
-           and a hard refresh on a deep React Router URL (SPA fallback)
-           plus one cross-org duplicate team name (proves the old global
-           index really was dropped, not just hidden by the app check)
+           and a hard refresh on a deep React Router URL (SPA fallback);
+           one cross-org duplicate team name (proves the old global index
+           really was dropped, not just hidden by the app check); and one
+           phone signup + OTP (console driver is fine) to prove the phone
+           indexes are in place
 7. Only then promote to production
 ```
 
