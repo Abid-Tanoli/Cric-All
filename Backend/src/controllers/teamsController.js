@@ -112,6 +112,15 @@ export const createTeam = async (req, res) => {
     const team = await teamService.createTeam(req.body);
     res.status(201).json({ team, message: "Team created successfully" });
   } catch (error) {
+    // Terminal A: a duplicate team is a 409 that names the existing record, not
+    // a generic 400.
+    if (error?.code === "TEAM_NAME_TAKEN") {
+      return res.status(409).json({
+        message: error.message,
+        code: "TEAM_NAME_TAKEN",
+        existing: error.existing || null,
+      });
+    }
     res.status(400).json({ message: "Failed to create team", error: error.message });
   }
 };

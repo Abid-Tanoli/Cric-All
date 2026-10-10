@@ -116,6 +116,12 @@ const teamSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "Player"
     }],
+    // Terminal A: the team's captain and vice-captain, as labels on the roster.
+    // Squad-level C/VC (Match/Event/Tournament) remain authoritative for a
+    // specific fixture; these are the standing appointments shown on the team
+    // profile. Nothing about bowling/batting eligibility is restricted by them.
+    captain: { type: mongoose.Schema.Types.ObjectId, ref: "Player", default: null },
+    viceCaptain: { type: mongoose.Schema.Types.ObjectId, ref: "Player", default: null },
     incubationGroup: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "IncubationGroup"

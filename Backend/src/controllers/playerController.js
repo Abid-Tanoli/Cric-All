@@ -195,10 +195,34 @@ export const getPlayerMatches = async (req, res) => {
 export const createPlayer = async (req, res) => {
   try {
     normalizeEmptyOptionalIds(req.body);
+    // Terminal A: backend-enforced duplicate prevention for admin entry. A
+    // duplicate is a 409 naming the record that already exists, never a silent
+    // second row.
+    try {
+      await playerService.assertPlayerNotDuplicate({
+        name: req.body.name,
+        team: req.body.team,
+        phone: req.body.phone,
+      });
+    } catch (dupErr) {
+      if (dupErr.code === "PLAYER_DUPLICATE") {
+        return res.status(409).json({
+          message: dupErr.message,
+          code: dupErr.code,
+          existing: dupErr.existing,
+        });
+      }
+      throw dupErr;
+    }
+    const storedPhone = playerService.canonicalPlayerPhone(req.body.phone);
     // createdBy is the whole basis of "you can edit this later". It is set from
     // the session, never from the body, so a caller cannot claim authorship of
     // somebody else's profile.
-    const player = await Player.create({ ...req.body, createdBy: req.user._id });
+    const player = await Player.create({
+      ...req.body,
+      ...(storedPhone ? { phone: storedPhone } : {}),
+      createdBy: req.user._id,
+    });
     const populated = await Player.findById(player._id).populate("team", "name");
 
     // If a team was assigned, add this player to the team's players array
@@ -253,6 +277,31 @@ export const updatePlayer = async (req, res) => {
 
     normalizeEmptyOptionalIds(req.body);
     const { payload, stripped } = applyPlayerFieldPolicy(req.body, access);
+
+    // Terminal A: duplicate prevention also applies on update. Resolve the
+    // effective values first, because an update is partial.
+    try {
+      await playerService.assertPlayerNotDuplicate({
+        name: payload.name !== undefined ? payload.name : existing.name,
+        team: payload.team !== undefined ? payload.team : existing.team,
+        phone: payload.phone !== undefined ? payload.phone : existing.phone,
+        excludeId: existing._id,
+      });
+    } catch (dupErr) {
+      if (dupErr.code === "PLAYER_DUPLICATE") {
+        return res.status(409).json({
+          message: dupErr.message,
+          code: dupErr.code,
+          existing: dupErr.existing,
+        });
+      }
+      throw dupErr;
+    }
+    if (payload.phone !== undefined) {
+      const storedPhone = playerService.canonicalPlayerPhone(payload.phone);
+      if (storedPhone) payload.phone = storedPhone;
+    }
+
     const oldTeamId = existing.team?.toString();
     const newTeamId = payload.team?.toString();
     const oldImageUrl = existing.imageUrl;

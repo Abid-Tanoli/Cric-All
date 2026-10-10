@@ -1,5 +1,6 @@
 import Player from "../models/Player.js";
 import Team from "../models/Team.js";
+import { normalizePhone } from "../utils/phone.js";
 import {
   PLAYER_PUBLIC_SELECT,
   playerSelectFor,
@@ -8,6 +9,82 @@ import {
   isHiddenTeamDoc,
   canViewTeamPrivate,
 } from "../utils/publicProjection.js";
+
+// ---------------------------------------------------------------------------
+// Terminal A (oct11-A): canonical identity for admin data entry.
+//
+// Two players are "the same person" in the same team when the name matches
+// after case-folding and whitespace-collapsing; and "the same person" anywhere
+// when a phone number is given, because a phone is a stronger identifier than a
+// name. Both helpers are the single definition the controllers and the bulk
+// importer share, so duplicate prevention cannot drift between entry paths.
+// ---------------------------------------------------------------------------
+export function normalizePlayerName(name) {
+  return String(name ?? "")
+    .normalize("NFKC")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+}
+
+// Stored in the digits-only canonical form used by utils/phone.js so the same
+// number cannot be entered in two formats. A value that cannot be a phone
+// number is kept (trimmed, case-folded) so it is still comparable rather than
+// silently dropped.
+export function canonicalPlayerPhone(raw) {
+  const trimmed = String(raw ?? "").trim();
+  if (!trimmed) return "";
+  return normalizePhone(trimmed) || trimmed.toLowerCase();
+}
+
+export class DuplicatePlayerError extends Error {
+  constructor(message, existing) {
+    super(message);
+    this.name = "DuplicatePlayerError";
+    this.code = "PLAYER_DUPLICATE";
+    this.existing = existing
+      ? { _id: existing._id, name: existing.name, phone: existing.phone || "" }
+      : null;
+  }
+}
+
+/**
+ * Backend-enforced duplicate prevention for admin-entered players.
+ * Throws `DuplicatePlayerError` (409) naming the existing record. `excludeId`
+ * lets an update ignore the document being saved.
+ */
+export async function assertPlayerNotDuplicate({ name, team, phone, excludeId = null } = {}) {
+  const canonicalPhone = canonicalPlayerPhone(phone);
+  if (canonicalPhone) {
+    const phoneQuery = { phone: canonicalPhone };
+    if (excludeId) phoneQuery._id = { $ne: excludeId };
+    const byPhone = await Player.findOne(phoneQuery).select("_id name phone").lean();
+    if (byPhone) {
+      throw new DuplicatePlayerError(
+        `A player with this phone number already exists: "${byPhone.name}".`,
+        byPhone
+      );
+    }
+  }
+
+  const normalized = normalizePlayerName(name);
+  if (normalized && team) {
+    // Rosters are small (a squad), so comparing normalized names in JS is both
+    // cheaper than a regex and correct across internal spacing.
+    const roster = await Player.find({ team }).select("_id name phone").lean();
+    const clash = roster.find(
+      (p) =>
+        (!excludeId || String(p._id) !== String(excludeId)) &&
+        normalizePlayerName(p.name) === normalized
+    );
+    if (clash) {
+      throw new DuplicatePlayerError(
+        `A player named "${clash.name}" already exists in this team.`,
+        clash
+      );
+    }
+  }
+}
 
 export async function assignPlayerToTeam(playerId, teamId, role = "player", jerseyNumber) {
   const player = await Player.findById(playerId);

@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import Team from "../models/Team.js";
 import Player from "../models/Player.js";
 import TeamRanking from "../models/TeamRanking.js";
@@ -80,16 +81,24 @@ export async function listTeams(filters = {}) {
   if (filters.type) query.type = filters.type;
   if (filters.city) query["address.city"] = { $regex: filters.city, $options: "i" };
   if (filters.search) {
-    const term = String(filters.search).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    andClauses.push({
-      $or: [
-        { name: { $regex: term, $options: "i" } },
-        { shortName: { $regex: term, $options: "i" } },
-        { branchName: { $regex: term, $options: "i" } },
-        { organization: { $regex: term, $options: "i" } },
-        { "address.city": { $regex: term, $options: "i" } },
-      ],
-    });
+    // Terminal A: four search keys — team name, club name, team ID, club ID.
+    // The text keys are escaped so a caller cannot inject a regex; the id keys
+    // are only added when the term is a valid ObjectId, so a typo degrades to a
+    // text miss instead of a CastError 400.
+    const raw = String(filters.search).trim();
+    const term = raw.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const orClauses = [
+      { name: { $regex: term, $options: "i" } },
+      { shortName: { $regex: term, $options: "i" } },
+      { branchName: { $regex: term, $options: "i" } },
+      { organization: { $regex: term, $options: "i" } },
+      { "address.city": { $regex: term, $options: "i" } },
+    ];
+    if (mongoose.Types.ObjectId.isValid(raw)) {
+      const oid = new mongoose.Types.ObjectId(raw);
+      orClauses.push({ _id: oid }, { organizationRef: oid });
+    }
+    andClauses.push({ $or: orClauses });
   }
   if (filters.isActive !== undefined) query.isActive = filters.isActive;
   if (filters.isPublic !== undefined) query.isPublic = filters.isPublic === 'true' || filters.isPublic === true;
@@ -100,7 +109,7 @@ export async function listTeams(filters = {}) {
     // `city` was in this projection but is not a Team field — city lives in
     // `address.city`, which is projected as part of `address`. Selecting a
     // nonexistent path was harmless but misleading.
-    .select("name shortName logo type category categoryRef organization organizationRef branchName address area players teamColorPrimary teamColorSecondary isActive profileComplete isPublic description establishedYear homeGround ageGroup")
+    .select("name shortName logo type category categoryRef organization organizationRef branchName address area players captain viceCaptain teamColorPrimary teamColorSecondary isActive profileComplete isPublic description establishedYear homeGround ageGroup")
     .populate("categoryRef", "name slug icon")
     .populate("organizationRef", "name slug type")
     .sort({ name: 1 })
@@ -203,8 +212,12 @@ async function assertTeamNameAvailable(name, organizationRef, excludeId = null) 
     .select("_id name organizationRef")
     .lean();
   if (existing) {
-    const error = new Error("Team with this name already exists");
+    // Terminal A: name the record that already exists so the owner can see what
+    // collided, not just that something did.
+    const scope = organizationRef ? "this club" : "the platform";
+    const error = new Error(`A team named "${existing.name}" already exists in ${scope}.`);
     error.code = "TEAM_NAME_TAKEN";
+    error.existing = { _id: existing._id, name: existing.name };
     throw error;
   }
 }
@@ -312,6 +325,8 @@ export async function createTeam(data) {
     socialLinks: data.socialLinks || {},
     privacy: data.privacy || {},
     players: data.players || [],
+    captain: data.captain || null,
+    viceCaptain: data.viceCaptain || null,
     // A new real team is public by default (Team.js default). An org that is
     // standing up a test squad asks for `isPublic: false` explicitly — the
     // field used to be accepted by `updateTeam` and silently dropped on create.
@@ -361,9 +376,10 @@ export async function updateTeam(teamId, data) {
     "establishedYear", "homeGround", "teamColorPrimary", "teamColorSecondary",
     "isActive", "profileComplete", "isInternal", "tags", "media",
     "videos", "socialLinks", "privacy", "isPublic",
+    "captain", "viceCaptain",
   ];
 
-  const objectIdFields = ["categoryRef", "organizationRef", "incubationGroup"];
+  const objectIdFields = ["categoryRef", "organizationRef", "incubationGroup", "captain", "viceCaptain"];
   for (const field of objectIdFields) {
     if (data[field] === "") data[field] = null;
   }

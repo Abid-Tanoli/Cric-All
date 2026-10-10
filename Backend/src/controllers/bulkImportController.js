@@ -1,6 +1,7 @@
 import xlsx from 'xlsx';
 import Team from '../models/Team.js';
 import Player from '../models/Player.js';
+import * as playerService from '../services/playerService.js';
 import { getIO } from '../socket/socket.js';
 
 export const bulkImportPlayers = async (req, res) => {
@@ -16,6 +17,7 @@ export const bulkImportPlayers = async (req, res) => {
 
     const players = [];
     const errors = [];
+    const duplicates = [];
 
     for (let i = 0; i < data.length; i++) {
       const row = data[i];
@@ -27,6 +29,7 @@ export const bulkImportPlayers = async (req, res) => {
           continue;
         }
 
+        const phone = row.Phone || row.phone || '';
         const playerData = {
           name: row.Name,
           role: row.Role || '',
@@ -48,6 +51,28 @@ export const bulkImportPlayers = async (req, res) => {
             });
           }
         }
+
+        // Terminal A: backend-enforced duplicate prevention. A row that repeats
+        // an existing player (same name in the same team, or the same phone
+        // anywhere) is skipped and reported, never inserted twice.
+        try {
+          await playerService.assertPlayerNotDuplicate({
+            name: playerData.name,
+            team: playerData.team,
+            phone,
+          });
+        } catch (dupErr) {
+          if (dupErr.code === 'PLAYER_DUPLICATE') {
+            duplicates.push({ row: i + 2, error: dupErr.message });
+            continue;
+          }
+          throw dupErr;
+        }
+
+        const canonicalPhone = playerService.canonicalPlayerPhone(phone);
+        if (canonicalPhone) playerData.phone = canonicalPhone;
+        const jersey = row.JerseyNumber ?? row.jersey_no ?? row.Jersey;
+        if (jersey !== undefined && jersey !== '') playerData.jerseyNumber = Number(jersey);
 
         const player = await Player.create(playerData);
 
@@ -78,6 +103,7 @@ export const bulkImportPlayers = async (req, res) => {
     res.status(201).json({
       message: `${players.length} players imported successfully`,
       imported: players.length,
+      duplicates: duplicates.length > 0 ? duplicates : undefined,
       errors: errors.length > 0 ? errors : undefined,
       players
     });

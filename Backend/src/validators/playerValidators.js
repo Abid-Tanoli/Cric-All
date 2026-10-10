@@ -266,12 +266,23 @@ const seedProvenance = {
   seedVersion: z.string().trim().max(50).optional(),
 };
 
+// Terminal A (oct11-A): fields the Admin data-entry path may set. Kept off the
+// self-service schema so a public creator cannot add contact/jersey data to a
+// claim about somebody else. `jerseyNumber` is coerced because HTML number
+// inputs submit strings.
+const adminEntryFields = {
+  phone: z.string().trim().max(32).optional(),
+  jerseyNumber: z.coerce.number().int().min(0).max(999).optional(),
+  isPartTimeBowler: z.boolean().optional(),
+};
+
 /** Admin-only: the seed/import path, which may set career stats and provenance. */
 export const adminPlayerSchema = createPlayerSchema
   .extend({
     stats: statsSchema.optional(),
     team: optionalTeamId.optional(),
     ...seedProvenance,
+    ...adminEntryFields,
   })
   .strict();
 
@@ -286,6 +297,7 @@ export const adminUpdatePlayerSchema = createPlayerSchema
     stats: statsSchema.optional(),
     team: optionalTeamId.optional(),
     ...seedProvenance,
+    ...adminEntryFields,
   })
   .refine(ageOrBirthInfo, {
     message: 'Send either age or birthInfo.date, not both',
