@@ -1,5 +1,44 @@
 import fetch from "node-fetch";
 import Anthropic from '@anthropic-ai/sdk';
+import { getPlatformSettings } from "../models/SystemSettings.js";
+
+// ─── AI KILL SWITCH (Terminal A, oct11-A) ────────────────────────
+//
+// Every paid model call in this module is gated on the platform's
+// `aiCommentaryEnabled` flag, so a superadmin can stop AI commentary entirely
+// (for example to cap spend during a live tournament) without a redeploy. The
+// template commentary in `buildStructuredCommentary` is pure and always runs,
+// so turning AI off degrades to the structured text rather than to nothing.
+//
+// The flag is cached briefly because `generateBallCommentary` is called once per
+// delivery and a database round-trip on every ball is not worth it; a 10s stale
+// window is invisible to an operator flipping the switch.
+let _aiFlagCache = { value: null, at: 0 };
+const AI_FLAG_TTL_MS = 10000;
+
+export async function isAiCommentaryEnabled() {
+  const now = Date.now();
+  if (_aiFlagCache.value !== null && now - _aiFlagCache.at < AI_FLAG_TTL_MS) {
+    return _aiFlagCache.value;
+  }
+  let enabled;
+  try {
+    const settings = await getPlatformSettings();
+    enabled = settings?.aiCommentaryEnabled !== false;
+  } catch {
+    // If settings cannot be read, fall back to the env default rather than
+    // silently disabling (which would look like "AI broke").
+    enabled = String(process.env.AI_COMMENTARY_ENABLED ?? "true").toLowerCase() !== "false";
+  }
+  _aiFlagCache.value = enabled;
+  _aiFlagCache.at = now;
+  return enabled;
+}
+
+// Test hook: let a test force the cached value without hitting the database.
+export function __setAiCommentaryEnabledForTests(value) {
+  _aiFlagCache = { value, at: Date.now() };
+}
 
 // ─── LABEL MAPS ──────────────────────────────────────────────────
 
@@ -346,8 +385,9 @@ class AICommentaryService {
     const structured = buildStructuredCommentary(data);
     let result = { ...structured };
 
-    // 2. If AI key available, enhance VIVID with AI flair (keep SHORT as is)
-    if (this.apiKey) {
+    // 2. If AI is enabled and a key is available, enhance VIVID with AI flair
+    //    (keep SHORT as is).
+    if (this.apiKey && (await isAiCommentaryEnabled())) {
       try {
         const vividEnriched = await this._aiEnrichVivid(data, structured.vivid);
         if (vividEnriched) result.vivid = vividEnriched;
@@ -446,7 +486,7 @@ VIVID:`;
       batter1 = {}, batter2 = {}
     } = data;
 
-    if (this.apiKey) {
+    if (this.apiKey && (await isAiCommentaryEnabled())) {
       try {
         const ballsText = ballsSummary.map((b, i) =>
           `${overNumber}.${i + 1} — ${b.notation || b.runs} — ${b.commentary || "no commentary"}`
@@ -522,7 +562,7 @@ CricAll analyst style. No emojis. Plain flowing text only.`;
       isWide = false, isNoBall = false, isWicket = false, wicketType = ""
     } = data;
 
-    if (this.apiKey) {
+    if (this.apiKey && (await isAiCommentaryEnabled())) {
       try {
         const prompt = `The ball at ${overNumber}.${ballNumber} was incorrectly recorded. Please provide corrected commentary.
 
@@ -595,6 +635,7 @@ const rewriteCache = new Map();
 export async function rewriteInBQStyle(originalCommentary, ballData = {}) {
   if (!originalCommentary || originalCommentary.length < 5) return originalCommentary;
   if (!_aiClient) return originalCommentary;
+  if (!(await isAiCommentaryEnabled())) return originalCommentary;
 
   const key = originalCommentary.slice(0, 80);
   if (rewriteCache.has(key)) return rewriteCache.get(key);
@@ -624,6 +665,7 @@ Rewritten:`
 
 export async function generateMatchSummary(matchData) {
   if (!_aiClient) return null;
+  if (!(await isAiCommentaryEnabled())) return null;
 
   try {
     const response = await _aiClient.messages.create({

@@ -118,10 +118,13 @@ export const updatePlatformSettingsHandler = async (req, res) => {
     if (typeof req.body?.enableSuperSub === "boolean") {
       patch.enableSuperSub = req.body.enableSuperSub;
     }
+    if (typeof req.body?.aiCommentaryEnabled === "boolean") {
+      patch.aiCommentaryEnabled = req.body.aiCommentaryEnabled;
+    }
     if (Object.keys(patch).length === 0) {
       return res.status(400).json({
         message:
-          "Nothing to update. Send requireOrgApproval, requireMemberApproval and/or enableSuperSub.",
+          "Nothing to update. Send requireOrgApproval, requireMemberApproval, enableSuperSub and/or aiCommentaryEnabled.",
         code: "NO_SETTINGS_PROVIDED",
       });
     }

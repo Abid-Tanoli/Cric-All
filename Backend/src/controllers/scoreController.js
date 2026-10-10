@@ -4,7 +4,7 @@ import fetch from "node-fetch";
 import { getIO, emitBallRecorded, emitScoreUpdate, emitStrikeChanged, emitOverCompleted, emitBallWithCommentary, emitBallUpdate, emitWicketAlert, emitMilestoneAlert, emitInningsComplete, emitInningsEnd, emitMatchEnd, emitFieldClick, emitAICommentary } from "../socket/socket.js";
 import { updateTournamentPoints } from "../services/tournamentService.js";
 import fieldPositionMapper from "../services/fieldPositionMapper.js";
-import aiCommentary from "../services/aiCommentary.js";
+import aiCommentary, { isAiCommentaryEnabled } from "../services/aiCommentary.js";
 import CricketShot from "../models/CricketShot.js";
 import Ball from "../models/Ball.js";
 import { saveAndEmitCommentary } from "../services/commentaryService.js";
@@ -1385,7 +1385,9 @@ LINE2: [vivid detailed commentary]
 
 Context: Batsman: ${batsman}, Bowler: ${bowler}, Runs: ${runs}, Extras: ${extras}, Wicket: ${wicket}, Field Position: ${fieldPosition}, Ball info: ${ballNotation}`;
 
-    if (!process.env.ANTHROPIC_API_KEY) {
+    if (!process.env.ANTHROPIC_API_KEY || !(await isAiCommentaryEnabled())) {
+      // Terminal A: the platform AI kill switch also covers this on-demand
+      // endpoint. It degrades to the deterministic line rather than erroring.
       return res.status(200).json({
         line1: `${ballNotation} ${batsman} to ${bowler}, ${runs} runs`,
         line2: `The ball was played towards ${fieldPosition}.`

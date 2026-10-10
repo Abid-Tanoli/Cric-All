@@ -27,6 +27,10 @@ export const DEFAULT_PLATFORM_SETTINGS = Object.freeze({
   // only name a 12th man as an impact player for a top-11 player when the
   // platform turns this on, mirroring how the IPL-style rule is opt-in.
   enableSuperSub: false,
+  // Terminal A (oct11-A): AI commentary kill switch. On by default so the
+  // behaviour is unchanged when an API key is configured; a superadmin can turn
+  // it off to stop all paid model calls during a tournament without a deploy.
+  aiCommentaryEnabled: true,
 });
 
 const envDefaultPlatformSettings = () => ({
@@ -36,6 +40,8 @@ const envDefaultPlatformSettings = () => ({
     String(process.env.REQUIRE_MEMBER_APPROVAL ?? "false").toLowerCase() === "true",
   enableSuperSub:
     String(process.env.SUPER_SUB_ENABLED ?? "false").toLowerCase() === "true",
+  aiCommentaryEnabled:
+    String(process.env.AI_COMMENTARY_ENABLED ?? "true").toLowerCase() !== "false",
 });
 
 const envDefaultExternalApi = () => ({
