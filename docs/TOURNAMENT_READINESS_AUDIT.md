@@ -198,3 +198,33 @@ Legend
 - **No test files exist** for tournament points/flixture generation or bulk import.
 - Frontends build via Vite (Admin, User, Shared). No lint scripts defined in
   `Backend/package.json`.
+
+---
+
+## 9. oct11-B re-audit: Tournament/Fixtures only (Saturday 10 Oct 2026)
+
+Branch `oct11-B` (Prompt 1, Terminal B). Quick re-check of the sections this
+exercise owns, with file:line evidence. Chosen path: **Tournament** — it is the
+one model with a working create → fixtures → standings story
+(`Tournament.js:28-35,49-66`), a public renderer that already probes it
+(`Frontend/User/src/pages/Series.jsx:30-34,111-129`), and 4 point-table write
+paths. Event/Series are deliberately untouched (no merge).
+
+| Feature | Status | Evidence |
+|---|---|---|
+| Tournament create | `Partial` | exists (`TournamentController.js:84-145`) but: no `createdByAdmin` owner, no `pointsConfig`, team-count rule is a flat `>=2` (`:88-92`), no team-existence/duplicate check. `format` enum lacks "T6"/"T8" labels the admin form sends. |
+| Tournament edit/delete | `Partial` | exist (`:147-209`) but any admin may edit any tournament; `Object.assign(tournament, req.body)` (`:155`) is unwhitelisted. Owner-only rule missing. |
+| Match status `postponed` | `Missing` | absent from `Match.js:273` enum and `matchController.js:12-22`. |
+| Manual fixture create | `Partial`/`Broken` | `createTournamentMatch` (`TournamentController.js:532-583`) sets `matchCategory: "league"` → **fails enum validation** (`Match.js:191-205` has no "league" value; `validateModifiedOnly` validates set paths) → any real manual create likely 500s. No same-team check, no both-in-tournament check, no no-duplicate check, no double-booking check, sets no `matchNumber`. |
+| Fixture auto-generation | `Missing` | no preview/apply endpoints anywhere. |
+| Points recompute idempotency | `Partial` | `updateTournamentPoints` (`tournamentService.js:4-102`) rebuilds from scratch (good) but: treats tie AND no-result as `tied` (`:45-51`, no `noResult` counter, no `NR` form), NRR is `(rf-ra)/20` hardcoded (`:93`), points 2/1/1 hardcoded, no `pointsConfig`. Manual `updatePointsTable` (`TournamentController.js:236-361`) is an incremental adder → double-counts on re-run. |
+| Public tabs | `Partial` | `Series.jsx:284-289` always shows Matches/Points/Stats/Squads regardless of content; no Home/Teams/Awards; `postponed`/`abandoned` fall out of all three buckets (`:292-294`). ShareButton already present (`:325`). |
+| Admin fixtures dashboard | `Missing` | `Tournamentmanagement.jsx` is not even routed in `Admin/src/App.jsx`; its fixtures modal reads `match.team1/team2/startTime` fields that Match docs don't have (`:265-267`). No group/date dashboard, no one-click Reschedule/Postpone/Abandon. |
+
+Decisions (carried into `TOURNAMENT_IMPLEMENTATION_PLAN.md` and this branch's
+commits): keep `Tournament` as the single path; add `createdByAdmin` +
+`pointsConfig`; enforce team-count by `type` (knockout ≥2, league ≥3,
+group-stage/mixed ≥4); add `postponed`; add `round`/`group` to Match for
+"same pair + round" dedupe and grouped dashboards; make `updateTournamentPoints`
+points-config-aware and no-result-correct; make the manual points route
+recompute via the service instead of incrementing.
