@@ -107,8 +107,24 @@ const tournamentSchema = new mongoose.Schema(
     },
     format: {
       type: String,
-      enum: ["T20", "ODI", "Test", "T10", "6 Overs", "8 Overs"],
+      enum: ["6 Overs", "8 Overs", "T6", "T8", "T10", "T20", "ODI", "Test"],
       default: "T20"
+    },
+    // Only the creator (or a superadmin) may edit/delete this tournament. The
+    // prompt's rule is owner/admin/superadmin; `createdByAdmin` is what makes
+    // "owner" real on the data model.
+    createdByAdmin: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Admin",
+      default: null
+    },
+    // Points handed out per result. Default 2 for a win, 1 for a tie, 1 for a
+    // no-result; an admin may override at create/update time. The points table
+    // recompute reads this instead of a hardcoded 2/1/1.
+    pointsConfig: {
+      win: { type: Number, default: 2, min: 0 },
+      tie: { type: Number, default: 1, min: 0 },
+      noResult: { type: Number, default: 1, min: 0 }
     },
     // Tournament/Series Squad: 11-20 players per team
     tournamentSquads: [{
