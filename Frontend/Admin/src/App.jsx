@@ -13,6 +13,7 @@ import ErrorBoundary from "../../Shared/components/ErrorBoundary";
 const Dashboard = lazy(() => import("./pages/Dashboard"));
 const LiveScores = lazy(() => import("./pages/LiveScores"));
 const ManageEvents = lazy(() => import("./pages/ManageEvents"));
+const Tournaments = lazy(() => import("./pages/Tournamentmanagement"));
 const ManagePlayers = lazy(() => import("./pages/ManagePlayers"));
 const Teams = lazy(() => import("./pages/Teams"));
 const ManageScore = lazy(() => import("./pages/ManageScore"));
@@ -59,6 +60,7 @@ export default function App() {
       <Route path="/admin" element={<ProtectedRoute><ErrorBoundary><Layout><Dashboard /></Layout></ErrorBoundary></ProtectedRoute>} />
       <Route path="/admin/live" element={<ProtectedRoute><ErrorBoundary><Layout><LiveScores /></Layout></ErrorBoundary></ProtectedRoute>} />
       <Route path="/admin/events" element={<ProtectedRoute><ErrorBoundary><Layout><ManageEvents /></Layout></ErrorBoundary></ProtectedRoute>} />
+      <Route path="/admin/tournaments" element={<ProtectedRoute><ErrorBoundary><Layout><Tournaments /></Layout></ErrorBoundary></ProtectedRoute>} />
       <Route path="/admin/teams" element={<ProtectedRoute><ErrorBoundary><Layout><Teams /></Layout></ErrorBoundary></ProtectedRoute>} />
       <Route path="/admin/players" element={<ProtectedRoute><ErrorBoundary><Layout><ManagePlayers /></Layout></ErrorBoundary></ProtectedRoute>} />
       <Route path="/admin/score" element={<ProtectedRoute><ErrorBoundary><Layout><ManageScore /></Layout></ErrorBoundary></ProtectedRoute>} />

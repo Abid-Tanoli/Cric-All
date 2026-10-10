@@ -8,6 +8,7 @@ const menuItems = [
   { to: "/admin/international", label: "International", icon: "IN" },
   { to: "/admin/score", label: "Live Scoring", icon: "SC" },
   { to: "/admin/events", label: "Manage Events", icon: "EV" },
+  { to: "/admin/tournaments", label: "Tournaments", icon: "TR" },
   { to: "/admin/teams", label: "Manage Teams", icon: "TM" },
   { to: "/admin/organizations", label: "Organizations", icon: "OR" },
   { to: "/admin/players", label: "Manage Players", icon: "PL" },
