@@ -7,6 +7,7 @@ import { getIO } from "../socket/socket.js";
 import { getBallRunText, normalizeBallRunText } from "../utils/cricketHelpers.js";
 import { hiddenTeamIds, reservedNamesMongoClause } from "../utils/publicProjection.js";
 import { getPlatformSettings } from "../models/SystemSettings.js";
+import { recordAudit } from "../utils/audit.js";
 
 const normalStatus = (status = "upcoming") => (status === "innings-break" ? "innings_break" : status);
 const legalMatchStatuses = [
@@ -17,6 +18,7 @@ const legalMatchStatuses = [
   "innings-break",
   "completed",
   "abandoned",
+  "postponed",
   "pending_tie_resolution",
   "super_over",
 ];
@@ -821,6 +823,137 @@ export const updateMatchStatus = async (req, res) => {
       message: "Failed to update match status",
       error: error.message
     });
+  }
+};
+
+export const postponeMatch = async (req, res) => {
+  try {
+    const { reason, startAt } = req.body;
+    const match = await Match.findById(req.params.id);
+    if (!match) return res.status(404).json({ message: "Match not found" });
+
+    if (match.status === "completed" || match.status === "abandoned") {
+      return res.status(409).json({ message: `Cannot postpone a ${match.status} match` });
+    }
+
+    const previousStatus = match.status;
+    match.status = "postponed";
+    if (startAt !== undefined) match.rescheduledTo = startAt ? new Date(startAt) : null;
+
+    await match.save({ validateModifiedOnly: true });
+
+    recordAudit({
+      req,
+      action: "match.postponed",
+      targetType: "match",
+      targetId: match._id,
+      targetLabel: match.title,
+      metadata: { previousStatus, reason: reason || "", rescheduledTo: match.rescheduledTo },
+    });
+
+    try {
+      const io = getIO();
+      io.emit("match:statusChanged", { matchId: match._id, status: match.status });
+      io.emit("match:updateList");
+    } catch (socketError) {
+      console.log("Socket not available:", socketError.message);
+    }
+
+    res.status(200).json({ match, message: "Match postponed" });
+  } catch (error) {
+    console.error("Error postponing match:", error);
+    res.status(400).json({ message: "Failed to postpone match", error: error.message });
+  }
+};
+
+export const rescheduleMatch = async (req, res) => {
+  try {
+    const { startAt, venue, reason } = req.body;
+    if (!startAt || Number.isNaN(new Date(startAt).getTime())) {
+      return res.status(400).json({ message: "A valid startAt date-time is required" });
+    }
+
+    const match = await Match.findById(req.params.id);
+    if (!match) return res.status(404).json({ message: "Match not found" });
+
+    if (match.status === "completed" || match.status === "abandoned") {
+      return res.status(409).json({ message: `Cannot reschedule a ${match.status} match` });
+    }
+
+    const previousStartAt = match.startAt;
+    match.startAt = new Date(startAt);
+    match.rescheduledTo = new Date(startAt);
+    if (venue !== undefined) match.venue = venue;
+    // A postponed match that gets a fresh date is live again.
+    if (match.status === "postponed") match.status = "upcoming";
+
+    await match.save({ validateModifiedOnly: true });
+
+    recordAudit({
+      req,
+      action: "match.rescheduled",
+      targetType: "match",
+      targetId: match._id,
+      targetLabel: match.title,
+      metadata: { previousStartAt, newStartAt: match.startAt, reason: reason || "" },
+    });
+
+    try {
+      const io = getIO();
+      io.emit("match:updated", match);
+      io.emit("match:updateList");
+    } catch (socketError) {
+      console.log("Socket not available:", socketError.message);
+    }
+
+    res.status(200).json({ match, message: "Match rescheduled" });
+  } catch (error) {
+    console.error("Error rescheduling match:", error);
+    res.status(400).json({ message: "Failed to reschedule match", error: error.message });
+  }
+};
+
+export const abandonMatch = async (req, res) => {
+  try {
+    const { reason } = req.body;
+    const match = await Match.findById(req.params.id);
+    if (!match) return res.status(404).json({ message: "Match not found" });
+
+    if (match.status === "completed") {
+      return res.status(409).json({ message: "Cannot abandon a completed match" });
+    }
+
+    const previousStatus = match.status;
+    match.status = "abandoned";
+    if (!match.result) match.result = {};
+    if (!match.result.resultType || match.result.resultType === "normal") {
+      match.result.resultType = "no result";
+      match.result.resultText = match.result.resultText || "Match abandoned";
+    }
+
+    await match.save({ validateModifiedOnly: true });
+
+    recordAudit({
+      req,
+      action: "match.abandoned",
+      targetType: "match",
+      targetId: match._id,
+      targetLabel: match.title,
+      metadata: { previousStatus, reason: reason || "" },
+    });
+
+    try {
+      const io = getIO();
+      io.emit("match:statusChanged", { matchId: match._id, status: match.status });
+      io.emit("match:updateList");
+    } catch (socketError) {
+      console.log("Socket not available:", socketError.message);
+    }
+
+    res.status(200).json({ match, message: "Match abandoned" });
+  } catch (error) {
+    console.error("Error abandoning match:", error);
+    res.status(400).json({ message: "Failed to abandon match", error: error.message });
   }
 };
 

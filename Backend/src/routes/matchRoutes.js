@@ -22,7 +22,10 @@ import {
   setImpactPlayer,
   setBowlingXI,
   setTeamRoles,
-  toggleMatchFeatured
+  toggleMatchFeatured,
+  postponeMatch,
+  rescheduleMatch,
+  abandonMatch
 } from "../controllers/matchController.js";
 import {
   updateScore,
@@ -142,6 +145,9 @@ router.post("/:matchId/umpire-signal", ...adminOnly, validateObjectId("matchId")
 router.put("/:matchId/official-status", ...scoring("matchId"), updateMatchStatusOfficial);
 
 router.patch("/:id/featured", ...adminOnly, validateObjectId("id"), toggleMatchFeatured);
+router.post("/:id/postpone", ...adminOnly, validateObjectId("id"), postponeMatch);
+router.post("/:id/reschedule", ...adminOnly, validateObjectId("id"), rescheduleMatch);
+router.post("/:id/abandon", ...adminOnly, validateObjectId("id"), abandonMatch);
 router.put("/:id", ...adminOnly, validateObjectId("id"), updateMatch);
 router.put("/:id/status", ...scoring("id"), updateMatchStatus);
 router.put("/:id/mom", ...scoring("id"), setMOM);

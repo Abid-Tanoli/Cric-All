@@ -203,6 +203,28 @@ const matchSchema = new mongoose.Schema(
       ],
       default: "Other"
     },
+    matchSubcategory: {
+      type: String,
+      default: ""
+    },
+    // Fixture structure for tournaments: which round this fixture belongs to
+    // and, for group-stage tournaments, which group. Kept null/empty for any
+    // match created outside a tournament. Used for "same pair + round + group"
+    // duplicate checks and for grouping the admin fixtures dashboard.
+    round: {
+      type: Number,
+      default: null
+    },
+    group: {
+      type: String,
+      default: ""
+    },
+    // Set when a fixture is rescheduled so the public UI and logs can show the
+    // original slot. The displayed date always comes from `startAt`.
+    rescheduledTo: {
+      type: Date,
+      default: null
+    },
     category: {
       type: String,
       enum: ["School", "College", "University", "Organization", "Business", "Industry", "Club", "International", "Other"],
@@ -270,7 +292,7 @@ const matchSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ["upcoming", "toss_done", "live", "innings-break", "innings_break", "completed", "abandoned", "pending_tie_resolution", "super_over"],
+      enum: ["upcoming", "toss_done", "live", "innings-break", "innings_break", "completed", "abandoned", "postponed", "pending_tie_resolution", "super_over"],
       default: "upcoming"
     },
     result: {
