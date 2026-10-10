@@ -14,7 +14,7 @@ export default function Series() {
   const [stats, setStats] = useState({ topRunScorers: [], topWicketTakers: [], topFielders: [], boundaryMeter: { sixes: 0, fours: 0, mostSixes: [], mostFours: [] } });
   const [pointsTable, setPointsTable] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState("matches");
+  const [activeTab, setActiveTab] = useState("home");
 
   const loadData = useCallback(async () => {
     if (!seriesId || seriesId === "undefined" || seriesId === "null") {
@@ -281,17 +281,30 @@ export default function Series() {
     );
   }
 
-  const tabs = [
-    { key: "matches", label: "Matches" },
-    { key: "points", label: "Points Table" },
-    { key: "stats", label: "Stats" },
-    { key: "squads", label: "Squads" },
-  ];
-
   const normalizeStatus = (status) => status === "innings-break" ? "innings_break" : status;
   const liveMatches = matches.filter(m => ["live", "innings_break", "toss_done"].includes(normalizeStatus(m.status)));
   const completedMatches = matches.filter(m => normalizeStatus(m.status) === "completed");
   const upcomingMatches = matches.filter(m => ["upcoming", "scheduled"].includes(normalizeStatus(m.status)));
+
+  const hasStats = Boolean(
+    stats.topRunScorers?.length || stats.topWicketTakers?.length || stats.topFielders?.length
+  );
+  const awards = [
+    stats.topRunScorers?.[0] && { title: "Most Runs", name: stats.topRunScorers[0].name, team: stats.topRunScorers[0].team, value: `${stats.topRunScorers[0].runs} runs`, playerId: stats.topRunScorers[0].playerId },
+    stats.topWicketTakers?.[0] && { title: "Most Wickets", name: stats.topWicketTakers[0].name, team: stats.topWicketTakers[0].team, value: `${stats.topWicketTakers[0].wickets} wkts`, playerId: stats.topWicketTakers[0].playerId },
+    stats.boundaryMeter?.mostSixes?.[0] && { title: "Most Sixes", name: stats.boundaryMeter.mostSixes[0].name, team: stats.boundaryMeter.mostSixes[0].team, value: `${stats.boundaryMeter.mostSixes[0].count} sixes`, playerId: stats.boundaryMeter.mostSixes[0].playerId },
+    stats.boundaryMeter?.mostFours?.[0] && { title: "Most Fours", name: stats.boundaryMeter.mostFours[0].name, team: stats.boundaryMeter.mostFours[0].team, value: `${stats.boundaryMeter.mostFours[0].count} fours`, playerId: stats.boundaryMeter.mostFours[0].playerId },
+  ].filter(Boolean);
+
+  // Tabs with nothing to show are hidden rather than rendered empty.
+  const tabs = [
+    { key: "home", label: "Home" },
+    ...(matches.length ? [{ key: "fixtures", label: "Fixtures & Results" }] : []),
+    ...(pointsTable && pointsTable.length ? [{ key: "points", label: "Points Table" }] : []),
+    ...(hasStats ? [{ key: "stats", label: "Stats" }] : []),
+    ...(squads.length ? [{ key: "teams", label: "Teams" }] : []),
+    ...(awards.length ? [{ key: "awards", label: "Awards" }] : []),
+  ];
 
   return (
     <div className="bg-cric-bg min-h-screen">
@@ -378,8 +391,46 @@ export default function Series() {
             <div className="text-[10px] font-bold text-purple-600 uppercase tracking-widest mt-1">6s / 4s</div>
           </div>
         </div>
+        {/* Home Tab */}
+        {activeTab === "home" && (
+          <div className="space-y-8">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div className="bg-cric-card rounded-2xl shadow-sm p-6 border border-cric-border">
+                <h3 className="text-lg font-black text-cric-text uppercase tracking-tight mb-4">Recent Results</h3>
+                {completedMatches.length === 0 ? (
+                  <p className="text-cric-muted text-sm">No completed matches yet.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {completedMatches.slice(0, 5).map(match => (
+                      <Link key={match._id} to={`/match/${match._id}`} className="block p-3 rounded-lg hover:bg-cric-bg transition-colors">
+                        <p className="font-bold text-sm text-cric-text">{match.teams?.map(t => t.shortName || t.name).join(" vs ")}</p>
+                        <p className="text-xs text-cric-muted">{match.result?.description || "Completed"}</p>
+                      </Link>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div className="bg-cric-card rounded-2xl shadow-sm p-6 border border-cric-border">
+                <h3 className="text-lg font-black text-cric-text uppercase tracking-tight mb-4">Upcoming Fixtures</h3>
+                {upcomingMatches.length === 0 ? (
+                  <p className="text-cric-muted text-sm">No upcoming fixtures.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {upcomingMatches.slice(0, 5).map(match => (
+                      <Link key={match._id} to={`/match/${match._id}`} className="block p-3 rounded-lg hover:bg-cric-bg transition-colors">
+                        <p className="font-bold text-sm text-cric-text">{match.teams?.map(t => t.shortName || t.name).join(" vs ")}</p>
+                        <p className="text-xs text-cric-muted">{match.startAt ? new Date(match.startAt).toLocaleString() : "Date TBD"}</p>
+                      </Link>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Matches Tab */}
-        {activeTab === "matches" && (
+        {activeTab === "fixtures" && (
           <div className="space-y-8">
             {liveMatches.length > 0 && (
               <div>
@@ -760,7 +811,7 @@ export default function Series() {
         )}
 
         {/* Squads Tab */}
-        {activeTab === "squads" && (
+        {activeTab === "teams" && (
           <div className="space-y-6">
           <h2 className="text-xl font-black text-cric-text uppercase tracking-tight flex items-center gap-2">
               <span className="w-2 h-6 bg-purple-600 rounded-full"></span>
@@ -819,6 +870,24 @@ export default function Series() {
                 ))}
               </div>
             )}
+          </div>
+        )}
+
+        {/* Awards Tab */}
+        {activeTab === "awards" && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {awards.map(award => (
+              <Link
+                key={award.title}
+                to={`/players/${award.playerId}`}
+                className="bg-cric-card rounded-2xl shadow-sm p-6 border border-cric-border hover:shadow-md transition-all"
+              >
+                <p className="text-[10px] font-black uppercase tracking-widest text-cric-accent mb-2">{award.title}</p>
+                <p className="text-lg font-black text-cric-text">{award.name}</p>
+                <p className="text-xs text-cric-muted mb-3">{award.team}</p>
+                <p className="text-sm font-bold text-cric-text">{award.value}</p>
+              </Link>
+            ))}
           </div>
         )}
 
