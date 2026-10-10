@@ -1,18 +1,19 @@
 import React from "react";
 import { NavLink } from "react-router-dom";
 import { useSelector } from "react-redux";
+import { adminFeatureFlags } from "../config/features";
 
 const menuItems = [
   { to: "/admin", label: "Dashboard", icon: "DB" },
   { to: "/admin/live", label: "Live Scores", icon: "LS" },
-  { to: "/admin/international", label: "International", icon: "IN" },
+  { to: "/admin/international", label: "International", icon: "IN", flag: "international" },
   { to: "/admin/score", label: "Live Scoring", icon: "SC" },
   { to: "/admin/events", label: "Manage Events", icon: "EV" },
   { to: "/admin/tournaments", label: "Tournaments", icon: "TR" },
   { to: "/admin/teams", label: "Manage Teams", icon: "TM" },
   { to: "/admin/organizations", label: "Organizations", icon: "OR" },
   { to: "/admin/players", label: "Manage Players", icon: "PL" },
-  { to: "/admin/handler-requests", label: "Handler Requests", icon: "HR" },
+  { to: "/admin/handler-requests", label: "Handler Requests", icon: "HR", flag: "handlerRequests" },
   { to: "/admin/bulk-import", label: "Bulk Import", icon: "BI" },
   { to: "/admin/blogs", label: "Manage Blogs", icon: "BL" },
   { to: "/admin/rankings", label: "Rankings", icon: "RK" },
@@ -23,13 +24,18 @@ const menuItems = [
 export default function Sidebar({ open, onClose }) {
   const user = useSelector((state) => state.auth.user);
   const isSuperAdmin = user?.role === "superadmin";
-  const visibleItems = menuItems.filter((item) => !item.superAdminOnly || isSuperAdmin);
+  const flags = adminFeatureFlags();
+  const visibleItems = menuItems.filter(
+    (item) =>
+      (!item.superAdminOnly || isSuperAdmin) &&
+      (!item.flag || flags[item.flag])
+  );
 
   return (
     <aside
       className={`
         fixed inset-y-0 left-0 z-50 w-64 bg-cric-card border-r border-cric-border
-        flex flex-col h-full transition-transform duration-300 ease-in-out
+        flex flex-col h-full overflow-hidden transition-transform duration-300 ease-in-out
         lg:translate-x-0
         ${open ? "translate-x-0" : "-translate-x-full"}
       `}
@@ -47,7 +53,7 @@ export default function Sidebar({ open, onClose }) {
           </button>
         </div>
       </div>
-      <nav className="flex-1 p-3 sm:p-4 overflow-y-auto no-scrollbar overscroll-contain">
+      <nav className="flex-1 min-h-0 p-3 sm:p-4 overflow-y-auto overscroll-contain [scrollbar-width:thin] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-cric-border hover:[&::-webkit-scrollbar-thumb]:bg-cric-accent/60">
         <ul className="space-y-0.5 sm:space-y-1">
           {visibleItems.map((item) => (
             <li key={item.to}>

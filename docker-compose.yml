@@ -53,6 +53,10 @@ services:
         VITE_API_URL: ${VITE_API_URL:-http://localhost:5000/api}
         VITE_SOCKET_URL: ${VITE_SOCKET_URL:-http://localhost:5000}
         VITE_GOOGLE_CLIENT_ID: ${VITE_GOOGLE_CLIENT_ID:-}
+        # Empty when unset, which the admin featureFlags() treats as its
+        # default (International and Handler Requests hidden).
+        VITE_SHOW_ADMIN_INTERNATIONAL: ${VITE_SHOW_ADMIN_INTERNATIONAL:-}
+        VITE_SHOW_ADMIN_HANDLER_REQUESTS: ${VITE_SHOW_ADMIN_HANDLER_REQUESTS:-}
     container_name: cricall-admin-frontend
     restart: unless-stopped
     ports:
