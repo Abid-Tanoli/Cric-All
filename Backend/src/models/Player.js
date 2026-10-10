@@ -59,6 +59,14 @@ const playerSchema = new mongoose.Schema(
       country: { type: String, default: "Pakistan" }
     },
     imageUrl: { type: String, default: "" },
+    // Terminal A (oct11-A): contact and squad-entry facts the Admin form
+    // collects. `phone` is stored in the digits-only canonical form produced by
+    // utils/phone.js so the same number cannot be entered two ways (see
+    // playerService.assertPlayerNotDuplicate). `isPartTimeBowler` does NOT change
+    // any bowling eligibility — it is an informational flag for team selection.
+    phone: { type: String, default: "" },
+    jerseyNumber: { type: Number, default: null },
+    isPartTimeBowler: { type: Boolean, default: false },
     team: { type: mongoose.Schema.Types.ObjectId, ref: "Team" },
     birthInfo: {
       date: { type: Date },
@@ -135,6 +143,7 @@ gallery: [{
 );
 
 playerSchema.index({ team: 1 });
+playerSchema.index({ phone: 1 });
 playerSchema.index({ createdBy: 1 });
 playerSchema.index({ category: 1 });
 playerSchema.index({ "address.town": 1 });

@@ -206,7 +206,7 @@ function teamNameQuery(name, organizationRef, excludeId = null) {
   return filter;
 }
 
-async function assertTeamNameAvailable(name, organizationRef, excludeId = null) {
+export async function assertTeamNameAvailable(name, organizationRef, excludeId = null) {
   if (!name) return;
   const existing = await Team.findOne(teamNameQuery(name, organizationRef, excludeId))
     .select("_id name organizationRef")
