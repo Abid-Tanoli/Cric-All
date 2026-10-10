@@ -1,5 +1,6 @@
 import React from "react";
 import BlogGallery from "../components/BlogGallery";
+import { featureFlags } from "../config/features";
 
 export default function News() {
   return (
@@ -22,23 +23,27 @@ export default function News() {
 
       <div className="max-w-7xl mx-auto px-4 py-20">
          <div className="space-y-16">
-            <section>
-               <div className="flex items-center gap-4 mb-12">
-                  <div className="h-0.5 flex-1 bg-cric-border" />
-                  <h2 className="text-2xl font-black text-cric-accent uppercase tracking-tighter italic">Top Headlines</h2>
-                  <div className="h-0.5 flex-1 bg-cric-border" />
-               </div>
-               <BlogGallery category="General" />
-            </section>
+            {featureFlags().blogs && (
+              <>
+                <section>
+                   <div className="flex items-center gap-4 mb-12">
+                      <div className="h-0.5 flex-1 bg-cric-border" />
+                      <h2 className="text-2xl font-black text-cric-accent uppercase tracking-tighter italic">Top Headlines</h2>
+                      <div className="h-0.5 flex-1 bg-cric-border" />
+                   </div>
+                   <BlogGallery category="General" />
+                </section>
 
-            <section>
-               <div className="flex items-center gap-4 mb-12">
-                  <div className="h-0.5 flex-1 bg-cric-border" />
-                  <h2 className="text-2xl font-black text-cric-accent uppercase tracking-tighter italic">Match Analysis</h2>
-                  <div className="h-0.5 flex-1 bg-cric-border" />
-               </div>
-               <BlogGallery category="Match" />
-            </section>
+                <section>
+                   <div className="flex items-center gap-4 mb-12">
+                      <div className="h-0.5 flex-1 bg-cric-border" />
+                      <h2 className="text-2xl font-black text-cric-accent uppercase tracking-tighter italic">Match Analysis</h2>
+                      <div className="h-0.5 flex-1 bg-cric-border" />
+                   </div>
+                   <BlogGallery category="Match" />
+                </section>
+              </>
+            )}
          </div>
       </div>
     </div>

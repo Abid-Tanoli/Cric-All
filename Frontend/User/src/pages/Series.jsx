@@ -5,6 +5,7 @@ import BlogGallery from "../components/BlogGallery";
 import BoundaryMeter from "../components/BoundaryMeter";
 import ShareButton from "../components/ShareButton";
 import { initSocket } from "../services/socket";
+import { featureFlags } from "../config/features";
 
 export default function Series() {
   const { seriesId } = useParams();
@@ -823,9 +824,11 @@ export default function Series() {
         )}
 
         {/* Blog Gallery */}
-        <div className="mt-12">
-          <BlogGallery category="Series" relatedId={seriesId} />
-        </div>
+        {featureFlags().blogs && (
+          <div className="mt-12">
+            <BlogGallery category="Series" relatedId={seriesId} />
+          </div>
+        )}
       </div>
     </div>
   );

@@ -23,8 +23,8 @@ export default function Header({ user, hasOrg, onShowLogin, onShowRegister, onLo
     { name: "Players", path: "/players" },
     ...(flags.highlights ? [{ name: "Highlights", path: "/highlights" }] : []),
     ...(flags.cricketNews ? [{ name: "News", path: "/cricket-news" }] : []),
-    { name: "Videos", path: "/videos" },
-    { name: "Rankings", path: "/rankings" },
+    ...(flags.videos ? [{ name: "Videos", path: "/videos" }] : []),
+    ...(flags.rankings ? [{ name: "Rankings", path: "/rankings" }] : []),
   ];
 
   const closeMobile = () => setMobileMenuOpen(false);

@@ -9,6 +9,7 @@ import { api } from "../services/api";
 import GlobalSearch from "../components/GlobalSearch";
 import { initSocket } from "../services/socket";
 import CreatePlayerProfile from "../components/CreatePlayerProfile";
+import { featureFlags } from "../config/features";
 
 const statusBadge = (match) => {
   const s = match.status;
@@ -320,13 +321,15 @@ export function Home() {
               )}
 
               {/* Top Stories */}
-              <section>
-                <div className="flex items-center justify-between mb-3">
-                  <h2 className="text-sm font-black font-raj text-cric-text uppercase tracking-wider">Top Stories</h2>
-                  <Link to="/news" className="text-[10px] font-bold text-cric-accent hover:text-orange-600">More News →</Link>
-                </div>
-                <BlogGallery category="General" />
-              </section>
+              {featureFlags().blogs && (
+                <section>
+                  <div className="flex items-center justify-between mb-3">
+                    <h2 className="text-sm font-black font-raj text-cric-text uppercase tracking-wider">Top Stories</h2>
+                    <Link to="/news" className="text-[10px] font-bold text-cric-accent hover:text-orange-600">More News →</Link>
+                  </div>
+                  <BlogGallery category="General" />
+                </section>
+              )}
 
             </div>
 

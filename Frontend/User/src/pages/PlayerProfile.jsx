@@ -4,6 +4,7 @@ import { api } from "../services/api";
 import FormTracker from "../components/FormTracker";
 import ShareButton from "../components/ShareButton";
 import SafeImage from "../../../Shared/components/SafeImage.jsx";
+import { featureFlags } from "../config/features";
 
 export default function PlayerProfile() {
   const { playerId } = useParams();
@@ -108,15 +109,17 @@ export default function PlayerProfile() {
                     {player.team.name || player.team.shortName}
                   </Link>
                 )}
-                <Link
-                  to={`/compare?p1=${playerId}`}
-                  className="px-4 py-1.5 bg-white/10 backdrop-blur-sm border border-white/20 text-white rounded-full text-xs font-bold uppercase tracking-widest hover:bg-white/20 transition-all flex items-center gap-1.5"
-                >
-                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
-                  </svg>
-                  Compare
-                </Link>
+                {featureFlags().comparison && (
+                  <Link
+                    to={`/compare?p1=${playerId}`}
+                    className="px-4 py-1.5 bg-white/10 backdrop-blur-sm border border-white/20 text-white rounded-full text-xs font-bold uppercase tracking-widest hover:bg-white/20 transition-all flex items-center gap-1.5"
+                  >
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                    </svg>
+                    Compare
+                  </Link>
+                )}
                 <ShareButton title={player.name} />
               </div>
 

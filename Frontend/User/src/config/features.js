@@ -14,6 +14,13 @@
 // disabled, so the default (no env set) hides every external-only section while
 // the platform-owned pages (Videos, News) stay visible.
 
+// Platform-owned sections default to VISIBLE (fallback true) so nothing changes
+// unless the owner explicitly hides a section for a tournament, e.g.
+//
+//   VITE_SHOW_VIDEOS=false
+//   VITE_SHOW_RANKINGS=false
+//   VITE_SHOW_COMPARISON=false
+//   VITE_SHOW_BLOGS=false
 function readFlag(value, fallback = false) {
   if (value === undefined || value === null || value === "") return fallback;
   return String(value).trim().toLowerCase() === "true";
@@ -24,6 +31,12 @@ export function featureFlags() {
     international: readFlag(import.meta.env.VITE_SHOW_INTERNATIONAL),
     highlights: readFlag(import.meta.env.VITE_SHOW_HIGHLIGHTS),
     cricketNews: readFlag(import.meta.env.VITE_SHOW_CRICKET_NEWS),
+    // Terminal A (Task 8): hide-able platform sections. Fallback true keeps the
+    // current (visible) behaviour; set the env var to "false" to hide.
+    videos: readFlag(import.meta.env.VITE_SHOW_VIDEOS, true),
+    rankings: readFlag(import.meta.env.VITE_SHOW_RANKINGS, true),
+    comparison: readFlag(import.meta.env.VITE_SHOW_COMPARISON, true),
+    blogs: readFlag(import.meta.env.VITE_SHOW_BLOGS, true),
   };
 }
 
