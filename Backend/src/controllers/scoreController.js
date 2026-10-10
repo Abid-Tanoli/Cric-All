@@ -15,6 +15,7 @@ import { computeProjectedScore, computeWinProbability, updateMatchAnalytics } fr
 import { getBallRunText } from "../utils/cricketHelpers.js";
 import { processDeliveryWithEngine, computeShouldEndInnings } from "../services/scoring/controllerAdapter.js";
 import { normalizeWicketType, calculateWinProbability, populateFullMatch } from "../utils/scoringHelpers.js";
+import { ensureMatchInnings } from "../utils/matchInnings.js";
 
 export const updateScore = async (req, res) => {
   try {
@@ -68,6 +69,7 @@ export const updateScore = async (req, res) => {
       return res.status(404).json({ message: "Match not found" });
     }
 
+    ensureMatchInnings(match);
     if (!match.innings || !match.innings[inningsIndex]) {
       return res.status(400).json({ message: "Invalid innings index" });
     }
@@ -1355,6 +1357,7 @@ export const setBowler = async (req, res) => {
     const match = await Match.findById(matchId);
     if (!match) return res.status(404).json({ message: "Match not found" });
 
+    ensureMatchInnings(match);
     const innings = match.innings[inningsIndex];
     if (!innings) return res.status(400).json({ message: "Invalid innings index" });
 

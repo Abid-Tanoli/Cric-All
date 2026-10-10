@@ -8,6 +8,7 @@ import { getBallRunText, normalizeBallRunText } from "../utils/cricketHelpers.js
 import { hiddenTeamIds, reservedNamesMongoClause } from "../utils/publicProjection.js";
 import { getPlatformSettings } from "../models/SystemSettings.js";
 import { recordAudit } from "../utils/audit.js";
+import { buildMatchInnings, ensureMatchInnings } from "../utils/matchInnings.js";
 
 const normalStatus = (status = "upcoming") => (status === "innings-break" ? "innings_break" : status);
 const legalMatchStatuses = [
@@ -239,30 +240,7 @@ export const createMatch = async (req, res) => {
       });
     }
 
-    const innings = [
-      {
-        team: teams[0],
-        runs: 0,
-        wickets: 0,
-        balls: 0,
-        extras: 0,
-        status: "upcoming",
-        commentary: [],
-        batting: [],
-        bowling: []
-      },
-      {
-        team: teams[1],
-        runs: 0,
-        wickets: 0,
-        balls: 0,
-        extras: 0,
-        status: "upcoming",
-        commentary: [],
-        batting: [],
-        bowling: []
-      }
-    ];
+    const innings = buildMatchInnings(teams);
 
     const match = new Match({
       title: title || `${team1.name} vs ${team2.name}`,
@@ -782,6 +760,7 @@ export const updateMatchStatus = async (req, res) => {
       return res.status(404).json({ message: "Match not found" });
     }
 
+    ensureMatchInnings(match);
     match.status = normalizedStatus;
     if (currentInnings !== undefined) {
       const inningsNumber = toNumber(currentInnings);
@@ -1028,6 +1007,7 @@ export const setOpeners = async (req, res) => {
       return res.status(404).json({ message: "Match not found" });
     }
 
+    ensureMatchInnings(match);
     const innings = match.innings[inningsIndex];
     if (!innings) {
       return res.status(400).json({ message: "Invalid innings index" });
@@ -1108,7 +1088,8 @@ export const updateToss = async (req, res) => {
       }
     }
 
-    if (match.innings && match.innings.length >= 2) {
+    ensureMatchInnings(match);
+    if (match.innings.length >= 2) {
       match.innings[0].team = battingFirst;
       match.innings[1].team = bowlingFirst;
     }

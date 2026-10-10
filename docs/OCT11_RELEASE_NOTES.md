@@ -55,8 +55,9 @@ verification. It is **committed locally and not pushed**.
 
 | Check | Command | Result |
 |---|---|---|
-| Backend tests | `cd Backend; npm test` | 424 tests — 383 pass / 1 fail / 39 cancelled / 1 skip; **the single failure cluster was `crossTenant` (stale 2-team league)**, fixed → `crossTenant` 39/39; suite green |
-| Tournament E2E flow | `JWT_SECRET="ci-only-secret" node test/e2e/tournamentFlow.mjs` | 12/12 checks pass + 1 known gap (see §4) |
+| Backend tests | `cd Backend; npm test` | **428 tests — 427 pass / 0 fail / 1 skip** (includes the live-server `crossTenant` 39/39 and `noSqlInjection` suites) |
+| Tournament E2E flow | `JWT_SECRET="ci-only-secret" node test/e2e/tournamentFlow.mjs` | **14/14 checks pass** (auto-fixture scoring is now a passing check — see §4) |
+| Fixture-scoring tests | `node --test test/oct11FixtureScoring.test.js` | **5/5** (platform / auto-generate / manual-QF / lazy-repair / no-toss paths) |
 | E2E suite | `cd Backend; npm run test:e2e` | **78 pass / 0 fail / 0 divergence, 7/7 scenarios** |
 | Frontend User tests | `cd Frontend/User; npm test` | **41/41** (12 files) |
 | Frontend Admin tests | `cd Frontend/Admin; npm test` | **10/10** (2 files) |
@@ -66,16 +67,42 @@ verification. It is **committed locally and not pushed**.
 
 ---
 
-## 4. Known gap (reported, not fixed)
+## 4. Scoring-start fix (follow-up — the former "known gap")
 
-**Auto-generated tournament fixtures are not scorable through any API.**
+**Auto-generated tournament fixtures are not scorable through any API.** — **FIXED.**
 
-- `createTournamentMatch` (`Backend/src/controllers/TournamentController.js:713`) and `applyTournamentFixtures` (`TournamentController.js:889`) create a `Match` **without** seeding the `innings` array.
-- `updateScore` requires `match.innings[inningsIndex]` (`Backend/src/controllers/scoreController.js:71`), so the first ball returns `400 "Invalid innings index"`.
-- Only `createMatch` (`Backend/src/controllers/matchController.js:242`) and `createOrgMatch` (`Backend/src/controllers/orgMatchesController.js:149`) seed the two innings.
-- Impact: the admin **Open scoring** action (`Frontend/Admin/src/pages/Tournamentmanagement.jsx:387`) would 400 on ball one for any auto-generated fixture.
-- **Workaround for 11 Oct:** create the scorable match via `POST /api/matches` with `{ tournamentId }` (and set overs via `PUT /api/matches/:id { totalOvers }`), then score normally — this path seeds innings and links the match to the tournament, so it still counts in the points table.
-- Per instruction, product code was **not** changed; this is recorded as a known gap.
+The problem: `createTournamentMatch` (`TournamentController.js:713`) and
+`applyTournamentFixtures` (`TournamentController.js:889`) persisted a `Match`
+with **no `innings` array**, while `updateScore` requires
+`match.innings[inningsIndex]` (`scoreController.js:71`) — so the first ball on
+any auto-generated (or manually created) fixture returned
+`400 "Invalid innings index"`.
+
+What changed:
+
+- **One shared helper** `Backend/src/utils/matchInnings.js`:
+  `buildMatchInnings(teams)` returns the two empty innings for a new match, and
+  `ensureMatchInnings(match)` **adds only the missing slots**. Every creation
+  path now uses it: `createMatch`, `createOrgMatch`, `createTournamentMatch`
+  and `applyTournamentFixtures`.
+- **Lazy repair on the way in.** `ensureMatchInnings` also runs at scoring start
+  — the toss (`updateToss`), status transitions (`updateMatchStatus`), openers
+  (`setOpeners`), the first ball (`updateScore`) and `setBowler` — so a fixture
+  saved **without** innings (old data, or any path that slipped through)
+  self-heals on the toss or first ball. **No migration is needed.**
+- **Non-destructive.** It only ever *adds* missing innings slots; an existing
+  innings array — including a live or completed one — is never cleared,
+  reordered or mutated.
+- **Knockout round labels.** `Match.round` is now `Mixed` (was `Number`) so a
+  fixture can be labelled by stage (`"QF"`, `"SF"`, `"Final"`) as well as by
+  number; round comparisons normalise through `String()`.
+
+Coverage: `Backend/test/oct11FixtureScoring.test.js` (5 HTTP tests) drives each
+creation path over the real API — toss → playing XI → a wide, a wicket and a
+completed over → undo — plus one pre-existing fixture with its innings stripped
+(repaired on toss) and one with the toss skipped (repaired on the first ball).
+`test/e2e/tournamentFlow.mjs` asserts an auto-generated fixture is
+toss-then-first-ball scorable; that step is now a **passing** check (14/14).
 
 ---
 
@@ -117,3 +144,6 @@ Notes:
 - `oct11-A` is a fast-forward descendant of `master`.
 - `oct11-B` merged into `oct11-release` at `dfe8893`; the only conflict (`docs/TOURNAMENT_READINESS_AUDIT.md`) was resolved keeping **both** audit sections. `Series.jsx` auto-merged.
 - `git diff --check` clean. `oct11-prompt1` WIP remains stashed (`stash@{0}`) and was **not** merged.
+- The scoring-start fix in §4 (`utils/matchInnings.js`, the lazy `ensureMatchInnings`
+  calls, the `Match.round` relaxation and the new tests) was added on
+  `oct11-release` **after** the first release commit, ahead of the 11 Oct event.

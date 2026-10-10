@@ -211,8 +211,11 @@ const matchSchema = new mongoose.Schema(
     // and, for group-stage tournaments, which group. Kept null/empty for any
     // match created outside a tournament. Used for "same pair + round + group"
     // duplicate checks and for grouping the admin fixtures dashboard.
+    // Number for generated round-robin/knockout rounds (1, 2, ...), but a
+    // knockout fixture may also be labelled by stage ("QF", "SF", "Final"), so
+    // this is Mixed rather than Number. Comparisons normalise with String().
     round: {
-      type: Number,
+      type: mongoose.Schema.Types.Mixed,
       default: null
     },
     group: {

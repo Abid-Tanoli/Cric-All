@@ -49,13 +49,6 @@ function check(label, ok, detail = "") {
   log(`  [${ok ? "PASS" : "FAIL"}] ${label}${detail ? ` - ${detail}` : ""}`);
 }
 
-// Findings that are outside this run's pass/fail contract but must be reported.
-const gaps = [];
-function knownGap(label, detail = "") {
-  gaps.push({ label, detail });
-  log(`  [KNOWN GAP] ${label}${detail ? ` - ${detail}` : ""}`);
-}
-
 async function ensureAdmin(api) {
   const register = await api.post(
     "/admin/register",
@@ -183,37 +176,45 @@ async function main() {
     const applyAgain = await api.post(`/tournaments/${tournamentId}/fixtures/apply`, { startAt }, { expect: 200 });
     check("re-apply created nothing (idempotent)", applyAgain.body?.applied === 0 && applyAgain.body?.skipped?.length === 6, `applied=${applyAgain.body?.applied} skipped=${applyAgain.body?.skipped?.length}`);
 
-    // --- play one fixture to a result -------------------------------------
-    // --- KNOWN GAP: are the auto-generated fixtures scorable? -------------
-    // createTournamentMatch / applyTournamentFixtures build the Match without an
-    // `innings` array (TournamentController.js:713 and :889), and updateScore
-    // requires match.innings[inningsIndex] (scoreController.js:71). So the very
-    // first ball against an auto fixture is expected to 400. Reproduce it here as
-    // evidence for the release notes rather than treating it as this run failing.
+    // --- an auto-generated fixture must be scorable (was the known gap) ---
+    // applyTournamentFixtures / createTournamentMatch now build the Match through
+    // the shared helper (utils/matchInnings.js), and the toss / first ball lazily
+    // repair any older fixture saved without innings. So an auto fixture can go
+    // toss -> playing XI -> first ball without manual repair.
     const fixtures = await api.get(`/tournaments/${tournamentId}/fixtures`, { expect: 200 });
     const autoFixture = (fixtures.body || []).find((m) => (m.teams || []).length === 2);
     if (!autoFixture) fail("no auto-generated fixture found");
     const autoId = String(autoFixture._id);
     const [autoT1, autoT2] = autoFixture.teams.map((t) => String(t._id || t));
-    const gapProbe = await api.post(
+
+    const autoDoc = await api.get(`/matches/${autoId}`, { expect: 200 });
+    const autoMatch = autoDoc.body?.match || autoDoc.body;
+    check(
+      "auto-generated fixture carries the two innings it needs to be scorable",
+      (autoMatch.innings || []).length === 2,
+      `innings=${(autoMatch.innings || []).length}`,
+    );
+
+    const autoToss = await api.put(`/matches/${autoId}/toss`, { tossWinnerId: autoT1, decision: "bat" }, { expect: 200 });
+    await api.put(`/matches/${autoId}/playing-xi`, { teamId: autoT1, players: squads[autoT1] }, { expect: 200 });
+    await api.put(`/matches/${autoId}/playing-xi`, { teamId: autoT2, players: squads[autoT2] }, { expect: 200 });
+    const autoFirstBall = await api.post(
       `/matches/${autoId}/score`,
       {
         inningsIndex: 0,
-        runs: 0,
-        batsmanOnStrikeId: squads[autoT1]?.[0],
-        batsmanNonStrikeId: squads[autoT1]?.[1],
-        bowlerId: squads[autoT2]?.[0],
+        runs: 1,
+        batsmanOnStrikeId: squads[autoT1][0],
+        batsmanNonStrikeId: squads[autoT1][1],
+        bowlerId: squads[autoT2][0],
+        commentaryText: `${TEST_PREFIX}first ball`,
       },
-      { expect: null },
+      { expect: 200 },
     );
-    if (gapProbe.status === 400 && /Invalid innings index/i.test(gapProbe.body?.message || "")) {
-      knownGap(
-        "auto-generated tournament fixtures are not scorable",
-        `POST /matches/${autoId}/score -> 400 "${gapProbe.body.message}" (no innings seeded by applyTournamentFixtures, TournamentController.js:889)`,
-      );
-    } else {
-      check("auto-generated fixture scoring behaved as documented", false, `expected 400 Invalid innings index, got ${gapProbe.status} ${JSON.stringify(gapProbe.body || {})}`);
-    }
+    check(
+      "auto-generated fixture is scorable (toss then first ball accepted)",
+      autoToss.status === 200 && autoFirstBall.status === 200,
+      `toss=${autoToss.status} ball=${autoFirstBall.status}`,
+    );
 
     // --- score a tournament-linked match through the scorable path --------
     // POST /matches seeds innings (matchController.js:242) and links the match to
@@ -320,10 +321,6 @@ async function main() {
 
     const failed = checks.filter((c) => !c.ok);
     log("");
-    if (gaps.length) {
-      log(`--- ${gaps.length} KNOWN GAP(S) ---`);
-      for (const g of gaps) log(`  * ${g.label}: ${g.detail}`);
-    }
     log(`=== TOURNAMENT E2E: ${checks.length - failed.length}/${checks.length} checks passed ===`);
     return failed.length ? 1 : 0;
   } finally {

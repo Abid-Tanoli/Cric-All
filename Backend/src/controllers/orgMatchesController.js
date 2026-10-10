@@ -4,6 +4,7 @@ import Event from "../models/Event.js";
 import Team from "../models/Team.js";
 import { recordAudit } from "../utils/audit.js";
 import { emitToAll } from "../socket/socket.js";
+import { buildMatchInnings } from "../utils/matchInnings.js";
 
 // Phase 6: fixtures and competitions an organization runs itself.
 //
@@ -146,10 +147,7 @@ export const createOrgMatch = async (req, res) => {
       organizationRef: req.org._id,
       organization: req.org.name || "",
       status: "upcoming",
-      innings: [
-        { team: teams[0], status: "upcoming" },
-        { team: teams[1], status: "upcoming" },
-      ],
+      innings: buildMatchInnings(teams),
     });
 
     if (eventId) {

@@ -4,6 +4,7 @@ import Team from "../models/Team.js";
 import { getIO } from "../socket/socket.js";
 import mongoose from "mongoose";
 import { recordAudit } from "../utils/audit.js";
+import { buildMatchInnings } from "../utils/matchInnings.js";
 import {
   planTournamentFixtures,
   fixturePairKey,
@@ -617,13 +618,16 @@ const normalizeMatchType = (format) => MATCH_TYPE_ALIASES[format] || format || "
  */
 export const findManualFixtureConflict = ({ existingMatches = [], team1, team2, round = 1, group = "", startAt } = {}) => {
   const pairKey = (a, b) => [String(a), String(b)].sort().join("|");
+  // Rounds may be numeric (1, 2, ...) or stage labels ("QF", "SF", "Final"), so
+  // compare them as strings — Number("QF") would be NaN and never match itself.
+  const roundKey = (value) => (value == null || value === "" ? "1" : String(value));
   const wantedPair = pairKey(team1, team2);
-  const wantedRound = Number(round || 1);
+  const wantedRound = roundKey(round);
   const wantedGroup = group || "";
 
   for (const match of existingMatches) {
     if (!match || !Array.isArray(match.teams) || match.teams.length < 2) continue;
-    const exRound = match.round == null ? 1 : Number(match.round);
+    const exRound = roundKey(match.round);
     const exGroup = match.group || "";
     if (
       pairKey(match.teams[0]?._id || match.teams[0], match.teams[1]?._id || match.teams[1]) === wantedPair &&
@@ -694,7 +698,7 @@ export const createTournamentMatch = async (req, res) => {
       existingMatches,
       team1,
       team2,
-      round: round != null ? Number(round) : 1,
+      round,
       group: group || "",
       startAt: startTime,
     });
@@ -721,10 +725,11 @@ export const createTournamentMatch = async (req, res) => {
       // the tournament label in matchSubcategory.
       matchCategory: matchCategory || CONTROLLER_MATCH_CATEGORY,
       matchSubcategory: matchSubcategory || tournament.name,
-      round: round != null ? Number(round) : 1,
+      round: round != null && round !== "" ? round : 1,
       group: group || "",
       tournament: tournamentId,
       teams: [team1, team2],
+      innings: buildMatchInnings([team1, team2]),
       startAt: startTime || new Date(),
       status: "upcoming"
     });
@@ -898,6 +903,7 @@ export const applyTournamentFixtures = async (req, res) => {
         group: planned.group || "",
         tournament: id,
         teams: [planned.team1, planned.team2],
+        innings: buildMatchInnings([planned.team1, planned.team2]),
         startAt: planned.startAt,
         status: "upcoming",
       });
