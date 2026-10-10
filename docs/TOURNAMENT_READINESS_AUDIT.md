@@ -198,3 +198,64 @@ Legend
 - **No test files exist** for tournament points/flixture generation or bulk import.
 - Frontends build via Vite (Admin, User, Shared). No lint scripts defined in
   `Backend/package.json`.
+
+---
+
+## Appendix — Terminal A scope: Teams / Players / Share / Hide (`oct11-A`)
+
+Audited against `d6817e5`; this is the subset Terminal A owns. Tournament and
+fixture work is Terminal B's and is out of scope here. Markers as above.
+
+### Club (`TeamOrganization`) creation — `Partial`
+- Admin create/list/update exists (`organizationController.js`,
+  `organizationRoutes.js`, Admin `pages/Organizations.jsx`); `requireOrgApproval`
+  is off by default (`SystemSettings.js:19-30`) so admin creation is immediate.
+- No blocking defect found for the owner's flow.
+
+### Team under a club — `Partial`
+- Per-org uniqueness `(organizationRef, name)` is enforced by two partial unique
+  indexes (`Team.js:192-212`) and `assertTeamNameAvailable`
+  (`teamService.js:200-210`).
+- **Gap:** `POST /api/teams` swallows `TEAM_NAME_TAKEN` into a generic
+  `400 "Failed to create team"` and never names the existing record
+  (`teamsController.js:110-117`).
+- **Gap:** team search matches name/short/branch/org/city only — not `_id` or
+  `organizationRef` (`teamService.js:82-93`).
+
+### Players — `Partial`
+- Create/list/update/delete exist (`playerController.js:195-345`); reads are
+  projected and privacy-gated (`playerService.js`).
+- Schema now carries `phone`, `jerseyNumber`, `isPartTimeBowler` (this branch).
+- **Gap:** no duplicate prevention — `createPlayer` inserts unconditionally
+  (`playerController.js:195-226`); bulk import inserts every row
+  (`bulkImportController.js:52`).
+
+### Captain / vice-captain — `Missing` (team-level)
+- Captain/viceCaptain exist at *squad* level on Match/Event/Tournament
+  (`Match.js:314-315`, `Event.js:75-76`, `Tournament.js:123-124`) but not on
+  `Team`; `TeamForm.jsx` (Players tab) has no C/VC control.
+
+### Bulk import (`/admin/bulk-import`) — `Partial`
+- Excel players/teams import + templates exist (`bulkImportController.js`,
+  `bulkImportRoutes.js`). Teams are joined by case-insensitive name; players are
+  inserted unconditionally; no club import, no dry-run, no phone/jersey columns.
+- Route is `[protect, requireAdmin]` without `requireVerifiedEmail`
+  (`bulkImportRoutes.js:12`).
+
+### Share buttons — `Partial`
+- `ShareButton` (Web Share API → clipboard fallback) exists
+  (`Frontend/Shared/components/ShareButton.jsx`) and is used on the public Series
+  page and Player profile.
+- **Gap:** the Match page uses an inline clipboard-only button
+  (`User/src/pages/Match.jsx`), and the User team profile has no share control.
+
+### Hide sections (nav flags) — `Partial`
+- Flags exist for `international`, `highlights`, `cricketNews`
+  (`Frontend/User/src/config/features.js`); `Header.jsx` respects them.
+- **Gap:** Videos, Rankings, Player Comparison, Blogs have no flags.
+
+### AI commentary toggle — `Missing`
+- `aiCommentary.*` is called unconditionally in `scoreController.js:233`,
+  `:456-457`, `:1089`, `:1710`; there is no on/off flag. `SystemSettings`
+  platform settings exist and are superadmin-writable
+  (`SystemSettings.js:70-89`, `settingsRoutes.js:15-16`).
