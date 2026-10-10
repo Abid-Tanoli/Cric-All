@@ -76,6 +76,11 @@ export default function TeamForm({ editMode, currentTeam, onSave, onCancel }) {
       setSocial({ facebook: '', instagram: '', twitter: '', youtube: '', whatsapp: '', ...(currentTeam.socialLinks || {}) });
       setPrivacy({ contactInfo: 'public', socialLinks: 'public', location: 'public', ...(currentTeam.privacy || {}) });
       setSelectedPlayers(currentTeam.players?.map(p => p._id) || []);
+      // Terminal A: keep the populated squad around so the Captain / Vice-Captain
+      // selects can show names without another request.
+      setSquadPlayers((currentTeam.players || []).filter(p => p && typeof p === 'object'));
+      setValue('captain', currentTeam.captain?._id || currentTeam.captain || '');
+      setValue('viceCaptain', currentTeam.viceCaptain?._id || currentTeam.viceCaptain || '');
 
       const orgId = currentTeam.organizationRef?._id || currentTeam.organizationRef;
       if (orgId) loadOrgChainForEdit(orgId);
@@ -190,6 +195,9 @@ export default function TeamForm({ editMode, currentTeam, onSave, onCancel }) {
     setLoading(true);
     try {
       data.players = selectedPlayers;
+      // Don't leave a C/VC pointing at a player who is no longer in the squad.
+      if (data.captain && !selectedPlayers.includes(data.captain)) data.captain = '';
+      if (data.viceCaptain && !selectedPlayers.includes(data.viceCaptain)) data.viceCaptain = '';
       data.media = mediaItems;
       data.videos = videoItems;
       data.socialLinks = social;
@@ -210,6 +218,14 @@ export default function TeamForm({ editMode, currentTeam, onSave, onCancel }) {
 
   const filteredFreeAgents = freeAgents.filter(p =>
     p.name.toLowerCase().includes(playerSearch.toLowerCase())
+  );
+
+  // Roster options for the C/VC selects, resolved from whichever source knows
+  // the player (the populated squad on edit, or the free-agent list).
+  const playerOptions = selectedPlayers.map(pid =>
+    squadPlayers.find(p => String(p._id) === String(pid)) ||
+    freeAgents.find(p => String(p._id) === String(pid)) ||
+    { _id: pid, name: pid }
   );
 
   const tabs = [
@@ -587,6 +603,30 @@ export default function TeamForm({ editMode, currentTeam, onSave, onCancel }) {
         <div className="space-y-6">
           <div className="bg-cric-bg rounded-2xl p-6 border border-cric-border">
             <h4 className="font-black text-xs uppercase tracking-widest text-cric-text mb-4">👥 Current Squad ({selectedPlayers.length})</h4>
+
+            {/* Captain / Vice-Captain (Terminal A). Labels on the roster, not a
+                playing restriction; a specific fixture can still set its own. */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+              <div>
+                <label className="text-[10px] font-black uppercase text-cric-muted block mb-1">Captain</label>
+                <select {...register('captain')} className="w-full bg-cric-card border border-cric-border rounded-xl px-4 py-3 text-cric-text">
+                  <option value="">-- None --</option>
+                  {playerOptions.map(p => (
+                    <option key={p._id} value={p._id}>{p.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-[10px] font-black uppercase text-cric-muted block mb-1">Vice-Captain</label>
+                <select {...register('viceCaptain')} className="w-full bg-cric-card border border-cric-border rounded-xl px-4 py-3 text-cric-text">
+                  <option value="">-- None --</option>
+                  {playerOptions.map(p => (
+                    <option key={p._id} value={p._id}>{p.name}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
             <div className="space-y-2 max-h-48 overflow-y-auto">
               {selectedPlayers.length === 0 ? (
                 <p className="text-cric-muted text-sm">No players added yet. Select from Free Agents below.</p>

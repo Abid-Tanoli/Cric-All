@@ -31,6 +31,7 @@ const Teams = () => {
   const dispatch = useDispatch();
   const navigate = useNavigate();
   const { teams, loading } = useSelector((state) => state.teams);
+  const { pagination: playerPagination } = useSelector((state) => state.players);
   const [viewMode, setViewMode] = useState('grid');
   const [showForm, setShowForm] = useState(false);
   const [filterCategory, setFilterCategory] = useState('all');
@@ -54,14 +55,31 @@ const Teams = () => {
     } catch (e) { console.error(e); }
   };
 
+  // Terminal A: four search keys — team name, club name, team id, club id.
+  const orgIdOf = (team) => String(team.organizationRef?._id || team.organizationRef || '');
+  const orgNameOf = (team) => (team.organizationRef?.name || team.organization || '');
+
   const filteredTeams = teams.filter(team => {
     if (filterCategory !== 'all' && team.category !== filterCategory) return false;
-    if (searchTerm && !team.name.toLowerCase().includes(searchTerm.toLowerCase()) &&
-        !team.shortName?.toLowerCase().includes(searchTerm.toLowerCase()) &&
-        !team.organization?.toLowerCase().includes(searchTerm.toLowerCase())) return false;
+    if (searchTerm) {
+      const q = searchTerm.trim().toLowerCase();
+      const matches =
+        team.name?.toLowerCase().includes(q) ||
+        team.shortName?.toLowerCase().includes(q) ||
+        team.branchName?.toLowerCase().includes(q) ||
+        String(team._id).toLowerCase().includes(q) ||
+        orgIdOf(team).toLowerCase().includes(q) ||
+        orgNameOf(team).toLowerCase().includes(q);
+      if (!matches) return false;
+    }
     if (cityFilter && !team.address?.city?.toLowerCase().includes(cityFilter.toLowerCase())) return false;
     return true;
   });
+
+  // Counts (Task 5): a single glance at how much real data exists.
+  const totalClubs = organizations.length;
+  const totalTeams = teams.length;
+  const totalPlayers = playerPagination?.totalPlayers ?? teams.reduce((n, t) => n + (t.players?.length || 0), 0);
 
   const groupedTeams = {};
   CATEGORIES.filter(c => c.key !== 'all').forEach(c => {
@@ -148,6 +166,22 @@ const Teams = () => {
         </div>
       )}
 
+      {/* Counts (Task 5) */}
+      <div className="grid grid-cols-3 gap-4 mb-6">
+        <div className="bg-cric-card rounded-2xl border border-cric-border p-4 text-center">
+          <p className="text-3xl font-black text-cric-text">{totalClubs}</p>
+          <p className="text-[10px] font-black uppercase tracking-widest text-cric-muted mt-1">Clubs</p>
+        </div>
+        <div className="bg-cric-card rounded-2xl border border-cric-border p-4 text-center">
+          <p className="text-3xl font-black text-cric-text">{totalTeams}</p>
+          <p className="text-[10px] font-black uppercase tracking-widest text-cric-muted mt-1">Teams</p>
+        </div>
+        <div className="bg-cric-card rounded-2xl border border-cric-border p-4 text-center">
+          <p className="text-3xl font-black text-cric-text">{totalPlayers}</p>
+          <p className="text-[10px] font-black uppercase tracking-widest text-cric-muted mt-1">Players</p>
+        </div>
+      </div>
+
       {/* Filters */}
       <div className="bg-cric-card rounded-2xl shadow-sm border border-cric-border p-4 mb-6">
         <div className="flex flex-wrap items-center gap-2 mb-4">
@@ -168,7 +202,7 @@ const Teams = () => {
         <div className="flex flex-col sm:flex-row gap-3">
           <input
             type="text"
-            placeholder="Search teams by name, org..."
+            placeholder="Search by team name, club name, team ID or club ID..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="flex-1 bg-cric-card border border-cric-border rounded-xl px-4 py-2 focus:outline-none focus:ring-2 focus:ring-cric-accent text-cric-text"

@@ -37,6 +37,11 @@ const adminSchema = z.object({
   bowlingStyle: z.string().min(1, "Bowling style is required"),
   team: z.string().optional(),
   imageUrl: z.string().optional(),
+  // Terminal A: admin data-entry fields. `jerseyNumber` stays a string here and
+  // is converted on submit so an empty input is omitted rather than coerced to 0.
+  phone: z.string().optional(),
+  jerseyNumber: z.string().optional(),
+  isPartTimeBowler: z.boolean().optional(),
   category: z.string().optional(),
   subCategory: z.string().optional(),
   ageGroup: z.string().optional(),
@@ -129,13 +134,24 @@ export default function PlayerForm({
   }, [editingId, defaultValues]);
 
   const handleFormSubmit = async (data) => {
-    await onSubmit({
+    const payload = {
       ...data,
       gallery: gallery.filter(g => g.url),
       videos: videos.filter(v => v.url),
       socialLinks: social,
       privacy,
-    });
+    };
+    // Terminal A: omit an empty jersey number instead of sending "" (which would
+    // be coerced to 0), and normalise the part-time flag to a real boolean.
+    if (payload.jerseyNumber === "" || payload.jerseyNumber == null) {
+      delete payload.jerseyNumber;
+    } else {
+      payload.jerseyNumber = Number(payload.jerseyNumber);
+    }
+    if (payload.isPartTimeBowler != null) {
+      payload.isPartTimeBowler = Boolean(payload.isPartTimeBowler);
+    }
+    await onSubmit(payload);
   };
 
   const buttonText = submitButtonText || (
@@ -200,6 +216,22 @@ export default function PlayerForm({
               disabled={loading}
             />
           </FormField>
+
+          <FormField label="Phone">
+            <Input register={register} name="phone" placeholder="e.g. 0300 1234567" />
+          </FormField>
+
+          <div className="grid grid-cols-2 gap-3 items-start">
+            <FormField label="Jersey #">
+              <Input register={register} name="jerseyNumber" type="number" placeholder="10" />
+            </FormField>
+            <FormField label="Part-time bowler">
+              <label className="flex items-center gap-2 p-3 bg-cric-bg border border-cric-border rounded-xl cursor-pointer">
+                <input type="checkbox" {...register("isPartTimeBowler")} className="w-4 h-4 accent-cric-accent" />
+                <span className="text-xs font-bold text-cric-text">Yes</span>
+              </label>
+            </FormField>
+          </div>
         </>
       )}
 

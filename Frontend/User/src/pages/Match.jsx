@@ -4,6 +4,7 @@ import { api } from "../services/api";
 import EnhancedMatchTabs from "../components/EnhancedMatchTabs";
 import ToastNotifications from "../components/ToastNotifications";
 import ThemeToggle from "../components/ThemeToggle";
+import ShareButton from "../components/ShareButton";
 import PDFReport from "../components/PDFReport";
 import { initSocket, joinMatchRoom, leaveMatchRoom } from "../services/socket";
 
@@ -298,13 +299,10 @@ const Match = () => {
           <Link to="/" className="text-sm font-black font-raj text-cric-text truncate">CricAll</Link>
           <div className="flex items-center gap-2">
             <PDFReport match={match} label="PDF" />
-            <button
-              onClick={() => { navigator.clipboard.writeText(window.location.href); alert('Match link copied!'); }}
-              className="text-xs font-bold text-cric-muted hover:text-cric-accent px-2 py-1 rounded-lg border border-cric-border hover:border-cric-accent/50 transition"
-              title="Share match"
-            >
-              Share
-            </button>
+            <ShareButton
+              title={`${match.teams?.[0]?.name || "Match"} vs ${match.teams?.[1]?.name || ""}`.trim()}
+              text="Follow the live score on CricAll"
+            />
             <ThemeToggle />
           </div>
         </div>

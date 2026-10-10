@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { api } from '../services/api';
 import SafeImage from '../../../Shared/components/SafeImage.jsx';
+import ShareButton from '../components/ShareButton';
 
 const idOf = (v) => v?._id || v?.id || v;
 
@@ -108,9 +109,12 @@ export default function TeamProfile() {
       <div className="bg-cric-accent text-white py-12 relative overflow-hidden" style={{backgroundColor: primaryColor}}>
         <div className="absolute top-0 right-0 w-96 h-96 bg-white/5 rounded-full -mr-48 -mt-48 blur-3xl" />
         <div className="max-w-7xl mx-auto px-4 relative">
-          <Link to="/teams" className="text-blue-300 hover:text-white text-sm font-bold mb-4 inline-block">
-            ← Back to Teams
-          </Link>
+          <div className="flex items-center justify-between mb-4">
+            <Link to="/teams" className="text-blue-300 hover:text-white text-sm font-bold inline-block">
+              ← Back to Teams
+            </Link>
+            <ShareButton title={`${team.name} on CricAll`} text="Check out this team on CricAll" />
+          </div>
 
           {/* Organization Chain */}
           {orgChain.length > 0 && (
