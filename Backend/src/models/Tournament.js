@@ -118,6 +118,13 @@ const tournamentSchema = new mongoose.Schema(
       ref: "Admin",
       default: null
     },
+    // Per-tournament rule defaults for its matches. A match with its own
+    // rules.twelfthManEnabled set overrides this; otherwise the match inherits.
+    // The "12th Man" rule is still gated by the platform master switch
+    // (SystemSettings.enableSuperSub), so this only ever narrows, never widens.
+    rules: {
+      twelfthManEnabled: { type: Boolean, default: false },
+    },
     // Points handed out per result. Default 2 for a win, 1 for a tie, 1 for a
     // no-result; an admin may override at create/update time. The points table
     // recompute reads this instead of a hardcoded 2/1/1.

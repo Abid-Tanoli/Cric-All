@@ -25,6 +25,7 @@ const emptyForm = {
     venue: '',
     teams: [],
     pointsConfig: { win: 2, tie: 1, noResult: 1 },
+    rules: { twelfthManEnabled: false },
 };
 
 const fmtDate = (value) => {
@@ -178,6 +179,7 @@ export default function TournamentManagement() {
             venue: t.venue || '',
             teams: (t.teams || []).map((x) => String(x?._id || x)),
             pointsConfig: t.pointsConfig || { win: 2, tie: 1, noResult: 1 },
+            rules: { twelfthManEnabled: t.rules?.twelfthManEnabled === true },
         });
     };
 
@@ -472,6 +474,14 @@ export default function TournamentManagement() {
                     <input type="date" className={inputCls} value={form.startDate} onChange={(e) => setForm({ ...form, startDate: e.target.value })} required />
                     <input type="date" className={inputCls} value={form.endDate} onChange={(e) => setForm({ ...form, endDate: e.target.value })} required />
                     <input className={inputCls} placeholder="Venue" value={form.venue} onChange={(e) => setForm({ ...form, venue: e.target.value })} />
+                    <label className="flex items-center gap-2 text-xs font-bold text-slate-600">
+                        <input
+                            type="checkbox"
+                            checked={form.rules?.twelfthManEnabled === true}
+                            onChange={(e) => setForm({ ...form, rules: { twelfthManEnabled: e.target.checked } })}
+                        />
+                        12th Man (this tournament)
+                    </label>
                     <div className="flex gap-2">
                         <button type="submit" className={btnPrimary}>{editId ? 'Update' : 'Create'}</button>
                         {editId && (

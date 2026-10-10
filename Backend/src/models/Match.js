@@ -148,6 +148,13 @@ const inningsSchema = new mongoose.Schema({
   },
   isFreeHit: { type: Boolean, default: false },
   isFeatured: { type: Boolean, default: false },
+  // 12th Man: when the swap is made mid-over on the fielding side, the incoming
+  // player is barred from bowling the remainder of that over. Cleared implicitly
+  // once the over number advances.
+  twelfthManBowlBlock: {
+    overNumber: { type: Number, default: null },
+    player: { type: mongoose.Schema.Types.ObjectId, ref: "Player", default: null },
+  },
   oversHistory: [overSchema],
   batting: [batsmanStatsSchema],
   bowling: [bowlerStatsSchema],
@@ -354,6 +361,13 @@ const matchSchema = new mongoose.Schema(
       replaces: { type: mongoose.Schema.Types.ObjectId, ref: "Player" },
       usedAt: { type: Date, default: Date.now }
     }],
+    // Per-match rule overrides. `twelfthManEnabled` (the "12th Man" rule):
+    //   true  -> on for THIS match
+    //   false -> explicitly off for this match
+    //   null  -> inherit from the tournament, then the platform master switch
+    rules: {
+      twelfthManEnabled: { type: Boolean, default: null },
+    },
     bowlingXI: [{
       team: { type: mongoose.Schema.Types.ObjectId, ref: "Team" },
       players: [{ type: mongoose.Schema.Types.ObjectId, ref: "Player" }]

@@ -259,7 +259,11 @@ export const createMatch = async (req, res) => {
       status: "upcoming",
       powerplayConfig: powerplayConfig || { enabled: false, overs: 0 },
       series: series || "",
-      seriesMatchNumber: seriesMatchNumber || null
+      seriesMatchNumber: seriesMatchNumber || null,
+      // Per-match "12th Man" override. Omitted -> null (inherit from tournament).
+      rules: req.body.rules && "twelfthManEnabled" in req.body.rules
+        ? { twelfthManEnabled: req.body.rules.twelfthManEnabled === true }
+        : undefined,
     });
 
     await match.save({ validateModifiedOnly: true });
@@ -338,6 +342,9 @@ export const updateMatch = async (req, res) => {
     if (powerplayConfig !== undefined) match.powerplayConfig = powerplayConfig;
     if (series !== undefined) match.series = series;
     if (seriesMatchNumber !== undefined) match.seriesMatchNumber = seriesMatchNumber;
+    if (req.body.rules && "twelfthManEnabled" in req.body.rules) {
+      match.rules = { twelfthManEnabled: req.body.rules.twelfthManEnabled === true };
+    }
 
     await match.save({ validateModifiedOnly: true });
 
@@ -1253,21 +1260,44 @@ export const setTwelfthMan = async (req, res) => {
   }
 };
 
-// Task 6 — Super Sub (Impact Player). While the platform enables the rule, a
-// team's 12th man may replace one of its playing XI exactly once. The swap is
-// applied to `playingXI` so the incoming player is a full participant (they can
-// bat and bowl like anyone in the XI), and `impactPlayers` keeps the audit trail
-// of who came in for whom.
+// Task B — the "12th Man" rule (formerly "Super Sub" / "Impact Player").
+//
+// While the platform master switch AND the per-match/tournament scope allow it,
+// a team's nominated 12th man may replace one of its playing XI exactly once per
+// match. The swap edits `playingXI` (and `bowlingXI` when present) so the
+// incoming player is a full participant, while `impactPlayers` keeps the audit
+// trail. All user-facing copy says "12th Man"; the stored field names stay as-is.
+//
+// Effective enablement (narrowing only — the master switch always wins):
+//   platform enableSuperSub
+//     AND ( match.rules.twelfthManEnabled ?? tournament.rules.twelfthManEnabled ?? false )
+//
+// Timing (when a swap is legal):
+//   - at the innings start (no legal ball bowled yet),
+//   - at the end of an over (a whole number of overs is complete), or
+//   - immediately after a wicket.
+const twelfthManWindowOpen = (innings) => {
+  if (!innings) return true; // innings not created yet -> innings start
+  const legalBalls = toNumber(innings.balls);
+  if (legalBalls === 0) return true; // innings start
+  if (legalBalls % 6 === 0) return true; // end of an over
+  const overs = innings.oversHistory || [];
+  const lastOver = overs[overs.length - 1];
+  const lastBall = lastOver?.balls?.[lastOver.balls.length - 1];
+  return Boolean(lastBall && lastBall.isWicket && !lastBall.wicketCancelled); // right after a wicket
+};
+
 export const setImpactPlayer = async (req, res) => {
   try {
     const { matchId } = req.params;
     const { teamId, playerId, replacesPlayerId } = req.body;
 
+    // 1. Platform master switch. Off blocks the rule everywhere.
     const settings = await getPlatformSettings();
     if (!settings?.enableSuperSub) {
       return res.status(403).json({
-        message: "The Super Sub rule is disabled for this platform.",
-        code: "SUPER_SUB_DISABLED",
+        message: "The 12th Man rule is disabled for this platform.",
+        code: "TWELFTH_MAN_DISABLED",
       });
     }
 
@@ -1276,22 +1306,40 @@ export const setImpactPlayer = async (req, res) => {
       return res.status(404).json({ message: "Match not found" });
     }
 
+    // 2. Scope: this match's rule, else its tournament's rule, else off. Enabling
+    //    the rule for one match/tournament never changes another.
+    let tournamentEnabled = null;
+    if (match.tournament) {
+      const tournament = await Tournament.findById(match.tournament).select("rules");
+      if (tournament) tournamentEnabled = tournament.rules?.twelfthManEnabled ?? null;
+    }
+    const matchRule = match.rules?.twelfthManEnabled;
+    const scopedEnabled = matchRule === null || matchRule === undefined
+      ? tournamentEnabled === true
+      : matchRule === true;
+    if (!scopedEnabled) {
+      return res.status(403).json({
+        message: "The 12th Man rule is not enabled for this match or tournament.",
+        code: "TWELFTH_MAN_DISABLED",
+      });
+    }
+
     if (!match.teams.some((team) => sameId(team, teamId))) {
       return res.status(400).json({ message: "Team is not part of this match" });
     }
 
     if ((match.impactPlayers || []).some((entry) => sameId(entry.team, teamId))) {
       return res.status(400).json({
-        message: "This team has already used its Super Sub.",
-        code: "SUPER_SUB_ALREADY_USED",
+        message: "This team has already used its 12th Man.",
+        code: "TWELFTH_MAN_ALREADY_USED",
       });
     }
 
     const twelfth = (match.twelfthMan || []).find((entry) => sameId(entry.team, teamId));
     if (!twelfth || !sameId(twelfth.player, playerId)) {
       return res.status(400).json({
-        message: "The Super Sub must be the team's nominated 12th man.",
-        code: "SUPER_SUB_NOT_TWELFTH_MAN",
+        message: "The 12th Man must be the team's nominated 12th man.",
+        code: "TWELFTH_MAN_NOT_TWELFTH_MAN",
       });
     }
 
@@ -1299,17 +1347,50 @@ export const setImpactPlayer = async (req, res) => {
     if (!xi || !xi.players.some((player) => sameId(player, replacesPlayerId))) {
       return res.status(400).json({
         message: "The replaced player must be in the team's playing XI.",
-        code: "SUPER_SUB_REPLACED_NOT_IN_XI",
+        code: "TWELFTH_MAN_REPLACED_NOT_IN_XI",
       });
     }
 
+    // 3. Timing: only at innings start, end of an over, or right after a wicket.
+    const inningsIndex = match.currentInnings ?? 0;
+    const innings = match.innings?.[inningsIndex];
+    if (innings && !twelfthManWindowOpen(innings)) {
+      return res.status(400).json({
+        message: "The 12th Man can only be used at the innings start, the end of an over, or after a wicket.",
+        code: "TWELFTH_MAN_BAD_TIMING",
+      });
+    }
+
+    // 4. Apply the swap to the XI and keep the bowling XI in sync.
     xi.players = xi.players.map((player) => (sameId(player, replacesPlayerId) ? playerId : player));
+
+    const bowling = (match.bowlingXI || []).find((entry) => sameId(entry.team, teamId));
+    if (bowling) {
+      bowling.players = bowling.players.filter((player) => !sameId(player, replacesPlayerId));
+      if (!bowling.players.some((player) => sameId(player, playerId))) {
+        bowling.players.push(playerId);
+      }
+    }
+
     match.impactPlayers.push({
       team: teamId,
       player: playerId,
       replaces: replacesPlayerId,
       usedAt: new Date(),
     });
+
+    // 5. Mid-over fielding swap: the incoming player may not bowl the rest of
+    //    the current over, and the replaced player (if bowling) cannot continue.
+    if (innings && !sameId(innings.team, teamId)) {
+      const legalBalls = toNumber(innings.balls);
+      if (legalBalls % 6 !== 0) {
+        innings.twelfthManBowlBlock = {
+          overNumber: Math.floor(legalBalls / 6),
+          player: playerId,
+        };
+        if (sameId(innings.currentBowler, replacesPlayerId)) innings.currentBowler = null;
+      }
+    }
 
     await match.save({ validateModifiedOnly: true });
     await match.populate("impactPlayers.team", "name shortName logo");
@@ -1325,12 +1406,12 @@ export const setImpactPlayer = async (req, res) => {
 
     res.status(200).json({
       match,
-      message: "Super Sub applied successfully"
+      message: "12th Man applied successfully"
     });
   } catch (error) {
-    console.error("Error applying Super Sub:", error);
+    console.error("Error applying 12th Man:", error);
     res.status(400).json({
-      message: "Failed to apply Super Sub",
+      message: "Failed to apply 12th Man",
       error: error.message
     });
   }

@@ -2,10 +2,12 @@ import React, { useEffect, useState, useCallback } from 'react';
 import api from '../../services/api';
 import { useToast } from '../Toast';
 
-// Task 6 — Super Sub (Impact Player), IPL-style rule.
-// A team's nominated 12th man may replace one player of the playing XI once.
-// The platform must enable the rule first (SystemSettings.enableSuperSub,
-// default off) or the endpoint will refuse with SUPER_SUB_DISABLED.
+// Task B — the "12th Man" rule (formerly "Super Sub" / "Impact Player").
+// A team's nominated 12th man may replace one player of the playing XI once,
+// when timing allows (innings start, end of an over, or right after a wicket).
+// The platform master switch (SystemSettings.enableSuperSub) AND the match or
+// tournament rule (rules.twelfthManEnabled) must both be on, or the endpoint
+// refuses with TWELFTH_MAN_DISABLED.
 const idOf = (value) => String(value?._id || value || '');
 
 const ImpactPlayerSetup = ({ match, matchId }) => {
@@ -62,14 +64,16 @@ const ImpactPlayerSetup = ({ match, matchId }) => {
         setError('');
         try {
             await api.put(`/matches/${matchId}/impact-player`, { teamId, playerId, replacesPlayerId });
-            showToast('Super Sub applied — impact player is now in the XI', 'success');
+            showToast('12th Man applied — the nominated player is now in the XI', 'success');
             await loadMatch();
         } catch (err) {
             const code = err.response?.data?.code;
             const fallback =
-                code === 'SUPER_SUB_DISABLED'
-                    ? 'The Super Sub rule is disabled. Enable enableSuperSub in platform settings first.'
-                    : 'Failed to apply the Super Sub.';
+                code === 'TWELFTH_MAN_DISABLED'
+                    ? 'The 12th Man rule is off. A superadmin must enable it platform-wide AND this match/tournament must enable it.'
+                    : code === 'TWELFTH_MAN_BAD_TIMING'
+                        ? 'The 12th Man can only be used at the innings start, the end of an over, or after a wicket.'
+                        : 'Failed to apply the 12th Man.';
             setError(err.response?.data?.message || fallback);
         } finally {
             setBusy(false);
@@ -100,7 +104,7 @@ const ImpactPlayerSetup = ({ match, matchId }) => {
                                 : 'bg-cric-muted/15 text-cric-muted'
                         }`}
                     >
-                        {impactEntry ? 'Super Sub used' : 'Super Sub available'}
+                        {impactEntry ? '12th Man used' : '12th Man available'}
                     </span>
                 </div>
 
@@ -113,7 +117,7 @@ const ImpactPlayerSetup = ({ match, matchId }) => {
                     <div className="mt-3 space-y-2">
                         {xiIds.length === 0 ? (
                             <p className="text-xs text-cric-muted font-semibold">
-                                Save the Playing XI first — the Super Sub swaps a 12th man in for one XI player.
+                                Save the Playing XI first — the 12th Man swaps a nominated player in for one XI player.
                             </p>
                         ) : (
                             <>
@@ -182,7 +186,7 @@ const ImpactPlayerSetup = ({ match, matchId }) => {
                                         disabled={busy}
                                         className="w-full rounded-xl bg-cric-accent px-3 py-2 text-[9px] font-black uppercase tracking-widest text-white hover:opacity-90 disabled:opacity-50"
                                     >
-                                        Apply Super Sub
+                                        Apply 12th Man
                                     </button>
                                 )}
                             </>
@@ -198,10 +202,10 @@ const ImpactPlayerSetup = ({ match, matchId }) => {
             <div className="flex items-center justify-between gap-2">
                 <div>
                     <h3 className="text-sm font-black uppercase tracking-widest text-cric-text">
-                        Super Sub (Impact Player)
+                        12th Man
                     </h3>
                     <p className="mt-1 text-[10px] font-bold text-cric-muted">
-                        A team's 12th man may replace one of the playing XI once.
+                        A team's nominated 12th man may replace one of the playing XI once.
                     </p>
                 </div>
                 <button
@@ -221,7 +225,7 @@ const ImpactPlayerSetup = ({ match, matchId }) => {
 
             {loading ? (
                 <p className="py-4 text-center text-xs font-black uppercase tracking-widest text-cric-muted">
-                    Loading Super Sub state...
+                    Loading 12th Man state...
                 </p>
             ) : (
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2">

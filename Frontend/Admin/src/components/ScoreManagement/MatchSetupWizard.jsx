@@ -1,4 +1,5 @@
 import React from 'react';
+import api from '../../services/api';
 import ImpactPlayerSetup from './ImpactPlayerSetup';
 
 const FORMATS = [
@@ -26,6 +27,26 @@ const MatchSetupWizard = ({
     const selectedFormat = FORMATS.find(f => f.value === setupState.matchFormat) || FORMATS[2];
     const ppEnabled = setupState.powerplayEnabled ?? selectedFormat.powerplayDefault;
     const ppOvers = setupState.powerplayOvers ?? selectedFormat.powerplayOvers;
+
+    // Per-match "12th Man" override (rules.twelfthManEnabled). null means inherit
+    // from the tournament; here we set an explicit per-match value.
+    const [ruleSaving, setRuleSaving] = React.useState(false);
+    const twelfthManOn = selectedMatch?.rules?.twelfthManEnabled === true;
+    const toggleTwelfthMan = async () => {
+        if (!selectedMatch?._id) return;
+        setRuleSaving(true);
+        try {
+            const res = await api.put(`/matches/${selectedMatch._id}`, {
+                rules: { twelfthManEnabled: !twelfthManOn },
+            });
+            const updated = res.data?.match || res.data;
+            if (updated) setSelectedMatch(m => ({ ...(m || {}), ...updated, rules: updated.rules }));
+        } catch {
+            // Non-fatal: the server rejects if the caller is not authorized.
+        } finally {
+            setRuleSaving(false);
+        }
+    };
 
     return (
         <div className="min-h-screen bg-cric-bg text-cric-text transition-colors duration-300 flex flex-col items-center justify-center p-3 sm:p-6 lg:p-8 overflow-x-hidden">
@@ -116,6 +137,25 @@ const MatchSetupWizard = ({
                                 )}
                             </div>
                         )}
+
+                        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between p-4 sm:p-8 rounded-2xl sm:rounded-3xl bg-black/5 dark:bg-white/5">
+                            <div>
+                                <h4 className="text-sm font-black uppercase tracking-widest">12th Man (this match)</h4>
+                                <p className="text-[10px] font-bold text-cric-muted mt-1">
+                                    Allow a team to swap its nominated 12th man in once. Also requires the platform master switch.
+                                </p>
+                            </div>
+                            <label className="relative inline-flex items-center cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    checked={twelfthManOn}
+                                    disabled={ruleSaving}
+                                    onChange={toggleTwelfthMan}
+                                    className="sr-only peer"
+                                />
+                                <div className="w-11 h-6 bg-black/10 rounded-full peer peer-checked:bg-cric-accent after:content-[''] after:absolute after:top-0.5 after:start-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full"></div>
+                            </label>
+                        </div>
 
                         <button
                             onClick={() => handleSaveFormat({

@@ -48,6 +48,7 @@ async function seedMatch() {
     teams: [teamA._id, teamB._id],
     playingXI: [{ team: teamA._id, players: batters.map((p) => p._id) }],
     twelfthMan: [{ team: teamA._id, player: sub._id }],
+    rules: { twelfthManEnabled: true },
   });
 
   return { match, xi: batters, sub };
@@ -73,7 +74,7 @@ test("applying the rule while disabled is rejected and changes nothing", async (
   );
 
   assert.equal(res.statusCode, 403);
-  assert.equal(res.body.code, "SUPER_SUB_DISABLED");
+  assert.equal(res.body.code, "TWELFTH_MAN_DISABLED");
 
   const reloaded = await Match.findById(match._id);
   assert.deepEqual(
@@ -115,7 +116,7 @@ test("enabled: the incoming player must be the nominated 12th man", async () => 
   );
 
   assert.equal(res.statusCode, 400);
-  assert.equal(res.body.code, "SUPER_SUB_NOT_TWELFTH_MAN");
+  assert.equal(res.body.code, "TWELFTH_MAN_NOT_TWELFTH_MAN");
 });
 
 test("enabled: the replaced player must be in the playing XI", async () => {
@@ -129,7 +130,7 @@ test("enabled: the replaced player must be in the playing XI", async () => {
   );
 
   assert.equal(res.statusCode, 400);
-  assert.equal(res.body.code, "SUPER_SUB_REPLACED_NOT_IN_XI");
+  assert.equal(res.body.code, "TWELFTH_MAN_REPLACED_NOT_IN_XI");
 });
 
 test("enabled: a team may only use the Super Sub once", async () => {
@@ -147,5 +148,5 @@ test("enabled: a team may only use the Super Sub once", async () => {
     match._id
   );
   assert.equal(second.statusCode, 400);
-  assert.equal(second.body.code, "SUPER_SUB_ALREADY_USED");
+  assert.equal(second.body.code, "TWELFTH_MAN_ALREADY_USED");
 });

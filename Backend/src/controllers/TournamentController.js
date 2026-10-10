@@ -199,6 +199,7 @@ export const createTournament = async (req, res) => {
       venue: venue || "",
       format: format || "T20",
       pointsConfig: parsePointsConfig(req.body),
+      rules: { twelfthManEnabled: req.body?.rules?.twelfthManEnabled === true },
       pointsTable: teamIds.map(pointsRow),
       status: status || "upcoming",
       createdByAdmin: req.user?._id || null,
@@ -279,6 +280,9 @@ export const updateTournament = async (req, res) => {
     if (format !== undefined) tournament.format = format;
     if (status !== undefined) tournament.status = status;
     if (req.body.pointsConfig !== undefined) tournament.pointsConfig = parsePointsConfig(req.body);
+    if (req.body.rules && "twelfthManEnabled" in req.body.rules) {
+      tournament.rules = { twelfthManEnabled: req.body.rules.twelfthManEnabled === true };
+    }
 
     await tournament.save();
     await tournament.populate("teams", "name shortName logo");

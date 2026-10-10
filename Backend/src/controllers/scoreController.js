@@ -1361,6 +1361,17 @@ export const setBowler = async (req, res) => {
     const innings = match.innings[inningsIndex];
     if (!innings) return res.status(400).json({ message: "Invalid innings index" });
 
+    // 12th Man: a player swapped in mid-over on the fielding side may not bowl
+    // the remainder of that over.
+    const currentOverNumber = Math.floor((innings.balls || 0) / 6);
+    const bowlBlock = innings.twelfthManBowlBlock;
+    if (bowlBlock && bowlBlock.overNumber === currentOverNumber && String(bowlBlock.player) === String(bowlerId)) {
+      return res.status(400).json({
+        message: "The 12th Man cannot bowl the rest of this over.",
+        code: "TWELFTH_MAN_CANNOT_BOWL_OVER",
+      });
+    }
+
     innings.currentBowler = bowlerId;
     await match.save({ validateModifiedOnly: true });
 
