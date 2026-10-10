@@ -147,3 +147,72 @@ Notes:
 - The scoring-start fix in §4 (`utils/matchInnings.js`, the lazy `ensureMatchInnings`
   calls, the `Match.round` relaxation and the new tests) was added on
   `oct11-release` **after** the first release commit, ahead of the 11 Oct event.
+- The Admin sidebar fix and the "12th Man" rule (§7, §8) were added on the
+  `oct11-fixes` branch (from `master`/`a4cf64e`), ahead of the 11 Oct event.
+
+---
+
+## 7. Admin navigation fix
+
+The Admin sidebar entries did not work and the sidebar could not scroll to its
+last items. Root cause: the `<aside>` was a fixed-height flex column whose
+`<nav>` child lacked `min-h-0`, so the nav grew past the viewport instead of
+scrolling, and a `no-scrollbar` utility hid the (overflowing) scrollbar.
+
+Fix (`Frontend/Admin/src/components/Sidebar.jsx`):
+- `min-h-0` on the nav so it becomes the scrolling flex child; the header stays
+  pinned.
+- `overflow-hidden` on the aside; replaced `no-scrollbar` with a thin, visible
+  scrollbar (`scrollbar-width: thin` + webkit rules).
+- Nav still uses `NavLink` (client-side routing, active item highlighted via
+  `aria-current`), and each item closes the mobile drawer on click.
+
+Two entries are now hidden by default behind admin feature flags (routes stay
+mounted, so links keep working if visited directly):
+- `VITE_SHOW_ADMIN_INTERNATIONAL` (default hidden)
+- `VITE_SHOW_ADMIN_HANDLER_REQUESTS` (default hidden)
+
+Wired as build args/ENV in `Frontend/Admin/Dockerfile` and
+`docker-compose.yml` (admin-frontend `build.args`), mirroring the User frontend.
+A component test (`Frontend/Admin/src/test/Sidebar.test.jsx`) covers item
+rendering, the hidden-by-default flags, the superadmin-only "Manage Admins"
+entry, the active route, and the scrollable nav.
+
+## 8. 12th Man rule (replaces "Super Sub / Impact Player")
+
+User-facing text is now "12th Man" everywhere; internal field names
+(`Match.twelfthMan`, `Match.impactPlayers`, `setImpactPlayer`, the
+`/matches/:id/impact-player` route) are unchanged. `ScoringEngine.addImpactPlayer`
+is untouched.
+
+**Enablement is narrowest-wins and must be turned on in two places:**
+1. Platform master switch — superadmin toggle **Sync Panel → "12th Man"**
+   (`SystemSettings.enableSuperSub`; env seed `SUPER_SUB_ENABLED=true`). Off
+   blocks the rule everywhere.
+2. Per-scope rule — `rules.twelfthManEnabled` on the **tournament** form and/or
+   the **match setup wizard** (per match). A match value overrides the
+   tournament; `null` (unset, the default) inherits the tournament.
+
+Effective = master switch AND (`match.rules.twelfthManEnabled` ??
+`tournament.rules.twelfthManEnabled` ?? false). Turning it on for one
+match/tournament never affects another.
+
+**Behaviour:** a team's nominated 12th man replaces one XI player, once per team
+per match. The swap edits `playingXI` and keeps `bowlingXI` in sync (replaced
+player removed, incoming player added when a bowling XI exists). The replaced
+player cannot bat or bowl after the swap; existing scorecard entries are kept.
+
+**Timing (backend-enforced):** only at the innings start, at the end of an over,
+or right after a wicket — otherwise `TWELFTH_MAN_BAD_TIMING`. A mid-over swap on
+the fielding side bars the incoming player from bowling the rest of that over
+(`TWELFTH_MAN_CANNOT_BOWL_OVER`); the replaced player (if bowling) also cannot
+continue.
+
+**Not implemented (deliberately out of scope):** no five-substitute list, no
+overseas-player rule, no over cap for the 12th Man. Only the single mid-innings
+replacement described above.
+
+Tests: `Backend/test/twelfthMan.test.js` (scope isolation, master-off block,
+timing, once-per-team, bowlingXI sync, replaced-player removal, mid-over bowling
+block, end-of-over window); `Backend/test/superSub.test.js` kept passing
+(codes/gating updated).
