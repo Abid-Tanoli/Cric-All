@@ -45,7 +45,10 @@ import { PERMISSIONS, roleHasPermission, isOrgAdminRole } from "../permissions/o
  *
  * Deliberately absent: `createdBy`, `isSeed`, `seedSource`, `seedVersion`
  * (internal provenance) and `birthInfo` (no privacy flag opts date of birth in,
- * so it is withheld outright rather than merely blanked).
+ * so it is withheld outright rather than merely blanked). Also withheld are
+ * the oct11-A data-entry fields `phone` (a contact number has no business on a
+ * public profile) and `isPartTimeBowler` (a classification nothing public
+ * renders). `jerseyNumber` IS whitelisted: the public player page renders it.
  *
  * `gallery` and `videos` *are* on the whitelist because `privacy.gallery` and
  * `privacy.videos` are real flags on the model — they are emitted blanked when
@@ -64,6 +67,7 @@ export const PLAYER_PUBLIC_FIELDS = Object.freeze([
   "ageGroup",
   "organization",
   "imageUrl",
+  "jerseyNumber",
   "team",
   "age",
   "stats",
@@ -391,13 +395,12 @@ export function sanitizePlayerPublic(doc, opts = {}) {
     out.videos = [];
   }
 
-  // `privacy.contactInfo` has nothing to gate on a Player: the model declares no
-  // phone, email or website field, so there is no contact data to blank. The flag
-  // is kept on the schema because it is part of the shared privacy vocabulary and
-  // `Team` (which does have contact fields, gated above) uses the same names. If a
-  // contact field is ever added to Player, it belongs on the whitelist *and*
-  // behind this branch — the empty `if` that used to sit here was a placeholder
-  // that silently did nothing.
+  // oct11-A added a real `phone` field to the Player schema for admin data entry.
+  // It is deliberately NOT on the whitelist above, so it never reaches a public
+  // body — the model now having a contact field does not make contact data
+  // public. `privacy.contactInfo` therefore still has nothing to gate here (the
+  // `Team` sanitizer above is the one that honours it, since teams do whitelist
+  // phone/email/website).
 
   // `location` gates the address. For public (non-private) view, expose only city and country
   // as per requirement. Blank the values rather than dropping the key so the frontend's reads stay type-safe.

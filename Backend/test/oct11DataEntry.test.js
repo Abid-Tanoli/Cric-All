@@ -15,7 +15,7 @@ import * as teamService from "../src/services/teamService.js";
 import * as playerService from "../src/services/playerService.js";
 import { createPlayer } from "../src/controllers/playerController.js";
 import { createTeam } from "../src/controllers/teamsController.js";
-import {
+import aiCommentary, {
   isAiCommentaryEnabled,
   __setAiCommentaryEnabledForTests,
 } from "../src/services/aiCommentary.js";
@@ -150,15 +150,164 @@ test("listTeams escapes regex metacharacters in the search term", async () => {
 
 // --- AI kill switch ---------------------------------------------------------
 
-test("AI commentary is on by default and can be switched off", async () => {
+test("AI commentary is off by default and only a stored true enables it", async () => {
   const settings = await getPlatformSettings();
-  assert.equal(settings.aiCommentaryEnabled, true);
+  assert.equal(settings.aiCommentaryEnabled, false);
 
-  await setPlatformSettings({ aiCommentaryEnabled: false });
   __setAiCommentaryEnabledForTests(null);
   assert.equal(await isAiCommentaryEnabled(), false);
 
   await setPlatformSettings({ aiCommentaryEnabled: true });
   __setAiCommentaryEnabledForTests(null);
   assert.equal(await isAiCommentaryEnabled(), true);
+});
+
+test("the env var never enables AI by default; an explicit stored false wins over env", async () => {
+  const previous = process.env.AI_COMMENTARY_ENABLED;
+  try {
+    // Even with the env var absent, a fresh database is off.
+    delete process.env.AI_COMMENTARY_ENABLED;
+    await SystemSettings.deleteMany({});
+    __setAiCommentaryEnabledForTests(null);
+    assert.equal(await isAiCommentaryEnabled(), false);
+
+    // An explicit env value only seeds a fresh document; it is opt-in.
+    process.env.AI_COMMENTARY_ENABLED = "true";
+    await SystemSettings.deleteMany({});
+    __setAiCommentaryEnabledForTests(null);
+    assert.equal(await isAiCommentaryEnabled(), true);
+
+    // A stored `false` is authoritative over the env value.
+    await setPlatformSettings({ aiCommentaryEnabled: false });
+    __setAiCommentaryEnabledForTests(null);
+    assert.equal(await isAiCommentaryEnabled(), false);
+  } finally {
+    if (previous === undefined) delete process.env.AI_COMMENTARY_ENABLED;
+    else process.env.AI_COMMENTARY_ENABLED = previous;
+    __setAiCommentaryEnabledForTests(null);
+  }
+});
+
+test("with AI off, ball commentary is the non-AI text and the AI client is never called", async (t) => {
+  const previousKey = process.env.ANTHROPIC_API_KEY;
+  const previousApiKey = aiCommentary.apiKey;
+  process.env.ANTHROPIC_API_KEY = "sk-test-not-real";
+  aiCommentary.apiKey = "sk-test-not-real";
+
+  let aiCalls = 0;
+  // Spy on the only method that would touch the Anthropic API for a ball.
+  await t.mock.method(aiCommentary, "_aiEnrichVivid", async () => {
+    aiCalls += 1;
+    return "AI enriched text";
+  });
+
+  try {
+    await setPlatformSettings({ aiCommentaryEnabled: false });
+    __setAiCommentaryEnabledForTests(null);
+    assert.equal(await isAiCommentaryEnabled(), false);
+
+    const result = await aiCommentary.generateBallCommentary({
+      runs: 4,
+      batsmanName: "Ali Raza",
+      bowlerName: "Imran Khan",
+      pitchLine: "off_stump",
+      pitchLength: "full",
+      ballMovement: "none",
+      shotType: "cover_drive",
+      shotDirection: "off",
+    });
+
+    assert.equal(aiCalls, 0, "zero AI calls while the flag is off even with a key present");
+    assert.equal(
+      result.short,
+      "Imran Khan to Ali Raza, full on off stump, straight delivery, Ali Raza Cover Drive to off, four!",
+    );
+    assert.match(result.vivid, /Ali Raza/i);
+    assert.match(result.vivid, /on off stump/);
+    assert.match(result.vivid, /Cover Drive/);
+    assert.doesNotMatch(result.vivid, /AI enriched text/);
+  } finally {
+    if (previousKey === undefined) delete process.env.ANTHROPIC_API_KEY;
+    else process.env.ANTHROPIC_API_KEY = previousKey;
+    aiCommentary.apiKey = previousApiKey;
+  }
+});
+
+test("with AI switched on, the AI enrich method runs and replaces the vivid line", async (t) => {
+  let aiCalls = 0;
+  // `apiKey` is fixed at construction time from the environment, so a test
+  // cannot opt in by racing an env var against the module's import. Poke the
+  // singleton directly (and restore it afterwards).
+  const previousApiKey = aiCommentary.apiKey;
+  aiCommentary.apiKey = "sk-test-not-real";
+  await t.mock.method(aiCommentary, "_aiEnrichVivid", async () => {
+    aiCalls += 1;
+    return "AI enriched text";
+  });
+
+  try {
+    await setPlatformSettings({ aiCommentaryEnabled: true });
+    __setAiCommentaryEnabledForTests(null);
+
+    const result = await aiCommentary.generateBallCommentary({
+      runs: 6,
+      batsmanName: "Ali Raza",
+      bowlerName: "Imran Khan",
+      pitchLine: "middle_stump",
+      pitchLength: "full_toss",
+      ballMovement: "none",
+      shotType: "slog",
+    });
+
+    assert.equal(aiCalls, 1);
+    assert.equal(result.vivid, "AI enriched text");
+    assert.equal(
+      result.short,
+      "Imran Khan to Ali Raza, full toss on middle stump, straight delivery, Ali Raza Slog to the outfield, six!",
+    );
+  } finally {
+    aiCommentary.apiKey = previousApiKey;
+    __setAiCommentaryEnabledForTests(null);
+  }
+});
+
+test("over summary and edited-ball regeneration fall back without any AI call when off", async (t) => {
+  const previousKey = process.env.ANTHROPIC_API_KEY;
+  process.env.ANTHROPIC_API_KEY = "sk-test-not-real";
+  await t.mock.method(aiCommentary, "_aiEnrichVivid", async () => "AI enriched text");
+
+  try {
+    await setPlatformSettings({ aiCommentaryEnabled: false });
+    __setAiCommentaryEnabledForTests(null);
+
+    const over = await aiCommentary.generateOverSummary({
+      overNumber: 2,
+      bowlerName: "Imran Khan",
+      runsThisOver: 8,
+      wicketsThisOver: 1,
+      oversFigures: "2-0-12-1",
+      ballsSummary: [],
+      score: 45,
+      wickets: 2,
+      totalOvers: 8,
+    });
+    assert.match(over, /Imran Khan/);
+    assert.match(over, /8 runs/);
+
+    const edited = await aiCommentary.regenerateEditedBallCommentary({
+      overNumber: 3,
+      ballNumber: 4,
+      oldType: "dot",
+      oldRuns: 0,
+      newType: "four",
+      newRuns: 4,
+      bowlerName: "Imran Khan",
+      batsmanName: "Ali Raza",
+    });
+    assert.match(edited.short, /corrected: four for 4 runs/i);
+  } finally {
+    if (previousKey === undefined) delete process.env.ANTHROPIC_API_KEY;
+    else process.env.ANTHROPIC_API_KEY = previousKey;
+    __setAiCommentaryEnabledForTests(null);
+  }
 });

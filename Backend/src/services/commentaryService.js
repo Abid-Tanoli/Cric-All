@@ -1,5 +1,6 @@
 import Ball from "../models/Ball.js";
 import { getIO } from "../socket/socket.js";
+import { isAiCommentaryEnabled } from "./aiCommentary.js";
 import fetch from "node-fetch";
 
 export function buildCommentaryPrompt(data) {
@@ -63,6 +64,10 @@ function generateFallbackCommentary(data) {
 }
 
 async function callAI(prompt) {
+  // The same platform kill switch gates this admin on-demand path: when AI
+  // commentary is off no provider (claude/openai) is called at all.
+  if (!(await isAiCommentaryEnabled())) return null;
+
   const provider = process.env.AI_PROVIDER || "none";
 
   if (provider === "claude" && process.env.ANTHROPIC_API_KEY) {

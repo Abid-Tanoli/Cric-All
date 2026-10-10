@@ -10,6 +10,13 @@ import { getPlatformSettings } from "../models/SystemSettings.js";
 // template commentary in `buildStructuredCommentary` is pure and always runs,
 // so turning AI off degrades to the structured text rather than to nothing.
 //
+// The flag defaults to OFF. Only two things can enable it:
+//   1. an explicit `AI_COMMENTARY_ENABLED=true` at first boot (the value the
+//      settings document is seeded from), or
+//   2. a superadmin flipping the Sync Panel toggle at runtime.
+// Any other state (env unset, field missing, fresh database) reads as off, so a
+// tournament cannot accrue model spend by accident.
+//
 // The flag is cached briefly because `generateBallCommentary` is called once per
 // delivery and a database round-trip on every ball is not worth it; a 10s stale
 // window is invisible to an operator flipping the switch.
@@ -24,11 +31,13 @@ export async function isAiCommentaryEnabled() {
   let enabled;
   try {
     const settings = await getPlatformSettings();
-    enabled = settings?.aiCommentaryEnabled !== false;
+    // Opt-in only: a missing/undefined flag is "off", not "on".
+    enabled = settings?.aiCommentaryEnabled === true;
   } catch {
     // If settings cannot be read, fall back to the env default rather than
-    // silently disabling (which would look like "AI broke").
-    enabled = String(process.env.AI_COMMENTARY_ENABLED ?? "true").toLowerCase() !== "false";
+    // silently disabling (which would look like "AI broke"). The env default is
+    // also off unless AI_COMMENTARY_ENABLED is explicitly "true".
+    enabled = String(process.env.AI_COMMENTARY_ENABLED ?? "false").toLowerCase() === "true";
   }
   _aiFlagCache.value = enabled;
   _aiFlagCache.at = now;

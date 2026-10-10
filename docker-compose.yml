@@ -24,6 +24,15 @@ services:
         VITE_API_URL: ${VITE_API_URL:-http://localhost:5000/api}
         VITE_SOCKET_URL: ${VITE_SOCKET_URL:-http://localhost:5000}
         VITE_GOOGLE_CLIENT_ID: ${VITE_GOOGLE_CLIENT_ID:-}
+        # Empty when unset, which the frontend's featureFlags() treats as its
+        # default (external sections hidden, platform sections visible).
+        VITE_SHOW_INTERNATIONAL: ${VITE_SHOW_INTERNATIONAL:-}
+        VITE_SHOW_HIGHLIGHTS: ${VITE_SHOW_HIGHLIGHTS:-}
+        VITE_SHOW_CRICKET_NEWS: ${VITE_SHOW_CRICKET_NEWS:-}
+        VITE_SHOW_VIDEOS: ${VITE_SHOW_VIDEOS:-}
+        VITE_SHOW_RANKINGS: ${VITE_SHOW_RANKINGS:-}
+        VITE_SHOW_COMPARISON: ${VITE_SHOW_COMPARISON:-}
+        VITE_SHOW_BLOGS: ${VITE_SHOW_BLOGS:-}
     container_name: cricall-user-frontend
     restart: unless-stopped
     ports:

@@ -239,7 +239,7 @@ before(async () => {
     {
       name: `${TEST_PREFIX}VictimTournament_${runId}`,
       shortName: `P11VT${runId}`.slice(0, 12),
-      type: "league",
+      type: "knockout",
       startDate: "2026-01-01",
       endDate: "2026-02-01",
       teams: [ctx.teams.a.id, ctx.teams.b.id],
@@ -1055,7 +1055,7 @@ describe("Phase 11 - cross-tenant authorization matrix", () => {
         body: {
           name: `${TEST_PREFIX}P11_Throwaway_${world.runId}`,
           shortName: `P11X${world.runId}`.slice(0, 12),
-          type: "league",
+          type: "knockout",
           startDate: "2026-01-01",
           endDate: "2026-02-01",
           teams: [v().teamId, v().otherTeamId],

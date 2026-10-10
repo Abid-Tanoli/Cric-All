@@ -179,6 +179,13 @@ test("REGRESSION: a brand-new field added to the Player schema is not exposed by
     "isSeed",
     "seedSource",
     "seedVersion",
+    // oct11-A data-entry fields kept off the public surface: `phone` is a
+    // contact detail (a phone number must not reach a public profile) and
+    // `isPartTimeBowler` is a classification nothing public renders.
+    // `jerseyNumber` is NOT withheld — the public player page renders it, so it
+    // lives on PLAYER_PUBLIC_FIELDS instead.
+    "phone",
+    "isPartTimeBowler",
   ]);
   const unaccountedFor = schemaPaths.filter(
     (p) => !PLAYER_PUBLIC_FIELDS.includes(p) && !intentionallyWithheld.has(p),
