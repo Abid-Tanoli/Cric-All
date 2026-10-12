@@ -110,7 +110,7 @@ const ImpactPlayerSetup = ({ match, matchId }) => {
 
                 {impactEntry ? (
                     <p className="mt-3 text-xs font-bold text-cric-text">
-                        Impact player {impactEntry.player?.name || 'n/a'} replaced{' '}
+                        12th Man {impactEntry.player?.name || 'n/a'} replaced{' '}
                         {impactEntry.replaces?.name || 'n/a'}.
                     </p>
                 ) : (
