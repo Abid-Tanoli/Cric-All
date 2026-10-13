@@ -98,8 +98,16 @@ export function computeTournamentStats(input = {}) {
 
   const batting = new Map();
   const bowling = new Map();
+  const fielding = new Map();
   const inningsScores = [];
   const bowlingSpells = [];
+
+  // Counts a dismissal as a fielding credit for the non-batting team.
+  const FIELDING_DISMISSALS = {
+    caught: "catches",
+    stumped: "stumpings",
+    "run out": "runOuts",
+  };
 
   const completed = matches.filter((match) =>
     COMPLETED_STATUSES.includes(String(match?.status || "").toLowerCase())
@@ -117,8 +125,15 @@ export function computeTournamentStats(input = {}) {
 
   for (const match of completed) {
     const matchId = idOf(match);
+    const matchTeams = (match.teams || [])
+      .filter((team) => team && typeof team === "object")
+      .map((team) => ({ id: idOf(team), name: nameOf(team), logo: team.logo || "" }));
     for (const innings of match.innings || []) {
       const hint = teamHintFor(innings);
+      // The fielding side is the match team that is not batting this innings.
+      const fieldingTeam =
+        matchTeams.find((team) => team.id && team.id !== hint.teamId) ||
+        matchTeams[0] || { id: null, name: "", logo: "" };
 
       for (const entry of innings.batting || []) {
         const key = idOf(entry.player);
@@ -175,6 +190,31 @@ export function computeTournamentStats(input = {}) {
           fours: Number(entry.fours) || 0,
           sixes: Number(entry.sixes) || 0,
         });
+
+        // Fielding credit: the fielder belongs to the team that is NOT batting.
+        const credit = FIELDING_DISMISSALS[String(entry.dismissalType || "").toLowerCase()];
+        const fielderId = idOf(entry.fielder);
+        if (credit && fielderId) {
+          if (!fielding.has(fielderId)) {
+            const fielder = entry.fielder && typeof entry.fielder === "object" ? entry.fielder : {};
+            fielding.set(fielderId, {
+              playerId: fielderId,
+              name: fielder.name || "",
+              imageUrl: fielder.imageUrl || "",
+              teamId: fieldingTeam.id,
+              team: fieldingTeam.name,
+              teamLogo: fieldingTeam.logo,
+              matches: 0,
+              catches: 0,
+              stumpings: 0,
+              runOuts: 0,
+              _matchIds: new Set(),
+            });
+          }
+          const fRow = fielding.get(fielderId);
+          fRow[credit] += 1;
+          fRow._matchIds.add(matchId || `anon-${fieldingTeam.id}`);
+        }
       }
 
       for (const entry of innings.bowling || []) {
@@ -260,6 +300,15 @@ export function computeTournamentStats(input = {}) {
     };
   });
 
+  const fieldingRows = [...fielding.values()].map((row) => {
+    const { _matchIds, ...rest } = row;
+    return {
+      ...rest,
+      matches: _matchIds instanceof Set ? _matchIds.size : row.matches || 0,
+      total: row.catches + row.stumpings + row.runOuts,
+    };
+  });
+
   const cap = Math.max(1, Number(limit) || 50);
   const take = (list) => list.slice(0, cap);
 
@@ -293,23 +342,45 @@ export function computeTournamentStats(input = {}) {
   const mostFours = take(
     battingRows.filter((row) => row.fours > 0).sort((a, b) => b.fours - a.fours),
   );
+  // Fielding leaderboard, ranked by total dismissals (catches + stumpings + run outs).
+  const topFielders = take(
+    [...fieldingRows].sort((a, b) => b.total - a.total || b.catches - a.catches),
+  );
+
+  // A compact "boundary meter" for the Home / Stats hero: tournament-wide 4s and
+  // 6s plus the top five hitters in each column. Shape is intentionally the one
+  // the existing <BoundaryMeter /> component already consumes.
+  const boundaryMeter = {
+    sixes: battingRows.reduce((sum, row) => sum + (row.sixes || 0), 0),
+    fours: battingRows.reduce((sum, row) => sum + (row.fours || 0), 0),
+    mostSixes: mostSixes
+      .slice(0, 5)
+      .map((row) => ({ playerId: row.playerId, name: row.name, team: row.team, count: row.sixes })),
+    mostFours: mostFours
+      .slice(0, 5)
+      .map((row) => ({ playerId: row.playerId, name: row.name, team: row.team, count: row.fours })),
+  };
 
   const hasBatting = battingRows.length > 0;
   const hasBowling = bowlingRows.length > 0;
+  const hasFielding = fieldingRows.length > 0;
 
   return {
     matchCount: completed.length,
     thresholds: { minBallsFaced: Number(minBallsFaced) || 0, minOvers: Number(minOvers) || 0 },
     topRunScorers,
     topWicketTakers,
+    topFielders,
     highestScores,
     bestBowling,
     bestStrikeRates,
     bestEconomy,
     mostSixes,
     mostFours,
+    boundaryMeter,
     hasBatting,
     hasBowling,
+    hasFielding,
     hasSixes: mostSixes.length > 0,
     hasFours: mostFours.length > 0,
     empty: !hasBatting && !hasBowling,
@@ -336,12 +407,13 @@ export async function gatherTournamentStats(tournament, opts = {}) {
     .select(
       "status result manOfMatch teams innings.team innings.batting.player innings.batting.runs " +
         "innings.batting.balls innings.batting.fours innings.batting.sixes innings.batting.isOut " +
-        "innings.batting.dismissalType innings.bowling.player innings.bowling.balls innings.bowling.overs " +
-        "innings.bowling.maidens innings.bowling.runs innings.bowling.wickets",
+        "innings.batting.dismissalType innings.batting.fielder innings.bowling.player innings.bowling.balls " +
+        "innings.bowling.overs innings.bowling.maidens innings.bowling.runs innings.bowling.wickets",
     )
     .populate("teams", STATS_TEAM_SELECT)
     .populate("innings.team", STATS_TEAM_SELECT)
     .populate("innings.batting.player", STATS_PLAYER_SELECT)
+    .populate("innings.batting.fielder", STATS_PLAYER_SELECT)
     .populate("innings.bowling.player", STATS_PLAYER_SELECT)
     .lean();
 
@@ -366,16 +438,24 @@ export async function gatherTournamentStats(tournament, opts = {}) {
   // Belt-and-braces: strip any row that still carries a reserved test name
   // (e.g. a player typed into a fixture team).
   const strip = (list) => (list || []).filter((row) => !isReservedTestName(row.name) && !isReservedTestName(row.team));
+  const topFielders = strip(stats.topFielders);
   return {
     ...stats,
     topRunScorers: strip(stats.topRunScorers),
     topWicketTakers: strip(stats.topWicketTakers),
+    topFielders,
     highestScores: strip(stats.highestScores),
     bestBowling: strip(stats.bestBowling),
     bestStrikeRates: strip(stats.bestStrikeRates),
     bestEconomy: strip(stats.bestEconomy),
     mostSixes: strip(stats.mostSixes),
     mostFours: strip(stats.mostFours),
+    boundaryMeter: {
+      ...stats.boundaryMeter,
+      mostSixes: strip(stats.boundaryMeter?.mostSixes),
+      mostFours: strip(stats.boundaryMeter?.mostFours),
+    },
+    hasFielding: topFielders.length > 0,
   };
 }
 

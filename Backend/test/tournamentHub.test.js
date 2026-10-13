@@ -88,7 +88,7 @@ async function makePlayers(team, count, label) {
  * hold the same numbers a ball-by-ball innings would produce. This is exactly
  * the input shape documented at the top of services/tournamentStats.js.
  */
-async function makeManualMatch({ tournament, teamA, teamB, batsmen, bowlers, result, title }) {
+async function makeManualMatch({ tournament, teamA, teamB, batsmen, bowlers, result, title, fielders }) {
   return Match.create({
     title: title || uniq("Manual Match"),
     tournament,
@@ -118,7 +118,16 @@ async function makeManualMatch({ tournament, teamA, teamB, batsmen, bowlers, res
         runs: 161,
         wickets: 6,
         balls: 118,
-        batting: batsmen.map((player) => ({ player: player._id, runs: 10, balls: 12, isOut: true, dismissalType: "caught" })),
+        // teamA is fielding in this innings, so a caught dismissal credits one of
+        // teamA's players; that fielder must reach the public leaderboard.
+        batting: batsmen.map((player, i) => ({
+          player: player._id,
+          runs: 10,
+          balls: 12,
+          isOut: true,
+          dismissalType: "caught",
+          fielder: fielders && fielders.length ? fielders[i % fielders.length]._id : undefined,
+        })),
         bowling: bowlers.map((player) => ({ player: player._id, balls: 24, overs: 4, runs: 30, wickets: 1 })),
       },
     ],
@@ -147,6 +156,7 @@ after(async () => {
 
 test("computeTournamentStats aggregates a manual scorecard and counts tie/no-result matches", () => {
   const batsman = { _id: "p1", name: "Opener" };
+  const keeper = { _id: "f1", name: "Gloves" };
   const bowler = { _id: "b1", name: "Spearhead" };
   const team = { _id: "t1", name: "Reds" };
 
@@ -154,6 +164,7 @@ test("computeTournamentStats aggregates a manual scorecard and counts tie/no-res
     team,
     batting: [
       { player: batsman, runs: 70, balls: 45, fours: 8, sixes: 2, isOut: true, dismissalType: "bowled" },
+      { player: { _id: "p2", name: "Finisher" }, runs: 12, balls: 9, isOut: true, dismissalType: "caught", fielder: keeper },
     ],
     bowling: [{ player: bowler, balls: 24, overs: 4, maidens: 1, runs: 18, wickets: 4 }],
   };
@@ -178,6 +189,18 @@ test("computeTournamentStats aggregates a manual scorecard and counts tie/no-res
   assert.equal(stats.empty, false);
   assert.equal(stats.hasBatting, true);
   assert.equal(stats.hasBowling, true);
+  // Fielding: the caught dismissal credits the named fielder in all three matches.
+  assert.equal(stats.hasFielding, true);
+  assert.equal(stats.topFielders[0].playerId, "f1");
+  assert.equal(stats.topFielders[0].catches, 3);
+  assert.equal(stats.topFielders[0].total, 3);
+  assert.equal(stats.topFielders[0].matches, 3, "distinct completed matches count once each");
+  // Boundary meter: tournament-wide 4s/6s plus a top-five compact list.
+  assert.equal(stats.boundaryMeter.sixes, 6, "two sixes per innings across three matches");
+  assert.equal(stats.boundaryMeter.fours, 24);
+  assert.equal(stats.boundaryMeter.mostSixes[0].playerId, "p1");
+  assert.equal(stats.boundaryMeter.mostSixes[0].count, 6);
+  assert.equal(stats.boundaryMeter.mostSixes[0].name, "Opener");
   // The qualified strike-rate list needs minBallsFaced; 45 balls qualifies.
   assert.equal(stats.bestStrikeRates[0].playerId, "p1");
   // Economy qualifies at >= minOvers (5) overs = 30 balls. The three completed
@@ -208,7 +231,7 @@ test("GET /api/tournaments/:id/stats returns completed-match leaders and hides t
   tournament.teams = [teamA._id, teamB._id, hidden._id, reserved._id];
   await tournament.save();
 
-  await makeManualMatch({ tournament: tournament._id, teamA, teamB, batsmen, bowlers, result: { resultType: "normal" } });
+  await makeManualMatch({ tournament: tournament._id, teamA, teamB, batsmen, bowlers, result: { resultType: "normal" }, fielders: batsmen });
   await makeManualMatch({
     tournament: tournament._id,
     teamA: hidden,
@@ -237,6 +260,19 @@ test("GET /api/tournaments/:id/stats returns completed-match leaders and hides t
     assert.ok(!hiddenIds.has(row.playerId), "no hidden/reserved player leaks into run scorers");
   }
   assert.equal(res.body.topRunScorers[0].runs, 70, "60 from innings 1 plus 10 from innings 2");
+
+  // The fielding leaderboard is populated through the same public endpoint and
+  // credits a teamA player; the hidden match's fielders (if any) stay out.
+  assert.ok(Array.isArray(res.body.topFielders));
+  assert.equal(res.body.topFielders.length, 2, "the two teamA players took the two catches");
+  assert.equal(res.body.topFielders[0].catches, 1);
+  assert.equal(res.body.topFielders[0].total, 1);
+  assert.ok(res.body.topFielders.every((r) => !hiddenIds.has(r.playerId)));
+
+  // Boundary meter totals the completed public match's sixes/fours.
+  assert.equal(res.body.boundaryMeter.sixes, 6);
+  assert.equal(res.body.boundaryMeter.fours, 12);
+  assert.equal(res.body.hasFielding, true);
 });
 
 // ---------------------------------------------------------------------------
