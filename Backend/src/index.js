@@ -18,6 +18,7 @@ import errorHandler from "./middleware/errorHandler.js";
 import log from "./utils/logger.js";
 import { initSentry, sentryMiddleware, captureException } from "./utils/sentry.js";
 import tournamentRoutes from "./routes/tournamentRoutes.js";
+import tournamentContentRoutes from "./routes/tournamentContentRoutes.js";
 import eventRoutes from "./routes/eventRoutes.js";
 import bulkImportRoutes from "./routes/bulkImportRoutes.js";
 import blogRoutes from "./routes/blogRoutes.js";
@@ -174,6 +175,10 @@ app.use("/api/matches", matchRoutes);
 app.use("/api/teams", teamRoutes);
 app.use("/api/livematch", liveMatchRoutes);
 app.use("/api/tournaments", tournamentRoutes);
+// Tournament-hub sub-resources (content / stats / standings / media / articles).
+// Mounted after the legacy router on purpose: its multi-segment paths cannot
+// shadow the existing `/:id` reads. See routes/tournamentContentRoutes.js.
+app.use("/api/tournaments", tournamentContentRoutes);
 app.use("/api/events", eventRoutes);
 app.use("/api/bulk-import", bulkImportRoutes);
 app.use("/api/upload", uploadRoutes);
