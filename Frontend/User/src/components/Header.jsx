@@ -49,8 +49,14 @@ export default function Header({ user, hasOrg, onShowLogin, onShowRegister, onLo
   // Banner only while NEITHER identifier is verified: email OR phone being
   // verified satisfies the account (see isIdentityVerified on the backend).
   // `!== true` (not `=== false`) so users whose cached profile predates the
-  // phone fields still see the banner.
-  const needsVerification = Boolean(user && user.emailVerified !== true && user.phoneVerified !== true);
+  // phone fields still see the banner. When REQUIRE_VERIFIED_ACCOUNT is turned
+  // off platform-wide the whole banner is hidden (the backend no longer blocks).
+  const needsVerification = Boolean(
+    flags.requireVerifiedAccount &&
+      user &&
+      user.emailVerified !== true &&
+      user.phoneVerified !== true
+  );
   const missingEmail = Boolean(user && user.email && user.emailVerified !== true);
   const missingPhone = Boolean(user && user.phone && user.phoneVerified !== true);
   // "My Organizations" only means something once the account belongs to one. An

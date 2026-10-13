@@ -135,9 +135,23 @@ export const optionalProtect = async (req, res, next) => {
 export const isIdentityVerified = (user) =>
   user?.emailVerified === true || user?.phoneVerified === true;
 
+// Temporary kill switch (env flag REQUIRE_VERIFIED_ACCOUNT).
+//
+// The verification requirement is ON unless REQUIRE_VERIFIED_ACCOUNT is the
+// exact string "false" (case-insensitive). Absent, empty, "0", "no" or any
+// other value keeps the current, stricter behaviour, so a typo fails closed.
+// Only the identity-verification step is skipped when the flag is off; every
+// other check (authentication, roles, tenant isolation) is untouched.
+export const isVerifiedAccountRequired = () =>
+  String(process.env.REQUIRE_VERIFIED_ACCOUNT ?? "true").trim().toLowerCase() !== "false";
+
 export const requireVerifiedEmail = (req, res, next) => {
   if (!req.user) return res.status(401).json({ message: "Not authorized" });
   if (req.principalType === "admin") return next();
+  // Flag off: an authenticated user may perform the action without having
+  // proven an email or phone yet. Set REQUIRE_VERIFIED_ACCOUNT back to true
+  // once real SMTP/SMS delivery is configured.
+  if (!isVerifiedAccountRequired()) return next();
   if (!isIdentityVerified(req.user)) {
     return res.status(403).json({
       message: "Please verify your email address or phone number before performing this action.",
@@ -149,4 +163,4 @@ export const requireVerifiedEmail = (req, res, next) => {
   next();
 };
 
-export default { protect, optionalProtect, requireAdmin, requireSuperAdmin, requireVerifiedEmail, isIdentityVerified };
+export default { protect, optionalProtect, requireAdmin, requireSuperAdmin, requireVerifiedEmail, isIdentityVerified, isVerifiedAccountRequired };

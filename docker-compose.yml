@@ -33,6 +33,9 @@ services:
         VITE_SHOW_RANKINGS: ${VITE_SHOW_RANKINGS:-}
         VITE_SHOW_COMPARISON: ${VITE_SHOW_COMPARISON:-}
         VITE_SHOW_BLOGS: ${VITE_SHOW_BLOGS:-}
+        # Unset/empty falls through to the frontend default (verification
+        # requirement ON). Set the literal "false" to hide the banner.
+        VITE_REQUIRE_VERIFIED_ACCOUNT: ${VITE_REQUIRE_VERIFIED_ACCOUNT:-}
     container_name: cricall-user-frontend
     restart: unless-stopped
     ports:
