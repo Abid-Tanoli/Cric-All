@@ -37,6 +37,11 @@ export function featureFlags() {
     rankings: readFlag(import.meta.env.VITE_SHOW_RANKINGS, true),
     comparison: readFlag(import.meta.env.VITE_SHOW_COMPARISON, true),
     blogs: readFlag(import.meta.env.VITE_SHOW_BLOGS, true),
+    // "Verify your email/phone" requirement. Mirrors the backend
+    // REQUIRE_VERIFIED_ACCOUNT flag: ON by default, set the literal "false"
+    // (before building the bundle) to hide the verification banner/warning
+    // while the platform has no real SMTP/SMS delivery configured.
+    requireVerifiedAccount: readFlag(import.meta.env.VITE_REQUIRE_VERIFIED_ACCOUNT, true),
   };
 }
 

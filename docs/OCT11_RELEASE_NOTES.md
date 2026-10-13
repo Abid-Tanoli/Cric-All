@@ -216,3 +216,88 @@ Tests: `Backend/test/twelfthMan.test.js` (scope isolation, master-off block,
 timing, once-per-team, bowlingXI sync, replaced-player removal, mid-over bowling
 block, end-of-over window); `Backend/test/superSub.test.js` kept passing
 (codes/gating updated).
+
+## 9. Temporary verification kill switch (`REQUIRE_VERIFIED_ACCOUNT`)
+
+**Branch:** `no-verify-gate` (from `master`). Committed locally, not pushed.
+
+Real SMTP/SMS delivery is not configured yet, so the "verify your email/phone
+before creating organizations, teams and matches" requirement can be turned off
+with an env flag while the platform still needs to be usable. **The code is
+hidden, not deleted.**
+
+### Backend
+
+`requireVerifiedEmail` (`Backend/src/middleware/authMiddleware.js`) is the single
+guard applied to the organization / team / match / player / invitation routes
+(and the admin-only event, blog, upload, tournament, live-match routes). It now
+consults `REQUIRE_VERIFIED_ACCOUNT`:
+
+- Default (unset) and every value **except** the exact string `false` → the
+  requirement stays ON (current behaviour). Case-insensitive/trimmed, so
+  `"FALSE"` works and `"0"`/`"no"`/empty fail **closed**.
+- `REQUIRE_VERIFIED_ACCOUNT=false` → an **authenticated** account passes the
+  guard without a verified email/phone.
+
+**Everything else is unchanged:** the 401 for an unauthenticated caller, the
+platform-admin bypass, session/`tokenVersion`/suspension checks, all role and
+tenant-isolation checks, and the invitation controller's separate "you must own
+the address the invitation was sent to" identity proof
+(`membershipController.js`). The flag only relaxes the email/phone
+verification step.
+
+Signup, OTP and verification-link flows are untouched — they still work, they are
+just no longer mandatory.
+
+### Frontend (User app)
+
+A matching build-time flag `VITE_REQUIRE_VERIFIED_ACCOUNT` (default ON) hides the
+"Verify your email…" header banner (`Header.jsx`) and the inline warning on the My
+Players page (`MyPlayers.jsx`). It is threaded through
+`Frontend/User/Dockerfile` (ARG/ENV) and `docker-compose.yml`
+(`user-frontend.build.args`), exactly like the existing `VITE_SHOW_*` flags.
+Keep it in sync with the backend flag: the frontend only hides the message; the
+backend decides whether the action is blocked.
+
+### Verification (serial, live server)
+
+| Check | Command | Result |
+|---|---|---|
+| Backend tests (live server) | in-memory Mongo on `127.0.0.1:27017` + `node --test --test-concurrency=1 test/*.test.js test/e2e/guardProcNet.test.js` | **443 tests — 442 pass / 0 fail / 0 cancelled / 1 skip** (the win32 skip is `guardProcNet`'s Linux-only `/proc` probe) |
+| New flag tests | `node --test --test-concurrency=1 test/requireVerifiedAccountFlag.test.js` | **7/7** |
+| Frontend User tests | `cd Frontend/User; npm test` | **45/45** (13 files) |
+
+The `crossTenant`/`noSqlInjection` suites need a live local server; the safe way
+to run them is a Mongo on `127.0.0.1:27017` (so `test/e2e/lib/guard.js` can prove
+locality) with the server logging the console-mail link to `E2E_BACKEND_LOG`.
+
+### VPS deploy steps (exact lines)
+
+**1. `VPS Backend/.env`** (turn the requirement OFF while SMTP/SMS are missing):
+
+```env
+REQUIRE_VERIFIED_ACCOUNT=false
+```
+
+**2. root `.env`** (the file `docker compose` reads for build args):
+
+```env
+VITE_REQUIRE_VERIFIED_ACCOUNT=false
+```
+
+Then rebuild the two services whose behaviour changed:
+
+```sh
+docker compose up -d --build backend user-frontend
+```
+
+To restore the requirement later (do this once real SMTP/SMS is configured), set
+both values to `true` (or simply remove the lines — the default is ON) and
+rebuild.
+
+**OWNER ACTION:** set `REQUIRE_VERIFIED_ACCOUNT=true` and
+`VITE_REQUIRE_VERIFIED_ACCOUNT=true` as soon as `MAIL_DRIVER=smtp` + `SMTP_*`
+and/or `SMS_DRIVER=http` + `SMS_*` are configured. While the flag is off, anyone
+who can sign up can create organizations/teams/matches without proving an
+identity.
+

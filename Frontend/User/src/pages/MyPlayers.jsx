@@ -12,6 +12,7 @@ import { createMyPlayer, deleteMyPlayer, listMyPlayers, updateMyPlayer } from ".
 import { useStoredUser } from "./auth/auth";
 import { Banner, card, dangerButton, eyebrow, primaryButton, secondaryButton, Field, input } from "./organization/orgStyles";
 import { PLAYING_ROLES, BATTING_STYLES, BOWLING_STYLES, PLAYER_CATEGORIES, AGE_GROUPS } from "../lib/playerFields";
+import { featureFlags } from "../config/features";
 
 const EMPTY = {
   name: "",
@@ -163,8 +164,11 @@ export default function MyPlayers() {
   if (!storedUser) return <Navigate to="/login?next=/my-players" replace />;
 
   // An unverified account is refused by the server with a 403. Saying so here
-  // is more useful than a bare "you do not have permission".
-  const unverified = storedUser.emailVerified === false;
+  // is more useful than a bare "you do not have permission". When the platform
+  // turns the verification requirement off (REQUIRE_VERIFIED_ACCOUNT=false) the
+  // server accepts the write, so the warning and the disabled button go away.
+  const unverified =
+    featureFlags().requireVerifiedAccount && storedUser.emailVerified === false;
 
   const reset = () => {
     setForm(EMPTY);
