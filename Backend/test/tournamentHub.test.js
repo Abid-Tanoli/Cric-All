@@ -21,7 +21,7 @@ import Match from "../src/models/Match.js";
 import Tournament from "../src/models/Tournament.js";
 import TournamentMedia from "../src/models/TournamentMedia.js";
 import TournamentArticle from "../src/models/TournamentArticle.js";
-import { computeTournamentStats } from "../src/services/tournamentStats.js";
+import { computeTournamentStats, inningsForMatch } from "../src/services/tournamentStats.js";
 
 const PREFIX = "TournamentHub";
 let mongod;
@@ -516,4 +516,388 @@ test("public reads resolve a tournament by slug as well as id", async () => {
   const res = await req("GET", `/api/tournaments/${slug}/content`);
   assert.equal(res.status, 200);
   assert.equal(res.body.overview.format !== undefined, true);
+});
+
+// ---------------------------------------------------------------------------
+// (3) Manual scorecards: the single documented plug-in seam
+// ---------------------------------------------------------------------------
+
+test("inningsForMatch is the one documented manual-scorecard plug-in seam", () => {
+  const innings = [
+    {
+      team: { _id: "t1", name: "Reds" },
+      batting: [{ player: { _id: "p1", name: "Opener" }, runs: 12, balls: 9 }],
+    },
+  ];
+  // The canonical shape is returned unchanged.
+  assert.deepEqual(inningsForMatch({ innings }), innings);
+  // Every "nothing to read" input returns an empty list, never throws.
+  assert.deepEqual(inningsForMatch({}), []);
+  assert.deepEqual(inningsForMatch(null), []);
+  assert.deepEqual(inningsForMatch(undefined), []);
+  assert.deepEqual(inningsForMatch({ innings: "not-an-array" }), []);
+  assert.deepEqual(inningsForMatch({ innings: { nope: true } }), []);
+});
+
+test("a completed match with no scorecard yields an empty, non-misleading stats payload", async () => {
+  const tournament = await makeTournament("No Scorecard Cup");
+  const teamA = await makeTeam("NS A");
+  const teamB = await makeTeam("NS B");
+  tournament.teams = [teamA._id, teamB._id];
+  await tournament.save();
+
+  // Completed, with a result, but NO innings / batting / bowling — the shape a
+  // much later manual scorecard will fill in. It must contribute no phantom row.
+  await Match.create({
+    title: uniq("No Data Match"),
+    tournament: tournament._id,
+    teams: [teamA._id, teamB._id],
+    status: "completed",
+    result: { resultType: "normal", winner: teamA._id },
+    startAt: new Date("2026-10-03T09:00:00.000Z"),
+  });
+
+  const res = await req("GET", `/api/tournaments/${tournament._id}/stats?fresh=1`);
+  assert.equal(res.status, 200);
+  assert.equal(res.body.empty, true, "the UI shows the empty state, not zeros dressed as data");
+  assert.equal(res.body.matchCount, 0, "a completed match with no innings contributes nothing");
+  assert.equal(res.body.hasBatting, false);
+  assert.equal(res.body.hasBowling, false);
+  for (const key of [
+    "topRunScorers",
+    "topWicketTakers",
+    "topFielders",
+    "highestScores",
+    "bestBowling",
+    "bestStrikeRates",
+    "bestEconomy",
+    "mostSixes",
+    "mostFours",
+  ]) {
+    assert.deepEqual(res.body[key], [], `${key} must be empty`);
+  }
+  assert.equal(res.body.boundaryMeter.sixes, 0);
+  assert.equal(res.body.boundaryMeter.fours, 0);
+  assert.deepEqual(res.body.boundaryMeter.mostSixes, []);
+  assert.deepEqual(res.body.boundaryMeter.mostFours, []);
+
+  // The sidebar reads the same two endpoints; the points table is also empty.
+  const standings = await req("GET", `/api/tournaments/${tournament._id}/standings`);
+  assert.equal(standings.status, 200);
+  assert.equal(standings.body.hasStandings, false);
+  assert.deepEqual(standings.body.rows, []);
+});
+
+// ---------------------------------------------------------------------------
+// (a) Draft articles / unpublished media never reach a public route
+// ---------------------------------------------------------------------------
+
+test("unpublished media stays off the public hub but remains visible to the admin", async () => {
+  const admin = await makeAdminToken();
+  const tournament = await makeTournament("Unpublished Cup");
+
+  // One published photo and video through the real routes.
+  const pubForm = new FormData();
+  pubForm.append("image", new Blob([ONE_PX_PNG], { type: "image/png" }), "pub.png");
+  const pubPhoto = await req("POST", `/api/tournaments/admin/${tournament._id}/photos`, {
+    token: admin,
+    form: pubForm,
+  });
+  assert.equal(pubPhoto.status, 201);
+  await req("POST", `/api/tournaments/admin/${tournament._id}/videos`, {
+    token: admin,
+    body: { url: "https://youtu.be/aaaaaaaaaaa", title: "Published" },
+  });
+
+  // One unpublished photo and video, stored directly.
+  await TournamentMedia.create({
+    tournament: tournament._id,
+    kind: "photo",
+    url: "/uploads/hidden.png",
+    published: false,
+    deletedAt: null,
+  });
+  await TournamentMedia.create({
+    tournament: tournament._id,
+    kind: "video",
+    url: "https://youtu.be/bbbbbbbbbbb",
+    provider: "youtube",
+    videoId: "bbbbbbbbbbb",
+    published: false,
+    deletedAt: null,
+  });
+
+  const photos = await req("GET", `/api/tournaments/${tournament._id}/photos`);
+  assert.equal(photos.body.total, 1, "only the published photo is public");
+  assert.equal(photos.body.items.length, 1);
+  const videos = await req("GET", `/api/tournaments/${tournament._id}/videos`);
+  assert.equal(videos.body.total, 1, "only the published video is public");
+  assert.ok(!videos.body.items.some((v) => v.videoId === "bbbbbbbbbbb"));
+
+  const content = await req("GET", `/api/tournaments/${tournament._id}/content`);
+  assert.equal(content.body.counts.photos, 1, "the count ignores unpublished rows");
+  assert.equal(content.body.counts.videos, 1);
+
+  const adminList = await req("GET", `/api/tournaments/admin/${tournament._id}/content`, { token: admin });
+  assert.equal(adminList.status, 200);
+  assert.equal(adminList.body.media.filter((m) => m.kind === "photo").length, 2, "admin sees both photos");
+  assert.equal(adminList.body.media.filter((m) => m.kind === "video").length, 2, "admin sees both videos");
+});
+
+// ---------------------------------------------------------------------------
+// (b) Hidden / test teams never leak through standings (the teams tab and stats
+//     are covered by their own tests above)
+// ---------------------------------------------------------------------------
+
+test("standings hide hidden/test teams and never name a hidden next opponent", async () => {
+  const tournament = await makeTournament("Hidden Table Cup", { type: "league" });
+  const teamA = await makeTeam("Visible A");
+  const teamB = await makeTeam("Visible B");
+  const hidden = await makeTeam("Hidden Tea", { isPublic: false });
+  const reserved = await Team.create({ name: `E2E_${rnd()}` });
+
+  tournament.teams = [teamA._id, teamB._id, hidden._id, reserved._id];
+  tournament.pointsTable = [
+    { team: teamA._id, matchesPlayed: 1, won: 1, points: 2, netRunRate: 1 },
+    { team: hidden._id, matchesPlayed: 1, won: 1, points: 2, netRunRate: 5 },
+    { team: reserved._id, matchesPlayed: 1, won: 1, points: 2, netRunRate: 6 },
+    { team: teamB._id, matchesPlayed: 1, won: 0, points: 0, netRunRate: -1 },
+  ];
+  await tournament.save();
+
+  // Visible A's next fixture is against the hidden team: the opponent must not
+  // be named even though the match itself is public.
+  await Match.create({
+    title: uniq("Future vs Hidden"),
+    tournament: tournament._id,
+    teams: [teamA._id, hidden._id],
+    status: "upcoming",
+    startAt: new Date(Date.now() + 60 * 60 * 1000),
+  });
+
+  const res = await req("GET", `/api/tournaments/${tournament._id}/standings`);
+  assert.equal(res.status, 200);
+  const ids = res.body.rows.map((r) => r.team._id);
+  assert.ok(!ids.includes(String(hidden._id)), "a hidden team is not a standings row");
+  assert.ok(!ids.includes(String(reserved._id)), "a reserved-test team is not a standings row");
+  assert.equal(res.body.rows.length, 2);
+  assert.ok(res.body.rows.every((r) => !/Hidden/i.test(r.team.name)));
+  assert.ok(res.body.rows.every((r) => !/^E2E_/i.test(r.team.name)));
+  const rowA = res.body.rows.find((r) => r.team._id === String(teamA._id));
+  assert.equal(rowA.next, null, "a hidden next opponent is dropped, not named");
+
+  // The public tournament document (what the Teams tab reads) is filtered too.
+  const doc = await req("GET", `/api/tournaments/${tournament._id}`);
+  assert.equal(doc.status, 200);
+  const docTeamIds = (doc.body.teams || []).map((t) => String(t._id || t));
+  assert.ok(!docTeamIds.includes(String(hidden._id)));
+  assert.ok(!docTeamIds.includes(String(reserved._id)));
+});
+
+// ---------------------------------------------------------------------------
+// (c) Article body: script, event handlers and javascript: links
+// ---------------------------------------------------------------------------
+
+test("article body sanitization strips scripts, handlers, iframes and javascript: links", async () => {
+  const admin = await makeAdminToken();
+  const tournament = await makeTournament("XSS Cup");
+
+  const created = await req("POST", `/api/tournaments/admin/${tournament._id}/articles`, {
+    token: admin,
+    body: {
+      title: "<script>alert(1)</script>Report",
+      body:
+        "<p>ok</p><script>steal()</script><img src=x onerror=alert(1)>" +
+        "<iframe src=\"https://evil.example\"></iframe>" +
+        "<a href=\"javascript:alert(document.cookie)\">click</a>" +
+        "<svg onload=alert(2)></svg><style>body{x:1}</style>",
+      published: true,
+    },
+  });
+  assert.equal(created.status, 201, JSON.stringify(created.body));
+  const slug = created.body.article.slug;
+
+  const detail = await req("GET", `/api/tournaments/${tournament._id}/articles/${slug}`);
+  assert.equal(detail.status, 200);
+  const body = detail.body.article.body;
+  assert.ok(!/<script/i.test(body), "script removed");
+  assert.ok(!/<iframe/i.test(body), "iframe removed");
+  assert.ok(!/<svg/i.test(body), "svg removed");
+  assert.ok(!/<style/i.test(body), "style removed");
+  assert.ok(!/onerror/i.test(body), "onerror removed");
+  assert.ok(!/onload/i.test(body), "onload removed");
+  assert.ok(!/javascript\s*:/i.test(body), "javascript: scheme removed");
+  assert.ok(!/[<>]/.test(detail.body.article.title), "no markup characters remain in the title");
+
+  // The public list summary is sanitized too.
+  const list = await req("GET", `/api/tournaments/${tournament._id}/articles`);
+  assert.ok(!/javascript\s*:/i.test(JSON.stringify(list.body)));
+});
+
+// ---------------------------------------------------------------------------
+// (d) Video URL allow-list + no server-side fetch (SSRF)
+// ---------------------------------------------------------------------------
+
+test("video URLs are allow-listed, http(s)-only, and never fetched server-side", async () => {
+  const admin = await makeAdminToken();
+  const tournament = await makeTournament("SSRF Cup");
+
+  const rejected = [
+    "https://evil.example.com/steal",
+    "http://169.254.169.254/latest/meta-data/", // cloud metadata: not allow-listed
+    "http://localhost:5000/api/health", // internal service: not allow-listed
+    "file:///etc/passwd", // wrong scheme
+    "javascript:alert(1)", // wrong scheme
+    "not a url",
+  ];
+  for (const url of rejected) {
+    const res = await req("POST", `/api/tournaments/admin/${tournament._id}/videos`, {
+      token: admin,
+      body: { url },
+    });
+    assert.equal(res.status, 400, `rejected: ${url}`);
+  }
+
+  // No remote media row was created by any rejected attempt.
+  assert.equal(await TournamentMedia.countDocuments({ tournament: tournament._id }), 0);
+
+  // An accepted link stores only the URL/id — the payload is opaque to us.
+  const ok = await req("POST", `/api/tournaments/admin/${tournament._id}/videos`, {
+    token: admin,
+    body: { url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ" },
+  });
+  assert.equal(ok.status, 201);
+  const stored = await TournamentMedia.findOne({ tournament: tournament._id, kind: "video" }).lean();
+  assert.equal(stored.provider, "youtube");
+  assert.equal(stored.videoId, "dQw4w9WgXcQ");
+  assert.ok(stored.url.startsWith("https://"), "only a URL string is persisted");
+  assert.equal(stored.body, undefined);
+});
+
+// ---------------------------------------------------------------------------
+// (e) Upload type / size validation through the same pipeline
+// ---------------------------------------------------------------------------
+
+test("photo upload rejects a non-image and an oversized file with a 400", async () => {
+  const admin = await makeAdminToken();
+  const tournament = await makeTournament("Upload Cup");
+
+  const badType = new FormData();
+  badType.append("image", new Blob([Buffer.from("hello")], { type: "text/plain" }), "note.txt");
+  const rejected = await req("POST", `/api/tournaments/admin/${tournament._id}/photos`, {
+    token: admin,
+    form: badType,
+  });
+  assert.equal(rejected.status, 400, JSON.stringify(rejected.body));
+
+  const tooBig = new FormData();
+  tooBig.append("image", new Blob([Buffer.alloc(5 * 1024 * 1024 + 16)], { type: "image/png" }), "big.png");
+  const oversized = await req("POST", `/api/tournaments/admin/${tournament._id}/photos`, {
+    token: admin,
+    form: tooBig,
+  });
+  assert.equal(oversized.status, 400, JSON.stringify(oversized.body));
+
+  assert.equal(await TournamentMedia.countDocuments({ tournament: tournament._id }), 0);
+});
+
+// ---------------------------------------------------------------------------
+// (f) Every write route is platform-admin-only; hostile params are text, never
+//     query operators
+// ---------------------------------------------------------------------------
+
+test("every admin write route refuses anonymous and non-admin callers", async () => {
+  const tournament = await makeTournament("Write Auth Cup");
+  const user = await makeUserToken();
+  const id = tournament._id;
+  const fakeId = "000000000000000000000000";
+
+  const writes = [
+    ["PUT", `/api/tournaments/admin/${id}/content`, { body: { city: "X" } }],
+    ["POST", `/api/tournaments/admin/${id}/videos`, { body: { url: "https://youtu.be/aaaaaaaaaaa" } }],
+    ["PUT", `/api/tournaments/admin/${id}/media/${fakeId}`, { body: { caption: "x" } }],
+    ["DELETE", `/api/tournaments/admin/${id}/media/${fakeId}`, {}],
+    ["POST", `/api/tournaments/admin/${id}/articles`, { body: { title: "x", body: "y" } }],
+    ["PUT", `/api/tournaments/admin/${id}/articles/${fakeId}`, { body: { title: "x" } }],
+    ["DELETE", `/api/tournaments/admin/${id}/articles/${fakeId}`, {}],
+  ];
+
+  for (const [method, path, opts] of writes) {
+    const anon = await req(method, path, opts);
+    assert.equal(anon.status, 401, `anonymous ${method} ${path}`);
+    const asUser = await req(method, path, { ...opts, token: user });
+    assert.equal(asUser.status, 403, `non-admin ${method} ${path}`);
+  }
+
+  // The multipart photo route is guarded before multer ever runs.
+  const photoForm = new FormData();
+  photoForm.append("image", new Blob([ONE_PX_PNG], { type: "image/png" }), "p.png");
+  const anonPhoto = await req("POST", `/api/tournaments/admin/${id}/photos`, { form: photoForm });
+  assert.equal(anonPhoto.status, 401);
+});
+
+test("a hostile id or body value is treated as text, never as a query operator", async () => {
+  const payload = encodeURIComponent('{"$ne":null}');
+  const byId = await req("GET", `/api/tournaments/${payload}/content`);
+  assert.equal(byId.status, 404, "an object-shaped slug matches nothing and leaks nothing");
+
+  const prefix = await req("GET", `/api/tournaments/${encodeURIComponent("$ne")}/stats`);
+  assert.equal(prefix.status, 404);
+
+  const admin = await makeAdminToken();
+  const tournament = await makeTournament("Inject Param Cup");
+  const city = await req("PUT", `/api/tournaments/admin/${tournament._id}/content`, {
+    token: admin,
+    body: { city: { $ne: null } },
+  });
+  assert.equal(city.status, 400, "an object city is rejected");
+  const article = await req("POST", `/api/tournaments/admin/${tournament._id}/articles`, {
+    token: admin,
+    body: { title: "ok", body: { $ne: null } },
+  });
+  assert.equal(article.status, 400, "an object body is rejected");
+});
+
+// ---------------------------------------------------------------------------
+// (g) Public responses expose no private fields
+// ---------------------------------------------------------------------------
+
+test("public hub responses expose no emails, passwords or admin ids", async () => {
+  const adminDoc = await Admin.create({
+    name: uniq("admin"),
+    email: `${PREFIX}.leak.${rnd()}@example.com`,
+    password: "a-password-hash-that-is-never-compared",
+    role: "superadmin",
+  });
+  const admin = jwt.sign({ id: String(adminDoc._id) }, process.env.JWT_SECRET);
+  const tournament = await makeTournament("Privacy Cup");
+  tournament.content = { shortDescription: "Public series", city: "Lahore" };
+  await tournament.save();
+
+  await req("POST", `/api/tournaments/admin/${tournament._id}/articles`, {
+    token: admin,
+    body: { title: "Public Article", body: "Body text", published: true },
+  });
+  await req("POST", `/api/tournaments/admin/${tournament._id}/videos`, {
+    token: admin,
+    body: { url: "https://youtu.be/dQw4w9WgXcQ", title: "Highlights" },
+  });
+
+  const endpoints = [
+    `/api/tournaments/${tournament._id}/content`,
+    `/api/tournaments/${tournament._id}/stats?fresh=1`,
+    `/api/tournaments/${tournament._id}/standings`,
+    `/api/tournaments/${tournament._id}/photos`,
+    `/api/tournaments/${tournament._id}/videos`,
+    `/api/tournaments/${tournament._id}/articles`,
+  ];
+  for (const path of endpoints) {
+    const res = await req("GET", path);
+    assert.equal(res.status, 200, path);
+    const text = JSON.stringify(res.body);
+    assert.ok(!text.includes(adminDoc.email), `${path} must not expose an admin email`);
+    assert.ok(!/createdByAdmin/i.test(text), `${path} must not expose createdByAdmin`);
+    assert.ok(!/password/i.test(text), `${path} must not expose a password`);
+    assert.ok(!/"[^"]*@example\.com"/.test(text), `${path} must not expose any email address`);
+  }
 });

@@ -291,5 +291,41 @@ describe("tab empty and error states", () => {
     );
     expect(screen.getByText("Stats will be available after matches are played.")).toBeInTheDocument();
     expect(screen.getByText("No batting stats available yet")).toBeInTheDocument();
+    // A completed match with no ball-by-ball data must not render a 0/0 boundary
+    // meter that reads like real figures.
+    expect(screen.queryByText("Boundary Meter")).not.toBeInTheDocument();
+  });
+
+  it("Stats shows the boundary meter once figures exist", () => {
+    render(
+      <MemoryRouter>
+        <StatsTab stats={{ empty: false, boundaryMeter: { sixes: 3, fours: 9, mostSixes: [], mostFours: [] } }} />
+      </MemoryRouter>
+    );
+    expect(screen.getByText("Boundary Meter")).toBeInTheDocument();
+    expect(screen.queryByText("Stats will be available after matches are played.")).not.toBeInTheDocument();
+  });
+});
+
+describe("article rendering is inert", () => {
+  it("renders a malicious title and body as escaped text, never as HTML", async () => {
+    mockApi({
+      article: {
+        _id: "ar9",
+        slug: "xss",
+        title: "<img src=x onerror=alert(1)>Pwn",
+        body: "<script>globalThis.__xss=1</script>body text",
+        publishedAt: "2026-01-01T00:00:00.000Z",
+      },
+    });
+    renderHub(`/series/${TOURNAMENT_ID}/articles/xss`);
+
+    expect(
+      await screen.findByText("<script>globalThis.__xss=1</script>body text")
+    ).toBeInTheDocument();
+    // No element was created from the markup, and the script never ran.
+    expect(document.querySelector("article script")).toBeNull();
+    expect(document.querySelector('img[src="x"]')).toBeNull();
+    expect(globalThis.__xss).toBeUndefined();
   });
 });

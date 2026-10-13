@@ -20,6 +20,7 @@ import {
   uniqueArticleSlug,
 } from "../services/tournamentContent.js";
 import { recordAudit } from "../utils/audit.js";
+import { hiddenTeamIds, isHiddenTeamDoc, isReservedTestName } from "../utils/publicProjection.js";
 
 const PUBLISHED = { published: true, deletedAt: null };
 
@@ -120,6 +121,18 @@ export const getTournamentStandings = async (req, res) => {
       "name shortName logo",
     );
 
+    // Hidden (`isPublic:false`) and reserved-test teams must never reach a
+    // public standings row, and a visible team's "next opponent" must not name
+    // one either. `hiddenTeamIds()` covers both `isPublic:false` and the
+    // reserved test prefixes, so the id set is the single source of truth.
+    const hidden = new Set(await hiddenTeamIds());
+    const isHiddenRef = (team) => {
+      if (!team) return true;
+      if (hidden.has(String(team._id || team))) return true;
+      if (typeof team === "object" && isHiddenTeamDoc(team)) return true;
+      return typeof team === "object" && isReservedTestName(team.name);
+    };
+
     const teamIds = (populated.teams || []).map((t) => String(t?._id || t));
     const matches = await Match.find({ tournament: tournament._id })
       .select("teams status result startAt round group")
@@ -130,6 +143,7 @@ export const getTournamentStandings = async (req, res) => {
 
     const rows = [...(populated.pointsTable || [])]
       .filter((row) => row?.team)
+      .filter((row) => !isHiddenRef(row.team))
       .map((row) => {
         const id = String(row.team?._id || row.team);
         const nextMatch = next.get(id);
@@ -150,13 +164,14 @@ export const getTournamentStandings = async (req, res) => {
           wicketsFor: row.wicketsFor || 0,
           wicketsAgainst: row.wicketsAgainst || 0,
           form: (form.get(id) || []).slice(-5).reverse(),
-          next: nextTeam
-            ? {
-                matchId: String(nextMatch._id),
-                opponent: nextTeam.name || nextTeam.shortName || "",
-                startAt: nextMatch.startAt || null,
-              }
-            : null,
+          next:
+            nextTeam && !isHiddenRef(nextTeam)
+              ? {
+                  matchId: String(nextMatch._id),
+                  opponent: nextTeam.name || nextTeam.shortName || "",
+                  startAt: nextMatch.startAt || null,
+                }
+              : null,
         };
       })
       .sort((a, b) => b.points - a.points || b.netRunRate - a.netRunRate);

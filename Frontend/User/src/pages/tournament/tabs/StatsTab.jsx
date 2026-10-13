@@ -67,7 +67,7 @@ export default function StatsTab({ stats = {} }) {
 
   return (
     <div className="space-y-8">
-      <BoundaryMeter stats={boundaryMeter} />
+      {!empty && <BoundaryMeter stats={boundaryMeter} />}
 
       {empty && (
         <div className="bg-cric-card rounded-2xl shadow-sm p-8 text-center border border-cric-border">

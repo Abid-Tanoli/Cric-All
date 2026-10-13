@@ -179,6 +179,50 @@ never disagree.
   stale-while-revalidate=30`). `?fresh=1` bypasses the cache (used by tests and
   after edits); the admin content update also clears it.
 
+#### The single plug-in point for a manual scorecard
+
+`inningsForMatch(match)` in `Backend/src/services/tournamentStats.js` is **the
+only function that reads innings off a match**. Both `computeTournamentStats` and
+`gatherTournamentStats` call it, so it is the one seam the oct12-knockout branch
+has to touch:
+
+```js
+// Backend/src/services/tournamentStats.js
+export function inningsForMatch(match) {
+  const innings = match?.innings;
+  return Array.isArray(innings) ? innings : [];
+}
+```
+
+Today a match already stores `innings[]` on the document, whether it came from
+ball-by-ball entry or a hand-entered card, so the function is a straight read.
+When the knockout branch starts persisting a manual scorecard in its own field,
+return `inningsForMatch(match)` from that field (as `InningsLike[]`) and every
+figure — batting, bowling, fielding, boundaries, qualification and the sidebar —
+keeps working with no other edit. It is pure, synchronous and never throws on a
+malformed match; `[]` means "nothing to read". Do not reimplement the maths
+anywhere else.
+
+#### A completed match with **no** ball-by-ball data
+
+This is the manual-scorecard case that matters most: a match is marked
+`completed` with a result but has no `innings` (no batting/bowling yet). The
+behaviour is deliberately empty, never fabricated:
+
+| Surface | What it shows |
+| --- | --- |
+| `GET /:id/stats` | `empty: true`, `matchCount: 0`, every list `[]`, `boundaryMeter` all zeros, `hasBatting/hasBowling/hasFielding: false` |
+| Stats tab | The message **"Stats will be available after matches are played."**; the Boundary Meter (0/0-style panel) is **hidden** while `empty` is true, so nothing reads like real figures |
+| Sidebar | "No standing yet" / "No bowling stats yet" / "No batting stats yet" placeholders |
+
+A completed match with no innings contributes **no** row and no `matchCount`
+(`gatherTournamentStats` drops innings-less matches); it is not counted as a
+played match with zero runs. The points-table engine is unaffected — the Table
+tab still renders the existing `pointsTable` rows. Verified by the backend test
+*"a completed match with no scorecard yields an empty, non-misleading stats
+payload"* and the User tests *"Stats shows the empty state before any match is
+played"* / *"Stats shows the boundary meter once figures exist"*.
+
 ---
 
 ## 4. Admin app — content manager
@@ -223,31 +267,43 @@ No existing collection or field is modified. No migration is required to go live
 
 ## 6. Tests and screenshots
 
-Backend (new): `Backend/test/tournamentHub.test.js` — 11 tests covering stats
-aggregation, content defaults, auth, validation and media parsing. Run the full
-suite with:
+Backend (new): `Backend/test/tournamentHub.test.js` — 21 tests covering stats
+aggregation, the manual-scorecard plug-in seam, the empty-stats case, content
+defaults, auth, validation, XSS/SSRF/upload security and media parsing. Run the
+full suite with:
 
 ```
 npm --prefix Backend test          # script pins --test-concurrency=1
 ```
 
-Last full-suite run on this branch: **456 tests, 386 pass, 2 fail, 53 cancelled,
-15 skipped** (all 11 hub tests pass). The 2 failures are pre-existing and
-unrelated to this work: `test/crossTenant.test.js` and
-`test/noSqlInjection.test.js` both abort with `world was never built; the suite
-did not run` because they need a live local API server on `127.0.0.1:5000`
-(`ECONNREFUSED`). They fail the same way on `origin/master` without a server
-running.
+Last full-suite run on this branch (Linux container, live local API on
+`127.0.0.1:5000`, throwaway `cric-all-e2e` database): **464 tests, 464 pass,
+0 fail, 0 cancelled, 0 skipped** (all 21 hub tests pass, 23 suites,
+~21 min). The two suites that need a live server (`crossTenant.test.js`,
+`noSqlInjection.test.js`) pass in that setup.
+
+The skips and failures seen on a bare Windows host are environmental, not
+regressions: without a server, `auth-api.test.js` (14 tests, `{ skip:
+!serverAvailable }`) and the Linux-only `guardProcNet.test.js` (1, `{ skip:
+process.platform !== "linux" }`) skip (15), and the two server-needing suites
+abort (`ECONNREFUSED`). No test is skipped because of this branch's changes.
+
+E2E (real scoring over HTTP + Socket.IO): `npm --prefix Backend run test:e2e` —
+**7/7 scenarios, 78 pass, 0 fail, 0 divergence** (~3.7 min), with the local-target
+guard confirming the server picks `127.0.0.1:5000` and only loopback Mongo peers.
+Requires the server up and writing `backend.log` in its cwd (set
+`E2E_BACKEND_LOG` to override).
 
 Frontend (User, new):
 
 - `TournamentTabs` — registry order, `gate`, empty-media hiding.
 - `TournamentMatchUtils` — fixtures grouping/filters.
 - `TournamentSidebar` — leaderboard order and empty states.
-- `TournamentHub` — routing / deep links / legacy fallback.
+- `TournamentHub` — routing / deep links / legacy fallback, the empty-stats
+  Boundary-Meter guard, and inert article rendering.
 
 ```
-npm --prefix Frontend/User test    # 17 files, 79 tests, all pass
+npm --prefix Frontend/User test    # 17 files, 81 tests, all pass
 npm --prefix Frontend/Admin test   # 5 files, 23 tests, all pass
 ```
 
@@ -263,10 +319,38 @@ Teams at both **360×640** and **1280×800** (10 PNGs), captured by
 `scripts/screenshot-tournament-hub.mjs` against the built User app with
 `OPENCODE_TEST_` fixtures, which are removed afterwards.
 
-> The harness uses `playwright-core` driving the system Edge (`channel: 'msedge'`),
-> installed with `npm i playwright-core --no-save` (no new dependency is added to
-> any `package.json`). The server worker is blocked in the browser context so
-> Playwright can intercept `**/api/**`.
+### Manual smoke test (real API + real database)
+
+`scripts/smoke-tournament-hub.mjs` is a second, non-intercepted pass: it serves
+the built User app and reverse-proxies `/api`, `/socket.io` and `/uploads` to a
+**live local API**, then walks every tab plus the legacy `/series/<id>` URL and
+the slug form, asserting real seeded rows are present and that the draft article
+and the hidden ghost team are absent. It writes four fresh 360×640 shots to
+`docs/screenshots/tournament-hub-smoke/`:
+
+```
+# 1. seed (writes only to an e2e-named throwaway db; refuses anything else)
+MONGO_URL=mongodb://127.0.0.1:27017/cric-all-e2e \
+  node Backend/scripts/smokeSeedTournamentHub.mjs
+# 2. run the smoke pass against the running API
+node scripts/smoke-tournament-hub.mjs <tournamentId> opencode-test-hub-smoke
+# 3. remove the seed rows again
+MONGO_URL=mongodb://127.0.0.1:27017/cric-all-e2e \
+  node Backend/scripts/smokeSeedTournamentHub.mjs clean
+```
+
+The seed marks itself with `OPENCODE_TEST_` (tournament name, slug, admin email
+and one intentionally-hidden "ghost" team). The four **competing** teams are
+deliberately **not** prefixed with a reserved test prefix: the public hub filters
+`OPENCODE_TEST_` / `E2E_` / `TEST_` teams by design, so a reserved-prefix team
+would make the hub render empty. Filtering is therefore asserted on the ghost
+team here and covered directly by unit tests. Last run: **11/11 tab checks
+passed**, 4 screenshots written, seed data removed afterwards (verified 404).
+
+Both harnesses use `playwright-core` driving the system Edge
+(`channel: 'msedge'`), installed with `npm i playwright-core --no-save` (no new
+dependency is added to any `package.json`). The service worker is blocked in the
+browser context so a cached shell cannot mask the network.
 
 ---
 
@@ -305,3 +389,31 @@ maths anywhere else. `Bracket` / `Awards` tabs drop in via the registry (§2).
 - Video embeds store and validate provider URLs but the public page has not been
   audited against every Facebook URL shape; YouTube is exercised by tests.
 - `content.visibility` gates tabs but there is no bulk per-tournament export/import.
+
+---
+
+## 10. Security self-review (new public + admin surface)
+
+Every claim below has code evidence and a regression test in
+`Backend/test/tournamentHub.test.js` (unless a frontend test is named). Nothing
+here fetches remote content server-side; the only new I/O is Mongo reads/writes
+and the existing local photo store.
+
+| # | Risk | Evidence | Test (item) |
+| --- | --- | --- | --- |
+| a | Draft articles / unpublished media must never be public | `PUBLISHED = { published: true, deletedAt: null }` (`TournamentContentController.js:25`) applied to every public media/article query (`:204` and the article lists/detail); projections `publicMedia` / `publicArticleSummary` / `publicArticleDetail` (`tournamentContent.js:188/202/215`) drop internal fields | *unpublished media stays off the public hub but remains visible to the admin* |
+| b | Hidden (`isPublic:false`) and reserved-test (`OPENCODE_TEST_`/`E2E_`/`TEST_`) teams never reach hub stats / Teams / standings | `TEST_NAME_PREFIXES` + `isReservedTestName` (`publicProjection.js:528/536`), `hiddenTeamIds` (`:586`), `isHiddenTeamDoc` (`:596`), `stripHiddenTeamRefs` (`:617`); `getTournaments` excludes them (`TournamentController.js:100-102`); `getTournament` strips refs (`:146`); stats filter (`tournamentStats.js:449-462`); **standings rows + `next.opponent`** filter (`TournamentContentController.js:128-168`) | *standings hide hidden/test teams and never name a hidden next opponent* (+ stats/teams coverage in the existing hub tests) |
+| c | Article body/link XSS (`<script>`, `onerror`, `javascript:`, iframe/svg) | `sanitizeArticleBody` strips script/style/iframe/object/embed/form/link/meta/svg, `on*=` handlers and `javascript:` / `data:text/html` (`tournamentContent.js:61-75`); the title goes through `sanitizeText` (`:46`). The React reader renders `{article.body}` as **text** (no `dangerouslySetInnerHTML`), so it is escaped twice (`Frontend/User/src/pages/tournament/tabs/ArticleDetail.jsx`) | *article body sanitization strips scripts, handlers, iframes and javascript: links*; *renders a malicious title and body as escaped text, never as HTML* (User) |
+| d | Video URL host allow-list, no SSRF, nothing fetched server-side | `parseVideoUrl` accepts only http(s) and YouTube/YouTube-nocookie/Facebook hosts (`tournamentContent.js:98-100,107+`); only `{ provider, videoId, url }` is stored — no fetch anywhere | *video URLs are allow-listed, http(s)-only, and never fetched server-side* (`169.254.169.254`, localhost, `file:`, `javascript:` all 400) |
+| e | Upload type/size validation reuses the existing pipeline | `multer` memory storage, `fileSize: 5 MB`, `fileFilter` jpeg/png/webp, `MulterError` mapped to 400 (`tournamentContentRoutes.js:39-60`); stored via `storeImage` | *photo upload rejects a non-image and an oversized file with a 400* |
+| f | Every write route is platform-admin-only; hostile params/body cannot become query operators | all `/admin/*` writes are wrapped in `adminOnly = [protect, requireAdmin, requireVerifiedEmail]` (`tournamentContentRoutes.js:37,77-87`); `readString` rejects non-strings (`tournamentContent.js:31-39`); ids are resolved by `resolveTournament`, never passed as objects | *every admin write route refuses anonymous and non-admin callers* (401 anon, 403 user); *a hostile id or body value is treated as text, never as a query operator* |
+| g | Public responses leak no private fields (emails, phones, passwords, admin ids) | public projections omit `createdByAdmin`/`publishedBy`/timestamps and select only `name/imageUrl` for players (`tournamentStats.js`); `publicMedia`/`publicArticle*` build explicit shapes | *public hub responses expose no emails, passwords or admin ids* |
+
+Notes:
+
+- No admin ``id``/email ever reaches a public payload; the test also asserts no
+  ``@example.com`` string appears in any public response.
+- A rejected upload or video URL is a **400**, never a 500, and creates no row.
+- The reserved-team filter is prefix-based and case-insensitive, applied from the
+  start of the name (`publicProjection.js:553-554`); a normal team cannot
+  accidentally match it.

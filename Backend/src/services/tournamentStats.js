@@ -51,8 +51,11 @@ import { hiddenTeamIds, isHiddenTeamDoc, isReservedTestName } from "../utils/pub
 //
 // A "manual scorecard" only has to populate `innings[].batting` / `innings[].bowling`
 // with the same numbers a ball-by-ball innings produces; nothing else is assumed.
-// (If the other branch persists a manual scorecard somewhere else, adapt it into
-// this shape once and pass it in — do not reimplement the maths.)
+// If the other branch persists a manual scorecard somewhere else, adapt it into
+// this shape once and pass it in — do not reimplement the maths. The single
+// adapter seam for that is `inningsForMatch()` (below): it is the ONLY function
+// that reads innings off a match, so teaching it the other branch's field is the
+// whole integration.
 //
 // Only matches whose `status` is in `COMPLETED_STATUSES` contribute, so a live
 // match never half-counts. `manually entered` and `ball-by-ball` matches follow
@@ -60,6 +63,25 @@ import { hiddenTeamIds, isHiddenTeamDoc, isReservedTestName } from "../utils/pub
 
 /** Match statuses that contribute to career figures. */
 export const COMPLETED_STATUSES = Object.freeze(["completed"]);
+
+/**
+ * THE single plug-in point for a manual scorecard.
+ *
+ * Every figure below comes from an innings in the shape documented at the top
+ * of this file. Today a match already stores those innings on `match.innings`,
+ * whether they were produced ball-by-ball or entered by hand. When the
+ * oct12-knockout branch starts persisting a manual scorecard in its own field,
+ * adapt it HERE and nowhere else: return the innings as `InningsLike[]` and the
+ * whole aggregation — batting, bowling, fielding, boundaries, qualification —
+ * keeps working unchanged. Do not reimplement the maths elsewhere.
+ *
+ * Contract: pure, synchronous, never throws on a malformed match, and returns
+ * `[]` when there is nothing to read.
+ */
+export function inningsForMatch(match) {
+  const innings = match?.innings;
+  return Array.isArray(innings) ? innings : [];
+}
 
 const idOf = (value) => {
   if (!value) return null;
@@ -128,7 +150,7 @@ export function computeTournamentStats(input = {}) {
     const matchTeams = (match.teams || [])
       .filter((team) => team && typeof team === "object")
       .map((team) => ({ id: idOf(team), name: nameOf(team), logo: team.logo || "" }));
-    for (const innings of match.innings || []) {
+    for (const innings of inningsForMatch(match)) {
       const hint = teamHintFor(innings);
       // The fielding side is the match team that is not batting this innings.
       const fieldingTeam =
@@ -424,7 +446,7 @@ export async function gatherTournamentStats(tournament, opts = {}) {
   const cleanMatches = matches
     .map((match) => ({
       ...match,
-      innings: (match.innings || []).filter((innings) => {
+      innings: inningsForMatch(match).filter((innings) => {
         const team = innings.team;
         if (!team || typeof team !== "object") return true;
         if (hidden.has(String(team._id))) return false;
@@ -504,4 +526,4 @@ export function computeFormAndNext(matches = [], teamIds = []) {
   return { form, next };
 }
 
-export default { computeTournamentStats, gatherTournamentStats, computeFormAndNext, COMPLETED_STATUSES };
+export default { computeTournamentStats, gatherTournamentStats, computeFormAndNext, inningsForMatch, COMPLETED_STATUSES };
