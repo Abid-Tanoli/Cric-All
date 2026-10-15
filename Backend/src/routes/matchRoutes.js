@@ -49,6 +49,10 @@ import {
   resetInnings
 } from "../controllers/inningsController.js";
 import {
+  createManualMatch,
+  updateManualMatch
+} from "../controllers/manualScorecardController.js";
+import {
   getMatchPartnerships,
   getActivePartnership,
   getWagonWheelData,
@@ -122,6 +126,11 @@ router.get("/:id/commentary", validateObjectId("id"), getMatchCommentary);
 router.get("/:id/officials", validateObjectId("id"), getMatchOfficials);
 
 router.post("/", ...adminOnly, createMatch);
+// Manual (paper) scorecard: admin-only, creates a completed (or draft) match
+// whose summary innings feed standings/stats with no special case. Declared
+// before the `/:id/...` blocks so the literal path can never be read as an id.
+router.post("/manual", ...adminOnly, createManualMatch);
+router.put("/:id/manual", ...adminOnly, validateObjectId("id"), updateManualMatch);
 router.post("/:matchId/score", ...scoring("matchId"), scoringRateLimit, validate(updateScoreSchema), updateScore);
 router.post("/:matchId/end-innings", ...scoring("matchId"), validate(endInningsSchema), endInnings);
 router.post("/:matchId/start-next-innings", ...scoring("matchId"), startNextInnings);

@@ -17,6 +17,7 @@ const Tournaments = lazy(() => import("./pages/Tournamentmanagement"));
 const ManagePlayers = lazy(() => import("./pages/ManagePlayers"));
 const Teams = lazy(() => import("./pages/Teams"));
 const ManageScore = lazy(() => import("./pages/ManageScore"));
+const ManualScorecard = lazy(() => import("./pages/ManualScorecard"));
 const LiveMatchView = lazy(() => import("./pages/LiveMatchView"));
 const BulkImport = lazy(() => import("./pages/BulkImport"));
 const Rankings = lazy(() => import("./pages/Rankings"));
@@ -66,6 +67,8 @@ export default function App() {
       <Route path="/admin/score" element={<ProtectedRoute><ErrorBoundary><Layout><ManageScore /></Layout></ErrorBoundary></ProtectedRoute>} />
       <Route path="/admin/score/:matchId" element={<ProtectedRoute><ErrorBoundary><Layout><ManageScore /></Layout></ErrorBoundary></ProtectedRoute>} />
       <Route path="/admin/score/:matchId/:tabId" element={<ProtectedRoute><ErrorBoundary><Layout><ManageScore /></Layout></ErrorBoundary></ProtectedRoute>} />
+      <Route path="/admin/manual-scorecard" element={<ProtectedRoute><ErrorBoundary><Layout><ManualScorecard /></Layout></ErrorBoundary></ProtectedRoute>} />
+      <Route path="/admin/manual-scorecard/:id" element={<ProtectedRoute><ErrorBoundary><Layout><ManualScorecard /></Layout></ErrorBoundary></ProtectedRoute>} />
       <Route path="/admin/bulk-import" element={<ProtectedRoute><ErrorBoundary><Layout><BulkImport /></Layout></ErrorBoundary></ProtectedRoute>} />
       <Route path="/admin/blogs" element={<ProtectedRoute><ErrorBoundary><Layout><Blogs /></Layout></ErrorBoundary></ProtectedRoute>} />
       <Route path="/admin/rankings" element={<ProtectedRoute><ErrorBoundary><Layout><Rankings /></Layout></ErrorBoundary></ProtectedRoute>} />

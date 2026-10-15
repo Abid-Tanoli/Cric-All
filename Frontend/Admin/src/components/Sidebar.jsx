@@ -8,6 +8,7 @@ const menuItems = [
   { to: "/admin/live", label: "Live Scores", icon: "LS" },
   { to: "/admin/international", label: "International", icon: "IN", flag: "international" },
   { to: "/admin/score", label: "Live Scoring", icon: "SC" },
+  { to: "/admin/manual-scorecard", label: "Manual Scorecard", icon: "MS" },
   { to: "/admin/events", label: "Manage Events", icon: "EV" },
   { to: "/admin/tournaments", label: "Tournaments", icon: "TR" },
   { to: "/admin/teams", label: "Manage Teams", icon: "TM" },

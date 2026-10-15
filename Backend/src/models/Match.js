@@ -83,6 +83,11 @@ const batsmanStatsSchema = new mongoose.Schema({
   isRetiredHurt: { type: Boolean, default: false },
   isRetired: { type: Boolean, default: false },
   dismissalType: { type: String, default: "" },
+  // Free-text "how out" exactly as written in a paper scorebook, e.g.
+  // "c Khan b Adil" or "run out (Sami)". Only set for manual scorecards; the
+  // structured `dismissalType`/`dismissedBy`/`fielder` above is what the stats
+  // and fielding aggregates read.
+  dismissalText: { type: String, default: "" },
   dismissedBy: { type: mongoose.Schema.Types.ObjectId, ref: "Player" },
   fielder: { type: mongoose.Schema.Types.ObjectId, ref: "Player" },
   position: { type: Number, default: 0 },
@@ -229,6 +234,20 @@ const matchSchema = new mongoose.Schema(
       type: String,
       default: ""
     },
+    // Knockout progression. `round` above stays the numeric/legacy fixture
+    // round; `stage` is the bracket position and `stageLabel` the human slot
+    // ("QF1", "SF2", "Final"). Both are set for knockout fixtures (manual or
+    // generated) and empty for league ones. `stage` drives the public bracket.
+    stage: {
+      type: String,
+      enum: ["", "group", "quarter_final", "semi_final", "final", "third_place"],
+      default: ""
+    },
+    stageLabel: {
+      type: String,
+      default: "",
+      trim: true
+    },
     // Set when a fixture is rescheduled so the public UI and logs can show the
     // original slot. The displayed date always comes from `startAt`.
     rescheduledTo: {
@@ -322,6 +341,23 @@ const matchSchema = new mongoose.Schema(
     tossWinner: { type: mongoose.Schema.Types.ObjectId, ref: "Team" },
     tossDecision: { type: String, enum: ["bat", "bowl"] },
     manOfMatch: { type: mongoose.Schema.Types.ObjectId, ref: "Player" },
+    // Where the innings data came from. `live` is the ball-by-ball scorer;
+    // `manual` is a completed paper scorecard entered by an admin. Readers use
+    // this to hide the live badge / ball-by-ball timeline, and writers use it to
+    // know a match may be edited through the manual-scorecard endpoint.
+    source: {
+      type: String,
+      enum: ["live", "manual"],
+      default: "live",
+      index: true,
+    },
+    // A manual scorecard saved but not yet published: excluded from standings
+    // and stats until published (published matches are `status: "completed"`).
+    manualDraft: { type: Boolean, default: false },
+    manualMeta: {
+      enteredAt: { type: Date, default: null },
+      lastEditedAt: { type: Date, default: null },
+    },
     umpires: [{
       name: String,
       role: { type: String, enum: ["field", "third", "reserve"] }

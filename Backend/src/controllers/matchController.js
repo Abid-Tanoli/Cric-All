@@ -9,6 +9,7 @@ import { hiddenTeamIds, reservedNamesMongoClause } from "../utils/publicProjecti
 import { getPlatformSettings } from "../models/SystemSettings.js";
 import { recordAudit } from "../utils/audit.js";
 import { buildMatchInnings, ensureMatchInnings } from "../utils/matchInnings.js";
+import { updateTournamentPoints } from "../services/tournamentService.js";
 
 const normalStatus = (status = "upcoming") => (status === "innings-break" ? "innings_break" : status);
 const legalMatchStatuses = [
@@ -390,7 +391,20 @@ export const deleteMatch = async (req, res) => {
       return res.status(404).json({ message: "Match not found" });
     }
 
+    const wasManual = match.source === "manual";
+    const tournamentId = idOf(match.tournament) || null;
     await Match.findByIdAndDelete(req.params.id);
+
+    // Keep the tournament's fixture list and points table consistent with the
+    // delete (previously an orphaned id lingered in Tournament.matches).
+    if (tournamentId) {
+      try {
+        await Tournament.updateOne({ _id: tournamentId }, { $pull: { matches: match._id } });
+        updateTournamentPoints(tournamentId);
+      } catch (syncError) {
+        console.log("[TournamentSync] delete cleanup failed:", syncError.message);
+      }
+    }
 
     try {
       const io = getIO();
@@ -398,6 +412,17 @@ export const deleteMatch = async (req, res) => {
       io.emit("match:updateList");
     } catch (socketError) {
       console.log("Socket not available:", socketError.message);
+    }
+
+    if (wasManual) {
+      recordAudit({
+        req,
+        action: "match.manual_deleted",
+        targetType: "match",
+        targetId: match._id,
+        targetLabel: match.title,
+        metadata: { tournamentId },
+      });
     }
 
     res.status(200).json({ message: "Match deleted successfully" });
