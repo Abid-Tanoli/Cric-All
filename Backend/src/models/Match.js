@@ -164,9 +164,17 @@ const inningsSchema = new mongoose.Schema({
   batting: [batsmanStatsSchema],
   bowling: [bowlerStatsSchema],
   fallOfWickets: [{
+    // `wicket` is what the scoring engine writes (and what the scorecard summary
+    // reads); `wickets` is what the manual scorecard form posts. Both used to be
+    // half-defined here, so Mongoose silently dropped `wicket`, `wicketType` and
+    // `fielder` on save and the fall of wickets could never say *how* a batsman
+    // was dismissed. Keep all four.
+    wicket: { type: Number, default: null },
+    wickets: { type: Number, default: null },
     runs: { type: Number },
-    wickets: { type: Number },
     player: { type: mongoose.Schema.Types.ObjectId, ref: "Player" },
+    wicketType: { type: String, default: "" },
+    fielder: { type: mongoose.Schema.Types.ObjectId, ref: "Player", default: null },
     overs: { type: Number }
   }],
   partnerships: [partnershipSchema],
@@ -358,6 +366,14 @@ const matchSchema = new mongoose.Schema(
       enteredAt: { type: Date, default: null },
       lastEditedAt: { type: Date, default: null },
     },
+    // P2: who may score THIS match. Empty means "any org member whose role
+    // holds score_match" (the Phase 9 rule). When non-empty, only these users
+    // (plus org owners/admins/managers and platform admins) may open the
+    // scoring screen. Set by an admin through PUT /matches/:id/scorers.
+    assignedScorers: [{
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User"
+    }],
     umpires: [{
       name: String,
       role: { type: String, enum: ["field", "third", "reserve"] }

@@ -158,3 +158,32 @@ test("reverts the latest delivery totals and player statistics", () => {
   assert.equal(reverted.innings.bowling[0].runs, 0);
   assert.equal(reverted.innings.oversHistory.length, 0);
 });
+
+test("the fall-of-wickets sub-document persists the dismissal type and fielder", () => {
+  const inningsSchema = Match.schema.path("innings").schema;
+  const fowSchema = inningsSchema.path("fallOfWickets").schema;
+  assert.ok(fowSchema.path("wicketType"), "wicketType must be persisted");
+  assert.ok(fowSchema.path("fielder"), "fielder must be persisted");
+  assert.ok(fowSchema.path("wicket"), "the engine's wicket number must be persisted");
+  assert.ok(fowSchema.path("wickets"), "the manual form's wicket number must be persisted");
+});
+
+test("a run-out charges the dismissal to the batsman the scorer named", () => {
+  const engine = createEngine();
+  const result = engine.processDelivery(delivery({
+    isWicket: true,
+    wicketType: "runOut",
+    dismissedPlayer: "batter-2", // the non-striker is run out
+    fielder: "fielder-1",
+  }));
+
+  assert.equal(result.innings.wickets, 1);
+  assert.equal(result.innings.fallOfWickets[0].player, "batter-2");
+
+  const nonStrikerCard = result.innings.batting.find((b) => String(b.player) === "batter-2");
+  const strikerCard = result.innings.batting.find((b) => String(b.player) === "batter-1");
+  assert.ok(nonStrikerCard, "the dismissed non-striker has a card");
+  assert.equal(nonStrikerCard.isOut, true, "the non-striker is shown out");
+  assert.equal(nonStrikerCard.dismissalType, "runOut");
+  assert.ok(!strikerCard || strikerCard.isOut !== true, "the striker is not shown out");
+});

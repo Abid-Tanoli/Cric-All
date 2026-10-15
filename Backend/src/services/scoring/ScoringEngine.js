@@ -365,7 +365,21 @@ class ScoringEngine {
         if (bat.ballsFaced == null || isNaN(bat.ballsFaced)) bat.ballsFaced = bat.balls || 0;
         if (bat.dotBalls == null || isNaN(bat.dotBalls)) bat.dotBalls = 0;
       }
-      if (br.isWicket) { bat.isOut = true; bat.dismissalType = br.wicketType; bat.dismissedBy = br.bowler; bat.fielder = br.fielder; }
+      if (br.isWicket) {
+        // Attribute the out to the batsman the scorer dismissed. A run-out can
+        // dismiss the non-striker; crediting the striker's card instead (the
+        // pre-P2 behaviour) made the two cards disagree with the fall of wicket.
+        const dismissedId = String(br.dismissedPlayer?._id || br.dismissedPlayer || sid);
+        let outBat = bat;
+        if (dismissedId && dismissedId !== sid) {
+          outBat = innings.batting.find(b => String(b.player?._id || b.player) === dismissedId);
+          if (!outBat) {
+            outBat = { player: br.dismissedPlayer || br.batsmanNonStrike, runs: 0, ballsFaced: 0, fours: 0, sixes: 0, dotBalls: 0, isOut: false, dismissalType: null, dismissedBy: null, fielder: null };
+            innings.batting.push(outBat);
+          }
+        }
+        outBat.isOut = true; outBat.dismissalType = br.wicketType; outBat.dismissedBy = br.bowler; outBat.fielder = br.fielder;
+      }
       bat.runs += br.batsmanRuns;
       if (!br.isWide && !br.isNoBall) { bat.ballsFaced += 1; if (br.batsmanRuns === 0 && !br.isWicket) bat.dotBalls += 1; }
       if (br.isFour) bat.fours += 1;

@@ -1,5 +1,7 @@
 import Match from "../models/Match.js";
 import Team from "../models/Team.js";
+import User from "../models/User.js";
+import mongoose from "mongoose";
 import Event from "../models/Event.js";
 import Tournament from "../models/Tournament.js";
 import Partnership from "../models/Partnership.js";
@@ -102,8 +104,13 @@ const populateMatchList = (query) => {
       "subCategory",
       "ageGroup",
       "organization",
+      "organizationRef",
       "address",
       "tournament",
+      "stage",
+      "stageLabel",
+      "source",
+      "assignedScorers",
       "totalOvers",
       "startAt",
       "teams",
@@ -465,6 +472,76 @@ export const setMOM = async (req, res) => {
     console.error("Error setting MOM:", error);
     res.status(400).json({
       message: "Failed to set Man of the Match",
+      error: error.message
+    });
+  }
+};
+
+/**
+ * P2: assign the scorer(s) for one match.
+ *
+ * A non-empty list restricts who may open the scoring screen for this fixture
+ * to those users (plus the club's owners/admins/managers and platform admins).
+ * An empty list clears the restriction and restores the org-wide score_match
+ * rule. `assignedScorers` is the single source of truth read by matchAccess.
+ */
+export const setMatchScorers = async (req, res) => {
+  try {
+    const match = await Match.findById(req.params.id);
+    if (!match) return res.status(404).json({ message: "Match not found" });
+
+    const raw = req.body?.scorerIds ?? req.body?.userIds ?? req.body?.scorers ?? [];
+    const list = (Array.isArray(raw) ? raw : [raw])
+      .filter((value) => value != null && value !== "")
+      .map((value) => String(value?._id || value));
+    const unique = [...new Set(list)];
+
+    for (const id of unique) {
+      if (!mongoose.Types.ObjectId.isValid(id)) {
+        return res.status(400).json({ message: `Not a valid user id: ${id}` });
+      }
+    }
+
+    const users = unique.length
+      ? await User.find({ _id: { $in: unique } }).select("name email")
+      : [];
+    if (users.length !== unique.length) {
+      return res.status(400).json({ message: "One or more scorers do not exist" });
+    }
+
+    match.assignedScorers = users.map((user) => user._id);
+    await match.save({ validateModifiedOnly: true });
+
+    recordAudit({
+      req,
+      action: "match.scorers_assigned",
+      targetType: "match",
+      targetId: match._id,
+      targetLabel: match.title,
+      metadata: { scorerIds: users.map((user) => String(user._id)) },
+    });
+
+    await match.populate("assignedScorers", "name email");
+    await match.populate("teams", "name shortName logo");
+
+    try {
+      const io = getIO();
+      io.emit("match:updated", match);
+    } catch (socketError) {
+      console.log("Socket not available:", socketError.message);
+    }
+
+    res.status(200).json({
+      match,
+      assignedScorers: match.assignedScorers,
+      message: users.length
+        ? "Scorer assigned successfully"
+        : "Scorer assignment cleared",
+    });
+  } catch (error) {
+    console.error("Error assigning scorers:", error);
+    res.status(400).json({
+      message: "Failed to assign scorers",
       error: error.message
     });
   }

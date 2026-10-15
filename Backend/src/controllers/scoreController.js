@@ -354,9 +354,17 @@ export const updateScore = async (req, res) => {
     // Set current bowler on innings
     innings.currentBowler = bowlerId;
     if (innings.status !== "completed") innings.status = "live";
-    match.currentInnings = inningsIndex;
-    if (!["completed", "pending_tie_resolution", "super_over"].includes(match.status)) {
-      match.status = "live";
+    // The engine may have moved the match on with THIS delivery: ending the
+    // innings (-> innings_break) or the match (-> completed). Rewinding both
+    // fields back to "the ball just bowled" threw that transition away, which
+    // left the public page on "live", hid the innings break, and made
+    // /start-next-innings answer "Match is not in innings break".
+    const engineMovedMatchOn = ["innings_break", "innings-break", "completed"].includes(match.status);
+    if (!engineMovedMatchOn) {
+      match.currentInnings = inningsIndex;
+      if (!["pending_tie_resolution", "super_over"].includes(match.status)) {
+        match.status = "live";
+      }
     }
 
     // Strike rotation for next ball — engine already applied both odd-runs swap
@@ -497,7 +505,10 @@ export const updateScore = async (req, res) => {
 
       // ─── INNINGS / MATCH END ────────────────────────────────
       if (shouldEndInnings) {
-        const isMatchEnd = match.currentInnings >= 1 || match.innings.length <= 1;
+        // Only the last innings ends the match. An earlier innings ends with an
+        // innings break (by which point the engine may already have advanced
+        // currentInnings, so that is not a reliable test).
+        const isMatchEnd = inningsIndex >= match.innings.length - 1;
         const eventData = {
           inningsIndex,
           runs: innings.runs,
