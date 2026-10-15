@@ -666,10 +666,76 @@ export const findManualFixtureConflict = ({ existingMatches = [], team1, team2, 
   return null;
 };
 
+// P3: knockout progression. A knockout fixture above the first round may only
+// be drawn from teams that won the previous round, so a bracket can never be
+// silently mis-populated. Exported (pure) for unit tests.
+export const STAGE_VALUES = ["", "group", "quarter_final", "semi_final", "final", "third_place"];
+const PRIOR_STAGE_FOR = { semi_final: "quarter_final", final: "semi_final" };
+const STAGE_NAME = {
+  group: "group stage",
+  quarter_final: "quarter-final",
+  semi_final: "semi-final",
+  final: "final",
+  third_place: "third-place",
+};
+
+export const normalizeStage = (stage) =>
+  typeof stage === "string" && STAGE_VALUES.includes(stage) ? stage : "";
+
+/** Pure: ids of teams that won a completed match at `stage`. */
+export const stageWinnerIds = (matches = [], stage) => {
+  const ids = new Set();
+  for (const m of matches || []) {
+    if (!m || m.stage !== stage || m.status !== "completed") continue;
+    const winner = m.result?.winner;
+    const id = winner?._id || winner;
+    if (id) ids.add(String(id));
+  }
+  return ids;
+};
+
+/**
+ * Pure progression check for a knockout fixture. Returns a reason object or
+ * null. Only semi-finals and the final are guarded — a third-place play-off is
+ * for the semi-final losers, so the winner rule does not apply.
+ */
+export const findStageProgressionError = ({ stage, team1, team2, existingMatches = [] } = {}) => {
+  const wanted = normalizeStage(stage);
+  const priorStage = PRIOR_STAGE_FOR[wanted];
+  if (!priorStage) return null;
+
+  const winners = stageWinnerIds(existingMatches, priorStage);
+  const stageName = STAGE_NAME[wanted];
+  const priorName = STAGE_NAME[priorStage];
+
+  if (winners.size === 0) {
+    const hasPrior = (existingMatches || []).some((m) => m && m.stage === priorStage);
+    return {
+      reason: hasPrior ? "no_prior_winner" : "no_prior_stage",
+      message: hasPrior
+        ? `No ${priorName} has a winner yet — a ${stageName} can only be drawn once its teams have won the ${priorName}.`
+        : `This tournament has no ${priorName} fixtures yet — create the ${priorName}s first.`,
+    };
+  }
+
+  const missing = [team1, team2].filter((t) => !winners.has(String(t)));
+  if (!missing.length) return null;
+
+  return {
+    reason: "team_not_advancing",
+    message: `Both ${stageName} teams must be winners of the ${priorName}.`,
+  };
+};
+
 export const createTournamentMatch = async (req, res) => {
   try {
     const { tournamentId } = req.params;
-    const { team1, team2, venue, startTime, matchType, matchCategory, matchSubcategory, round, group } = req.body;
+    const { team1, team2, venue, startTime, matchType, matchCategory, matchSubcategory, round, group, stage: rawStage, stageLabel } = req.body;
+    const stage = normalizeStage(rawStage);
+    // The round the match will actually be stored with — the conflict check and
+    // the save must agree, or a second draw of the same pair slips past the
+    // duplicate guard.
+    const effectiveRound = round != null && round !== "" ? round : (stage || 1);
 
     const tournament = await Tournament.findById(tournamentId);
     if (!tournament) {
@@ -695,19 +761,26 @@ export const createTournamentMatch = async (req, res) => {
     }
 
     const existingMatches = await Match.find({ tournament: tournamentId })
-      .select("teams round group startAt status")
+      .select("teams round group stage status startAt result.winner")
       .lean();
 
     const conflict = findManualFixtureConflict({
       existingMatches,
       team1,
       team2,
-      round,
+      round: effectiveRound,
       group: group || "",
       startAt: startTime,
     });
     if (conflict) {
       return res.status(409).json({ message: conflict.message, reason: conflict.reason });
+    }
+
+    // Knockout progression: a semi-final may only be drawn from quarter-final
+    // winners and the final from semi-final winners.
+    const progressionError = findStageProgressionError({ stage, team1, team2, existingMatches });
+    if (progressionError) {
+      return res.status(400).json({ message: progressionError.message, reason: progressionError.reason });
     }
 
     const lastMatch = await Match.findOne({ tournament: tournamentId })
@@ -729,12 +802,16 @@ export const createTournamentMatch = async (req, res) => {
       // the tournament label in matchSubcategory.
       matchCategory: matchCategory || CONTROLLER_MATCH_CATEGORY,
       matchSubcategory: matchSubcategory || tournament.name,
-      round: round != null && round !== "" ? round : 1,
+      round: effectiveRound,
       group: group || "",
+      stage,
+      stageLabel: (stageLabel || "").trim(),
       tournament: tournamentId,
       teams: [team1, team2],
       innings: buildMatchInnings([team1, team2]),
-      startAt: startTime || new Date(),
+      // A knockout fixture with no date yet is a legitimate "TBD" placeholder —
+      // keep startAt null rather than inventing "now" so the schedule is honest.
+      startAt: startTime ? new Date(startTime) : (stage ? null : new Date()),
       status: "upcoming"
     });
 
@@ -751,7 +828,7 @@ export const createTournamentMatch = async (req, res) => {
       targetType: "match",
       targetId: match._id,
       targetLabel: match.title,
-      metadata: { tournamentId, matchNumber, round: match.round, group: match.group },
+      metadata: { tournamentId, matchNumber, round: match.round, group: match.group, stage: match.stage, stageLabel: match.stageLabel },
     });
 
     try {
@@ -905,6 +982,8 @@ export const applyTournamentFixtures = async (req, res) => {
         matchSubcategory: tournament.name,
         round: planned.round,
         group: planned.group || "",
+        stage: planned.stage || "",
+        stageLabel: planned.stageLabel || "",
         tournament: id,
         teams: [planned.team1, planned.team2],
         innings: buildMatchInnings([planned.team1, planned.team2]),

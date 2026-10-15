@@ -51,7 +51,7 @@ export default function TournamentManagement() {
 
     const [fixtureOpts, setFixtureOpts] = useState({ format: 'round-robin', startAt: '', gapHours: 2, venue: '' });
     const [preview, setPreview] = useState(null);
-    const [manual, setManual] = useState({ team1: '', team2: '', startTime: '', round: 1, group: '' });
+    const [manual, setManual] = useState({ team1: '', team2: '', startTime: '', round: '', group: '', stage: '', stageLabel: '' });
     const [groupAssign, setGroupAssign] = useState({});
     const [filters, setFilters] = useState({ status: '', team: '' });
 
@@ -218,12 +218,14 @@ export default function TournamentManagement() {
 
     const createManualFixture = async () => {
         try {
-            await api.post(`/tournaments/${selectedId}/matches`, {
-                ...manual,
-                round: Number(manual.round) || 1,
-            });
+            const payload = { ...manual };
+            // Round is optional for a knockout fixture — let the server derive it
+            // from the stage instead of forcing every fixture to "round 1".
+            if (manual.round === '' || manual.round == null) delete payload.round;
+            else payload.round = Number(manual.round);
+            await api.post(`/tournaments/${selectedId}/matches`, payload);
             showToast('Fixture added', 'success');
-            setManual({ team1: '', team2: '', startTime: '', round: 1, group: '' });
+            setManual({ team1: '', team2: '', startTime: '', round: '', group: '', stage: '', stageLabel: '' });
             loadDetail(selectedId);
         } catch (err) {
             showToast(err.response?.data?.message || 'Failed to add fixture', 'error');
@@ -332,22 +334,35 @@ export default function TournamentManagement() {
             <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
                 <h4 className="font-bold text-[#031d44] mb-3">Add a fixture manually</h4>
                 <div className="grid grid-cols-1 md:grid-cols-5 gap-3 mb-3">
-                    <select className={inputCls} value={manual.team1} onChange={(e) => setManual({ ...manual, team1: e.target.value })}>
+                    <select aria-label="Manual fixture team A" className={inputCls} value={manual.team1} onChange={(e) => setManual({ ...manual, team1: e.target.value })}>
                         <option value="">Team A</option>
                         {tournamentTeams.map((t) => (
                             <option key={t._id} value={t._id}>{teamName(t)}</option>
                         ))}
                     </select>
-                    <select className={inputCls} value={manual.team2} onChange={(e) => setManual({ ...manual, team2: e.target.value })}>
+                    <select aria-label="Manual fixture team B" className={inputCls} value={manual.team2} onChange={(e) => setManual({ ...manual, team2: e.target.value })}>
                         <option value="">Team B</option>
                         {tournamentTeams.map((t) => (
                             <option key={t._id} value={t._id}>{teamName(t)}</option>
                         ))}
                     </select>
-                    <input type="datetime-local" className={inputCls} value={manual.startTime} onChange={(e) => setManual({ ...manual, startTime: e.target.value })} />
-                    <input type="number" min="1" className={inputCls} placeholder="Round" value={manual.round} onChange={(e) => setManual({ ...manual, round: e.target.value })} />
-                    <input className={inputCls} placeholder="Group (optional)" value={manual.group} onChange={(e) => setManual({ ...manual, group: e.target.value })} />
+                    <input type="datetime-local" aria-label="Manual fixture date" className={inputCls} value={manual.startTime} onChange={(e) => setManual({ ...manual, startTime: e.target.value })} />
+                    <input type="number" min="1" aria-label="Manual fixture round" className={inputCls} placeholder="Round" value={manual.round} onChange={(e) => setManual({ ...manual, round: e.target.value })} />
+                    <input className={inputCls} aria-label="Manual fixture group" placeholder="Group (optional)" value={manual.group} onChange={(e) => setManual({ ...manual, group: e.target.value })} />
                 </div>
+                <div className="grid grid-cols-1 md:grid-cols-5 gap-3 mb-3">
+                    <select aria-label="Manual fixture stage" className={inputCls} value={manual.stage} onChange={(e) => setManual({ ...manual, stage: e.target.value })}>
+                        <option value="">Stage (league / group)</option>
+                        <option value="quarter_final">Quarter-final</option>
+                        <option value="semi_final">Semi-final</option>
+                        <option value="final">Final</option>
+                        <option value="third_place">Third-place</option>
+                    </select>
+                    <input className={inputCls} aria-label="Manual fixture stage label" placeholder="Slot label (QF1, SF2, Final)" value={manual.stageLabel} onChange={(e) => setManual({ ...manual, stageLabel: e.target.value })} />
+                </div>
+                <p className="text-xs text-slate-500 mb-3">
+                    Leave the date empty for a TBD fixture. A semi-final may only be drawn from quarter-final winners and the final from semi-final winners.
+                </p>
                 <button className={btnPrimary} onClick={createManualFixture} disabled={!manual.team1 || !manual.team2}>Add fixture</button>
             </div>
 

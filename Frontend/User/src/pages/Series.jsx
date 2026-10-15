@@ -6,6 +6,8 @@ import BoundaryMeter from "../components/BoundaryMeter";
 import ShareButton from "../components/ShareButton";
 import { initSocket } from "../services/socket";
 import { featureFlags } from "../config/features";
+import KnockoutRounds from "../components/KnockoutRounds";
+import { STAGE_ORDER } from "../components/knockoutBracket";
 
 export default function Series() {
   const { seriesId } = useParams();
@@ -297,11 +299,17 @@ export default function Series() {
     stats.boundaryMeter?.mostFours?.[0] && { title: "Most Fours", name: stats.boundaryMeter.mostFours[0].name, team: stats.boundaryMeter.mostFours[0].team, value: `${stats.boundaryMeter.mostFours[0].count} fours`, playerId: stats.boundaryMeter.mostFours[0].playerId },
   ].filter(Boolean);
 
+  // P3: only a knockout tournament gets a bracket, and only when it has
+  // fixtures that actually carry a bracket stage.
+  const isKnockout = series?.type === "knockout";
+  const knockoutMatches = matches.filter((m) => STAGE_ORDER.includes(m?.stage));
+
   // Tabs with nothing to show are hidden rather than rendered empty.
   const tabs = [
     { key: "home", label: "Home" },
     ...(matches.length ? [{ key: "fixtures", label: "Fixtures & Results" }] : []),
-    ...(pointsTable && pointsTable.length ? [{ key: "points", label: "Points Table" }] : []),
+    ...(isKnockout ? [{ key: "knockout", label: "Knockout" }] : []),
+    ...((isKnockout || (pointsTable && pointsTable.length)) ? [{ key: "points", label: "Points Table" }] : []),
     ...(hasStats ? [{ key: "stats", label: "Stats" }] : []),
     ...(squads.length ? [{ key: "teams", label: "Teams" }] : []),
     ...(awards.length ? [{ key: "awards", label: "Awards" }] : []),
@@ -573,8 +581,11 @@ export default function Series() {
           </div>
         )}
 
+        {/* Knockout Tab (bracket) */}
+        {activeTab === "knockout" && <KnockoutRounds matches={knockoutMatches} />}
+
         {/* Points Table Tab */}
-        {activeTab === "points" && (pointsTable && pointsTable.length > 0 ? (
+        {activeTab === "points" && (!isKnockout && pointsTable && pointsTable.length > 0 ? (
           <div className="space-y-6">
             <div className="bg-cric-card rounded-2xl shadow-sm overflow-hidden border border-cric-border">
               <div className="p-6 border-b border-cric-border bg-gradient-to-r from-cric-text to-slate-800 text-white">
@@ -648,8 +659,14 @@ export default function Series() {
           </div>
         ) : (
           <div className="bg-cric-card rounded-2xl shadow-sm p-12 text-center border border-cric-border">
-            <p className="text-cric-muted font-bold text-lg mb-2">Points Table Not Available</p>
-            <p className="text-sm text-cric-muted/60">Standings will appear after matches are played.</p>
+            <p className="text-cric-muted font-bold text-lg mb-2">
+              {isKnockout ? "Knockout tournament - no league table" : "Points Table Not Available"}
+            </p>
+            <p className="text-sm text-cric-muted/60">
+              {isKnockout
+                ? "Teams advance by winning their bracket fixture. See the Knockout tab for the draw."
+                : "Standings will appear after matches are played."}
+            </p>
           </div>
         ))}
 

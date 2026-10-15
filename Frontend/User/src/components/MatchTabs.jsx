@@ -220,7 +220,7 @@ export default function MatchTabs({ matchId, match }) {
             {tab === "table" && (
               <div className="bg-cric-card rounded-2xl shadow-xl p-6 border border-cric-border">
                 {match?.tournament && (
-                  <PointsTable tournamentId={match.tournament._id || match.tournament} />
+                  <PointsTable tournamentId={match.tournament._id || match.tournament} isKnockout={match.tournament?.type === "knockout"} />
                 )}
               </div>
             )}

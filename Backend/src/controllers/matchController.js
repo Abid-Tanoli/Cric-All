@@ -139,7 +139,7 @@ const populateMatchList = (query) => {
       "updatedAt"
     ].join(" "))
     .populate("teams", "name shortName logo")
-    .populate("tournament", "name shortName slug")
+    .populate("tournament", "name shortName slug type")
     .populate("innings.team", "name shortName logo")
     .populate("result.winner", "name shortName logo")
     .populate("tossWinner", "name shortName")
