@@ -16,6 +16,7 @@ import {
   stripHiddenTeamRefs,
   PLAYER_ROSTER_SELECT,
 } from "../utils/publicProjection.js";
+import { deleteTournamentContent } from "../services/tournamentContent.js";
 
 const CONTROLLER_MATCH_CATEGORY = "Other";
 
@@ -329,6 +330,16 @@ export const deleteTournament = async (req, res) => {
       await Match.deleteMany({ _id: { $in: tournament.matches } });
     }
 
+    // Remove hub artefacts (media rows + local photo files, articles) so
+    // deleting a tournament never silently orphans uploads. Best-effort: a
+    // failure here must not block deleting the tournament itself.
+    let contentCleanup = { media: 0, files: 0, articles: 0 };
+    try {
+      contentCleanup = await deleteTournamentContent(tournament._id);
+    } catch (cleanupError) {
+      console.error("Error cleaning up tournament content:", cleanupError);
+    }
+
     await Tournament.findByIdAndDelete(req.params.id);
 
     recordAudit({
@@ -337,7 +348,12 @@ export const deleteTournament = async (req, res) => {
       targetType: "tournament",
       targetId: tournament._id,
       targetLabel: tournament.name,
-      metadata: { matchCount: (tournament.matches || []).length },
+      metadata: {
+        matchCount: (tournament.matches || []).length,
+        mediaRemoved: contentCleanup.media,
+        filesRemoved: contentCleanup.files,
+        articlesRemoved: contentCleanup.articles,
+      },
     });
 
     try {

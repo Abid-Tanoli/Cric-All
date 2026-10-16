@@ -184,7 +184,7 @@ export default function TournamentManagement() {
     };
 
     const removeTournament = async (id) => {
-        if (!window.confirm('Delete this tournament and all its fixtures?')) return;
+        if (!window.confirm('Delete this tournament, its fixtures, and all of its photos and articles?')) return;
         try {
             await api.delete(`/tournaments/${id}`);
             showToast('Tournament deleted', 'success');
@@ -526,6 +526,7 @@ export default function TournamentManagement() {
                                 </div>
                                 <div className="flex flex-wrap gap-2">
                                     <button className={btnPrimary} onClick={() => setSelectedId(t._id)}>Manage</button>
+                                    <Link className={btnGhost} to={`/admin/tournaments/${t._id}/content`}>Content</Link>
                                     <button className={btnGhost} onClick={() => startEdit(t)}>Edit</button>
                                     <button className={btnGhost} onClick={() => removeTournament(t._id)}>Delete</button>
                                 </div>

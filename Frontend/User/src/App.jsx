@@ -25,8 +25,8 @@ const Rankings = lazy(() => import("./pages/Rankings"));
 const Live = lazy(() => import("./pages/Live"));
 const News = lazy(() => import("./pages/News"));
 const Videos = lazy(() => import("./pages/Videos"));
-const Series = lazy(() => import("./pages/Series"));
 const SeriesList = lazy(() => import("./pages/SeriesList"));
+const TournamentHub = lazy(() => import("./pages/tournament/TournamentHub"));
 const CricSeriesDetails = lazy(() => import("./pages/CricSeriesDetails"));
 const CricMatchDetails = lazy(() => import("./pages/CricMatchDetails"));
 const International = lazy(() => import("./pages/International"));
@@ -134,7 +134,9 @@ function App() {
           <Route path="/reset-password" element={<ErrorBoundary><NotFound /></ErrorBoundary>} />
           <Route path="/live" element={<ErrorBoundary><Live /></ErrorBoundary>} />
           <Route path="/series" element={<ErrorBoundary><SeriesList /></ErrorBoundary>} />
-          <Route path="/series/:seriesId" element={<ErrorBoundary><Series /></ErrorBoundary>} />
+          <Route path="/series/:seriesId" element={<ErrorBoundary><TournamentHub /></ErrorBoundary>} />
+          <Route path="/series/:seriesId/articles/:slug" element={<ErrorBoundary><TournamentHub /></ErrorBoundary>} />
+          <Route path="/series/:seriesId/:tab" element={<ErrorBoundary><TournamentHub /></ErrorBoundary>} />
           <Route path="/cricket/series/:seriesId" element={<ErrorBoundary><CricSeriesDetails /></ErrorBoundary>} />
           <Route path="/cricket/match/:matchId" element={<ErrorBoundary><CricMatchDetails /></ErrorBoundary>} />
           <Route path="/match/:matchId" element={<ErrorBoundary><Match /></ErrorBoundary>} />

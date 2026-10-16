@@ -31,6 +31,9 @@ const REFERENCE_QUERIES = [
   ["series", "logo"],
   ["tournaments", "logo"],
   ["tournaments", "sponsors.logo"],
+  // Tournament-hub content (additive): hub banner + uploaded gallery photos.
+  ["tournaments", "content.bannerImage"],
+  ["tournamentmedias", "url"],
   ["teamorganizations", "logoUrl"],
   ["incubationgroups", "logo"],
   ["incubationgroups", "images.url"],

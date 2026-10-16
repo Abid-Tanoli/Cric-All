@@ -1,9 +1,9 @@
 # E2E Results - Local Only
 
-- Run id: `mv2los9i`
+- Run id: `mv83zspz`
 - API base: `http://127.0.0.1:5000/api` (loopback only - guard enforced)
 - Database: `cric-all-e2e` on `127.0.0.1:27017` (local Docker Mongo)
-- Duration: 181.6s
+- Duration: 182.9s
 - Scenarios: 7 of 7 ran
 - Overall: **PASS** (78 pass, 0 fail, 0 divergence)
 
@@ -37,21 +37,21 @@ with `ScoringEngine`; agreement between the two is a real cross-check.
 ## Accounts and calls
 
 - Scenarios executed: 7 of 7 (none skipped)
-- Owner account: `OPENCODE_TEST_owner_mv2los9i@example.test` (never used to score)
-- Assigned scorer, who sent every delivery: `OPENCODE_TEST_scorer_mv2los9i@example.test`, organization role `score_handler`
+- Owner account: `OPENCODE_TEST_owner_mv83zspz@example.test` (never used to score)
+- Assigned scorer, who sent every delivery: `OPENCODE_TEST_scorer_mv83zspz@example.test`, organization role `score_handler`
 - Invitation accepted through `POST /invitations/accept` using the token from the console mail log
-- Organization: `6aca65cdb37b8ab7095573f8`; second tenant for the cross-tenant test: `6aca65cdb37b8ab7095573fc`
+- Organization: `6acf7ae2e4361713be911869`; second tenant for the cross-tenant test: `6acf7ae2e4361713be91186d`
 - HTTP calls issued by the suite: 655
 - Note: the application lower-cases e-mail addresses on save, so `OPENCODE_TEST_...` fixtures appear as `opencode_test_...` in the database and in mail. Names keep the prefix verbatim.
 
 
 ## Scenario 1 - full T20 innings (20 overs, every ball type) and the chase
 
-Fixture created through `POST /organizations/:id/matches`; every delivery sent by the invited `score_handler` (OPENCODE_TEST_scorer_mv2los9i@example.test), never by the owner.
+Fixture created through `POST /organizations/:id/matches`; every delivery sent by the invited `score_handler` (OPENCODE_TEST_scorer_mv83zspz@example.test), never by the owner.
 Extras split (innings 1): the independent tally follows the Laws - a wide is one extra and runs completed off a wide are byes. The server folds those runs into `wides` instead. `wides` independent=3 server=5; `byes` independent=4 server=2. The extras *total* is asserted separately and agrees.
 Innings 1: **145/8** in 20.0 overs. Extras (Laws split): wides 3, no-balls 4, byes 4, leg-byes 4, total 15.
 Chasing side: **146/0** off 49 balls (target 146).
-Result: OPENCODE_TEST_Beta_mv2los9i won by 10 wickets (23 balls remaining).
+Result: OPENCODE_TEST_Beta_mv83zspz won by 10 wickets (23 balls remaining).
 
 | Result | Check | Detail |
 | --- | --- | --- |
@@ -67,9 +67,9 @@ Result: OPENCODE_TEST_Beta_mv2los9i won by 10 wickets (23 balls remaining).
 | PASS | innings 2 ended because the target was reached | reason=targetChased runs=146 target=146 balls=49 |
 | PASS | strike rotation agreed on every chase delivery | [] |
 | PASS | innings 2 scorecard: independent tally vs server | independent tally and server agree |
-| PASS | scoring alone does not settle the match | status=completed result="{"winner":{"_id":"6aca65cdb37b8ab70955740b","name":"OPENCODE_TEST_Beta_mv2los9i","shortName":"OPE"},"margin":"10 wickets","description":"OPENCODE_TEST_Beta_mv2los9i won by 10 wickets (49 balls remaining)"}" - expected, the result is only written by end-innings |
+| PASS | scoring alone does not settle the match | status=completed result="{"winner":{"_id":"6acf7ae2e4361713be91187c","name":"OPENCODE_TEST_Beta_mv83zspz","shortName":"OPE"},"margin":"10 wickets","description":"OPENCODE_TEST_Beta_mv83zspz won by 10 wickets (49 balls remaining)"}" - expected, the result is only written by end-innings |
 | PASS | end-innings accepts the final innings | status=200 |
-| PASS | chasing side won by the wickets remaining | resultType=normal margin="10 wickets" description="OPENCODE_TEST_Beta_mv2los9i won by 10 wickets (23 balls remaining)" (inningsController.js:83 hard-codes 10 as the wicket count, so a Super Over margin would be wrong here too) |
+| PASS | chasing side won by the wickets remaining | resultType=normal margin="10 wickets" description="OPENCODE_TEST_Beta_mv83zspz won by 10 wickets (23 balls remaining)" (inningsController.js:83 hard-codes 10 as the wicket count, so a Super Over margin would be wrong here too) |
 | PASS | match marked completed | status=completed |
 
 ## Scenario 2 - free hit (a no-ball must protect the next delivery)
@@ -105,14 +105,14 @@ Both sides bat to 30, then the second innings is closed by hand. Under the Laws 
 | --- | --- | --- |
 | PASS | end-innings closes the first innings | status=200 runs=31 |
 | PASS | second innings starts | status=200 |
-| PASS | equal totals are accepted by end-innings | status=200 body={"match":{"address":{"country":"Pakistan"},"result":{"margin":"Match tied","description":"Match ended in a tie - Resolution pending","resultType":"tie"},"seriesStanding":{"matchesPlayed":0},"powerplayConfig":{"enabled":true,"overs":6,"type":"standard","batting |
+| PASS | equal totals are accepted by end-innings | status=200 body={"match":{"address":{"country":"Pakistan"},"result":{"margin":"Match tied","description":"Match ended in a tie - Resolution pending","resultType":"tie"},"rules":{"twelfthManEnabled":null},"seriesStanding":{"matchesPlayed":0},"powerplayConfig":{"enabled":true," |
 | PASS | the tie is recorded as resultType "tie" | resultType=tie margin="Match tied" description="Match ended in a tie - Resolution pending" |
 | PASS | the match waits for tie resolution | status=pending_tie_resolution |
 | PASS | balls are refused while tie resolution is pending with 4xx | status=409 code=MATCH_NOT_SCORABLE |
 | PASS | tied innings 1: independent tally vs server | independent tally and server agree |
 | PASS | tied innings 2: independent tally vs server | independent tally and server agree |
-| PASS | a tie can be resolved to a Super Over | status=200 {"match":{"address":{"country":"Pakistan"},"result":{"margin":"Match tied","description":"Match ended in a tie - Resolution pending","resultType":"tie"},"seriesStanding":{"matchesPlayed":0},"powerplay |
-| PASS | Super Over innings can be started | status=200 {"match":{"address":{"country":"Pakistan"},"result":{"margin":"Match tied","description":"Super Over 1: 1st Innings in progress","resultType":"super_over"},"seriesStanding":{"matchesPlayed":0},"powerp |
+| PASS | a tie can be resolved to a Super Over | status=200 {"match":{"address":{"country":"Pakistan"},"result":{"margin":"Match tied","description":"Match ended in a tie - Resolution pending","resultType":"tie"},"rules":{"twelfthManEnabled":null},"seriesStand |
+| PASS | Super Over innings can be started | status=200 {"match":{"address":{"country":"Pakistan"},"result":{"margin":"Match tied","description":"Super Over 1: 1st Innings in progress","resultType":"super_over"},"rules":{"twelfthManEnabled":null},"seriesSt |
 | PASS | Super Over recorded as a separate innings | independent=6 balls=2 inningsIndex=2 |
 | PASS | Super Over scorecard: independent tally vs server | independent tally and server agree |
 | PASS | the Super Over result is recorded | status=200 {"margin":"Match tied","description":"Super Over 1: First innings complete","resultType":"super_over"} |
