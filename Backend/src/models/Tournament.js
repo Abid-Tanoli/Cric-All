@@ -142,6 +142,29 @@ const tournamentSchema = new mongoose.Schema(
       tie: { type: Number, default: 1, min: 0 },
       noResult: { type: Number, default: 1, min: 0 }
     },
+    // Tournament-hub content settings. Entirely additive: a tournament that was
+    // saved before this field existed reads back with these defaults applied.
+    // `visibility` hides a public tab for THIS tournament only (it never flips
+    // the global VITE_SHOW_* flags), and `stats` carries the minimum
+    // balls-faced / overs thresholds used to qualify strike-rate and economy
+    // leaders. All optional.
+    content: {
+      bannerImage: { type: String, default: "" },
+      shortDescription: { type: String, default: "" },
+      city: { type: String, default: "" },
+      visibility: {
+        photos: { type: Boolean, default: true },
+        videos: { type: Boolean, default: true },
+        articles: { type: Boolean, default: true },
+        stats: { type: Boolean, default: true },
+        table: { type: Boolean, default: true },
+        teams: { type: Boolean, default: true },
+      },
+      stats: {
+        minBallsFaced: { type: Number, default: 30, min: 0 },
+        minOvers: { type: Number, default: 5, min: 0 },
+      },
+    },
     // Tournament/Series Squad: 11-20 players per team
     tournamentSquads: [{
       team: {
