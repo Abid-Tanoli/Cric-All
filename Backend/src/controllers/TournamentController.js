@@ -1,6 +1,7 @@
 import Tournament from "../models/Tournament.js";
 import Match from "../models/Match.js";
 import Team from "../models/Team.js";
+import Player from "../models/Player.js";
 import { getIO } from "../socket/socket.js";
 import mongoose from "mongoose";
 import { recordAudit } from "../utils/audit.js";
@@ -104,6 +105,7 @@ export const getTournaments = async (req, res) => {
       .populate("teams", "name shortName logo")
       .populate("winner", "name shortName logo")
       .populate("runnerUp", "name shortName logo")
+      .populate("awards.playerOfTournament awards.bestBatsman awards.bestBowler", "name playingRole role")
       .sort({ startDate: -1 })
       .skip((page - 1) * limit)
       .limit(limit)
@@ -133,7 +135,8 @@ export const getTournament = async (req, res) => {
       .populate("pointsTable.team", "name shortName logo")
       .populate("groups.teams", "name shortName logo")
       .populate("winner", "name shortName logo")
-      .populate("runnerUp", "name shortName logo");
+      .populate("runnerUp", "name shortName logo")
+      .populate("awards.playerOfTournament awards.bestBatsman awards.bestBowler", "name playingRole role");
 
     if (!tournament) {
       return res.status(404).json({ message: "Tournament not found" });
@@ -725,6 +728,159 @@ export const findStageProgressionError = ({ stage, team1, team2, existingMatches
     reason: "team_not_advancing",
     message: `Both ${stageName} teams must be winners of the ${priorName}.`,
   };
+};
+
+/**
+ * P4: validate a tournament's end-of-tournament honours before saving them.
+ *
+ * Pure so it can be unit tested without a database. `winner`/`runnerUp` must be
+ * teams already in the tournament; the three player awards must belong to a
+ * player on one of those teams, or to the tournament's own squads when it has
+ * them. An empty string / null clears an award, which is how an admin undoes a
+ * mis-click.
+ *
+ * @returns {{ ok: true, data: object } | { ok: false, errors: object }}
+ */
+export const validateTournamentAwards = ({
+  body = {},
+  teamIds = [],
+  squadPlayerIds = [],
+} = {}) => {
+  const errors = {};
+  const teamIdSet = new Set((teamIds || []).map((id) => String(id?._id || id)));
+  const squadSet = new Set((squadPlayerIds || []).map((id) => String(id?._id || id)));
+
+  const cleanId = (value) => {
+    if (value === null || value === undefined) return "";
+    const raw = typeof value === "object" ? value._id : value;
+    if (raw === null || raw === undefined) return "";
+    return String(raw).trim();
+  };
+
+  const readId = (key) => {
+    if (!Object.prototype.hasOwnProperty.call(body, key)) return undefined; // untouched
+    const cleaned = cleanId(body[key]);
+    if (!cleaned) return null; // explicit clear
+    if (!mongoose.isValidObjectId(cleaned)) {
+      errors[key] = "That is not a valid id.";
+      return null;
+    }
+    return cleaned;
+  };
+
+  const winner = readId("winner");
+  const runnerUp = readId("runnerUp");
+  const playerOfTournament = readId("playerOfTournament");
+  const bestBatsman = readId("bestBatsman");
+  const bestBowler = readId("bestBowler");
+
+  if (winner) {
+    if (!teamIdSet.size) errors.winner = "This tournament has no teams to award yet.";
+    else if (!teamIdSet.has(winner)) errors.winner = "The champion must be one of the tournament's teams.";
+  }
+  if (runnerUp) {
+    if (!teamIdSet.size) errors.runnerUp = "This tournament has no teams to award yet.";
+    else if (!teamIdSet.has(runnerUp)) errors.runnerUp = "The runner-up must be one of the tournament's teams.";
+  }
+  if (winner && runnerUp && winner === runnerUp) {
+    errors.runnerUp = "The champion and runner-up cannot be the same team.";
+  }
+
+  for (const key of ["playerOfTournament", "bestBatsman", "bestBowler"]) {
+    const value = { playerOfTournament, bestBatsman, bestBowler }[key];
+    if (!value) continue;
+    // Only enforce squad membership when the tournament actually has squads —
+    // a knockout with pre-made squads is the normal case, but a bare tournament
+    // without them must still be able to record its honours.
+    if (squadSet.size && !squadSet.has(value)) {
+      errors[key] = "The player must be in one of this tournament's squads.";
+    }
+  }
+
+  if (Object.keys(errors).length) return { ok: false, errors };
+
+  const data = {};
+  // Only write keys the caller actually sent, so a partial update (e.g. just
+  // the champion) never wipes the other awards.
+  if (winner !== undefined) data.winner = winner;
+  if (runnerUp !== undefined) data.runnerUp = runnerUp;
+  if (playerOfTournament !== undefined) data.playerOfTournament = playerOfTournament;
+  if (bestBatsman !== undefined) data.bestBatsman = bestBatsman;
+  if (bestBowler !== undefined) data.bestBowler = bestBowler;
+
+  return { ok: true, data };
+};
+
+export const setTournamentAwards = async (req, res) => {
+  try {
+    const tournament = await Tournament.findById(req.params.id);
+    if (!tournament) {
+      return res.status(404).json({ message: "Tournament not found" });
+    }
+
+    const squadPlayerIds = (tournament.tournamentSquads || []).flatMap((squad) =>
+      (squad.players || []).map((player) => player?._id || player),
+    );
+
+    const validation = validateTournamentAwards({
+      body: req.body || {},
+      teamIds: tournament.teams || [],
+      squadPlayerIds,
+    });
+
+    if (!validation.ok) {
+      return res.status(400).json({
+        message: "Please fix the awards before saving.",
+        errors: validation.errors,
+      });
+    }
+
+    const { data } = validation;
+    if (data.winner !== undefined) tournament.winner = data.winner || null;
+    if (data.runnerUp !== undefined) tournament.runnerUp = data.runnerUp || null;
+
+    const awards = { ...(tournament.awards ? (tournament.awards.toObject ? tournament.awards.toObject() : tournament.awards) : {}) };
+    for (const key of ["playerOfTournament", "bestBatsman", "bestBowler"]) {
+      if (data[key] !== undefined) awards[key] = data[key] || null;
+    }
+    tournament.awards = awards;
+
+    await tournament.save();
+    await tournament.populate("teams", "name shortName logo");
+    await tournament.populate("winner", "name shortName logo");
+    await tournament.populate("runnerUp", "name shortName logo");
+    await tournament.populate("awards.playerOfTournament awards.bestBatsman awards.bestBowler", "name playingRole role");
+
+    recordAudit({
+      req,
+      action: "tournament.awards_set",
+      targetType: "tournament",
+      targetId: tournament._id,
+      targetLabel: tournament.name,
+      metadata: {
+        winner: tournament.winner || null,
+        runnerUp: tournament.runnerUp || null,
+        playerOfTournament: tournament.awards?.playerOfTournament || null,
+        bestBatsman: tournament.awards?.bestBatsman || null,
+        bestBowler: tournament.awards?.bestBowler || null,
+      },
+    });
+
+    try {
+      const io = getIO();
+      io.emit("tournament:updated", tournament);
+    } catch (socketError) {
+      console.log("Socket not available:", socketError.message);
+    }
+
+    res.status(200).json({ tournament, message: "Tournament awards saved" });
+  } catch (error) {
+    console.error("Error setting tournament awards:", error);
+    res.status(400).json({
+      message: "Failed to save tournament awards",
+      error: error.message,
+    });
+  }
 };
 
 export const createTournamentMatch = async (req, res) => {

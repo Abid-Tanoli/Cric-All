@@ -8,6 +8,7 @@ import { initSocket } from "../services/socket";
 import { featureFlags } from "../config/features";
 import KnockoutRounds from "../components/KnockoutRounds";
 import { STAGE_ORDER } from "../components/knockoutBracket";
+import { buildTournamentAwards } from "../utils/tournamentAwards";
 
 export default function Series() {
   const { seriesId } = useParams();
@@ -299,6 +300,11 @@ export default function Series() {
     stats.boundaryMeter?.mostFours?.[0] && { title: "Most Fours", name: stats.boundaryMeter.mostFours[0].name, team: stats.boundaryMeter.mostFours[0].team, value: `${stats.boundaryMeter.mostFours[0].count} fours`, playerId: stats.boundaryMeter.mostFours[0].playerId },
   ].filter(Boolean);
 
+  // P4: honours an organiser sets by hand at the end of the tournament. Unlike
+  // the stat-derived awards above, these come straight off the tournament
+  // document, so they can be present even before anyone has batted.
+  const tournamentAwards = buildTournamentAwards(series);
+
   // P3: only a knockout tournament gets a bracket, and only when it has
   // fixtures that actually carry a bracket stage.
   const isKnockout = series?.type === "knockout";
@@ -312,7 +318,7 @@ export default function Series() {
     ...((isKnockout || (pointsTable && pointsTable.length)) ? [{ key: "points", label: "Points Table" }] : []),
     ...(hasStats ? [{ key: "stats", label: "Stats" }] : []),
     ...(squads.length ? [{ key: "teams", label: "Teams" }] : []),
-    ...(awards.length ? [{ key: "awards", label: "Awards" }] : []),
+    ...((awards.length || tournamentAwards.length) ? [{ key: "awards", label: "Awards" }] : []),
   ];
 
   return (
@@ -893,19 +899,46 @@ export default function Series() {
 
         {/* Awards Tab */}
         {activeTab === "awards" && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {awards.map(award => (
-              <Link
-                key={award.title}
-                to={`/players/${award.playerId}`}
-                className="bg-cric-card rounded-2xl shadow-sm p-6 border border-cric-border hover:shadow-md transition-all"
-              >
-                <p className="text-[10px] font-black uppercase tracking-widest text-cric-accent mb-2">{award.title}</p>
-                <p className="text-lg font-black text-cric-text">{award.name}</p>
-                <p className="text-xs text-cric-muted mb-3">{award.team}</p>
-                <p className="text-sm font-bold text-cric-text">{award.value}</p>
-              </Link>
-            ))}
+          <div className="space-y-8">
+            {tournamentAwards.length > 0 && (
+              <div data-testid="tournament-awards">
+                <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-cric-muted mb-3">Tournament Honours</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {tournamentAwards.map(award => (
+                    <div
+                      key={award.key}
+                      className="bg-cric-card rounded-2xl shadow-sm p-6 border border-cric-border"
+                    >
+                      <p className="text-[10px] font-black uppercase tracking-widest text-cric-accent mb-2">{award.title}</p>
+                      <p className="text-lg font-black text-cric-text">{award.name || "To be decided"}</p>
+                      {award.subtitle ? <p className="text-xs text-cric-muted">{award.subtitle}</p> : null}
+                      {award.playerId ? (
+                        <Link to={`/players/${award.playerId}`} className="mt-3 inline-block text-xs font-black uppercase tracking-widest text-cric-accent">
+                          View profile
+                        </Link>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {awards.length > 0 && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                {awards.map(award => (
+                  <Link
+                    key={award.title}
+                    to={`/players/${award.playerId}`}
+                    className="bg-cric-card rounded-2xl shadow-sm p-6 border border-cric-border hover:shadow-md transition-all"
+                  >
+                    <p className="text-[10px] font-black uppercase tracking-widest text-cric-accent mb-2">{award.title}</p>
+                    <p className="text-lg font-black text-cric-text">{award.name}</p>
+                    <p className="text-xs text-cric-muted mb-3">{award.team}</p>
+                    <p className="text-sm font-bold text-cric-text">{award.value}</p>
+                  </Link>
+                ))}
+              </div>
+            )}
           </div>
         )}
 

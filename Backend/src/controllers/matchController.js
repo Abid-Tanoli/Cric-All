@@ -1,6 +1,7 @@
 import Match from "../models/Match.js";
 import Team from "../models/Team.js";
 import User from "../models/User.js";
+import Player from "../models/Player.js";
 import mongoose from "mongoose";
 import Event from "../models/Event.js";
 import Tournament from "../models/Tournament.js";
@@ -34,6 +35,33 @@ const toNumber = (value, fallback = 0) => {
 const idOf = (value) => String(value?._id || value || "");
 const sameId = (a, b) => idOf(a) && idOf(a) === idOf(b);
 const displayName = (entity, fallback = "Unknown") => entity?.name || entity?.shortName || entity?.fullName || fallback;
+
+/**
+ * P4: every player id the match itself names — a named XI, the squad15, the
+ * bowling XI, the twelfth man, the impact players, and everyone who batted,
+ * bowled or was dismissed. A paper match has no Player.team links, so this is
+ * what proves someone took part.
+ */
+const matchStarters = (match) => {
+  const ids = new Set();
+  const add = (value) => {
+    const id = idOf(value);
+    if (id) ids.add(id);
+  };
+  const addXis = (groups) => (groups || []).forEach((group) => (group?.players || []).forEach(add));
+  addXis(match?.playingXI);
+  addXis(match?.squad15);
+  addXis(match?.bowlingXI);
+  (match?.twelfthMan || []).forEach((entry) => add(entry?.player));
+  (match?.impactPlayers || []).forEach((entry) => { add(entry?.player); add(entry?.replaces); });
+  (match?.innings || []).forEach((innings) => {
+    (innings?.batting || []).forEach((row) => add(row?.player));
+    (innings?.bowling || []).forEach((row) => add(row?.player));
+    (innings?.fallOfWickets || []).forEach((row) => add(row?.player));
+    (innings?.partnerships || []).forEach((row) => { add(row?.batsman1); add(row?.batsman2); });
+  });
+  return ids;
+};
 const formatOversFromBalls = (balls = 0) => `${Math.floor(toNumber(balls) / 6)}.${toNumber(balls) % 6}`;
 const formatBowlerOvers = (row = {}) => {
   if (toNumber(row.balls) > 0) return formatOversFromBalls(row.balls);
@@ -451,11 +479,60 @@ export const setMOM = async (req, res) => {
       return res.status(404).json({ message: "Match not found" });
     }
 
-    match.manOfMatch = playerId;
+    // P4: the player of the match is a post-match honour, so it can only be
+    // set once the match is actually finished. Scoring a live game and
+    // awarding the prize are different moments.
+    if (match.status !== "completed") {
+      return res.status(400).json({
+        message: "Player of the match can only be set once the match is completed.",
+        code: "MOM_REQUIRES_COMPLETED_MATCH",
+      });
+    }
+
+    // P4: an empty/absent playerId clears the honour; anything else must name a
+    // player who actually took part. Without this a stray id would surface as a
+    // blank "Player of the Match" on the public scorecard.
+    const cleaned = playerId == null ? "" : String(playerId).trim();
+    if (!cleaned) {
+      match.manOfMatch = null;
+    } else {
+      if (!mongoose.isValidObjectId(cleaned)) {
+        return res.status(400).json({ message: "That player id is not valid.", code: "MOM_INVALID_PLAYER" });
+      }
+      // A player "took part" if the match names them in a squad or an innings,
+      // or if their own team link points at one of the two teams. Checking only
+      // Player.team would wrongly refuse a paper match, where the roster is
+      // recorded on the match itself.
+      const teamIds = (match.teams || []).map((team) => team?._id || team);
+      const referenced = matchStarters(match).has(cleaned);
+      const onTeam = referenced
+        ? true
+        : !!(await Player.exists({ _id: cleaned, team: { $in: teamIds } }));
+      if (!onTeam) {
+        return res.status(400).json({
+          message: "The player of the match must belong to one of the two teams.",
+          code: "MOM_PLAYER_NOT_IN_MATCH",
+        });
+      }
+      match.manOfMatch = cleaned;
+    }
+
     await match.save({ validateModifiedOnly: true });
 
     await match.populate("manOfMatch", "name role");
     await match.populate("teams", "name shortName logo");
+
+    recordAudit({
+      req,
+      action: "match.mom_set",
+      targetType: "match",
+      targetId: match._id,
+      targetLabel: match.title,
+      metadata: {
+        playerOfMatch: match.manOfMatch?._id || match.manOfMatch || null,
+        via: req.matchAccess?.via || "unknown",
+      },
+    });
 
     try {
       const io = getIO();

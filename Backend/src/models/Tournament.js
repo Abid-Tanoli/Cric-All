@@ -97,6 +97,15 @@ const tournamentSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "Team"
     },
+    // P4: end-of-tournament honours. These are set by an admin rather than
+    // derived, because "best batsman" is a judgement call the stats table
+    // cannot make. `winner`/`runnerUp` above are set through the same route.
+    // All are nullable so an award can be cleared or left unfilled.
+    awards: {
+      playerOfTournament: { type: mongoose.Schema.Types.ObjectId, ref: "Player", default: null },
+      bestBatsman: { type: mongoose.Schema.Types.ObjectId, ref: "Player", default: null },
+      bestBowler: { type: mongoose.Schema.Types.ObjectId, ref: "Player", default: null },
+    },
     sponsors: [{
       name: String,
       logo: String
