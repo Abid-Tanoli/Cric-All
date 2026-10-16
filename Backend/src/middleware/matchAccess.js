@@ -91,6 +91,27 @@ export async function resolveMatchAccess(
     };
   }
 
+  // P2: per-match scorer assignment. When a match names its scorers, only those
+  // users (plus the club's own admins/managers and platform admins, who keep
+  // supervisory access) may run it. An unassigned match keeps the Phase 9 rule
+  // so nothing that worked before this feature changes behaviour.
+  const assignedScorers = (match?.assignedScorers || []).map((id) => String(id?._id || id));
+  if (requiredPermission === PERMISSIONS.SCORE_MATCH && assignedScorers.length) {
+    const userId = String(req.user?._id || req.user?.id || "");
+    const isAssigned = assignedScorers.includes(userId);
+    const isOrgAdmin = access.roles.some((role) => ["owner", "admin", "manager"].includes(role));
+    if (!isAssigned && !isOrgAdmin) {
+      return {
+        allowed: false,
+        via: "none",
+        reason: "This match is assigned to a specific scorer. Ask an admin to assign you.",
+        code: "MATCH_SCORER_NOT_ASSIGNED",
+        organization: organizationId,
+        requiredPermission,
+      };
+    }
+  }
+
   return {
     allowed: true,
     via: "membership",
@@ -120,7 +141,7 @@ export function requireMatchAccess(idParam = "matchId", permission = PERMISSIONS
         return res.status(400).json({ message: "Match id is not valid" });
       }
 
-      const match = await Match.findById(matchId).select("organizationRef").lean();
+      const match = await Match.findById(matchId).select("organizationRef assignedScorers").lean();
       if (!match) return res.status(404).json({ message: "Match not found" });
 
       const access = await resolveMatchAccess(req, match, permission);

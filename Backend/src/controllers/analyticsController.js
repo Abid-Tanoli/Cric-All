@@ -1,4 +1,5 @@
 import Match from "../models/Match.js";
+import User from "../models/User.js";
 import Delivery from "../models/Delivery.js";
 import Partnership from "../models/Partnership.js";
 import MatchAnalytics from "../models/MatchAnalytics.js";
@@ -259,17 +260,31 @@ export async function assignMatchOfficial(req, res) {
     
     const match = await Match.findById(matchId);
     if (match) {
-      const roleName = role.replace(/_/g, ' ').replace('umpire on field', 'Umpire').replace('third umpire', 'Third Umpire').replace('match referee', 'Match Referee').replace('scorer', 'Scorer');
-      if (!match.umpires) match.umpires = [];
-      const existingUmp = match.umpires.find(u => u.role === (role === 'umpire_on_field_1' ? 'field' : role === 'third_umpire' ? 'third' : role));
-      if (existingUmp) {
-        existingUmp.name = userId;
-      } else {
-        match.umpires.push({ name: userId, role: role === 'umpire_on_field_1' ? 'field' : role === 'third_umpire' ? 'third' : role });
+      // P2: a scorer appointment is what gates the scoring screen, so it is
+      // written to `Match.assignedScorers` (the same field the /scorers endpoint
+      // owns). It must NOT be mirrored into `match.umpires`: the old code pushed
+      // the raw userId string as an umpire name, so appointing a scorer left a
+      // ghost "umpire" behind.
+      if (role === "scorer") {
+        match.assignedScorers = [userId];
+        await match.save({ validateModifiedOnly: true });
+      } else if (role === "umpire_on_field_1" || role === "umpire_on_field_2" || role === "third_umpire") {
+        // Only real umpire appointments mirror into match.umpires, and the
+        // stored value is a human name (or the email), never a bare id.
+        const user = await User.findById(userId).select("name email");
+        const displayName = user?.name || user?.email || "";
+        const umpireRole = role === "third_umpire" ? "third" : "field";
+        if (!match.umpires) match.umpires = [];
+        const existingUmp = match.umpires.find(u => u.role === umpireRole);
+        if (existingUmp) {
+          existingUmp.name = displayName;
+        } else {
+          match.umpires.push({ name: displayName, role: umpireRole });
+        }
+        await match.save({ validateModifiedOnly: true });
       }
-      await match.save();
     }
-    
+
     res.json(official);
   } catch (err) {
     res.status(500).json({ error: err.message });

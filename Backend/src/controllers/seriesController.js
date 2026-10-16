@@ -94,7 +94,9 @@ const groupMatchesByStatus = (matches) => {
   return groups;
 };
 
-const aggregateSeriesStats = (matches) => {
+// Exported (in addition to internal use) so the manual-scorecard tests can
+// prove a manual match feeds the same player-stats aggregate a live one does.
+export const aggregateSeriesStats = (matches) => {
   const batting = new Map();
   const bowling = new Map();
   const fielding = new Map();

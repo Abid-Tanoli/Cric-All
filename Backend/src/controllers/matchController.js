@@ -1,5 +1,8 @@
 import Match from "../models/Match.js";
 import Team from "../models/Team.js";
+import User from "../models/User.js";
+import Player from "../models/Player.js";
+import mongoose from "mongoose";
 import Event from "../models/Event.js";
 import Tournament from "../models/Tournament.js";
 import Partnership from "../models/Partnership.js";
@@ -9,6 +12,7 @@ import { hiddenTeamIds, reservedNamesMongoClause } from "../utils/publicProjecti
 import { getPlatformSettings } from "../models/SystemSettings.js";
 import { recordAudit } from "../utils/audit.js";
 import { buildMatchInnings, ensureMatchInnings } from "../utils/matchInnings.js";
+import { updateTournamentPoints } from "../services/tournamentService.js";
 
 const normalStatus = (status = "upcoming") => (status === "innings-break" ? "innings_break" : status);
 const legalMatchStatuses = [
@@ -31,6 +35,33 @@ const toNumber = (value, fallback = 0) => {
 const idOf = (value) => String(value?._id || value || "");
 const sameId = (a, b) => idOf(a) && idOf(a) === idOf(b);
 const displayName = (entity, fallback = "Unknown") => entity?.name || entity?.shortName || entity?.fullName || fallback;
+
+/**
+ * P4: every player id the match itself names — a named XI, the squad15, the
+ * bowling XI, the twelfth man, the impact players, and everyone who batted,
+ * bowled or was dismissed. A paper match has no Player.team links, so this is
+ * what proves someone took part.
+ */
+const matchStarters = (match) => {
+  const ids = new Set();
+  const add = (value) => {
+    const id = idOf(value);
+    if (id) ids.add(id);
+  };
+  const addXis = (groups) => (groups || []).forEach((group) => (group?.players || []).forEach(add));
+  addXis(match?.playingXI);
+  addXis(match?.squad15);
+  addXis(match?.bowlingXI);
+  (match?.twelfthMan || []).forEach((entry) => add(entry?.player));
+  (match?.impactPlayers || []).forEach((entry) => { add(entry?.player); add(entry?.replaces); });
+  (match?.innings || []).forEach((innings) => {
+    (innings?.batting || []).forEach((row) => add(row?.player));
+    (innings?.bowling || []).forEach((row) => add(row?.player));
+    (innings?.fallOfWickets || []).forEach((row) => add(row?.player));
+    (innings?.partnerships || []).forEach((row) => { add(row?.batsman1); add(row?.batsman2); });
+  });
+  return ids;
+};
 const formatOversFromBalls = (balls = 0) => `${Math.floor(toNumber(balls) / 6)}.${toNumber(balls) % 6}`;
 const formatBowlerOvers = (row = {}) => {
   if (toNumber(row.balls) > 0) return formatOversFromBalls(row.balls);
@@ -101,8 +132,13 @@ const populateMatchList = (query) => {
       "subCategory",
       "ageGroup",
       "organization",
+      "organizationRef",
       "address",
       "tournament",
+      "stage",
+      "stageLabel",
+      "source",
+      "assignedScorers",
       "totalOvers",
       "startAt",
       "teams",
@@ -131,7 +167,7 @@ const populateMatchList = (query) => {
       "updatedAt"
     ].join(" "))
     .populate("teams", "name shortName logo")
-    .populate("tournament", "name shortName slug")
+    .populate("tournament", "name shortName slug type")
     .populate("innings.team", "name shortName logo")
     .populate("result.winner", "name shortName logo")
     .populate("tossWinner", "name shortName")
@@ -390,7 +426,20 @@ export const deleteMatch = async (req, res) => {
       return res.status(404).json({ message: "Match not found" });
     }
 
+    const wasManual = match.source === "manual";
+    const tournamentId = idOf(match.tournament) || null;
     await Match.findByIdAndDelete(req.params.id);
+
+    // Keep the tournament's fixture list and points table consistent with the
+    // delete (previously an orphaned id lingered in Tournament.matches).
+    if (tournamentId) {
+      try {
+        await Tournament.updateOne({ _id: tournamentId }, { $pull: { matches: match._id } });
+        updateTournamentPoints(tournamentId);
+      } catch (syncError) {
+        console.log("[TournamentSync] delete cleanup failed:", syncError.message);
+      }
+    }
 
     try {
       const io = getIO();
@@ -398,6 +447,17 @@ export const deleteMatch = async (req, res) => {
       io.emit("match:updateList");
     } catch (socketError) {
       console.log("Socket not available:", socketError.message);
+    }
+
+    if (wasManual) {
+      recordAudit({
+        req,
+        action: "match.manual_deleted",
+        targetType: "match",
+        targetId: match._id,
+        targetLabel: match.title,
+        metadata: { tournamentId },
+      });
     }
 
     res.status(200).json({ message: "Match deleted successfully" });
@@ -419,11 +479,60 @@ export const setMOM = async (req, res) => {
       return res.status(404).json({ message: "Match not found" });
     }
 
-    match.manOfMatch = playerId;
+    // P4: the player of the match is a post-match honour, so it can only be
+    // set once the match is actually finished. Scoring a live game and
+    // awarding the prize are different moments.
+    if (match.status !== "completed") {
+      return res.status(400).json({
+        message: "Player of the match can only be set once the match is completed.",
+        code: "MOM_REQUIRES_COMPLETED_MATCH",
+      });
+    }
+
+    // P4: an empty/absent playerId clears the honour; anything else must name a
+    // player who actually took part. Without this a stray id would surface as a
+    // blank "Player of the Match" on the public scorecard.
+    const cleaned = playerId == null ? "" : String(playerId).trim();
+    if (!cleaned) {
+      match.manOfMatch = null;
+    } else {
+      if (!mongoose.isValidObjectId(cleaned)) {
+        return res.status(400).json({ message: "That player id is not valid.", code: "MOM_INVALID_PLAYER" });
+      }
+      // A player "took part" if the match names them in a squad or an innings,
+      // or if their own team link points at one of the two teams. Checking only
+      // Player.team would wrongly refuse a paper match, where the roster is
+      // recorded on the match itself.
+      const teamIds = (match.teams || []).map((team) => team?._id || team);
+      const referenced = matchStarters(match).has(cleaned);
+      const onTeam = referenced
+        ? true
+        : !!(await Player.exists({ _id: cleaned, team: { $in: teamIds } }));
+      if (!onTeam) {
+        return res.status(400).json({
+          message: "The player of the match must belong to one of the two teams.",
+          code: "MOM_PLAYER_NOT_IN_MATCH",
+        });
+      }
+      match.manOfMatch = cleaned;
+    }
+
     await match.save({ validateModifiedOnly: true });
 
     await match.populate("manOfMatch", "name role");
     await match.populate("teams", "name shortName logo");
+
+    recordAudit({
+      req,
+      action: "match.mom_set",
+      targetType: "match",
+      targetId: match._id,
+      targetLabel: match.title,
+      metadata: {
+        playerOfMatch: match.manOfMatch?._id || match.manOfMatch || null,
+        via: req.matchAccess?.via || "unknown",
+      },
+    });
 
     try {
       const io = getIO();
@@ -440,6 +549,76 @@ export const setMOM = async (req, res) => {
     console.error("Error setting MOM:", error);
     res.status(400).json({
       message: "Failed to set Man of the Match",
+      error: error.message
+    });
+  }
+};
+
+/**
+ * P2: assign the scorer(s) for one match.
+ *
+ * A non-empty list restricts who may open the scoring screen for this fixture
+ * to those users (plus the club's owners/admins/managers and platform admins).
+ * An empty list clears the restriction and restores the org-wide score_match
+ * rule. `assignedScorers` is the single source of truth read by matchAccess.
+ */
+export const setMatchScorers = async (req, res) => {
+  try {
+    const match = await Match.findById(req.params.id);
+    if (!match) return res.status(404).json({ message: "Match not found" });
+
+    const raw = req.body?.scorerIds ?? req.body?.userIds ?? req.body?.scorers ?? [];
+    const list = (Array.isArray(raw) ? raw : [raw])
+      .filter((value) => value != null && value !== "")
+      .map((value) => String(value?._id || value));
+    const unique = [...new Set(list)];
+
+    for (const id of unique) {
+      if (!mongoose.Types.ObjectId.isValid(id)) {
+        return res.status(400).json({ message: `Not a valid user id: ${id}` });
+      }
+    }
+
+    const users = unique.length
+      ? await User.find({ _id: { $in: unique } }).select("name email")
+      : [];
+    if (users.length !== unique.length) {
+      return res.status(400).json({ message: "One or more scorers do not exist" });
+    }
+
+    match.assignedScorers = users.map((user) => user._id);
+    await match.save({ validateModifiedOnly: true });
+
+    recordAudit({
+      req,
+      action: "match.scorers_assigned",
+      targetType: "match",
+      targetId: match._id,
+      targetLabel: match.title,
+      metadata: { scorerIds: users.map((user) => String(user._id)) },
+    });
+
+    await match.populate("assignedScorers", "name email");
+    await match.populate("teams", "name shortName logo");
+
+    try {
+      const io = getIO();
+      io.emit("match:updated", match);
+    } catch (socketError) {
+      console.log("Socket not available:", socketError.message);
+    }
+
+    res.status(200).json({
+      match,
+      assignedScorers: match.assignedScorers,
+      message: users.length
+        ? "Scorer assigned successfully"
+        : "Scorer assignment cleared",
+    });
+  } catch (error) {
+    console.error("Error assigning scorers:", error);
+    res.status(400).json({
+      message: "Failed to assign scorers",
       error: error.message
     });
   }

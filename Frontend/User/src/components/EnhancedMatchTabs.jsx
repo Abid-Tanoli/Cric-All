@@ -24,11 +24,25 @@ import StatsTab from "./StatsTab";
 import WagonWheelTab from "./WagonWheelTab";
 
 const EnhancedMatchTabs = ({ match, matchId }) => {
-  const [activeTab, setActiveTab] = useState("live");
+  // A manually entered (paper) match has no ball-by-ball timeline, so the
+  // live/commentary/overs tabs are hidden and the page opens on the scorecard.
+  const isManual = match?.source === "manual";
+  const visiblePrimaryTabs = isManual
+    ? PRIMARY_TABS.filter((tab) => tab.id !== "live" && tab.id !== "commentary")
+    : PRIMARY_TABS;
+  const visibleMoreTabs = isManual
+    ? MORE_TABS.filter((tab) => tab.id !== "overs" && tab.id !== "live-stats")
+    : MORE_TABS;
+  const availableTabs = [...visiblePrimaryTabs, ...visibleMoreTabs];
+
+  const [activeTab, setActiveTab] = useState(isManual ? "scorecard" : "live");
   const [selectedInnings, setSelectedInnings] = useState(0);
   const [visibleOvers, setVisibleOvers] = useState(5);
   const [moreOpen, setMoreOpen] = useState(false);
-  const isMoreTab = MORE_TABS.some((tab) => tab.id === activeTab);
+  const effectiveTab = availableTabs.some((tab) => tab.id === activeTab)
+    ? activeTab
+    : (isManual ? "scorecard" : "live");
+  const isMoreTab = visibleMoreTabs.some((tab) => tab.id === effectiveTab);
 
   const players = useMemo(() => collectPlayers(match), [match]);
   const currentInnings = currentInningsOf(match);
@@ -100,13 +114,13 @@ const EnhancedMatchTabs = ({ match, matchId }) => {
       <nav className="sticky top-0 z-30 border-b border-cric-border bg-cric-card/95 backdrop-blur supports-[backdrop-filter]:bg-cric-card/90">
         <div className="mx-auto max-w-7xl px-3 sm:px-6 lg:px-8">
           <div className="no-scrollbar flex flex-nowrap items-center gap-1 sm:gap-2 overflow-x-auto">
-            {PRIMARY_TABS.map((tab) => (
+            {visiblePrimaryTabs.map((tab) => (
               <button
                 key={tab.id}
                 type="button"
                 onClick={() => { setActiveTab(tab.id); setMoreOpen(false); }}
                 className={`match-tab-btn whitespace-nowrap border-b-2 px-2.5 sm:px-3 py-3 text-[11px] sm:text-sm font-black transition shrink-0 ${
-                  activeTab === tab.id ? "border-cric-accent text-cric-accent" : "border-transparent text-cric-muted hover:text-cric-text"
+                  effectiveTab === tab.id ? "border-cric-accent text-cric-accent" : "border-transparent text-cric-muted hover:text-cric-text"
                 }`}
               >
                 {tab.label}
@@ -120,16 +134,16 @@ const EnhancedMatchTabs = ({ match, matchId }) => {
                   isMoreTab || moreOpen ? "border-cric-accent text-cric-accent" : "border-transparent text-cric-muted"
                 }`}
               >
-                More {isMoreTab ? ` \u00b7 ${MORE_TABS.find((t) => t.id === activeTab)?.label}` : ""}
+                More {isMoreTab ? ` \u00b7 ${visibleMoreTabs.find((t) => t.id === effectiveTab)?.label}` : ""}
               </button>
               {moreOpen && (
                 <div className="absolute right-0 top-full z-40 mt-0 min-w-[160px] rounded-xl border border-cric-border bg-cric-card py-1 shadow-lg lg:hidden">
-                  {MORE_TABS.map((tab) => (
+                  {visibleMoreTabs.map((tab) => (
                     <button
                       key={tab.id}
                       type="button"
                       onClick={() => { setActiveTab(tab.id); setMoreOpen(false); }}
-                      className={`block w-full px-4 py-2.5 text-left text-xs font-bold ${activeTab === tab.id ? "bg-cric-accent/10 text-cric-accent" : "text-cric-text hover:bg-cric-bg"}`}
+                      className={`block w-full px-4 py-2.5 text-left text-xs font-bold ${effectiveTab === tab.id ? "bg-cric-accent/10 text-cric-accent" : "text-cric-text hover:bg-cric-bg"}`}
                     >
                       {tab.label}
                     </button>
@@ -137,13 +151,13 @@ const EnhancedMatchTabs = ({ match, matchId }) => {
                 </div>
               )}
             </div>
-            {MORE_TABS.map((tab) => (
+            {visibleMoreTabs.map((tab) => (
               <button
                 key={tab.id}
                 type="button"
                 onClick={() => setActiveTab(tab.id)}
                 className={`match-tab-btn hidden lg:inline-flex whitespace-nowrap border-b-2 px-2 sm:px-3 py-3 text-sm font-black transition shrink-0 ${
-                  activeTab === tab.id ? "border-cric-accent text-cric-accent" : "border-transparent text-cric-muted hover:text-cric-text"
+                  effectiveTab === tab.id ? "border-cric-accent text-cric-accent" : "border-transparent text-cric-muted hover:text-cric-text"
                 }`}
               >
                 {tab.label}
@@ -154,7 +168,7 @@ const EnhancedMatchTabs = ({ match, matchId }) => {
       </nav>
 
       <div className="mx-auto max-w-7xl w-full min-w-0 px-3 sm:px-6 lg:px-8 py-4 sm:py-5">
-        {activeTab === "live" && (
+        {effectiveTab === "live" && (
           <div className="grid gap-4 lg:gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
             <section className="space-y-3 sm:space-y-4 min-w-0">
               <div className="match-card">
@@ -198,7 +212,7 @@ const EnhancedMatchTabs = ({ match, matchId }) => {
           </div>
         )}
 
-        {activeTab === "scorecard" && (
+        {effectiveTab === "scorecard" && (
           <ScorecardTab
             match={match}
             innings={selectedInningsData}
@@ -209,7 +223,7 @@ const EnhancedMatchTabs = ({ match, matchId }) => {
           />
         )}
 
-        {activeTab === "commentary" && (
+        {effectiveTab === "commentary" && (
           <CommentaryTab
             overs={commentaryOvers}
             players={players}
@@ -218,27 +232,27 @@ const EnhancedMatchTabs = ({ match, matchId }) => {
           />
         )}
 
-        {activeTab === "playing-xi" && <PlayingXITab match={match} players={players} />}
+        {effectiveTab === "playing-xi" && <PlayingXITab match={match} players={players} />}
 
-        {activeTab === "overs" && <OversTab matchId={matchId || match?._id} />}
+        {effectiveTab === "overs" && <OversTab matchId={matchId || match?._id} />}
 
-        {activeTab === "live-stats" && <LiveStatsTab matchId={matchId || match?._id} />}
+        {effectiveTab === "live-stats" && <LiveStatsTab matchId={matchId || match?._id} />}
 
-        {activeTab === "summary" && <SummaryTab match={match} allPlayers={players} />}
+        {effectiveTab === "summary" && <SummaryTab match={match} allPlayers={players} />}
 
-        {activeTab === "partnerships" && (
+        {effectiveTab === "partnerships" && (
           <PartnershipsTab match={match} innings={currentInnings} players={players} />
         )}
 
-        {activeTab === "graphs" && (
+        {effectiveTab === "graphs" && (
           <GraphsTab match={match} matchId={matchId} innings={currentInnings} />
         )}
 
-        {activeTab === "info" && <MatchInfoTab match={match} />}
+        {effectiveTab === "info" && <MatchInfoTab match={match} />}
 
-        {activeTab === "stats" && <StatsTab match={match} players={players} />}
+        {effectiveTab === "stats" && <StatsTab match={match} players={players} />}
 
-        {activeTab === "wagon" && <WagonWheelTab match={match} players={players} />}
+        {effectiveTab === "wagon" && <WagonWheelTab match={match} players={players} />}
       </div>
     </main>
   );

@@ -8,6 +8,7 @@ import {
   updateMatch,
   deleteMatch,
   setMOM,
+  setMatchScorers,
   getMatchStats,
   getMatchLiveStats,
   getMatchSummary,
@@ -48,6 +49,10 @@ import {
   reduceOvers,
   resetInnings
 } from "../controllers/inningsController.js";
+import {
+  createManualMatch,
+  updateManualMatch
+} from "../controllers/manualScorecardController.js";
 import {
   getMatchPartnerships,
   getActivePartnership,
@@ -122,6 +127,11 @@ router.get("/:id/commentary", validateObjectId("id"), getMatchCommentary);
 router.get("/:id/officials", validateObjectId("id"), getMatchOfficials);
 
 router.post("/", ...adminOnly, createMatch);
+// Manual (paper) scorecard: admin-only, creates a completed (or draft) match
+// whose summary innings feed standings/stats with no special case. Declared
+// before the `/:id/...` blocks so the literal path can never be read as an id.
+router.post("/manual", ...adminOnly, createManualMatch);
+router.put("/:id/manual", ...adminOnly, validateObjectId("id"), updateManualMatch);
 router.post("/:matchId/score", ...scoring("matchId"), scoringRateLimit, validate(updateScoreSchema), updateScore);
 router.post("/:matchId/end-innings", ...scoring("matchId"), validate(endInningsSchema), endInnings);
 router.post("/:matchId/start-next-innings", ...scoring("matchId"), startNextInnings);
@@ -151,6 +161,11 @@ router.post("/:id/abandon", ...adminOnly, validateObjectId("id"), abandonMatch);
 router.put("/:id", ...adminOnly, validateObjectId("id"), updateMatch);
 router.put("/:id/status", ...scoring("id"), updateMatchStatus);
 router.put("/:id/mom", ...scoring("id"), setMOM);
+// P2: who may score this match. Assigning a scorer is a fixture-management
+// action, so it uses the same gate as the squad routes (create_match: platform
+// admins plus the club's owner/admin/manager). The consequence of the
+// assignment is enforced by the score_match guard.
+router.put("/:id/scorers", ...squad("id"), setMatchScorers);
 router.put("/:matchId/playing-xi", ...squad("matchId"), setPlayingXI);
 router.put("/:matchId/openers", ...squad("matchId"), setOpeners);
 router.put("/:matchId/format", ...adminOnly, validateObjectId("matchId"), async (req, res) => {

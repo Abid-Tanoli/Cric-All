@@ -42,4 +42,15 @@ describe('PointsTable (Task 5)', () => {
     await waitFor(() => expect(screen.getByText('No Points Table Available')).toBeTruthy())
     expect(api.get).not.toHaveBeenCalled()
   })
+
+  it('explains that a knockout has no league table instead of ranking zeros', async () => {
+    render(<PointsTable tournamentId="t1" isKnockout />)
+
+    await waitFor(() =>
+      expect(screen.getByText('Knockout tournament - no league table')).toBeTruthy(),
+    )
+    expect(screen.queryByText('Alpha CC')).toBeNull()
+    expect(screen.queryByText('PTS')).toBeNull()
+    expect(api.get).not.toHaveBeenCalled()
+  })
 })

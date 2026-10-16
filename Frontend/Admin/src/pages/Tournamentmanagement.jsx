@@ -51,9 +51,12 @@ export default function TournamentManagement() {
 
     const [fixtureOpts, setFixtureOpts] = useState({ format: 'round-robin', startAt: '', gapHours: 2, venue: '' });
     const [preview, setPreview] = useState(null);
-    const [manual, setManual] = useState({ team1: '', team2: '', startTime: '', round: 1, group: '' });
+    const [manual, setManual] = useState({ team1: '', team2: '', startTime: '', round: '', group: '', stage: '', stageLabel: '' });
     const [groupAssign, setGroupAssign] = useState({});
     const [filters, setFilters] = useState({ status: '', team: '' });
+    const awardsFormBlank = { winner: '', runnerUp: '', playerOfTournament: '', bestBatsman: '', bestBowler: '' };
+    const [awardsForm, setAwardsForm] = useState(awardsFormBlank);
+    const [awardSquads, setAwardSquads] = useState([]);
 
     const fetchTournaments = useCallback(async () => {
         setLoading(true);
@@ -105,6 +108,51 @@ export default function TournamentManagement() {
     useEffect(() => {
         if (selectedId) loadDetail(selectedId);
     }, [selectedId, loadDetail]);
+
+    // P4: seed the awards form from whatever the tournament already has, so the
+    // admin sees the current honours rather than a blank slate.
+    useEffect(() => {
+        if (!detail) return;
+        setAwardsForm({
+            winner: detail.winner?._id || '',
+            runnerUp: detail.runnerUp?._id || '',
+            playerOfTournament: detail.awards?.playerOfTournament?._id || '',
+            bestBatsman: detail.awards?.bestBatsman?._id || '',
+            bestBowler: detail.awards?.bestBowler?._id || '',
+        });
+    }, [detail]);
+
+    // P4: the player dropdowns need names, which only the squad endpoint
+    // populates. Fetch it lazily when the Awards tab is opened.
+    useEffect(() => {
+        if (tab !== 'awards' || !selectedId) return undefined;
+        let cancelled = false;
+        (async () => {
+            try {
+                const res = await api.get(`/tournaments/${selectedId}/squad`);
+                if (!cancelled) setAwardSquads(Array.isArray(res.data) ? res.data : []);
+            } catch {
+                if (!cancelled) setAwardSquads([]);
+            }
+        })();
+        return () => { cancelled = true; };
+    }, [tab, selectedId]);
+
+    const awardPlayerOptions = useMemo(() => {
+        const options = new Map();
+        (awardSquads || []).forEach((squad) => {
+            (squad?.players || []).forEach((player) => {
+                if (player?._id && !options.has(String(player._id))) {
+                    options.set(String(player._id), {
+                        id: String(player._id),
+                        name: player.name || 'Unnamed player',
+                        team: squad?.team?.name || squad?.team?.shortName || 'Squad',
+                    });
+                }
+            });
+        });
+        return [...options.values()];
+    }, [awardSquads]);
 
     const tournamentTeams = useMemo(() => detail?.teams || [], [detail]);
 
@@ -218,12 +266,14 @@ export default function TournamentManagement() {
 
     const createManualFixture = async () => {
         try {
-            await api.post(`/tournaments/${selectedId}/matches`, {
-                ...manual,
-                round: Number(manual.round) || 1,
-            });
+            const payload = { ...manual };
+            // Round is optional for a knockout fixture — let the server derive it
+            // from the stage instead of forcing every fixture to "round 1".
+            if (manual.round === '' || manual.round == null) delete payload.round;
+            else payload.round = Number(manual.round);
+            await api.post(`/tournaments/${selectedId}/matches`, payload);
             showToast('Fixture added', 'success');
-            setManual({ team1: '', team2: '', startTime: '', round: 1, group: '' });
+            setManual({ team1: '', team2: '', startTime: '', round: '', group: '', stage: '', stageLabel: '' });
             loadDetail(selectedId);
         } catch (err) {
             showToast(err.response?.data?.message || 'Failed to add fixture', 'error');
@@ -259,6 +309,18 @@ export default function TournamentManagement() {
             loadDetail(selectedId);
         } catch (err) {
             showToast(err.response?.data?.message || 'Recompute failed', 'error');
+        }
+    };
+
+    const saveAwards = async () => {
+        try {
+            const res = await api.put(`/tournaments/${selectedId}/awards`, awardsForm);
+            showToast(res.data?.message || 'Awards saved', 'success');
+            loadDetail(selectedId);
+        } catch (err) {
+            const errors = err.response?.data?.errors;
+            const firstFieldError = errors && Object.values(errors)[0];
+            showToast(firstFieldError || err.response?.data?.message || 'Failed to save awards', 'error');
         }
     };
 
@@ -332,22 +394,35 @@ export default function TournamentManagement() {
             <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
                 <h4 className="font-bold text-[#031d44] mb-3">Add a fixture manually</h4>
                 <div className="grid grid-cols-1 md:grid-cols-5 gap-3 mb-3">
-                    <select className={inputCls} value={manual.team1} onChange={(e) => setManual({ ...manual, team1: e.target.value })}>
+                    <select aria-label="Manual fixture team A" className={inputCls} value={manual.team1} onChange={(e) => setManual({ ...manual, team1: e.target.value })}>
                         <option value="">Team A</option>
                         {tournamentTeams.map((t) => (
                             <option key={t._id} value={t._id}>{teamName(t)}</option>
                         ))}
                     </select>
-                    <select className={inputCls} value={manual.team2} onChange={(e) => setManual({ ...manual, team2: e.target.value })}>
+                    <select aria-label="Manual fixture team B" className={inputCls} value={manual.team2} onChange={(e) => setManual({ ...manual, team2: e.target.value })}>
                         <option value="">Team B</option>
                         {tournamentTeams.map((t) => (
                             <option key={t._id} value={t._id}>{teamName(t)}</option>
                         ))}
                     </select>
-                    <input type="datetime-local" className={inputCls} value={manual.startTime} onChange={(e) => setManual({ ...manual, startTime: e.target.value })} />
-                    <input type="number" min="1" className={inputCls} placeholder="Round" value={manual.round} onChange={(e) => setManual({ ...manual, round: e.target.value })} />
-                    <input className={inputCls} placeholder="Group (optional)" value={manual.group} onChange={(e) => setManual({ ...manual, group: e.target.value })} />
+                    <input type="datetime-local" aria-label="Manual fixture date" className={inputCls} value={manual.startTime} onChange={(e) => setManual({ ...manual, startTime: e.target.value })} />
+                    <input type="number" min="1" aria-label="Manual fixture round" className={inputCls} placeholder="Round" value={manual.round} onChange={(e) => setManual({ ...manual, round: e.target.value })} />
+                    <input className={inputCls} aria-label="Manual fixture group" placeholder="Group (optional)" value={manual.group} onChange={(e) => setManual({ ...manual, group: e.target.value })} />
                 </div>
+                <div className="grid grid-cols-1 md:grid-cols-5 gap-3 mb-3">
+                    <select aria-label="Manual fixture stage" className={inputCls} value={manual.stage} onChange={(e) => setManual({ ...manual, stage: e.target.value })}>
+                        <option value="">Stage (league / group)</option>
+                        <option value="quarter_final">Quarter-final</option>
+                        <option value="semi_final">Semi-final</option>
+                        <option value="final">Final</option>
+                        <option value="third_place">Third-place</option>
+                    </select>
+                    <input className={inputCls} aria-label="Manual fixture stage label" placeholder="Slot label (QF1, SF2, Final)" value={manual.stageLabel} onChange={(e) => setManual({ ...manual, stageLabel: e.target.value })} />
+                </div>
+                <p className="text-xs text-slate-500 mb-3">
+                    Leave the date empty for a TBD fixture. A semi-final may only be drawn from quarter-final winners and the final from semi-final winners.
+                </p>
                 <button className={btnPrimary} onClick={createManualFixture} disabled={!manual.team1 || !manual.team2}>Add fixture</button>
             </div>
 
@@ -456,6 +531,82 @@ export default function TournamentManagement() {
         </div>
     );
 
+    const renderAwards = () => (
+        <div className="space-y-4">
+            <p className="text-sm text-slate-600">
+                Set the end-of-tournament honours. Choose &ldquo;Not awarded&rdquo; to clear one.
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <label className="flex flex-col gap-1 text-xs font-bold text-slate-600">
+                    Champion
+                    <select
+                        aria-label="Tournament champion"
+                        className={inputCls}
+                        value={awardsForm.winner}
+                        onChange={(e) => setAwardsForm({ ...awardsForm, winner: e.target.value })}
+                    >
+                        <option value="">Not awarded</option>
+                        {tournamentTeams.map((t) => <option key={t._id} value={t._id}>{teamName(t)}</option>)}
+                    </select>
+                </label>
+                <label className="flex flex-col gap-1 text-xs font-bold text-slate-600">
+                    Runner-up
+                    <select
+                        aria-label="Tournament runner-up"
+                        className={inputCls}
+                        value={awardsForm.runnerUp}
+                        onChange={(e) => setAwardsForm({ ...awardsForm, runnerUp: e.target.value })}
+                    >
+                        <option value="">Not awarded</option>
+                        {tournamentTeams.map((t) => <option key={t._id} value={t._id}>{teamName(t)}</option>)}
+                    </select>
+                </label>
+                <label className="flex flex-col gap-1 text-xs font-bold text-slate-600">
+                    Player of the Tournament
+                    <select
+                        aria-label="Player of the tournament"
+                        className={inputCls}
+                        value={awardsForm.playerOfTournament}
+                        onChange={(e) => setAwardsForm({ ...awardsForm, playerOfTournament: e.target.value })}
+                    >
+                        <option value="">Not awarded</option>
+                        {awardPlayerOptions.map((p) => <option key={p.id} value={p.id}>{p.name} ({p.team})</option>)}
+                    </select>
+                </label>
+                <label className="flex flex-col gap-1 text-xs font-bold text-slate-600">
+                    Best Batsman
+                    <select
+                        aria-label="Best batsman"
+                        className={inputCls}
+                        value={awardsForm.bestBatsman}
+                        onChange={(e) => setAwardsForm({ ...awardsForm, bestBatsman: e.target.value })}
+                    >
+                        <option value="">Not awarded</option>
+                        {awardPlayerOptions.map((p) => <option key={p.id} value={p.id}>{p.name} ({p.team})</option>)}
+                    </select>
+                </label>
+                <label className="flex flex-col gap-1 text-xs font-bold text-slate-600">
+                    Best Bowler
+                    <select
+                        aria-label="Best bowler"
+                        className={inputCls}
+                        value={awardsForm.bestBowler}
+                        onChange={(e) => setAwardsForm({ ...awardsForm, bestBowler: e.target.value })}
+                    >
+                        <option value="">Not awarded</option>
+                        {awardPlayerOptions.map((p) => <option key={p.id} value={p.id}>{p.name} ({p.team})</option>)}
+                    </select>
+                </label>
+            </div>
+            {awardPlayerOptions.length === 0 && (
+                <p className="text-xs text-slate-500">
+                    No squads have been imported for this tournament, so the player awards will stay empty.
+                </p>
+            )}
+            <button className={btnPrimary} onClick={saveAwards}>Save awards</button>
+        </div>
+    );
+
     return (
         <div className="min-h-screen bg-gradient-to-b from-slate-100 to-slate-50 p-6 lg:p-10">
             <h1 className="text-4xl lg:text-5xl font-black text-[#031d44] mb-8">Tournament Management</h1>
@@ -543,19 +694,20 @@ export default function TournamentManagement() {
                         <button className={btnGhost} onClick={() => setSelectedId(null)}>Close</button>
                     </div>
                     <div className="flex border-b border-slate-200 mb-4">
-                        {['fixtures', 'points', 'groups'].map((name) => (
+                        {['fixtures', 'points', 'groups', 'awards'].map((name) => (
                             <button
                                 key={name}
                                 onClick={() => setTab(name)}
                                 className={`px-6 py-3 font-bold text-sm uppercase tracking-wider ${tab === name ? 'bg-[#031d44] text-white' : 'text-slate-600 hover:bg-slate-100'}`}
                             >
-                                {name === 'fixtures' ? 'Fixtures' : name === 'points' ? 'Points Table' : 'Groups'}
+                                {{ fixtures: 'Fixtures', points: 'Points Table', groups: 'Groups', awards: 'Awards' }[name]}
                             </button>
                         ))}
                     </div>
                     {tab === 'fixtures' && renderFixtures()}
                     {tab === 'points' && renderPoints()}
                     {tab === 'groups' && renderGroups()}
+                    {tab === 'awards' && renderAwards()}
                 </div>
             )}
         </div>

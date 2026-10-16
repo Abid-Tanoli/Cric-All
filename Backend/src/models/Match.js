@@ -83,6 +83,11 @@ const batsmanStatsSchema = new mongoose.Schema({
   isRetiredHurt: { type: Boolean, default: false },
   isRetired: { type: Boolean, default: false },
   dismissalType: { type: String, default: "" },
+  // Free-text "how out" exactly as written in a paper scorebook, e.g.
+  // "c Khan b Adil" or "run out (Sami)". Only set for manual scorecards; the
+  // structured `dismissalType`/`dismissedBy`/`fielder` above is what the stats
+  // and fielding aggregates read.
+  dismissalText: { type: String, default: "" },
   dismissedBy: { type: mongoose.Schema.Types.ObjectId, ref: "Player" },
   fielder: { type: mongoose.Schema.Types.ObjectId, ref: "Player" },
   position: { type: Number, default: 0 },
@@ -159,9 +164,17 @@ const inningsSchema = new mongoose.Schema({
   batting: [batsmanStatsSchema],
   bowling: [bowlerStatsSchema],
   fallOfWickets: [{
+    // `wicket` is what the scoring engine writes (and what the scorecard summary
+    // reads); `wickets` is what the manual scorecard form posts. Both used to be
+    // half-defined here, so Mongoose silently dropped `wicket`, `wicketType` and
+    // `fielder` on save and the fall of wickets could never say *how* a batsman
+    // was dismissed. Keep all four.
+    wicket: { type: Number, default: null },
+    wickets: { type: Number, default: null },
     runs: { type: Number },
-    wickets: { type: Number },
     player: { type: mongoose.Schema.Types.ObjectId, ref: "Player" },
+    wicketType: { type: String, default: "" },
+    fielder: { type: mongoose.Schema.Types.ObjectId, ref: "Player", default: null },
     overs: { type: Number }
   }],
   partnerships: [partnershipSchema],
@@ -228,6 +241,20 @@ const matchSchema = new mongoose.Schema(
     group: {
       type: String,
       default: ""
+    },
+    // Knockout progression. `round` above stays the numeric/legacy fixture
+    // round; `stage` is the bracket position and `stageLabel` the human slot
+    // ("QF1", "SF2", "Final"). Both are set for knockout fixtures (manual or
+    // generated) and empty for league ones. `stage` drives the public bracket.
+    stage: {
+      type: String,
+      enum: ["", "group", "quarter_final", "semi_final", "final", "third_place"],
+      default: ""
+    },
+    stageLabel: {
+      type: String,
+      default: "",
+      trim: true
     },
     // Set when a fixture is rescheduled so the public UI and logs can show the
     // original slot. The displayed date always comes from `startAt`.
@@ -322,6 +349,31 @@ const matchSchema = new mongoose.Schema(
     tossWinner: { type: mongoose.Schema.Types.ObjectId, ref: "Team" },
     tossDecision: { type: String, enum: ["bat", "bowl"] },
     manOfMatch: { type: mongoose.Schema.Types.ObjectId, ref: "Player" },
+    // Where the innings data came from. `live` is the ball-by-ball scorer;
+    // `manual` is a completed paper scorecard entered by an admin. Readers use
+    // this to hide the live badge / ball-by-ball timeline, and writers use it to
+    // know a match may be edited through the manual-scorecard endpoint.
+    source: {
+      type: String,
+      enum: ["live", "manual"],
+      default: "live",
+      index: true,
+    },
+    // A manual scorecard saved but not yet published: excluded from standings
+    // and stats until published (published matches are `status: "completed"`).
+    manualDraft: { type: Boolean, default: false },
+    manualMeta: {
+      enteredAt: { type: Date, default: null },
+      lastEditedAt: { type: Date, default: null },
+    },
+    // P2: who may score THIS match. Empty means "any org member whose role
+    // holds score_match" (the Phase 9 rule). When non-empty, only these users
+    // (plus org owners/admins/managers and platform admins) may open the
+    // scoring screen. Set by an admin through PUT /matches/:id/scorers.
+    assignedScorers: [{
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User"
+    }],
     umpires: [{
       name: String,
       role: { type: String, enum: ["field", "third", "reserve"] }

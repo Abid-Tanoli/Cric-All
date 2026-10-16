@@ -17,7 +17,8 @@ import {
   createTournamentMatch,
   setTournamentGroups,
   previewTournamentFixtures,
-  applyTournamentFixtures
+  applyTournamentFixtures,
+  setTournamentAwards
 } from '../controllers/TournamentController.js';
 
 const router = express.Router();
@@ -40,6 +41,7 @@ router.post('/:id/groups', ...ownerOrAdmin, validateObjectId('id'), setTournamen
 router.post('/:id/fixtures/apply', ...ownerOrAdmin, validateObjectId('id'), applyTournamentFixtures);
 
 router.put('/:id', ...ownerOrAdmin, validateObjectId('id'), updateTournament);
+router.put('/:id/awards', ...ownerOrAdmin, validateObjectId('id'), setTournamentAwards);
 router.delete('/:id', ...ownerOrAdmin, validateObjectId('id'), deleteTournament);
 router.delete('/:tournamentId/squad/:teamId', ...ownerOrAdmin, validateObjectId('tournamentId'), validateObjectId('teamId'), deleteTournamentSquad);
 

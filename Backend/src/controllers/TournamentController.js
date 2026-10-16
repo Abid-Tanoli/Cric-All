@@ -1,6 +1,7 @@
 import Tournament from "../models/Tournament.js";
 import Match from "../models/Match.js";
 import Team from "../models/Team.js";
+import Player from "../models/Player.js";
 import { getIO } from "../socket/socket.js";
 import mongoose from "mongoose";
 import { recordAudit } from "../utils/audit.js";
@@ -105,6 +106,7 @@ export const getTournaments = async (req, res) => {
       .populate("teams", "name shortName logo")
       .populate("winner", "name shortName logo")
       .populate("runnerUp", "name shortName logo")
+      .populate("awards.playerOfTournament awards.bestBatsman awards.bestBowler", "name playingRole role")
       .sort({ startDate: -1 })
       .skip((page - 1) * limit)
       .limit(limit)
@@ -134,7 +136,8 @@ export const getTournament = async (req, res) => {
       .populate("pointsTable.team", "name shortName logo")
       .populate("groups.teams", "name shortName logo")
       .populate("winner", "name shortName logo")
-      .populate("runnerUp", "name shortName logo");
+      .populate("runnerUp", "name shortName logo")
+      .populate("awards.playerOfTournament awards.bestBatsman awards.bestBowler", "name playingRole role");
 
     if (!tournament) {
       return res.status(404).json({ message: "Tournament not found" });
@@ -682,10 +685,229 @@ export const findManualFixtureConflict = ({ existingMatches = [], team1, team2, 
   return null;
 };
 
+// P3: knockout progression. A knockout fixture above the first round may only
+// be drawn from teams that won the previous round, so a bracket can never be
+// silently mis-populated. Exported (pure) for unit tests.
+export const STAGE_VALUES = ["", "group", "quarter_final", "semi_final", "final", "third_place"];
+const PRIOR_STAGE_FOR = { semi_final: "quarter_final", final: "semi_final" };
+const STAGE_NAME = {
+  group: "group stage",
+  quarter_final: "quarter-final",
+  semi_final: "semi-final",
+  final: "final",
+  third_place: "third-place",
+};
+
+export const normalizeStage = (stage) =>
+  typeof stage === "string" && STAGE_VALUES.includes(stage) ? stage : "";
+
+/** Pure: ids of teams that won a completed match at `stage`. */
+export const stageWinnerIds = (matches = [], stage) => {
+  const ids = new Set();
+  for (const m of matches || []) {
+    if (!m || m.stage !== stage || m.status !== "completed") continue;
+    const winner = m.result?.winner;
+    const id = winner?._id || winner;
+    if (id) ids.add(String(id));
+  }
+  return ids;
+};
+
+/**
+ * Pure progression check for a knockout fixture. Returns a reason object or
+ * null. Only semi-finals and the final are guarded — a third-place play-off is
+ * for the semi-final losers, so the winner rule does not apply.
+ */
+export const findStageProgressionError = ({ stage, team1, team2, existingMatches = [] } = {}) => {
+  const wanted = normalizeStage(stage);
+  const priorStage = PRIOR_STAGE_FOR[wanted];
+  if (!priorStage) return null;
+
+  const winners = stageWinnerIds(existingMatches, priorStage);
+  const stageName = STAGE_NAME[wanted];
+  const priorName = STAGE_NAME[priorStage];
+
+  if (winners.size === 0) {
+    const hasPrior = (existingMatches || []).some((m) => m && m.stage === priorStage);
+    return {
+      reason: hasPrior ? "no_prior_winner" : "no_prior_stage",
+      message: hasPrior
+        ? `No ${priorName} has a winner yet — a ${stageName} can only be drawn once its teams have won the ${priorName}.`
+        : `This tournament has no ${priorName} fixtures yet — create the ${priorName}s first.`,
+    };
+  }
+
+  const missing = [team1, team2].filter((t) => !winners.has(String(t)));
+  if (!missing.length) return null;
+
+  return {
+    reason: "team_not_advancing",
+    message: `Both ${stageName} teams must be winners of the ${priorName}.`,
+  };
+};
+
+/**
+ * P4: validate a tournament's end-of-tournament honours before saving them.
+ *
+ * Pure so it can be unit tested without a database. `winner`/`runnerUp` must be
+ * teams already in the tournament; the three player awards must belong to a
+ * player on one of those teams, or to the tournament's own squads when it has
+ * them. An empty string / null clears an award, which is how an admin undoes a
+ * mis-click.
+ *
+ * @returns {{ ok: true, data: object } | { ok: false, errors: object }}
+ */
+export const validateTournamentAwards = ({
+  body = {},
+  teamIds = [],
+  squadPlayerIds = [],
+} = {}) => {
+  const errors = {};
+  const teamIdSet = new Set((teamIds || []).map((id) => String(id?._id || id)));
+  const squadSet = new Set((squadPlayerIds || []).map((id) => String(id?._id || id)));
+
+  const cleanId = (value) => {
+    if (value === null || value === undefined) return "";
+    const raw = typeof value === "object" ? value._id : value;
+    if (raw === null || raw === undefined) return "";
+    return String(raw).trim();
+  };
+
+  const readId = (key) => {
+    if (!Object.prototype.hasOwnProperty.call(body, key)) return undefined; // untouched
+    const cleaned = cleanId(body[key]);
+    if (!cleaned) return null; // explicit clear
+    if (!mongoose.isValidObjectId(cleaned)) {
+      errors[key] = "That is not a valid id.";
+      return null;
+    }
+    return cleaned;
+  };
+
+  const winner = readId("winner");
+  const runnerUp = readId("runnerUp");
+  const playerOfTournament = readId("playerOfTournament");
+  const bestBatsman = readId("bestBatsman");
+  const bestBowler = readId("bestBowler");
+
+  if (winner) {
+    if (!teamIdSet.size) errors.winner = "This tournament has no teams to award yet.";
+    else if (!teamIdSet.has(winner)) errors.winner = "The champion must be one of the tournament's teams.";
+  }
+  if (runnerUp) {
+    if (!teamIdSet.size) errors.runnerUp = "This tournament has no teams to award yet.";
+    else if (!teamIdSet.has(runnerUp)) errors.runnerUp = "The runner-up must be one of the tournament's teams.";
+  }
+  if (winner && runnerUp && winner === runnerUp) {
+    errors.runnerUp = "The champion and runner-up cannot be the same team.";
+  }
+
+  for (const key of ["playerOfTournament", "bestBatsman", "bestBowler"]) {
+    const value = { playerOfTournament, bestBatsman, bestBowler }[key];
+    if (!value) continue;
+    // Only enforce squad membership when the tournament actually has squads —
+    // a knockout with pre-made squads is the normal case, but a bare tournament
+    // without them must still be able to record its honours.
+    if (squadSet.size && !squadSet.has(value)) {
+      errors[key] = "The player must be in one of this tournament's squads.";
+    }
+  }
+
+  if (Object.keys(errors).length) return { ok: false, errors };
+
+  const data = {};
+  // Only write keys the caller actually sent, so a partial update (e.g. just
+  // the champion) never wipes the other awards.
+  if (winner !== undefined) data.winner = winner;
+  if (runnerUp !== undefined) data.runnerUp = runnerUp;
+  if (playerOfTournament !== undefined) data.playerOfTournament = playerOfTournament;
+  if (bestBatsman !== undefined) data.bestBatsman = bestBatsman;
+  if (bestBowler !== undefined) data.bestBowler = bestBowler;
+
+  return { ok: true, data };
+};
+
+export const setTournamentAwards = async (req, res) => {
+  try {
+    const tournament = await Tournament.findById(req.params.id);
+    if (!tournament) {
+      return res.status(404).json({ message: "Tournament not found" });
+    }
+
+    const squadPlayerIds = (tournament.tournamentSquads || []).flatMap((squad) =>
+      (squad.players || []).map((player) => player?._id || player),
+    );
+
+    const validation = validateTournamentAwards({
+      body: req.body || {},
+      teamIds: tournament.teams || [],
+      squadPlayerIds,
+    });
+
+    if (!validation.ok) {
+      return res.status(400).json({
+        message: "Please fix the awards before saving.",
+        errors: validation.errors,
+      });
+    }
+
+    const { data } = validation;
+    if (data.winner !== undefined) tournament.winner = data.winner || null;
+    if (data.runnerUp !== undefined) tournament.runnerUp = data.runnerUp || null;
+
+    const awards = { ...(tournament.awards ? (tournament.awards.toObject ? tournament.awards.toObject() : tournament.awards) : {}) };
+    for (const key of ["playerOfTournament", "bestBatsman", "bestBowler"]) {
+      if (data[key] !== undefined) awards[key] = data[key] || null;
+    }
+    tournament.awards = awards;
+
+    await tournament.save();
+    await tournament.populate("teams", "name shortName logo");
+    await tournament.populate("winner", "name shortName logo");
+    await tournament.populate("runnerUp", "name shortName logo");
+    await tournament.populate("awards.playerOfTournament awards.bestBatsman awards.bestBowler", "name playingRole role");
+
+    recordAudit({
+      req,
+      action: "tournament.awards_set",
+      targetType: "tournament",
+      targetId: tournament._id,
+      targetLabel: tournament.name,
+      metadata: {
+        winner: tournament.winner || null,
+        runnerUp: tournament.runnerUp || null,
+        playerOfTournament: tournament.awards?.playerOfTournament || null,
+        bestBatsman: tournament.awards?.bestBatsman || null,
+        bestBowler: tournament.awards?.bestBowler || null,
+      },
+    });
+
+    try {
+      const io = getIO();
+      io.emit("tournament:updated", tournament);
+    } catch (socketError) {
+      console.log("Socket not available:", socketError.message);
+    }
+
+    res.status(200).json({ tournament, message: "Tournament awards saved" });
+  } catch (error) {
+    console.error("Error setting tournament awards:", error);
+    res.status(400).json({
+      message: "Failed to save tournament awards",
+      error: error.message,
+    });
+  }
+};
+
 export const createTournamentMatch = async (req, res) => {
   try {
     const { tournamentId } = req.params;
-    const { team1, team2, venue, startTime, matchType, matchCategory, matchSubcategory, round, group } = req.body;
+    const { team1, team2, venue, startTime, matchType, matchCategory, matchSubcategory, round, group, stage: rawStage, stageLabel } = req.body;
+    const stage = normalizeStage(rawStage);
+    // The round the match will actually be stored with — the conflict check and
+    // the save must agree, or a second draw of the same pair slips past the
+    // duplicate guard.
+    const effectiveRound = round != null && round !== "" ? round : (stage || 1);
 
     const tournament = await Tournament.findById(tournamentId);
     if (!tournament) {
@@ -711,19 +933,26 @@ export const createTournamentMatch = async (req, res) => {
     }
 
     const existingMatches = await Match.find({ tournament: tournamentId })
-      .select("teams round group startAt status")
+      .select("teams round group stage status startAt result.winner")
       .lean();
 
     const conflict = findManualFixtureConflict({
       existingMatches,
       team1,
       team2,
-      round,
+      round: effectiveRound,
       group: group || "",
       startAt: startTime,
     });
     if (conflict) {
       return res.status(409).json({ message: conflict.message, reason: conflict.reason });
+    }
+
+    // Knockout progression: a semi-final may only be drawn from quarter-final
+    // winners and the final from semi-final winners.
+    const progressionError = findStageProgressionError({ stage, team1, team2, existingMatches });
+    if (progressionError) {
+      return res.status(400).json({ message: progressionError.message, reason: progressionError.reason });
     }
 
     const lastMatch = await Match.findOne({ tournament: tournamentId })
@@ -745,12 +974,16 @@ export const createTournamentMatch = async (req, res) => {
       // the tournament label in matchSubcategory.
       matchCategory: matchCategory || CONTROLLER_MATCH_CATEGORY,
       matchSubcategory: matchSubcategory || tournament.name,
-      round: round != null && round !== "" ? round : 1,
+      round: effectiveRound,
       group: group || "",
+      stage,
+      stageLabel: (stageLabel || "").trim(),
       tournament: tournamentId,
       teams: [team1, team2],
       innings: buildMatchInnings([team1, team2]),
-      startAt: startTime || new Date(),
+      // A knockout fixture with no date yet is a legitimate "TBD" placeholder —
+      // keep startAt null rather than inventing "now" so the schedule is honest.
+      startAt: startTime ? new Date(startTime) : (stage ? null : new Date()),
       status: "upcoming"
     });
 
@@ -767,7 +1000,7 @@ export const createTournamentMatch = async (req, res) => {
       targetType: "match",
       targetId: match._id,
       targetLabel: match.title,
-      metadata: { tournamentId, matchNumber, round: match.round, group: match.group },
+      metadata: { tournamentId, matchNumber, round: match.round, group: match.group, stage: match.stage, stageLabel: match.stageLabel },
     });
 
     try {
@@ -921,6 +1154,8 @@ export const applyTournamentFixtures = async (req, res) => {
         matchSubcategory: tournament.name,
         round: planned.round,
         group: planned.group || "",
+        stage: planned.stage || "",
+        stageLabel: planned.stageLabel || "",
         tournament: id,
         teams: [planned.team1, planned.team2],
         innings: buildMatchInnings([planned.team1, planned.team2]),

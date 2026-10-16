@@ -260,6 +260,32 @@ const startAtFor = (base, index, gapHours) =>
   new Date(base.getTime() + index * Math.max(gapHours, 0) * 60 * 60 * 1000);
 
 /**
+ * P3: map a knockout round to the bracket stage the public bracket groups by.
+ * Rounds are 1-based and only the last three carry a named stage, so a deeper
+ * bracket's early rounds (e.g. a round of 16) stay unnamed rather than being
+ * mislabelled as quarter-finals.
+ */
+export function knockoutStageForRound(roundNumber, totalRounds) {
+  if (!totalRounds || totalRounds < 1 || !roundNumber) return "";
+  const fromEnd = totalRounds - roundNumber; // 0 = final
+  if (fromEnd === 0) return "final";
+  if (fromEnd === 1) return "semi_final";
+  if (fromEnd === 2) return "quarter_final";
+  return "";
+}
+
+/**
+ * Human slot label for a stage match: QF1..QF4, SF1, SF2, Final.
+ */
+export function knockoutStageLabel(stage, ordinal) {
+  if (stage === "final") return "Final";
+  if (stage === "third_place") return "3rd place";
+  if (stage === "semi_final") return `SF${ordinal}`;
+  if (stage === "quarter_final") return `QF${ordinal}`;
+  return "";
+}
+
+/**
  * Propose fixtures for a tournament without touching the DB.
  * options: { format: 'round-robin'|'group'|'knockout', startAt, gapHours, venue }
  * Returns a summary meant for both preview and apply.
@@ -294,9 +320,17 @@ export function planTournamentFixtures(tournament, options = {}) {
 
   if (format === "knockout" || tournament.type === "knockout") {
     const { rounds } = generateKnockoutRoundStructure(tournament.teams || []);
+    const totalRounds = rounds.length;
+    const stageOrdinal = {};
     for (const rd of rounds) {
+      const stage = knockoutStageForRound(rd.round, totalRounds);
       for (const match of rd.matches) {
         matchNumber += 1;
+        let stageLabel = "";
+        if (stage) {
+          stageOrdinal[stage] = (stageOrdinal[stage] || 0) + 1;
+          stageLabel = knockoutStageLabel(stage, stageOrdinal[stage]);
+        }
         planned.push({
           matchNumber,
           round: rd.round,
@@ -306,6 +340,8 @@ export function planTournamentFixtures(tournament, options = {}) {
           startAt: nextStart(),
           venue,
           isTbd: match.isTbd,
+          stage,
+          stageLabel,
         });
       }
     }

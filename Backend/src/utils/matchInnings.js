@@ -33,3 +33,17 @@ export const ensureMatchInnings = (match) => {
   }
   return changed;
 };
+
+// The seam every summary-stat reader should go through to get a match's
+// innings. Live-scored and manual matches both store their innings in the same
+// `match.innings` array (the manual endpoint fills the same `batting`/`bowling`
+// summary fields the scorer maintains), so this is deliberately a single access
+// point rather than a branch: a future reader that needs to derive summary
+// innings from something other than `match.innings` (e.g. ball-by-ball events)
+// changes only this function. Named and shaped to stay compatible with the
+// `inningsForMatch` helper added on the `tournament-hub` branch.
+export const inningsForMatch = (match) => {
+  if (!match) return [];
+  if (Array.isArray(match.innings) && match.innings.length) return match.innings;
+  return buildMatchInnings(match.teams || []);
+};

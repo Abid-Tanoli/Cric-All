@@ -6,9 +6,25 @@ export default function ScorecardTab({ match, innings, selectedInnings, setSelec
   const totalExtras = number(extras.total) || number(extras.wides) + number(extras.noBalls) + number(extras.byes) + number(extras.legByes) + number(extras.penalties);
   const battingIds = new Set((innings?.batting || []).map((row) => idOf(row.player)));
   const dnb = getPlayingXI(match, innings?.team).filter((player) => !battingIds.has(idOf(player)));
+  // P4: the player of the match is set after the game, by a scorer or an
+  // admin. It is shown on every innings of the scorecard, not just the second.
+  const mom = match?.manOfMatch;
+  const momName = mom ? playerName(mom, players) : "";
 
   return (
     <section className="space-y-3 sm:space-y-4">
+      {momName && (
+        <div
+          data-testid="player-of-the-match"
+          className="flex items-center gap-3 rounded-xl bg-amber-50 px-3 sm:px-4 py-2.5 sm:py-3 ring-1 ring-amber-200"
+        >
+          <span aria-hidden="true" className="text-lg sm:text-xl">🏅</span>
+          <div className="min-w-0">
+            <p className="text-[9px] sm:text-[10px] font-black uppercase tracking-[0.18em] text-amber-700">Player of the Match</p>
+            <p className="text-sm sm:text-base font-black text-cric-text truncate">{momName}</p>
+          </div>
+        </div>
+      )}
       <div className="flex gap-1.5 sm:gap-2 overflow-x-auto no-scrollbar">
         {(match.innings || []).map((inn, index) => {
           const team = getTeamById(match, inn.team);

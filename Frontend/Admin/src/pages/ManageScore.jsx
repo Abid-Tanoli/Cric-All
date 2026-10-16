@@ -13,6 +13,7 @@ import CommentaryTab from '../components/ScoreManagement/CommentaryTab';
 import StatsTab from '../components/ScoreManagement/StatsTab';
 import { TABS, getScoreTabPath, formatOvers, FIELD_POSITIONS, WICKET_TYPES } from '../components/ScoreManagement/constants';
 import ScoringMobileBar from '../components/ScoringMobileBar';
+import PlayerOfMatchCard from '../components/ScoreManagement/PlayerOfMatchCard';
 
 export default function ManageScore() {
     const navigate = useNavigate();
@@ -314,7 +315,12 @@ export default function ManageScore() {
                     {selectedMatch.result?.description && (
                         <p className="text-cric-accent font-bold text-base sm:text-lg mb-4 sm:mb-6">{selectedMatch.result.description}</p>
                     )}
-                    <div className="flex flex-col sm:flex-row justify-center gap-4 sm:gap-8 mb-6 sm:mb-8">
+                    <PlayerOfMatchCard
+                        match={selectedMatch}
+                        onSaved={() => reloadMatch()}
+                        showToast={showToast}
+                    />
+                    <div className="flex flex-col sm:flex-row justify-center gap-4 sm:gap-8 mb-6 sm:mb-8 mt-6 sm:mt-8">
                         {(selectedMatch.innings || []).map((inn, idx) => (
                             <div key={inn._id || idx} className="bg-cric-bg rounded-2xl p-4 sm:p-6 border border-cric-border text-center min-w-0 sm:min-w-[180px]">
                                 <p className="text-[9px] font-black text-cric-muted uppercase tracking-widest mb-2">

@@ -26,14 +26,14 @@ const normalizeForm = (seriesForm) => {
   return [];
 };
 
-export default function PointsTable({ tournamentId, eventId, title = "Standings" }) {
+export default function PointsTable({ tournamentId, eventId, title = "Standings", isKnockout = false }) {
   const [table, setTable] = useState([]);
   const [loading, setLoading] = useState(Boolean(tournamentId || eventId));
 
   useEffect(() => {
     let cancelled = false;
 
-    if (!tournamentId && !eventId) {
+    if (isKnockout || (!tournamentId && !eventId)) {
       setTable([]);
       setLoading(false);
       return undefined;
@@ -62,11 +62,24 @@ export default function PointsTable({ tournamentId, eventId, title = "Standings"
     return () => {
       cancelled = true;
     };
-  }, [tournamentId, eventId]);
+  }, [tournamentId, eventId, isKnockout]);
 
   const sorted = [...table].sort(
     (a, b) => (b.points || 0) - (a.points || 0) || (b.netRunRate || 0) - (a.netRunRate || 0)
   );
+
+  // A knockout has no league table: teams advance by winning their fixture, so
+  // a zeroed table would be misleading rather than informative.
+  if (isKnockout) {
+    return (
+      <div className="py-12 text-center">
+        <h4 className="mb-2 text-lg font-black text-cric-accent">Knockout tournament - no league table</h4>
+        <p className="text-xs text-cric-muted">
+          Teams advance by winning their bracket fixture, so there are no standings to rank.
+        </p>
+      </div>
+    );
+  }
 
   if (loading) {
     return (
