@@ -4,7 +4,13 @@ import crypto from "crypto";
 import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-export const uploadsDir = path.resolve(__dirname, "../../uploads");
+// Root for locally stored uploads. Defaults to <Backend>/uploads, which
+// docker-compose mounts as the persistent named volume `uploads_data` (so the
+// files survive a rebuild). UPLOADS_DIR points it somewhere else — the tests
+// use a throwaway temp directory so a run never writes into the repo tree.
+export const uploadsDir = path.resolve(
+  process.env.UPLOADS_DIR || path.resolve(__dirname, "../../uploads"),
+);
 
 const ALLOWED_EXTENSIONS = {
   "image/jpeg": ".jpg",
