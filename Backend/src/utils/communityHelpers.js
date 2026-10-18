@@ -1,4 +1,13 @@
-import { isReservedTestName } from "./publicProjection.js";
+import { isPlatformAdmin } from "../middleware/orgAccess.js";
+
+/** The platform's own API origin; used to decide whether an image URL is ours. */
+export function getBackendUrl() {
+  return (
+    process.env.PUBLIC_BACKEND_URL ||
+    process.env.BACKEND_URL ||
+    "http://127.0.0.1:5000"
+  ).replace(/\/+$/, "");
+}
 
 export const YOUTUBE_REGEX = /^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be)\/(watch\?v=|embed\/|v\/)?([a-zA-Z0-9_-]{11})/i;
 export const FACEBOOK_VIDEO_REGEX = /^(https?:\/\/)?(www\.|fb\.)?(facebook\.com)\/(watch\/\?v=|videos\/|reel\/|share\/v\/)?[^\s]+/i;
@@ -39,26 +48,49 @@ export function isValidVideoUrl(url) {
   return parseVideoUrl(url) !== null;
 }
 
-export function isOwnUploadUrl(url, backendUrl) {
+/**
+ * True only for an image reference this platform itself serves.
+ *
+ * Accepts the relative form the upload endpoint returns (`/uploads/<file>`)
+ * and the absolute form built from it (`<backend>/uploads/<file>`). An
+ * absolute URL on any other origin — including `https://evil.test/uploads/…`,
+ * which a naive `includes("/uploads/")` accepts — is rejected, because the feed
+ * would otherwise render a hot-linked image that can change after the fact.
+ */
+export function isOwnUploadUrl(url, backendUrl = getBackendUrl()) {
   if (!url || typeof url !== "string") return false;
-  // Must point to /uploads/ on this platform
   if (url.startsWith("/uploads/")) return true;
-  if (backendUrl) {
-    try {
-      const base = new URL(backendUrl);
-      const u = new URL(url, backendUrl);
-      if (u.origin === base.origin && u.pathname.startsWith("/uploads/")) return true;
-    } catch {
-      // ignore
-    }
-  }
-  // Also accept relative uploads path
-  if (url.includes("/uploads/")) {
-    const idx = url.indexOf("/uploads/");
-    const rest = url.slice(idx);
-    if (rest.startsWith("/uploads/")) return true;
-  }
+  const base = String(backendUrl || "").replace(/\/+$/, "");
+  if (base && url.startsWith(`${base}/uploads/`)) return true;
   return false;
+}
+
+/**
+ * Parses a feed/comments cursor. Any value that is not a real timestamp (an
+ * operator object from `?cursor[$ne]=1`, a number, a malformed string) becomes
+ * null rather than an Invalid Date, which Mongoose would reject with a
+ * CastError — a public read answering 500 for a query parameter.
+ */
+export function cursorDate(value) {
+  if (typeof value !== "string" || value.trim() === "") return null;
+  const parsed = Date.parse(value);
+  if (Number.isNaN(parsed)) return null;
+  return new Date(parsed);
+}
+
+/**
+ * May this viewer see this post at all?
+ *
+ * `published` is public. `pending`, `hidden` and `removed` are visible only to
+ * the author and to a platform admin, which is what makes "pending, visible
+ * only to the author and admins" enforceable in one place instead of per route.
+ */
+export function canViewPost(post, req) {
+  if (!post || post.isDeleted) return false;
+  if (post.status === "published") return true;
+  if (!req?.user) return false;
+  if (isPlatformAdmin(req)) return true;
+  return String(post.authorUser?._id || post.authorUser) === String(req.user._id);
 }
 
 export function stripHtmlTags(str) {
