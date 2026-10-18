@@ -208,9 +208,13 @@ app.use("/api/handler", handlerRoutes);
 import shotRoutes from "./routes/shotRoutes.js";
 import fieldingPositionRoutes from "./routes/fieldingPositionRoutes.js";
 import commentaryRoutes from "./routes/commentaryRoutes.js";
+import communityRoutes from "./routes/communityRoutes.js";
+import shareRoutes from "./routes/shareRoutes.js";
 app.use("/api/shots", shotRoutes);
 app.use("/api/fielding-positions", fieldingPositionRoutes);
 app.use("/api/commentary", commentaryRoutes);
+app.use("/api/community", communityRoutes);
+app.use("/share", shareRoutes);
 
 app.get("/api/health", (req, res) => {
   res.json({
