@@ -277,12 +277,19 @@ import { ensureUserIdentityIndexes } from "./utils/identityIndexes.js";
 // treats two phone-only invites as a duplicate key. Best-effort too — see
 // utils/invitationIndexes.js.
 import { ensureInvitationAddressIndexes } from "./utils/invitationIndexes.js";
+// Community content unique indexes (one report / one like per user per post).
+// Same best-effort boot-time ensure: the schema specs are valid, but a fresh
+// database only materialises a collection on first write, and Mongoose's lazy
+// init can trail that write — the index must exist before concurrency can
+// race the app's duplicate guards. See utils/communityIndexes.js.
+import { ensureCommunityIndexes } from "./utils/communityIndexes.js";
 (async () => {
   try {
     const connection = await dbReadyPromise;
     if (!connection) return;
     await ensureUserIdentityIndexes();
     await ensureInvitationAddressIndexes();
+    await ensureCommunityIndexes();
   } catch (e) {
     // logged inside; never fatal
   }

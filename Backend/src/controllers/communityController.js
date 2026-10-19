@@ -22,6 +22,7 @@ import {
   stripHtmlTags,
   stripControlChars,
   canViewPost,
+  cursorDate,
   buildShareUrls
 } from "../utils/communityHelpers.js";
 import {
@@ -96,8 +97,9 @@ export const getFeed = [
         }
       }
       
-      if (cursor) {
-        query.createdAt = { $lt: new Date(cursor) };
+      const cursorAt = cursorDate(cursor);
+      if (cursorAt) {
+        query.createdAt = { $lt: cursorAt };
       }
       
       let posts = await CommunityPost.find(query)
@@ -183,8 +185,9 @@ export const getComments = [
       const limitNum = Math.min(parseInt(limit) || 20, 50);
       
       const query = { post: req.params.id, status: "published", isDeleted: false };
-      if (cursor) {
-        query.createdAt = { $lt: new Date(cursor) };
+      const cursorAt = cursorDate(cursor);
+      if (cursorAt) {
+        query.createdAt = { $lt: cursorAt };
       }
       
       let comments = await CommunityComment.find(query)
@@ -232,8 +235,9 @@ export const getTeamPosts = [
       if (kind && ["photo", "video", "article", "story"].includes(kind)) {
         query.kind = kind;
       }
-      if (cursor) {
-        query.createdAt = { $lt: new Date(cursor) };
+      const cursorAt = cursorDate(cursor);
+      if (cursorAt) {
+        query.createdAt = { $lt: cursorAt };
       }
       
       let posts = await CommunityPost.find(query)
@@ -281,8 +285,9 @@ export const getPlayerPosts = [
       if (kind && ["photo", "video", "article", "story"].includes(kind)) {
         query.kind = kind;
       }
-      if (cursor) {
-        query.createdAt = { $lt: new Date(cursor) };
+      const cursorAt = cursorDate(cursor);
+      if (cursorAt) {
+        query.createdAt = { $lt: cursorAt };
       }
       
       let posts = await CommunityPost.find(query)
@@ -413,11 +418,23 @@ function validatePostMedia(settings, { media, videoUrl }) {
   if (images.length > maxImages) {
     return { status: 400, body: { message: `At most ${maxImages} images per post`, code: "COMMUNITY_TOO_MANY_IMAGES" } };
   }
+  // The upload endpoint (uploadRoutes) already rejects non-jpg/png/webp bytes
+  // and anything over 5MB before a URL ever exists; the community layer
+  // re-checks the extension so a hand-crafted `/uploads/evil.exe` reference
+  // cannot slip into a post even if a file with that name were somehow stored.
+  const IMAGE_EXT_RE = /\.(jpe?g|png|webp)$/i;
   for (const item of images) {
     if (!isOwnUploadUrl(item.url)) {
       return {
         status: 400,
         body: { message: "Images must use this platform's own upload URLs.", code: "COMMUNITY_EXTERNAL_IMAGE" },
+      };
+    }
+    const pathOnly = String(item.url).split(/[?#]/)[0];
+    if (!IMAGE_EXT_RE.test(pathOnly)) {
+      return {
+        status: 400,
+        body: { message: "Images must be jpg, png or webp.", code: "COMMUNITY_IMAGE_TYPE" },
       };
     }
   }
@@ -707,6 +724,24 @@ export const reportPost = [
 
       if (String(post.authorUser) === String(req.user._id)) {
         return res.status(400).json({ message: "You cannot report your own post.", code: "COMMUNITY_SELF_REPORT" });
+      }
+
+      // One report per user per post. The unique index below is the concurrency
+      // backstop, but a fresh database builds indexes on first model use, which
+      // can trail the very first inserts by enough time to accept a duplicate —
+      // so the ordinary duplicate case is answered by an explicit read first,
+      // the same way registration answers a duplicate email.
+      const existingReport = await CommunityReport.findOne({
+        post: post._id,
+        reporter: req.user._id,
+      })
+        .select("_id")
+        .lean();
+      if (existingReport) {
+        return res.status(409).json({
+          message: "You have already reported this post.",
+          code: "COMMUNITY_ALREADY_REPORTED",
+        });
       }
 
       try {
