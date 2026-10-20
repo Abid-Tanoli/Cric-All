@@ -37,6 +37,11 @@ let teamId;
 let matchId;
 let runId;
 
+// A syntactically valid ObjectId that no fixture uses. Community writes need a
+// well-formed :id so the request reaches the body/operator check under test
+// instead of stopping at validateObjectId.
+const ABSENT_ID = "0123456789abcdef01234567";
+
 before(async () => {
   assertLocalTarget();
   await assertServerIsLocal();
@@ -137,6 +142,12 @@ describe("NoSQL operator injection", () => {
       `/organizations/${orgId}/matches/%s`,
       `/organizations/${orgId}/members/%s`,
       `/organizations/${orgId}/invitations/%s`,
+      // Community content routes (step C): every :id read is behind
+      // validateObjectId, so operators here must surface as 400s.
+      "/community/posts/%s",
+      "/community/posts/%s/comments",
+      "/community/teams/%s/posts",
+      "/community/players/%s/posts",
     ];
 
     for (const probe of probes) {
@@ -202,6 +213,79 @@ describe("NoSQL operator injection", () => {
   test("an operator in a sort field cannot turn the sort into a query operator", async () => {
     await expectNoServerError({ api: anon, method: "get", path: "/teams?sort[$ne]=1", label: "sort with operator" });
     await expectNoServerError({ api: anon, method: "get", path: "/matches?sort[$gt]=&limit=5", label: "sort with operator 2" });
+  });
+
+  test("operator payloads in community query strings are swallowed, never 5xx", async () => {
+    const queries = [
+      "?cursor[$ne]=1",
+      "?limit[$gt]=99999",
+      "?kind[$ne]=photo",
+      "?subjectType[$ne]=team",
+    ];
+    for (const query of queries) {
+      await expectNoServerError({ api: anon, method: "get", path: `/community/feed${query}`, label: `feed ${query}` });
+    }
+    // The admin queue filters by an allowlisted status — an object must not
+    // become a query operator (anon gets 401, which is still not a 5xx).
+    await expectNoServerError({
+      api: anon,
+      method: "get",
+      path: "/community/admin/queue?status[$ne]=x",
+      label: "queue with operator status",
+    });
+  });
+
+  test("operator payloads in community write bodies are rejected by the schema", async () => {
+    const postPath = "/community/posts";
+    const commentPath = `/community/posts/${ABSENT_ID}/comments`;
+    const reportPath = `/community/posts/${ABSENT_ID}/report`;
+    const cases = [
+      { method: "post", path: postPath, body: { kind: "story", subject: { type: "user", ref: { $ne: null } }, title: "x" }, label: "subject ref operator" },
+      { method: "post", path: postPath, body: { kind: "story", subject: { type: "user", ref: ABSENT_ID }, title: { $ne: "x" } }, label: "title operator" },
+      { method: "post", path: postPath, body: { kind: { $ne: "x" }, subject: { type: "user", ref: ABSENT_ID } }, label: "kind operator" },
+      { method: "post", path: postPath, body: { kind: "story", subject: { type: "user", ref: ABSENT_ID }, authorUser: { $ne: null } }, label: "spoofed authorUser operator" },
+      { method: "post", path: commentPath, body: { body: { $ne: null } }, label: "comment body operator" },
+      { method: "post", path: reportPath, body: { reason: { $ne: null } }, label: "report reason operator" },
+      { method: "patch", path: `/community/posts/${ABSENT_ID}`, body: { title: { $ne: "x" } }, label: "update title operator" },
+    ];
+    for (const c of cases) {
+      await expectRefused({ api: ownerApi, ...c });
+    }
+  });
+
+  test("operator :id probes on community write routes are refused", async () => {
+    const probes = [
+      encodeURIComponent(JSON.stringify({ $ne: null })),
+      encodeURIComponent(JSON.stringify({ $gt: "" })),
+      encodeURIComponent(JSON.stringify({ $regex: ".*" })),
+      encodeURIComponent(JSON.stringify({ $where: "1" })),
+      "abc",
+      "%24ne",
+    ];
+    const routes = [
+      { tpl: "/community/posts/%s", method: "patch" },
+      { tpl: "/community/posts/%s", method: "del" },
+      { tpl: "/community/posts/%s/like", method: "post" },
+      { tpl: "/community/posts/%s/comments", method: "post" },
+      { tpl: "/community/posts/%s/comments/%s", method: "del" },
+      { tpl: "/community/posts/%s/report", method: "post" },
+      { tpl: "/community/posts/%s/share", method: "post" },
+      { tpl: "/community/admin/posts/%s/approve", method: "post" },
+      { tpl: "/community/admin/posts/%s/hide", method: "post" },
+      { tpl: "/community/admin/posts/%s/remove", method: "post" },
+      { tpl: "/community/admin/posts/%s/restore", method: "post" },
+      { tpl: "/community/admin/users/%s/ban-poster", method: "post" },
+    ];
+    for (const probe of probes) {
+      for (const r of routes) {
+        const path = r.tpl.replaceAll("%s", probe);
+        // Community writes authenticate as an author and the admin ones land on
+        // requireAdmin first — either way the operator must be refused, never 5xx.
+        // (The 400-from-validateObjectId path for the admin routes is asserted in
+        // community.test.js, which has an admin session.)
+        await expectRefused({ api: ownerApi, method: r.method, path, label: `${r.method.toUpperCase()} ${path}` });
+      }
+    }
   });
 
   test("operator payloads cannot smuggle a second organizationRef into an update", async () => {

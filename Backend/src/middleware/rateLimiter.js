@@ -3,7 +3,12 @@ const store = new Map();
 function requestKey(req) {
   const actor = req.user?._id || req.user?.id || req.ip || req.connection?.remoteAddress || "unknown";
   const matchId = req.params?.matchId || req.params?.id || "global";
-  const route = req.route?.path || req.path || req.originalUrl || "unknown";
+  // Include the mount path: `req.route.path` is router-relative, so
+  // /api/auth/login and /api/admin/login both read "/login" — without the
+  // baseUrl they share one bucket despite configuring separate budgets
+  // (25/5min user vs 20/5min admin), letting ordinary user traffic exhaust
+  // the admin login allowance.
+  const route = req.route?.path ? `${req.baseUrl}${req.route.path}` : req.path || req.originalUrl || "unknown";
   return `${actor}:${matchId}:${req.method}:${route}`;
 }
 
