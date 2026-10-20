@@ -1,5 +1,6 @@
 import express from "express";
 import {
+  getCommunityConfig,
   getFeed,
   getPost,
   getComments,
@@ -27,6 +28,7 @@ import validateObjectId from "../middleware/validateObjectId.js";
 const router = express.Router();
 
 // Public reads
+router.get("/config", getCommunityConfig);
 router.get("/feed", getFeed);
 router.get("/posts/:id", validateObjectId("id"), getPost);
 router.get("/posts/:id/comments", validateObjectId("id"), getComments);

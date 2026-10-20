@@ -772,6 +772,28 @@ test("communityEnabled=false: every write is 403 COMMUNITY_DISABLED, every publi
 });
 
 // ---------------------------------------------------------------------------
+// T8b — public runtime config (GET /community/config)
+// ---------------------------------------------------------------------------
+
+test("GET /community/config is public and mirrors the runtime switches only", async () => {
+  // No auth header at all — the SPA needs this before login.
+  await setSettings({ communityEnabled: false, postMode: "auto" });
+  const off = await anon.get("/community/config", { expect: [200] });
+  assert.deepEqual(off.body, { enabled: false, postMode: "auto" });
+
+  await setSettings({ postMode: "approval" });
+  const approval = await anon.get("/community/config", { expect: [200] });
+  assert.deepEqual(approval.body, { enabled: false, postMode: "approval" });
+
+  // Only the two switches leak — never limits or the ban list.
+  assert.deepEqual(Object.keys(approval.body).sort(), ["enabled", "postMode"]);
+
+  await setSettings({ communityEnabled: true, postMode: "auto" });
+  const on = await anon.get("/community/config", { expect: [200] });
+  assert.deepEqual(on.body, { enabled: true, postMode: "auto" });
+});
+
+// ---------------------------------------------------------------------------
 // T9 — reserved test-prefix names
 // ---------------------------------------------------------------------------
 
