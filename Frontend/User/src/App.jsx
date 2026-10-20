@@ -1,6 +1,7 @@
 import React, { Suspense, lazy, useState } from "react";
 import { BrowserRouter as Router, Routes, Route, useLocation } from "react-router-dom";
 import { ThemeProvider } from "./context/ThemeContext";
+import { CommunityConfigProvider } from "./community/CommunityConfigContext";
 import Header from "./components/Header";
 import Footer from "./components/Footer";
 import OfflineBanner from "./components/OfflineBanner";
@@ -47,6 +48,9 @@ const MyPlayers = lazy(() => import("./pages/MyPlayers"));
 const Account = lazy(() => import("./pages/Account"));
 const CreateOrganization = lazy(() => import("./pages/organization/CreateOrganization"));
 const InvitationAccept = lazy(() => import("./pages/organization/InvitationAccept"));
+const CommunityIndex = lazy(() => import("./community/CommunityIndex"));
+const CommunityPost = lazy(() => import("./community/CommunityPost"));
+const CommunityCreate = lazy(() => import("./community/CommunityCreate"));
 
 // Single shared layout header. Previously the Header was rendered separately
 // on each page, which left several routes (News, Videos, Highlights, Match,
@@ -115,6 +119,7 @@ function AppHeader() {
 function App() {
   return (
     <ThemeProvider>
+      <CommunityConfigProvider>
       <Router>
         <div className="flex flex-col min-h-screen">
         <OfflineBanner />
@@ -170,6 +175,11 @@ function App() {
           <Route path="/organization/new" element={<ErrorBoundary><CreateOrganization /></ErrorBoundary>} />
           <Route path="/organization/invitations/:token" element={<ErrorBoundary><InvitationAccept /></ErrorBoundary>} />
           <Route path="/organization" element={<ErrorBoundary><MyOrganization /></ErrorBoundary>} />
+          {/* Community routes stay mounted; CommunityIndex/CommunityPost render the
+              "coming soon" placeholder while the runtime switch is off. */}
+          <Route path="/community" element={<ErrorBoundary><CommunityIndex /></ErrorBoundary>} />
+          <Route path="/community/new" element={<ErrorBoundary><CommunityCreate /></ErrorBoundary>} />
+          <Route path="/community/post/:id" element={<ErrorBoundary><CommunityPost /></ErrorBoundary>} />
           <Route path="*" element={<ErrorBoundary><NotFound /></ErrorBoundary>} />
         </Routes>
         </Suspense>
@@ -177,6 +187,7 @@ function App() {
         <Footer />
         </div>
       </Router>
+      </CommunityConfigProvider>
     </ThemeProvider>
   );
 }

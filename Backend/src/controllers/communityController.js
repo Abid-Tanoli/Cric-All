@@ -71,6 +71,19 @@ function getFrontendUrl() {
   return (process.env.PUBLIC_FRONTEND_URL || "https://cricall.online").replace(/\/+$/, "");
 }
 
+// GET /config - tiny public read of the runtime switches. Lets the SPA hide
+// the Community nav/routes and show a "coming soon" placeholder without a
+// build-time flag. Returns nothing sensitive (no bannedPosters, no limits).
+export const getCommunityConfig = async (req, res) => {
+  try {
+    const settings = await getCommunitySettings();
+    res.json({ enabled: Boolean(settings.communityEnabled), postMode: settings.postMode === "approval" ? "approval" : "auto" });
+  } catch (err) {
+    console.error("Community config error:", err);
+    res.status(500).json({ message: "Failed to load community config" });
+  }
+};
+
 // GET /feed - cursor pagination
 export const getFeed = [
   optionalProtect,

@@ -2,7 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { api } from '../services/api';
 import SafeImage from '../../../Shared/components/SafeImage.jsx';
-import ShareButton from '../components/ShareButton';
+import ShareMenu from '../community/ShareMenu';
+import { useCommunityConfig } from '../community/CommunityConfigContext';
+import PostsTab from '../community/PostsTab';
 
 const idOf = (v) => v?._id || v?.id || v;
 
@@ -12,6 +14,7 @@ export default function TeamProfile() {
   const [orgChain, setOrgChain] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('about');
+  const { enabled: communityEnabled } = useCommunityConfig();
 
   useEffect(() => {
     fetchTeam();
@@ -44,6 +47,7 @@ export default function TeamProfile() {
     { key: 'stats', label: 'Stats' },
     { key: 'matches', label: 'Matches' },
     { key: 'branches', label: 'Branches' },
+    ...(communityEnabled ? [{ key: 'posts', label: 'Posts' }] : []),
   ];
 
   if (loading) {
@@ -113,7 +117,7 @@ export default function TeamProfile() {
             <Link to="/teams" className="text-blue-300 hover:text-white text-sm font-bold inline-block">
               ← Back to Teams
             </Link>
-            <ShareButton title={`${team.name} on CricAll`} text="Check out this team on CricAll" />
+            <ShareMenu kind="team" id={id} title={`${team.name} on CricAll`} />
           </div>
 
           {/* Organization Chain */}
@@ -542,6 +546,12 @@ export default function TeamProfile() {
             ) : (
               <p className="text-cric-muted text-center py-8">No other branches for this organization.</p>
             )}
+          </div>
+        )}
+
+        {activeTab === 'posts' && (
+          <div className="bg-cric-card rounded-2xl shadow-sm border border-cric-border p-6">
+            <PostsTab kind="team" subjectId={id} subjectName={team.name} />
           </div>
         )}
       </div>
