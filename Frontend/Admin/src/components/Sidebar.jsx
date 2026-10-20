@@ -20,6 +20,7 @@ const menuItems = [
   { to: "/admin/blogs", label: "Manage Blogs", icon: "BL" },
   { to: "/admin/rankings", label: "Rankings", icon: "RK" },
   { to: "/admin/sync", label: "Sync Panel", icon: "SY" },
+  { to: "/admin/community", label: "Community", icon: "CM" },
   { to: "/admin/admins", label: "Manage Admins", icon: "AD", superAdminOnly: true },
 ];
 

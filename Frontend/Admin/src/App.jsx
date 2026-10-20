@@ -34,6 +34,8 @@ const TournamentContent = lazy(() => import("./pages/TournamentContent"));
 const ManageAdmins = lazy(() => import("./pages/ManageAdmins"));
 const HandlerRequests = lazy(() => import("./pages/HandlerRequests"));
 const Organizations = lazy(() => import("./pages/Organizations"));
+const CommunityModeration = lazy(() => import("./pages/CommunityModeration"));
+const CommunitySettings = lazy(() => import("./pages/CommunitySettings"));
 
 const PageLoader = () => (
   <div className="min-h-screen bg-[#0f172a] flex items-center justify-center">
@@ -86,6 +88,8 @@ export default function App() {
           <Route path="/admin/sync" element={<ProtectedRoute><ErrorBoundary><Layout><SyncPanel /></Layout></ErrorBoundary></ProtectedRoute>} />
           <Route path="/admin/handler-requests" element={<ProtectedRoute><ErrorBoundary><Layout><HandlerRequests /></Layout></ErrorBoundary></ProtectedRoute>} />
           <Route path="/admin/organizations" element={<ProtectedRoute><ErrorBoundary><Layout><Organizations /></Layout></ErrorBoundary></ProtectedRoute>} />
+          <Route path="/admin/community" element={<ProtectedRoute><ErrorBoundary><Layout><CommunityModeration /></Layout></ErrorBoundary></ProtectedRoute>} />
+          <Route path="/admin/community/settings" element={<ProtectedRoute><ErrorBoundary><Layout><CommunitySettings /></Layout></ErrorBoundary></ProtectedRoute>} />
           <Route path="/admin/admins" element={<SuperAdminRoute><ErrorBoundary><Layout><ManageAdmins /></Layout></ErrorBoundary></SuperAdminRoute>} />
       <Route path="/" element={<Navigate to="/admin" />} />
     </Routes>
