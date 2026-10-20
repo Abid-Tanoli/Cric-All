@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
@@ -108,10 +108,13 @@ describe("PostCard renders user text as plain text", () => {
 describe("CommunityConfigProvider runtime switch", () => {
   it("reads enabled/postMode from the public config endpoint", async () => {
     communityApi.getCommunityConfig.mockResolvedValueOnce({ enabled: true, postMode: "approval" });
-    let captured = null;
+    const seen = [];
     const Probe = () => {
       const { enabled, postMode, status } = useCommunityConfig();
-      captured = { enabled, postMode, status };
+      // Record from an effect, never during render (keeps the component pure).
+      useEffect(() => {
+        seen.push({ enabled, postMode, status });
+      }, [enabled, postMode, status]);
       return <span>{status}</span>;
     };
     renderInRouter(
@@ -119,8 +122,9 @@ describe("CommunityConfigProvider runtime switch", () => {
         <Probe />
       </CommunityConfigProvider>
     );
-    await waitFor(() => expect(captured?.status).toBe("ready"));
-    expect(captured.enabled).toBe(true);
-    expect(captured.postMode).toBe("approval");
+    await waitFor(() => expect(seen.some((s) => s.status === "ready")).toBe(true));
+    const ready = seen.find((s) => s.status === "ready");
+    expect(ready.enabled).toBe(true);
+    expect(ready.postMode).toBe("approval");
   });
 });
