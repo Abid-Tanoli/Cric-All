@@ -3,12 +3,16 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import ThemeToggle from "./ThemeToggle";
 import { resendVerification } from "../pages/auth/auth";
 import { featureFlags } from "../config/features";
+import { useCommunityConfig } from "../community/CommunityConfigContext";
 
 export default function Header({ user, hasOrg, onShowLogin, onShowRegister, onLogout }) {
   const location = useLocation();
   const navigate = useNavigate();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [resendState, setResendState] = useState("");
+  // Community is a RUNTIME switch (backend setting), not a build flag: the link
+  // only appears once GET /community/config confirms it is enabled.
+  const { enabled: communityEnabled } = useCommunityConfig();
 
   // Task 3: sections backed only by third-party feeds (International →
   // RapidAPI/Cricbuzz, Highlights → YouTube, News → RSS) are hidden by default
@@ -21,6 +25,7 @@ export default function Header({ user, hasOrg, onShowLogin, onShowRegister, onLo
     ...(flags.international ? [{ name: "International", path: "/international" }] : []),
     { name: "Teams", path: "/teams" },
     { name: "Players", path: "/players" },
+    ...(communityEnabled ? [{ name: "Community", path: "/community" }] : []),
     ...(flags.highlights ? [{ name: "Highlights", path: "/highlights" }] : []),
     ...(flags.cricketNews ? [{ name: "News", path: "/cricket-news" }] : []),
     ...(flags.videos ? [{ name: "Videos", path: "/videos" }] : []),

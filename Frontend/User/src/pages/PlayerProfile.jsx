@@ -2,9 +2,11 @@ import React, { useEffect, useState } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { api } from "../services/api";
 import FormTracker from "../components/FormTracker";
-import ShareButton from "../components/ShareButton";
 import SafeImage from "../../../Shared/components/SafeImage.jsx";
 import { featureFlags } from "../config/features";
+import { useCommunityConfig } from "../community/CommunityConfigContext";
+import PostsTab from "../community/PostsTab";
+import ShareMenu from "../community/ShareMenu";
 
 export default function PlayerProfile() {
   const { playerId } = useParams();
@@ -12,6 +14,7 @@ export default function PlayerProfile() {
   const [recentMatches, setRecentMatches] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('overview');
+  const { enabled: communityEnabled } = useCommunityConfig();
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -120,7 +123,7 @@ export default function PlayerProfile() {
                     Compare
                   </Link>
                 )}
-                <ShareButton title={player.name} />
+                <ShareMenu kind="player" id={playerId} title={`${player.name} on CricAll`} />
               </div>
 
               <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
@@ -185,6 +188,7 @@ export default function PlayerProfile() {
               { key: 'fielding', label: 'Fielding' },
               { key: 'matches', label: 'Match Log' },
               { key: 'info', label: 'Info' },
+              ...(communityEnabled ? [{ key: 'posts', label: 'Posts' }] : []),
             ].map(tab => (
               <button
                 key={tab.key}
@@ -674,6 +678,13 @@ export default function PlayerProfile() {
                 </div>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* ──── Posts Tab ──── */}
+        {activeTab === 'posts' && (
+          <div className="bg-cric-card rounded-xl shadow-sm border border-cric-border p-6">
+            <PostsTab kind="player" subjectId={playerId} subjectName={player.name} />
           </div>
         )}
 
