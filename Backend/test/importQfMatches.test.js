@@ -15,7 +15,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import * as xlsx from "xlsx";
 
-import { parseScorecardWorkbook, validateInnings, matchPlayerName } from "../src/scripts/importQfMatches.js";
+import { parseScorecardWorkbook, validateInnings, matchPlayerName, mappingFor, isSkippableBattingRow } from "../src/scripts/importQfMatches.js";
 
 const BATTING_HEADERS = [
   "#",
@@ -232,4 +232,35 @@ test("an explicit name mapping wins over fuzzy matching", () => {
   const result = matchPlayerName(squad, "Dr Aqal", { mappingValue: "Someone Else" });
   assert.equal(result.status, "matched");
   assert.equal(result.player.name, "Someone Else");
+});
+
+test("an explicit player id mapping resolves that squad player", () => {
+  const playerId = "64b7f0c2a1b2c3d4e5f60718";
+  const squad = [
+    { _id: playerId, name: "Br. Aqal" },
+    { _id: "64b7f0c2a1b2c3d4e5f60719", name: "Someone Else" },
+  ];
+  const result = matchPlayerName(squad, "Dr Aqal", { mappingValue: playerId });
+  assert.equal(result.status, "matched");
+  assert.equal(result.player._id, playerId);
+  assert.equal(result.reason, "mapping id");
+});
+
+test("the Orangi Sports alias resolves mapping keys for Orangi Warriors", () => {
+  const mapping = {
+    "Orangi Sports::MAE": "M Ali",
+    "Young Star::Salmen": "Salman Khan",
+  };
+  assert.equal(mappingFor(mapping, "Orangi Warriors", "MAE"), "M Ali");
+  assert.equal(mappingFor(mapping, "Orangi Warriors", "Salmen"), null);
+  assert.equal(mappingFor(mapping, "Young Star", "Salmen"), "Salman Khan");
+});
+
+test("SKIP is allowed only for a did-not-bat / 0-ball 0-run batsman", () => {
+  assert.equal(isSkippableBattingRow({ runs: 0, balls: 0, status: "DNB" }), true);
+  assert.equal(isSkippableBattingRow({ runs: 0, balls: 0, status: "Not Out" }), true);
+  assert.equal(isSkippableBattingRow({ runs: 0, balls: 0, status: "" }), true);
+  assert.equal(isSkippableBattingRow({ runs: 0, balls: 1, status: "Not Out" }), false);
+  assert.equal(isSkippableBattingRow({ runs: 4, balls: 0, status: "Not Out" }), false);
+  assert.equal(isSkippableBattingRow({ runs: 0, balls: 0, status: "Out" }), false);
 });

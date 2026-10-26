@@ -21,8 +21,10 @@
 //     ambiguity is not guessed and is reported as UNRESOLVED.
 //   * Optional disambiguation file: src/scripts/data/qfNameMap.json
 //       { "Dr Aqal": "<player ObjectId or exact squad name>",
-//         "Orangi Warriors::?": "<player ObjectId or exact squad name>" }
-//     A "Team::Sheet name" key wins over a plain "Sheet name" key.
+//         "Orangi Warriors::?": "<player ObjectId or exact squad name>",
+//         "Sky Sports::Islam": "SKIP" }
+//     A "Team::Sheet name" key wins over a plain "Sheet name" key. "SKIP" drops
+//     a did-not-bat / 0-ball 0-run batting row; it is rejected for any other row.
 //   * Re-running is safe: an existing tournament is reused, missing teams are
 //     added, and an already-imported QF (same teams/slot) is skipped.
 //   * The scorebook gives only combined wides/no-balls. The combined figure is
@@ -93,16 +95,7 @@ const MATCH_SPECS = [
       { batting: "Sky Sports", runs: 163, wickets: 6, overs: "17.2" },
     ],
     result: { winner: "Sky Sports", margin: "4 wickets", note: "Sky Sports won by 4 wickets." },
-    adjustments: [
-      {
-        innings: 2,
-        bowlingTeam: "Orangi United",
-        bowler: "?",
-        setWickets: 0,
-        reason:
-          "The scorebook credits the unnamed 7th bowler with 1 wicket, but Sharafat is marked Run Out and the innings has 6 wickets. Setting that row to 0 keeps 5 bowler wickets + 1 run out = 6.",
-      },
-    ],
+    adjustments: [],
   },
   {
     number: 3,
@@ -138,6 +131,15 @@ const normalizeTeamLabel = (value) =>
 const escapeRegex = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 const isObjectId = (value) => mongoose.Types.ObjectId.isValid(String(value || ""));
+
+export function isSkippableBattingRow(row) {
+  if (Number(row.runs) !== 0 || Number(row.balls) !== 0) return false;
+  const status = String(row.status || "").trim().toLowerCase();
+  if (!status) return true;
+  if (/^(dnb|did\s*not\s*bat)\b/.test(status)) return true;
+  if (/^(not\s*out|retired\s*hurt|retired)\b/.test(status)) return true;
+  return !/out/.test(status);
+}
 
 const idOf = (value) => String(value?._id || value || "");
 
@@ -644,16 +646,24 @@ export function validateInnings(raw, specInnings, options = {}) {
 // Name matching
 // ---------------------------------------------------------------------------
 
-function mappingFor(mapping, teamName, sheetName) {
+function teamLabelSet(teamName) {
+  const normalized = normalizeName(teamName);
+  const entry = TOURNAMENT_TEAMS.find((team) =>
+    team.aliases.some((alias) => normalizeName(alias) === normalized),
+  );
+  return new Set((entry ? entry.aliases : [teamName]).map(normalizeName));
+}
+
+export function mappingFor(mapping, teamName, sheetName) {
   if (!mapping) return null;
-  const normalizedTeam = normalizeName(teamName);
+  const teamLabels = teamLabelSet(teamName);
   const normalizedSheet = normalizeName(sheetName);
   let fallback = null;
   for (const [rawKey, value] of Object.entries(mapping)) {
     if (rawKey.startsWith("_")) continue;
     if (rawKey.includes("::")) {
       const [rawTeam, ...rest] = rawKey.split("::");
-      if (normalizeName(rawTeam) === normalizedTeam && normalizeName(rest.join("::")) === normalizedSheet) {
+      if (teamLabels.has(normalizeName(rawTeam)) && normalizeName(rest.join("::")) === normalizedSheet) {
         return value;
       }
     } else if (rawKey === sheetName || normalizeName(rawKey) === normalizedSheet) {
@@ -980,19 +990,48 @@ function buildMatchPlan(spec, parsedSheet, tournament, teamA, teamB, squadByTeam
 
     const mapRows = (rows, squad, role) =>
       rows.map((row) => {
-        const match = matchPlayerName(squad.players, row.name, {
-          mappingValue: mappingFor(mapping, role === "batting" ? team.name : opponent.name, row.name),
-        });
+        const squadTeam = role === "batting" ? team : opponent;
+        const mappingValue = mappingFor(mapping, squadTeam.name, row.name);
+        if (typeof mappingValue === "string" && mappingValue.trim().toUpperCase() === "SKIP") {
+          const match =
+            role === "batting" && isSkippableBattingRow(row)
+              ? { status: "skipped", reason: "mapping SKIP (did-not-bat row dropped)", candidates: [] }
+              : {
+                  status: "error",
+                  reason:
+                    role === "batting"
+                      ? "mapping SKIP is only allowed for a DNB/0-ball/0-run batsman"
+                      : "mapping SKIP is only allowed for a batting row",
+                  candidates: [],
+                };
+          if (match.status !== "skipped") {
+            inningsPlan.errors.push(
+              `${role} "${row.name}" (${squadTeam.name}, sheet row ${row.row}) is ${match.status.toUpperCase()}: ${match.reason}`,
+            );
+            plan.unresolved.push({
+              matchNumber: spec.number,
+              innings: index + 1,
+              role,
+              team: squadTeam.name,
+              sheetName: row.name,
+              row: row.row,
+              reason: match.reason,
+              candidates: [],
+            });
+          }
+          return { ...row, role, match };
+        }
+        const match = matchPlayerName(squad.players, row.name, { mappingValue });
         const mapped = { ...row, role, match };
         if (match.status !== "matched") {
           inningsPlan.errors.push(
-            `${role} "${row.name}" (${role === "batting" ? team.name : opponent.name}, sheet row ${row.row}) is ${match.status.toUpperCase()}: ${match.reason}`,
+            `${role} "${row.name}" (${squadTeam.name}, sheet row ${row.row}) is ${match.status.toUpperCase()}: ${match.reason}`,
           );
           plan.unresolved.push({
             matchNumber: spec.number,
             innings: index + 1,
             role,
-            team: role === "batting" ? team.name : opponent.name,
+            team: squadTeam.name,
             sheetName: row.name,
             row: row.row,
             reason: match.reason,
@@ -1005,11 +1044,19 @@ function buildMatchPlan(spec, parsedSheet, tournament, teamA, teamB, squadByTeam
       ...mapRows(raw.batting || [], battingSquad, "batting"),
       ...mapRows(raw.bowling || [], bowlingSquad, "bowling"),
     ];
+    const skippedRows = new Set(
+      inningsPlan.mapping
+        .filter((row) => row.role === "batting" && row.match.status === "skipped")
+        .map((row) => row.row),
+    );
+    const validationRaw = skippedRows.size
+      ? { ...raw, batting: (raw.batting || []).filter((row) => !skippedRows.has(row.row)) }
+      : raw;
 
     const adjustments = (spec.adjustments || []).filter(
       (adjustment) => adjustment.innings === index + 1 && normalizeName(adjustment.bowlingTeam) === normalizeName(opponent.name),
     );
-    const validation = validateInnings(raw, specInnings, { adjustments });
+    const validation = validateInnings(validationRaw, specInnings, { adjustments });
     inningsPlan.validation = validation;
     inningsPlan.errors.push(...validation.errors);
     inningsPlan.warnings.push(...validation.warnings);
@@ -1319,6 +1366,8 @@ function printPlan(plan, context, apply) {
         const match = row.match;
         if (match.status === "matched") {
           console.log(`        [${row.role}] "${row.name}" -> ${match.player.name} (${match.score}: ${match.reason})`);
+        } else if (match.status === "skipped") {
+          console.log(`        [${row.role}] "${row.name}" -> SKIPPED (${match.reason})`);
         } else {
           console.log(`        [${row.role}] "${row.name}" -> ${match.status.toUpperCase()} — ${match.reason}`);
           const candidates = formatCandidateList(match.candidates);
