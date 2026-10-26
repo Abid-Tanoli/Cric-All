@@ -173,6 +173,19 @@ test("a consistent innings passes and derives byes from bowler runs", () => {
   assert.equal(result.model.extras.noBalls, 0);
 });
 
+test("a run out is a dismissal but is not counted in the TOTAL BOWLING wicket cell", () => {
+  const withRunOut = structuredClone(INNINGS);
+  withRunOut.first.batting = [
+    { name: "Alpha", balls: 6, runs: 12, fours: 1, sixes: 1, status: "Out" },
+    { name: "Beta", balls: 6, runs: 18, fours: 1, sixes: 0, status: "Run Out" },
+  ];
+  const { sheets } = parseScorecardWorkbook(buildWorkbook(withRunOut));
+  const result = validateInnings(sheets[0].innings[0], { runs: 32, wickets: 2, overs: "3" });
+  assert.deepEqual(result.errors, []);
+  assert.equal(result.model.wickets, 2);
+  assert.equal(result.model.bowling[0].wickets, 1);
+});
+
 test("a batting/extras mismatch is an error", () => {
   const broken = structuredClone(INNINGS);
   broken.first.extras = 0;
@@ -244,6 +257,19 @@ test("an explicit player id mapping resolves that squad player", () => {
   assert.equal(result.status, "matched");
   assert.equal(result.player._id, playerId);
   assert.equal(result.reason, "mapping id");
+});
+
+test("an explicit mapping resolves a blank scorebook name such as an unnamed bowler", () => {
+  const playerId = "64b7f0c2a1b2c3d4e5f60718";
+  const squad = [
+    { _id: playerId, name: "Mystery Bowler" },
+    { _id: "64b7f0c2a1b2c3d4e5f60719", name: "Someone Else" },
+  ];
+  assert.equal(mappingFor({ "Orangi United::?": "Mystery Bowler" }, "Orangi United", "?"), "Mystery Bowler");
+  const result = matchPlayerName(squad, "", { mappingValue: "Mystery Bowler" });
+  assert.equal(result.status, "matched");
+  assert.equal(result.player._id, playerId);
+  assert.equal(result.reason, "mapping name");
 });
 
 test("the Orangi Sports alias resolves mapping keys for Orangi Warriors", () => {
