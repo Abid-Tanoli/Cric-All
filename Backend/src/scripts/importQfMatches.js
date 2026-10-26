@@ -25,6 +25,10 @@
 //         "Sky Sports::Islam": "SKIP" }
 //     A "Team::Sheet name" key wins over a plain "Sheet name" key. "SKIP" drops
 //     a did-not-bat / 0-ball 0-run batting row; it is rejected for any other row.
+//     A blank sheet name can be resolved with a key such as "Team::?". The
+//     mapping value must be an existing player ObjectId or an exact squad name;
+//     the script never creates players, so create a genuinely missing player in
+//     Admin (with the correct team roster) first, then map it here.
 //   * Re-running is safe: an existing tournament is reused, missing teams are
 //     added, and an already-imported QF (same teams/slot) is skipped.
 //   * The scorebook gives only combined wides/no-balls. The combined figure is
@@ -567,9 +571,12 @@ export function validateInnings(raw, specInnings, options = {}) {
       `bowler wickets (${bowlingWickets}) + run outs (${runOutCount}) do not equal the ${outCount} dismissed batsmen (expected ${expectedBowlingWickets} bowler wickets)`,
     );
   }
-  if (bowlingTotal.wickets !== null && bowlingWickets + runOutCount !== bowlingTotal.wickets) {
+  // The TOTAL BOWLING wicket cell sums the bowlers' wickets only; a run out is
+  // not credited to a bowler. Compare it with the bowler wickets, while the
+  // dismissed-batsmen check above still accounts for the run outs.
+  if (bowlingTotal.wickets !== null && bowlingWickets !== bowlingTotal.wickets) {
     add(
-      `adjusted bowler wickets (${bowlingWickets}) + run outs (${runOutCount}) do not equal the TOTAL BOWLING cell (${bowlingTotal.wickets})`,
+      `bowler wickets (${bowlingWickets}) do not equal the TOTAL BOWLING cell (${bowlingTotal.wickets})`,
     );
   }
 
@@ -692,12 +699,14 @@ function candidateForMapping(value, squad) {
 
 export function matchPlayerName(squad, sheetName, options = {}) {
   const name = String(sheetName || "").trim();
-  if (!name) return { status: "unresolved", reason: "blank name", candidates: [] };
+  // A blank scorebook name (for example an unnamed bowler row) can still be
+  // resolved by an explicit mapping entry, such as "Team::?" -> player id/name.
   const mapped = candidateForMapping(options.mappingValue, squad);
   if (mapped) {
     if (mapped.error) return { status: "error", reason: mapped.error, candidates: [] };
     return { status: "matched", player: mapped.player, score: 100, reason: mapped.reason, candidates: [] };
   }
+  if (!name) return { status: "unresolved", reason: "blank name", candidates: [] };
 
   const target = normalizeName(name);
   if (!target) return { status: "unresolved", reason: "blank name", candidates: [] };
