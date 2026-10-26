@@ -22,5 +22,12 @@
   "Orangi Warriors::MAE": "M Ali",
   "Sky Sports::Islam": "SKIP",
   "Sky Sports::Shahzaib": "SKIP",
-  "Orangi Warriors::Ali": "Ali Raza"
+  "Orangi Warriors::Ali": "Ali Raza",
+  "Young Star::Zahid": "CREATE:Zahid (TBC)",
+  "Orangi United::Afridi": "CREATE:Afridi (TBC)",
+  "Sky Sports::Abrar": "CREATE:Abrar (TBC)",
+  "Sky Sports::Ali": "CREATE:Ali (TBC)",
+  "Orangi United::Attaulla": "CREATE:Attaulla (TBC)",
+  "Orangi United::?": "CREATE:Unknown Bowler (TBC)",
+  "Orangi Warriors::MD": "CREATE:MD (TBC)"
 }

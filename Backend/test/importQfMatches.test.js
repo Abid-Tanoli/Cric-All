@@ -11,11 +11,24 @@
 //   * a batting/extras mismatch and a bowler-runs overshoot are reported as
 //     errors, because --apply must refuse them.
 
-import test from "node:test";
+import test, { before, after } from "node:test";
 import assert from "node:assert/strict";
 import * as xlsx from "xlsx";
 
-import { parseScorecardWorkbook, validateInnings, matchPlayerName, mappingFor, isSkippableBattingRow } from "../src/scripts/importQfMatches.js";
+import { startTestDb, stopTestDb } from "./helpers/testDb.js";
+import Team from "../src/models/Team.js";
+import Player from "../src/models/Player.js";
+import { validateManualScorecard } from "../src/services/manualScorecard.js";
+import {
+  parseScorecardWorkbook,
+  validateInnings,
+  matchPlayerName,
+  mappingFor,
+  isSkippableBattingRow,
+  parseCreateMappingValue,
+  collectCreateSpecs,
+  ensurePlaceholderPlayers,
+} from "../src/scripts/importQfMatches.js";
 
 const BATTING_HEADERS = [
   "#",
@@ -289,4 +302,188 @@ test("SKIP is allowed only for a did-not-bat / 0-ball 0-run batsman", () => {
   assert.equal(isSkippableBattingRow({ runs: 0, balls: 1, status: "Not Out" }), false);
   assert.equal(isSkippableBattingRow({ runs: 4, balls: 0, status: "Not Out" }), false);
   assert.equal(isSkippableBattingRow({ runs: 0, balls: 0, status: "Out" }), false);
+});
+
+// ---------------------------------------------------------------------------
+// CREATE:<name> placeholders
+// ---------------------------------------------------------------------------
+
+test("only CREATE: mapping values are player-creation instructions", () => {
+  assert.deepEqual(parseCreateMappingValue("CREATE:Zahid (TBC)"), { name: "Zahid (TBC)" });
+  assert.deepEqual(parseCreateMappingValue("  create:Ali (TBC)  "), { name: "Ali (TBC)" });
+  assert.equal(parseCreateMappingValue("Salman Khan"), null);
+  assert.equal(parseCreateMappingValue("SKIP"), null);
+  assert.equal(parseCreateMappingValue("64b7f0c2a1b2c3d4e5f60718"), null);
+  assert.equal(parseCreateMappingValue(undefined), null);
+  assert.match(parseCreateMappingValue("CREATE:").error, /needs a player name/);
+});
+
+test("the Sky Sports::Ali CREATE mapping is one spec for its batting and bowling rows", () => {
+  const orangi = { _id: "team-orangi", name: "Orangi United" };
+  const sky = { _id: "team-sky", name: "Sky Sports" };
+  const parsed = {
+    sheets: [
+      {
+        matchNumber: 2,
+        innings: [
+          // QF2 innings 1: Sky Sports is the bowling side.
+          { batting: [], bowling: [{ name: "Ali", row: 25 }] },
+          // QF2 innings 2: Sky Sports is the batting side.
+          { batting: [{ name: "Ali", row: 38 }], bowling: [] },
+        ],
+      },
+    ],
+  };
+  const { specs, errors } = collectCreateSpecs({
+    parsed,
+    teams: [
+      { name: "Orangi United", team: orangi },
+      { name: "Sky Sports", team: sky },
+    ],
+    mapping: { "Sky Sports::Ali": "CREATE:Ali (TBC)" },
+  });
+  assert.deepEqual(errors, []);
+  assert.equal(specs.length, 1);
+  assert.equal(specs[0].name, "Ali (TBC)");
+  assert.equal(specs[0].teamId, "team-sky");
+  assert.equal(specs[0].rows.length, 2);
+  assert.deepEqual(
+    specs[0].rows.map((row) => `${row.role}:${row.row}`).sort(),
+    ["batting:38", "bowling:25"],
+  );
+});
+
+test("a CREATE: value with no name is reported, not silently ignored", () => {
+  const parsed = {
+    sheets: [
+      {
+        matchNumber: 1,
+        innings: [
+          { batting: [{ name: "Zahid", row: 4 }], bowling: [] },
+          { batting: [], bowling: [] },
+        ],
+      },
+    ],
+  };
+  const { specs, errors } = collectCreateSpecs({
+    parsed,
+    teams: [
+      { name: "Young Star", team: { _id: "team-young", name: "Young Star" } },
+      { name: "Family Stallions", team: { _id: "team-stallions", name: "Family Stallions" } },
+    ],
+    mapping: { "Young Star::Zahid": "CREATE:" },
+  });
+  assert.equal(specs.length, 0);
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /needs a player name/);
+});
+
+let mongod = null;
+before(async () => {
+  mongod = await startTestDb();
+});
+after(async () => {
+  await stopTestDb(mongod);
+});
+
+test("CREATE: dry run reports would-create but writes nothing", async () => {
+  const team = await Team.create({ name: "OPENCODE_TEST CREATE Dry Run" });
+  const result = await ensurePlaceholderPlayers(
+    [{ teamId: String(team._id), teamName: team.name, name: "Zahid (TBC)" }],
+    { dryRun: true },
+  );
+
+  assert.deepEqual(result.created, []);
+  assert.equal(result.wouldCreate.length, 1);
+  assert.equal(result.wouldCreate[0].name, "Zahid (TBC)");
+  assert.equal(result.wouldCreate[0].team, team.name);
+  assert.equal(await Player.countDocuments({ team: team._id }), 0);
+  const afterRun = await Team.findById(team._id).lean();
+  assert.equal((afterRun.players || []).length, 0);
+});
+
+test("CREATE: apply creates exactly one player, then a second apply reuses it", async () => {
+  const team = await Team.create({ name: "OPENCODE_TEST CREATE Apply" });
+  const spec = [{ teamId: String(team._id), teamName: team.name, name: "Afridi (TBC)" }];
+
+  const first = await ensurePlaceholderPlayers(spec, { dryRun: false });
+  assert.equal(first.created.length, 1);
+  const createdId = first.created[0].id;
+  const player = await Player.findById(createdId).lean();
+  assert.equal(player.name, "Afridi (TBC)");
+  assert.equal(player.role, "");
+  assert.equal(String(player.team), String(team._id));
+  assert.ok(!player.createdBy);
+  assert.equal(player.imageUrl, "");
+
+  const roster = await Team.findById(team._id).lean();
+  assert.deepEqual((roster.players || []).map(String), [createdId]);
+  assert.equal(roster.captain, null);
+  assert.equal(roster.viceCaptain, null);
+
+  const second = await ensurePlaceholderPlayers(spec, { dryRun: false });
+  assert.deepEqual(second.created, []);
+  assert.equal(second.reused.length, 1);
+  assert.equal(second.reused[0].id, createdId);
+  assert.equal(await Player.countDocuments({ team: team._id, name: "Afridi (TBC)" }), 1);
+});
+
+test("one shared CREATE: placeholder creates a single player for both rows", async () => {
+  const orangi = await Team.create({ name: "Orangi United" });
+  const sky = await Team.create({ name: "Sky Sports" });
+  const { specs } = collectCreateSpecs({
+    parsed: {
+      sheets: [
+        {
+          matchNumber: 2,
+          innings: [
+            { batting: [], bowling: [{ name: "Ali", row: 25 }] },
+            { batting: [{ name: "Ali", row: 38 }], bowling: [] },
+          ],
+        },
+      ],
+    },
+    teams: [
+      { name: "Orangi United", team: orangi },
+      { name: "Sky Sports", team: sky },
+    ],
+    mapping: { "Sky Sports::Ali": "CREATE:Ali (TBC)" },
+  });
+
+  const result = await ensurePlaceholderPlayers(specs, { dryRun: false });
+  assert.equal(result.created.length, 1);
+  assert.equal(await Player.countDocuments({ team: sky._id, name: "Ali (TBC)" }), 1);
+  const roster = await Team.findById(sky._id).lean();
+  assert.deepEqual((roster.players || []).map(String), [result.created[0].id]);
+});
+
+test("the manual validator still refuses the same player twice in one innings", () => {
+  const payload = {
+    teamA: "team-a",
+    teamB: "team-b",
+    startAt: "2026-10-11T00:00:00Z",
+    totalOvers: 20,
+    innings: [
+      {
+        team: "team-a",
+        batting: [
+          { player: "player-a1", runs: 5, balls: 5, isOut: false },
+          { player: "player-a1", runs: 3, balls: 4, isOut: false },
+        ],
+        bowling: [],
+        extras: {},
+      },
+    ],
+    result: { winner: "team-a", margin: "1 run", resultType: "normal" },
+  };
+  const result = validateManualScorecard(payload, {
+    teamIds: ["team-a", "team-b"],
+    totalOvers: 20,
+    squadByTeam: {
+      "team-a": ["player-a1", "player-a2"],
+      "team-b": ["player-b1", "player-b2"],
+    },
+  });
+  assert.equal(result.ok, false);
+  assert.ok(result.errors.some((error) => /twice/.test(error.message)));
 });

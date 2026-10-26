@@ -22,13 +22,16 @@
 //   * Optional disambiguation file: src/scripts/data/qfNameMap.json
 //       { "Dr Aqal": "<player ObjectId or exact squad name>",
 //         "Orangi Warriors::?": "<player ObjectId or exact squad name>",
-//         "Sky Sports::Islam": "SKIP" }
+//         "Sky Sports::Islam": "SKIP",
+//         "Orangi United::Attaulla": "CREATE:Attaulla (TBC)" }
 //     A "Team::Sheet name" key wins over a plain "Sheet name" key. "SKIP" drops
 //     a did-not-bat / 0-ball 0-run batting row; it is rejected for any other row.
-//     A blank sheet name can be resolved with a key such as "Team::?". The
-//     mapping value must be an existing player ObjectId or an exact squad name;
-//     the script never creates players, so create a genuinely missing player in
-//     Admin (with the correct team roster) first, then map it here.
+//     A blank sheet name can be resolved with a key such as "Team::?". A
+//     "CREATE:<name>" value is the only way this script creates a player: with
+//     --apply it creates that exact name on the mapped team (role blank) and
+//     reuses an existing same-name player on later runs. Any other value must be
+//     an existing player ObjectId or an exact squad name. Nothing outside an
+//     explicit CREATE: entry is ever created.
 //   * Re-running is safe: an existing tournament is reused, missing teams are
 //     added, and an already-imported QF (same teams/slot) is skipped.
 //   * The scorebook gives only combined wides/no-balls. The combined figure is
@@ -62,6 +65,8 @@ mongoose.set("autoIndex", false);
 const MAPPING_FILE = path.join(SCRIPT_DIR, "data", "qfNameMap.json");
 const TOURNAMENT_NAME = "All Baldia T20 Hard Ball Cricket Tournament";
 const MATCH_DATE = "2026-10-11T00:00:00.000Z";
+const CREATE_PREFIX = "CREATE:";
+const PLACEHOLDER_ID_PREFIX = "placeholder-player:";
 const TOTAL_OVERS = 20;
 const STAGE = "quarter_final";
 
@@ -143,6 +148,21 @@ export function isSkippableBattingRow(row) {
   if (/^(dnb|did\s*not\s*bat)\b/.test(status)) return true;
   if (/^(not\s*out|retired\s*hurt|retired)\b/.test(status)) return true;
   return !/out/.test(status);
+}
+
+/**
+ * Parse an explicit placeholder instruction from the name map.
+ * "CREATE:Attaulla (TBC)" -> { name: "Attaulla (TBC)" }.
+ * Anything that is not a CREATE: value returns null, so ordinary names, ids and
+ * SKIP are never treated as player-creation instructions.
+ */
+export function parseCreateMappingValue(value) {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed.toUpperCase().startsWith(CREATE_PREFIX)) return null;
+  const name = trimmed.slice(CREATE_PREFIX.length).trim();
+  if (!name) return { name: "", error: "CREATE mapping needs a player name after CREATE:" };
+  return { name };
 }
 
 const idOf = (value) => String(value?._id || value || "");
@@ -680,6 +700,66 @@ export function mappingFor(mapping, teamName, sheetName) {
   return fallback;
 }
 
+/**
+ * Find every workbook row whose team-scoped mapping value is CREATE:<name>.
+ * The result is de-duplicated by team + name, so "Sky Sports::Ali" used in the
+ * batting and bowling rows produces a single placeholder player. This is a pure
+ * read: it never creates anything.
+ */
+export function collectCreateSpecs({ parsed, teams, mapping }) {
+  const specs = new Map();
+  const errors = [];
+  const teamByName = new Map(
+    (teams || []).filter((entry) => entry.team).map((entry) => [entry.name, entry.team]),
+  );
+  for (const spec of MATCH_SPECS) {
+    const sheet = (parsed?.sheets || []).find((row) => row.matchNumber === spec.number);
+    if (!sheet) continue;
+    const teamA = teamByName.get(spec.teamA.name);
+    const teamB = teamByName.get(spec.teamB.name);
+    if (!teamA || !teamB) continue;
+    spec.innings.forEach((_, index) => {
+      const raw = sheet.innings?.[index];
+      if (!raw) return;
+      const battingTeam = index === 0 ? teamA : teamB;
+      const bowlingTeam = index === 0 ? teamB : teamA;
+      for (const [role, rows, squadTeam] of [
+        ["batting", raw.batting || [], battingTeam],
+        ["bowling", raw.bowling || [], bowlingTeam],
+      ]) {
+        for (const row of rows) {
+          const create = parseCreateMappingValue(mappingFor(mapping, squadTeam.name, row.name));
+          if (!create) continue;
+          if (create.error) {
+            errors.push(
+              `QF${spec.number} innings ${index + 1} ${role} "${row.name}" (${squadTeam.name}, row ${row.row}): ${create.error}`,
+            );
+            continue;
+          }
+          const key = `${String(squadTeam._id)}::${normalizeName(create.name)}`;
+          if (!specs.has(key)) {
+            specs.set(key, {
+              teamId: String(squadTeam._id),
+              teamName: squadTeam.name,
+              name: create.name,
+              rows: [],
+            });
+          }
+          specs.get(key).rows.push({
+            matchNumber: spec.number,
+            innings: index + 1,
+            role,
+            team: squadTeam.name,
+            sheetName: row.name,
+            row: row.row,
+          });
+        }
+      }
+    });
+  }
+  return { specs: [...specs.values()], errors };
+}
+
 function candidateForMapping(value, squad) {
   if (value && typeof value === "object") {
     if (value.playerId) value = value.playerId;
@@ -929,6 +1009,61 @@ async function loadSquad(team) {
   };
 }
 
+/**
+ * Create the explicitly listed CREATE: placeholders, or reuse an existing player
+ * with the same name in that team. `dryRun` performs only reads. New players are
+ * intentionally minimal: name + team + blank role; no photo, creator, captain or
+ * vice-captain. The player is attached to Team.players and Player.team, exactly
+ * like the rest of the squad.
+ */
+export async function ensurePlaceholderPlayers(specs, { dryRun = false } = {}) {
+  const result = { wouldCreate: [], created: [], reused: [], errors: [] };
+  const unique = new Map();
+  for (const spec of specs || []) {
+    if (!spec?.teamId || !spec?.name) {
+      result.errors.push(`invalid placeholder spec: ${JSON.stringify(spec)}`);
+      continue;
+    }
+    const key = `${spec.teamId}::${normalizeName(spec.name)}`;
+    if (!unique.has(key)) unique.set(key, spec);
+  }
+
+  for (const spec of unique.values()) {
+    const team = await Team.findById(spec.teamId).select("name players").lean();
+    if (!team) {
+      result.errors.push(`team ${spec.teamName || spec.teamId} was not found`);
+      continue;
+    }
+    const rosterIds = (team.players || []).map(idOf).filter(Boolean);
+    const candidates = await Player.find({
+      $or: [
+        { team: team._id },
+        ...(rosterIds.length ? [{ _id: { $in: rosterIds } }] : []),
+      ],
+    })
+      .select("name team")
+      .lean();
+    const existing = candidates.find(
+      (player) => normalizeName(player.name) === normalizeName(spec.name),
+    );
+    if (existing) {
+      if (!dryRun && !rosterIds.includes(String(existing._id))) {
+        await Team.updateOne({ _id: team._id }, { $addToSet: { players: existing._id } });
+      }
+      result.reused.push({ id: String(existing._id), name: existing.name, team: team.name });
+      continue;
+    }
+    if (dryRun) {
+      result.wouldCreate.push({ name: spec.name, team: team.name, teamId: String(team._id) });
+      continue;
+    }
+    const player = await Player.create({ name: spec.name, team: team._id, role: "" });
+    await Team.updateOne({ _id: team._id }, { $addToSet: { players: player._id } });
+    result.created.push({ id: String(player._id), name: player.name, team: team.name });
+  }
+  return result;
+}
+
 function teamLabelMatches(label, teamSpec) {
   const normalized = normalizeTeamLabel(label);
   return (teamSpec.aliases || [teamSpec.name]).some((alias) => normalizeTeamLabel(alias) === normalized);
@@ -1001,6 +1136,50 @@ function buildMatchPlan(spec, parsedSheet, tournament, teamA, teamB, squadByTeam
       rows.map((row) => {
         const squadTeam = role === "batting" ? team : opponent;
         const mappingValue = mappingFor(mapping, squadTeam.name, row.name);
+        const create = parseCreateMappingValue(mappingValue);
+        if (create) {
+          let match;
+          if (create.error) {
+            match = { status: "error", reason: create.error, candidates: [] };
+          } else {
+            let player = squad.players.find(
+              (candidate) => normalizeName(candidate.name) === normalizeName(create.name),
+            );
+            if (!player) {
+              // Dry-run/plan placeholder: a stable id lets the manual validator
+              // exercise the full payload without writing a Player document.
+              player = {
+                _id: `${PLACEHOLDER_ID_PREFIX}${squadTeam._id}:${normalizeName(create.name)}`,
+                name: create.name,
+                placeholder: true,
+              };
+              squad.players.push(player);
+            }
+            match = {
+              status: "matched",
+              player,
+              score: 100,
+              reason: player.placeholder ? "mapping CREATE placeholder" : "mapping CREATE (existing player)",
+              candidates: [],
+            };
+          }
+          if (match.status !== "matched") {
+            inningsPlan.errors.push(
+              `${role} "${row.name}" (${squadTeam.name}, sheet row ${row.row}) is ${match.status.toUpperCase()}: ${match.reason}`,
+            );
+            plan.unresolved.push({
+              matchNumber: spec.number,
+              innings: index + 1,
+              role,
+              team: squadTeam.name,
+              sheetName: row.name,
+              row: row.row,
+              reason: match.reason,
+              candidates: [],
+            });
+          }
+          return { ...row, role, match };
+        }
         if (typeof mappingValue === "string" && mappingValue.trim().toUpperCase() === "SKIP") {
           const match =
             role === "batting" && isSkippableBattingRow(row)
@@ -1292,6 +1471,35 @@ function userTeamGaps(tournament, teams) {
   return { existingCount: existing.size, missing };
 }
 
+function addEnvironmentChecks(plan, { tournament, resolvedTeams, platformSettings }) {
+  if (tournament) {
+    if (tournament.type !== "knockout") plan.blockers.push(`existing tournament type is "${tournament.type}", expected "knockout"`);
+    if (tournament.format !== "T20") plan.blockers.push(`existing tournament format is "${tournament.format}", expected "T20"`);
+  }
+  if (!platformSettings.enableSuperSub) {
+    plan.warnings.push(
+      "the platform master switch enableSuperSub is OFF; the tournament rule will be ON but Super Sub is not effective until the platform setting is enabled",
+    );
+  }
+  for (const entry of resolvedTeams) {
+    if (!entry.team) {
+      plan.blockers.push(
+        entry.ambiguous.length
+          ? `team ${entry.name} is ambiguous: ${entry.ambiguous.map((row) => `${row.name} ${row.id}`).join(", ")}`
+          : `team ${entry.name} was not found; teams are never created by this script`,
+      );
+    }
+  }
+  if (!tournament) {
+    plan.warnings.push("tournament will be created with all resolved teams; missing teams block --apply");
+  }
+  const teamCount = resolvedTeams.filter((entry) => entry.team).length;
+  if (teamCount !== TOURNAMENT_TEAMS.length) {
+    plan.blockers.push(`tournament needs ${TOURNAMENT_TEAMS.length} teams, found ${teamCount}`);
+  }
+  return plan;
+}
+
 // ---------------------------------------------------------------------------
 // Reporting
 // ---------------------------------------------------------------------------
@@ -1304,7 +1512,7 @@ function formatCandidateList(candidates) {
     .join(", ");
 }
 
-function printPlan(plan, context, apply) {
+function printPlan(plan, context, apply, placeholders = null) {
   console.log("");
   console.log("=== All Baldia T20 QF import =======================================");
   console.log(`  Mode            : ${apply ? "APPLY" : "DRY RUN (no writes)"}`);
@@ -1328,6 +1536,18 @@ function printPlan(plan, context, apply) {
   );
   console.log(`  Platform gate   : enableSuperSub=${context.platformSettings.enableSuperSub}`);
   console.log(`  Hard ball       : no Tournament/Match field; represented by the tournament name + T20 format`);
+  if (placeholders && (placeholders.wouldCreate?.length || placeholders.created?.length || placeholders.reused?.length)) {
+    console.log(`  Placeholders    :`);
+    for (const row of placeholders.wouldCreate || []) {
+      console.log(`    would create ${row.name} in ${row.team}`);
+    }
+    for (const row of placeholders.created || []) {
+      console.log(`    created ${row.name} in ${row.team} -> ${row.id}`);
+    }
+    for (const row of placeholders.reused || []) {
+      console.log(`    reused ${row.name} in ${row.team} -> ${row.id}`);
+    }
+  }
 
   const found = plan.teams.filter((entry) => entry.team).length;
   console.log(`  Teams           : ${found}/${plan.teams.length} resolved in the database`);
@@ -1589,52 +1809,70 @@ export async function main(argv = process.argv) {
       forceTest,
       platformSettings,
     };
-    const plan = await buildPlan({
+    const createPlan = collectCreateSpecs({
+      parsed,
+      teams: resolvedTeams,
+      mapping: mapping.mapping,
+    });
+    let plan = await buildPlan({
       parsed,
       tournament,
       teams: resolvedTeams,
       mapping: mapping.mapping,
       existingMatches,
     });
+    plan.blockers.push(...createPlan.errors);
+    addEnvironmentChecks(plan, { tournament, resolvedTeams, platformSettings });
 
-    if (tournament) {
-      if (tournament.type !== "knockout") plan.blockers.push(`existing tournament type is "${tournament.type}", expected "knockout"`);
-      if (tournament.format !== "T20") plan.blockers.push(`existing tournament format is "${tournament.format}", expected "T20"`);
-      if (!platformSettings.enableSuperSub) {
-        plan.warnings.push(
-          "the platform master switch enableSuperSub is OFF; the tournament rule will be ON but Super Sub is not effective until the platform setting is enabled",
-        );
-      }
-    } else if (!platformSettings.enableSuperSub) {
-      plan.warnings.push(
-        "the platform master switch enableSuperSub is OFF; the tournament rule will be ON but Super Sub is not effective until the platform setting is enabled",
-      );
-    }
-    for (const entry of resolvedTeams) {
-      if (!entry.team) {
-        plan.blockers.push(
-          entry.ambiguous.length
-            ? `team ${entry.name} is ambiguous: ${entry.ambiguous.map((row) => `${row.name} ${row.id}`).join(", ")}`
-            : `team ${entry.name} was not found; teams are never created by this script`,
-        );
-      }
-    }
-    if (!tournament) {
-      plan.warnings.push("tournament will be created with all resolved teams; missing teams block --apply");
-    }
-    const teamCount = resolvedTeams.filter((entry) => entry.team).length;
-    if (teamCount !== TOURNAMENT_TEAMS.length) {
-      plan.blockers.push(`tournament needs ${TOURNAMENT_TEAMS.length} teams, found ${teamCount}`);
-    }
-
-    printPlan(plan, context, apply);
     if (!apply) {
+      // Explicit CREATE: mappings are only read here; nothing is written.
+      const placeholders = await ensurePlaceholderPlayers(createPlan.specs, { dryRun: true });
+      plan.blockers.push(...placeholders.errors);
+      printPlan(plan, context, false, placeholders);
       console.log("Dry run complete. Nothing was written.");
       if (plan.blockers.length) {
         console.log(`${plan.blockers.length} blocker(s) would prevent --apply.`);
       }
-      return { apply: false, plan, created: null };
+      return { apply: false, plan, created: null, placeholders };
     }
+
+    // --apply: never write placeholder players for a plan that is already blocked.
+    if (plan.blockers.length) {
+      printPlan(plan, context, true);
+      throw new Error(
+        `${plan.blockers.length} blocker(s) found; refusing --apply. No placeholder players were created.`,
+      );
+    }
+
+    const placeholders = await ensurePlaceholderPlayers(createPlan.specs, { dryRun: false });
+    if (placeholders.errors.length) {
+      throw new Error(`could not ensure placeholder players: ${placeholders.errors.join("; ")}`);
+    }
+    if (placeholders.created.length || placeholders.reused.length) {
+      // Real ids now exist, so rebuild the plan against the refreshed squads.
+      const refreshedTeams = await resolveTournamentTeams();
+      plan = await buildPlan({
+        parsed,
+        tournament,
+        teams: refreshedTeams,
+        mapping: mapping.mapping,
+        existingMatches,
+      });
+      plan.blockers.push(...createPlan.errors);
+      addEnvironmentChecks(plan, {
+        tournament,
+        resolvedTeams: refreshedTeams,
+        platformSettings,
+      });
+      if (plan.blockers.length) {
+        printPlan(plan, context, true, placeholders);
+        throw new Error(
+          `${plan.blockers.length} blocker(s) found after placeholder setup; refusing --apply.`,
+        );
+      }
+    }
+
+    printPlan(plan, context, true, placeholders);
     const created = await applyPlan(plan, context);
     console.log("");
     console.log("APPLIED (drafts only; nothing was published).");
