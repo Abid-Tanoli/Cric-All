@@ -41,7 +41,10 @@ export const TOURNAMENT_TABS = Object.freeze([
     label: "Table",
     path: "table",
     gate: "table",
-    isAvailable: (ctx) => (ctx?.standings?.length || 0) > 0,
+    // A knockout has no points rows but does have a bracket.
+    isAvailable: (ctx) =>
+      (ctx?.standings?.length || 0) > 0 ||
+      (ctx?.bracket?.stages || []).some((stage) => (stage.matches || []).length > 0),
   },
   {
     key: "stats",

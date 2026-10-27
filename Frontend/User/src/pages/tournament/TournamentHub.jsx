@@ -62,13 +62,13 @@ function formatRange(start, end) {
 export default function TournamentHub() {
   const { seriesId, tab: tabParam, slug } = useParams();
   const hub = useTournamentHub(seriesId);
-  const { status, tournament, content, counts, matches, standings, stats, squads, teams } = hub;
+  const { status, tournament, content, counts, matches, standings, bracket, stats, squads, teams } = hub;
 
   const basePath = `/series/${seriesId}`;
 
   const tabs = useMemo(
-    () => resolveTabs({ visibility: hub.visibility, counts, stats, standings, teams, squads }),
-    [hub.visibility, counts, stats, standings, teams, squads],
+    () => resolveTabs({ visibility: hub.visibility, counts, stats, standings, bracket, teams, squads }),
+    [hub.visibility, counts, stats, standings, bracket, teams, squads],
   );
 
   if (status === "loading") return <Spinner />;
@@ -95,6 +95,7 @@ export default function TournamentHub() {
     counts,
     matches,
     standings,
+    bracket,
     stats,
     squads,
     teams,
@@ -186,7 +187,7 @@ export default function TournamentHub() {
         ) : (
           <div className={showSidebar ? "grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_320px] gap-8" : ""}>
             <div className="min-w-0">{TabComponent ? <TabComponent {...params} /> : null}</div>
-            {showSidebar && <TournamentSidebar standings={standings} stats={stats} />}
+            {showSidebar && <TournamentSidebar standings={standings} bracket={bracket} stats={stats} />}
           </div>
         )}
       </div>

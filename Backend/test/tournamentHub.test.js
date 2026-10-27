@@ -22,6 +22,7 @@ import Tournament from "../src/models/Tournament.js";
 import TournamentMedia from "../src/models/TournamentMedia.js";
 import TournamentArticle from "../src/models/TournamentArticle.js";
 import { computeTournamentStats, inningsForMatch } from "../src/services/tournamentStats.js";
+import { buildTournamentBracket } from "../src/services/tournamentBracket.js";
 
 const PREFIX = "TournamentHub";
 let mongod;
@@ -208,6 +209,170 @@ test("computeTournamentStats aggregates a manual scorecard and counts tie/no-res
   assert.equal(stats.bestEconomy.length, 1);
   assert.equal(stats.bestEconomy[0].playerId, "b1");
   assert.equal(stats.bestEconomy[0].economy, 4.5);
+});
+
+// ---------------------------------------------------------------------------
+// Pure aggregation: team totals, did-not-bat rows, overs notation, drafts
+// ---------------------------------------------------------------------------
+
+test("computeTournamentStats totals a scorecard without counting drafts, DNB rows or 3.4 as 20 balls", () => {
+  const teamA = { _id: "t1", name: "Reds", shortName: "RED" };
+  const teamB = { _id: "t2", name: "Blues", shortName: "BLU" };
+  const opener = { _id: "p1", name: "Opener" };
+  const dnb = { _id: "p2", name: "Did Not Bat" };
+  const bowler = { _id: "b1", name: "Spearhead" };
+  const otherBowler = { _id: "b2", name: "Second Change" };
+
+  const inningsA = {
+    team: teamA,
+    runs: 150,
+    wickets: 6,
+    balls: 120,
+    extras: { wides: 5, noBalls: 2, byes: 1, legByes: 0, penalties: 0, total: 8 },
+    batting: [
+      // The 156* shape from the imported QF scorecards.
+      { player: opener, runs: 136, balls: 59, fours: 8, sixes: 14, isOut: false },
+      // An all-zero row with no dismissal is "did not bat" and must not count.
+      { player: dnb, runs: 0, balls: 0, fours: 0, sixes: 0, isOut: false },
+    ],
+    bowling: [
+      // Cricket notation only: no `balls` field. 3.4 overs = 22 balls, not 20.
+      { player: bowler, overs: 3.4, maidens: 0, runs: 30, wickets: 3, wides: 2, noBalls: 1 },
+    ],
+  };
+
+  const inningsB = {
+    team: teamB,
+    runs: 151,
+    wickets: 5,
+    balls: 118,
+    batting: [{ player: otherBowler, runs: 80, balls: 50, fours: 4, sixes: 2, isOut: true, dismissalType: "bowled" }],
+    bowling: [{ player: otherBowler, balls: 24, overs: 4, maidens: 1, runs: 20, wickets: 2 }],
+  };
+
+  const match = {
+    _id: "m1",
+    status: "completed",
+    teams: [teamA, teamB],
+    result: { resultType: "normal", winner: teamB._id },
+    innings: [inningsA, inningsB],
+  };
+
+  // A published-status draft must not count anyway: the draft flag wins.
+  const draft = { ...match, _id: "draft", manualDraft: true, innings: [{ ...inningsA, runs: 999 }] };
+
+  const stats = computeTournamentStats({ matches: [match, draft], minBallsFaced: 30, minOvers: 1 });
+
+  assert.equal(stats.matchCount, 1, "the manual draft is excluded even with status completed");
+  assert.equal(stats.totalRuns, 301, "150 + 151, not the draft's 999");
+  assert.equal(stats.totalWickets, 11);
+  assert.equal(stats.totalFours, 12);
+  assert.equal(stats.totalSixes, 16);
+  assert.equal(stats.tournamentTotals.runs, 301);
+  assert.equal(stats.tournamentTotals.wides, 5, "innings extras take precedence over per-bowler wides");
+  assert.equal(stats.tournamentTotals.noBalls, 2);
+
+  const openerRow = stats.topRunScorers.find((row) => row.playerId === opener._id);
+  assert.equal(openerRow.runs, 136);
+  assert.equal(openerRow.innings, 1);
+  assert.equal(openerRow.notOuts, 1);
+  assert.equal(openerRow.highestText, "136*", "highest score keeps the not-out star");
+  assert.equal(stats.topRunScorers.some((row) => row.playerId === dnb._id), false, "DNB row is not an innings");
+  assert.equal(stats.highestScores[0].runs, 136);
+  assert.equal(stats.highestScores[0].notOut, true);
+
+  const bowlerRow = stats.topWicketTakers.find((row) => row.playerId === bowler._id);
+  assert.equal(bowlerRow.balls, 22, "3.4 overs parses as 22 balls");
+  assert.equal(bowlerRow.oversText, "3.4");
+  assert.equal(bowlerRow.wides, 2);
+  assert.equal(bowlerRow.noBalls, 1);
+
+  const reds = stats.teamStats.find((row) => row.teamId === teamA._id);
+  const blues = stats.teamStats.find((row) => row.teamId === teamB._id);
+  assert.equal(reds.played, 1);
+  assert.equal(reds.lost, 1);
+  assert.equal(reds.runs, 150, "runs scored");
+  assert.equal(reds.runsConceded, 151);
+  assert.equal(reds.wickets, 5, "wickets taken by Reds");
+  assert.equal(reds.wicketsLost, 6);
+  assert.equal(reds.highestTotal, 150);
+  assert.equal(reds.lowestTotal, 150);
+  assert.equal(reds.fours, 8);
+  assert.equal(reds.sixes, 14);
+  assert.equal(blues.played, 1);
+  assert.equal(blues.won, 1);
+  assert.equal(blues.wickets, 6);
+});
+
+// ---------------------------------------------------------------------------
+// Pure bracket: stage rows, auto-advanced semis, placeholders, champion
+// ---------------------------------------------------------------------------
+
+test("buildTournamentBracket renders quarter-finals, auto-advanced semis, placeholders and a champion", () => {
+  const team = (id, name) => ({ _id: id, name, shortName: name.slice(0, 3) });
+  const t1 = team("t1", "Reds");
+  const t2 = team("t2", "Blues");
+  const t3 = team("t3", "Greens");
+  const t4 = team("t4", "Yellows");
+  const t5 = team("t5", "Pinks");
+  const t6 = team("t6", "Purples");
+  const t7 = team("t7", "Oranges");
+  const t8 = team("t8", "Browns");
+  const qf = (id, label, a, b, winner) => ({
+    _id: id,
+    stage: "quarter_final",
+    stageLabel: label,
+    status: "completed",
+    teams: [a, b],
+    result: { resultType: "normal", winner: winner._id },
+    innings: [{ team: a, runs: 140, wickets: 8, balls: 120 }],
+  });
+  const qf1 = qf("m1", "QF1", t1, t2, t1);
+  const qf2 = qf("m2", "QF2", t3, t4, t3);
+  const qf3 = qf("m3", "QF3", t5, t6, t5);
+  const qf4 = qf("m4", "QF4", t7, t8, t7);
+  const qfDraft = qf("md", "QF5", t1, t3, t1);
+  qfDraft.manualDraft = true;
+
+  const sf1 = {
+    _id: "m5",
+    stage: "semi_final",
+    stageLabel: "SF1",
+    status: "upcoming",
+    teams: [t1, t3],
+    result: {},
+    innings: [],
+  };
+
+  const beforeFinal = buildTournamentBracket([qf1, qf2, qf3, qf4, qfDraft, sf1], { type: "knockout" });
+  assert.equal(beforeFinal.isKnockout, true);
+  const stage = (name) => beforeFinal.stages.find((row) => row.stage === name);
+  assert.equal(stage("quarter_final").matches.length, 4, "the draft quarter-final is hidden");
+  assert.equal(stage("semi_final").matches.length, 2, "one real semi plus the expected missing one");
+  assert.equal(stage("semi_final").matches[0].teams[0]._id, "t1", "the published semi already carries the QF winner");
+  assert.equal(stage("semi_final").matches[1].placeholder, true);
+  assert.equal(stage("semi_final").matches[1].label, "Winner QF3");
+  assert.equal(stage("final").matches.length, 1);
+  assert.equal(stage("final").matches[0].placeholder, true);
+  assert.equal(stage("final").matches[0].label, "Winner SF1");
+  assert.equal(beforeFinal.champion, null);
+
+  const final = {
+    _id: "m6",
+    stage: "final",
+    stageLabel: "Final",
+    status: "completed",
+    teams: [t1, t3],
+    result: { resultType: "normal", winner: t1._id, description: "Reds won by 5 wickets" },
+    innings: [{ team: t1, runs: 152, wickets: 5, balls: 118 }],
+  };
+  const afterFinal = buildTournamentBracket([qf1, qf2, qf3, qf4, sf1, final], { type: "knockout" });
+  assert.equal(afterFinal.champion._id, "t1");
+  assert.equal(afterFinal.champion.name, "Reds");
+  const finalCard = afterFinal.stages.find((row) => row.stage === "final").matches[0];
+  assert.equal(finalCard.winner._id, "t1");
+  assert.equal(finalCard.result.description, "Reds won by 5 wickets");
+  assert.equal(finalCard.teams.find((row) => row._id === "t1").score.text, "152/5");
 });
 
 // ---------------------------------------------------------------------------
@@ -424,6 +589,126 @@ test("GET /api/tournaments/:id/standings reuses the points table and adds form",
   assert.equal(res.body.rows[0].team.name, teamA.name, "leaders sort first");
   assert.deepEqual(res.body.rows[0].form, ["W"]);
   assert.deepEqual(res.body.rows[1].form, ["L"]);
+});
+
+// ---------------------------------------------------------------------------
+// Knockout standings and manual-draft visibility
+// ---------------------------------------------------------------------------
+
+test("GET /api/tournaments/:id/standings returns a knockout bracket and hides drafts", async () => {
+  const tournament = await makeTournament("Knockout Cup", { type: "knockout" });
+  const teamA = await makeTeam("KO A");
+  const teamB = await makeTeam("KO B");
+  const teamC = await makeTeam("KO C");
+  const teamD = await makeTeam("KO D");
+  tournament.teams = [teamA._id, teamB._id, teamC._id, teamD._id];
+  await tournament.save();
+
+  const qf1 = await Match.create({
+    title: uniq("KO QF1"),
+    tournament: tournament._id,
+    teams: [teamA._id, teamB._id],
+    stage: "quarter_final",
+    stageLabel: "QF1",
+    status: "completed",
+    result: { resultType: "normal", winner: teamA._id, description: "KO A won by 5 wickets" },
+    innings: [{ team: teamA._id, runs: 150, wickets: 5, balls: 118 }],
+  });
+  const qfDraft = await Match.create({
+    title: uniq("KO QF2 draft"),
+    tournament: tournament._id,
+    teams: [teamC._id, teamD._id],
+    stage: "quarter_final",
+    stageLabel: "QF2",
+    status: "completed",
+    manualDraft: true,
+    result: { resultType: "normal", winner: teamC._id },
+  });
+  await Match.create({
+    title: uniq("KO SF1"),
+    tournament: tournament._id,
+    teams: [teamA._id, teamC._id],
+    stage: "semi_final",
+    stageLabel: "SF1",
+    status: "upcoming",
+  });
+
+  const res = await req("GET", `/api/tournaments/${tournament._id}/standings`);
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.equal(res.body.isKnockout, true);
+  assert.deepEqual(res.body.rows, [], "a knockout has no points rows");
+  assert.ok(res.body.bracket, "the bracket payload is present");
+  assert.equal(res.body.bracket.isKnockout, true);
+
+  const stages = Object.fromEntries(res.body.bracket.stages.map((stage) => [stage.stage, stage]));
+  const qfIds = stages.quarter_final.matches.map((match) => match.matchId);
+  assert.ok(qfIds.includes(String(qf1._id)));
+  assert.ok(!qfIds.includes(String(qfDraft._id)), "the draft quarter-final is not public");
+  assert.equal(stages.semi_final.matches[0].teams[0]._id, String(teamA._id));
+  assert.equal(stages.final.matches[0].placeholder, true);
+  assert.equal(stages.final.matches[0].label, "Winner SF1");
+});
+
+test("manual drafts are hidden from public tournament/match reads but visible to an admin", async () => {
+  const admin = await makeAdminToken();
+  const tournament = await makeTournament("Draft Cup", { type: "knockout" });
+  const teamA = await makeTeam("Draft A");
+  const teamB = await makeTeam("Draft B");
+  tournament.teams = [teamA._id, teamB._id];
+  await tournament.save();
+
+  const published = await Match.create({
+    title: uniq("Published fixture"),
+    tournament: tournament._id,
+    teams: [teamA._id, teamB._id],
+    stage: "quarter_final",
+    stageLabel: "QF1",
+    status: "completed",
+    result: { resultType: "normal", winner: teamA._id },
+  });
+  const draft = await Match.create({
+    title: uniq("Private draft"),
+    tournament: tournament._id,
+    teams: [teamA._id, teamB._id],
+    stage: "quarter_final",
+    stageLabel: "QF2",
+    status: "upcoming",
+    manualDraft: true,
+  });
+  // Normal match creation links each fixture back onto the tournament; the
+  // detail endpoint reads that populated list, so mirror it here.
+  tournament.matches = [published._id, draft._id];
+  await tournament.save();
+
+  const publicTournament = await req("GET", `/api/tournaments/${tournament._id}`);
+  assert.equal(publicTournament.status, 200);
+  assert.ok(
+    !publicTournament.body.matches.some((match) => String(match._id) === String(draft._id)),
+    "a guest's tournament payload has no draft fixture",
+  );
+
+  const adminTournament = await req("GET", `/api/tournaments/${tournament._id}`, { token: admin });
+  assert.ok(
+    adminTournament.body.matches.some((match) => String(match._id) === String(draft._id)),
+    "the admin still sees the draft for editing",
+  );
+
+  const publicFixtures = await req("GET", `/api/tournaments/${tournament._id}/fixtures`);
+  assert.ok(!publicFixtures.body.some((match) => String(match._id) === String(draft._id)));
+  const adminFixtures = await req("GET", `/api/tournaments/${tournament._id}/fixtures`, { token: admin });
+  assert.ok(adminFixtures.body.some((match) => String(match._id) === String(draft._id)));
+
+  const publicList = await req("GET", `/api/matches?tournament=${tournament._id}`);
+  assert.equal(publicList.status, 200);
+  assert.ok(!publicList.body.some((match) => String(match._id) === String(draft._id)));
+  const adminList = await req("GET", `/api/matches?tournament=${tournament._id}`, { token: admin });
+  assert.ok(adminList.body.some((match) => String(match._id) === String(draft._id)));
+
+  const publicMatch = await req("GET", `/api/matches/${draft._id}`);
+  assert.equal(publicMatch.status, 404, "a known draft id must not render publicly");
+  const adminMatch = await req("GET", `/api/matches/${draft._id}`, { token: admin });
+  assert.equal(adminMatch.status, 200);
+  assert.equal(adminMatch.body._id, String(draft._id));
 });
 
 // ---------------------------------------------------------------------------

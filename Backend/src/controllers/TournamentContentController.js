@@ -4,7 +4,14 @@ import Match from "../models/Match.js";
 import TournamentMedia from "../models/TournamentMedia.js";
 import TournamentArticle from "../models/TournamentArticle.js";
 import { storeImage, ensureUploadsDir } from "../utils/photoStore.js";
-import { gatherTournamentStats, computeFormAndNext } from "../services/tournamentStats.js";
+import {
+  gatherTournamentStats,
+  computeFormAndNext,
+  readTournamentStatsCache,
+  writeTournamentStatsCache,
+  invalidateTournamentStatsCache,
+} from "../services/tournamentStats.js";
+import { buildTournamentBracket } from "../services/tournamentBracket.js";
 import {
   HttpError,
   readString,
@@ -35,11 +42,9 @@ function parseIntQuery(value, min, max, fallback) {
   return clampInt(value, min, max, fallback);
 }
 
-// A very small in-process cache for the public stats payload. A live server
-// serves the same tournament to many phones; recomputing on every poll is
-// wasteful. `?fresh=1` bypasses it (used by tests and after an edit).
-const statsCache = new Map();
-const STATS_TTL_MS = 15_000;
+// The stats cache itself lives in `services/tournamentStats.js` so every write
+// path can invalidate it without importing this controller. `?fresh=1` still
+// bypasses it (used by tests and after an edit).
 
 async function requireTournament(req) {
   const tournament = await resolveTournament(req.params.id);
@@ -89,17 +94,13 @@ export const getTournamentStats = async (req, res) => {
   try {
     const tournament = await requireTournament(req);
     const settings = readContentSettings(tournament);
-    const key = `${tournament._id}:${settings.stats.minBallsFaced}:${settings.stats.minOvers}`;
     const fresh = String(req.query?.fresh || "") === "1";
     const now = Date.now();
 
-    let stats;
-    const cached = statsCache.get(key);
-    if (!fresh && cached && cached.expires > now) {
-      stats = cached.value;
-    } else {
+    let stats = fresh ? null : readTournamentStatsCache(tournament._id, settings.stats, now);
+    if (!stats) {
       stats = await gatherTournamentStats(tournament, settings.stats);
-      statsCache.set(key, { value: stats, expires: now + STATS_TTL_MS });
+      writeTournamentStatsCache(tournament._id, settings.stats, stats, now);
     }
 
     res.set("Cache-Control", "public, max-age=15, stale-while-revalidate=30");
@@ -134,12 +135,21 @@ export const getTournamentStandings = async (req, res) => {
     };
 
     const teamIds = (populated.teams || []).map((t) => String(t?._id || t));
-    const matches = await Match.find({ tournament: tournament._id })
-      .select("teams status result startAt round group")
+    const matches = await Match.find({ tournament: tournament._id, manualDraft: { $ne: true } })
+      .select(
+        "teams status result startAt round group stage stageLabel matchNumber " +
+          "innings.team innings.runs innings.wickets innings.balls innings.overs innings.extras " +
+          "innings.batting.runs innings.batting.balls innings.batting.fours innings.batting.sixes " +
+          "innings.batting.isOut innings.batting.dismissalType innings.batting.didNotBat innings.batting.batted",
+      )
       .populate("teams", "name shortName logo")
       .lean();
 
     const { form, next } = computeFormAndNext(matches, teamIds);
+    const bracketMatches = matches.filter(
+      (match) => !(match.teams || []).some((team) => isHiddenRef(team)),
+    );
+    const bracket = buildTournamentBracket(bracketMatches, { type: tournament.type });
 
     const rows = [...(populated.pointsTable || [])]
       .filter((row) => row?.team)
@@ -181,6 +191,8 @@ export const getTournamentStandings = async (req, res) => {
       type: tournament.type,
       hasStandings: rows.length > 0,
       rows,
+      bracket,
+      isKnockout: Boolean(bracket?.isKnockout),
     });
   } catch (error) {
     if (error instanceof HttpError) return res.status(error.status).json({ message: error.message });
@@ -361,7 +373,7 @@ export const adminUpdateContent = async (req, res) => {
     });
 
     const settings = readContentSettings(tournament);
-    statsCache.clear();
+    invalidateTournamentStatsCache(tournament._id);
     res.status(200).json({ settings, message: "Content settings updated" });
   } catch (error) {
     if (error instanceof HttpError) return res.status(error.status).json({ message: error.message });

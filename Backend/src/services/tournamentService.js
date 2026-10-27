@@ -1,5 +1,6 @@
 import Tournament from "../models/Tournament.js";
 import Match from "../models/Match.js";
+import { invalidateTournamentStatsCache } from "./tournamentStats.js";
 
 export const DEFAULT_POINTS = { win: 2, tie: 1, noResult: 1 };
 
@@ -28,6 +29,9 @@ export const pointsConfigOf = (tournament, key) => {
  * match (each team is charged the match's total overs).
  */
 export const recomputeTournamentPoints = async (tournamentId) => {
+  // A publish/completion changes the public stats payload; drop the cached copy
+  // before (and after) the recompute so the next read sees the new scorecard.
+  invalidateTournamentStatsCache(tournamentId);
   const tournament = await Tournament.findById(tournamentId).populate({
     path: "matches",
     populate: { path: "teams", select: "name" },

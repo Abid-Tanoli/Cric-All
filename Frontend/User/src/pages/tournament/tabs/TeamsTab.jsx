@@ -65,12 +65,71 @@ function TeamTile({ team }) {
   );
 }
 
-export default function TeamsTab({ teams = [], squads = [] }) {
+export default function TeamsTab({ teams = [], squads = [], stats = {} }) {
   const squadTeamIds = new Set(squads.map((s) => String(s.team?._id || s.team)));
   const teamsWithoutSquad = teams.filter((team) => !squadTeamIds.has(String(team?._id)));
+  const teamStats = stats?.teamStats || [];
 
   return (
     <div className="space-y-8">
+      {teamStats.length > 0 && (
+        <div>
+          <h2 className="text-xl font-black text-cric-text uppercase tracking-tight flex items-center gap-2 mb-4">
+            <span className="w-2 h-6 bg-blue-600 rounded-full" />
+            Team Stats
+          </h2>
+          <div className="bg-cric-card rounded-2xl shadow-sm overflow-hidden border border-cric-border">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm text-left">
+                <thead className="bg-cric-bg text-cric-muted uppercase text-[11px] font-bold">
+                  <tr>
+                    <th className="px-4 py-3">Team</th>
+                    <th className="px-2 py-3 text-center">M</th>
+                    <th className="px-2 py-3 text-center">W</th>
+                    <th className="px-2 py-3 text-center">L</th>
+                    <th className="px-2 py-3 text-center">Runs</th>
+                    <th className="px-2 py-3 text-center">Wkts</th>
+                    <th className="px-2 py-3 text-center">4s</th>
+                    <th className="px-2 py-3 text-center">6s</th>
+                    <th className="px-2 py-3 text-center">HS</th>
+                    <th className="px-2 py-3 text-center">LS</th>
+                    <th className="px-3 py-3 text-center">RR</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {teamStats.map((row) => (
+                    <tr key={row.teamId} className="hover:bg-cric-bg transition-colors">
+                      <td className="px-4 py-3">
+                        <Link to={`/teams/${row.teamId}`} className="flex items-center gap-2 font-bold text-cric-text hover:text-cric-accent">
+                          <span className="w-7 h-7 rounded bg-white border border-cric-border flex items-center justify-center overflow-hidden">
+                            {row.logo ? (
+                              <img src={row.logo} alt="" className="w-5 h-5 object-contain" />
+                            ) : (
+                              <span className="text-[9px] font-bold text-cric-muted">{(row.name || "T").charAt(0)}</span>
+                            )}
+                          </span>
+                          {row.name || "Team"}
+                        </Link>
+                      </td>
+                      <td className="px-2 py-3 text-center">{row.played || 0}</td>
+                      <td className="px-2 py-3 text-center text-green-600 font-bold">{row.won || 0}</td>
+                      <td className="px-2 py-3 text-center text-red-600 font-bold">{row.lost || 0}</td>
+                      <td className="px-2 py-3 text-center font-black text-blue-800">{row.runs ?? 0}</td>
+                      <td className="px-2 py-3 text-center font-bold">{row.wickets ?? 0}</td>
+                      <td className="px-2 py-3 text-center">{row.fours || 0}</td>
+                      <td className="px-2 py-3 text-center">{row.sixes || 0}</td>
+                      <td className="px-2 py-3 text-center">{row.highestTotalText ?? "-"}</td>
+                      <td className="px-2 py-3 text-center">{row.lowestTotalText ?? "-"}</td>
+                      <td className="px-3 py-3 text-center">{row.runRate ?? "-"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div>
         <h2 className="text-xl font-black text-cric-text uppercase tracking-tight flex items-center gap-2 mb-4">
           <span className="w-2 h-6 bg-purple-600 rounded-full" />

@@ -1,5 +1,5 @@
 import express from 'express';
-import { protect, requireAdmin, requireVerifiedEmail } from '../middleware/authMiddleware.js';
+import { protect, requireAdmin, requireVerifiedEmail, optionalProtect } from '../middleware/authMiddleware.js';
 import { requireTournamentOwnerOrAdmin } from '../middleware/tournamentOwner.js';
 import validateObjectId from '../middleware/validateObjectId.js';
 import {
@@ -26,9 +26,9 @@ const adminOnly = [protect, requireAdmin, requireVerifiedEmail];
 const ownerOrAdmin = [...adminOnly, requireTournamentOwnerOrAdmin];
 
 router.get('/', getTournaments);
-router.get('/:id', validateObjectId('id'), getTournament);
+router.get('/:id', optionalProtect, validateObjectId('id'), getTournament);
 router.get('/:id/points-table', validateObjectId('id'), getTournamentPointsTable);
-router.get('/:id/fixtures', validateObjectId('id'), getTournamentFixtures);
+router.get('/:id/fixtures', optionalProtect, validateObjectId('id'), getTournamentFixtures);
 router.get('/:id/squad', validateObjectId('id'), getTournamentSquad);
 router.get('/:id/squad/:teamId', validateObjectId('id'), validateObjectId('teamId'), getTournamentSquad);
 

@@ -1,5 +1,5 @@
 import express from "express";
-import { protect, requireAdmin, requireVerifiedEmail } from "../middleware/authMiddleware.js";
+import { protect, requireAdmin, requireVerifiedEmail, optionalProtect } from "../middleware/authMiddleware.js";
 import validateObjectId from "../middleware/validateObjectId.js";
 import {
   getMatches,
@@ -108,13 +108,13 @@ const scoring = (idParam) => [protect, requireVerifiedEmail, requireMatchScoreAc
 const squad = (idParam) => [protect, requireVerifiedEmail, requireMatchAccess(idParam, PERMISSIONS.CREATE_MATCH), validateObjectId(idParam)];
 const scoringRateLimit = rateLimiter({ windowMs: 1000, max: 12 });
 
-router.get("/", getMatches);
-router.get("/:id", validateObjectId("id"), getMatch);
-router.get("/:id/stats", validateObjectId("id"), getMatchStats);
-router.get("/:id/live-stats", validateObjectId("id"), getMatchLiveStats);
-router.get("/:id/summary", validateObjectId("id"), getMatchSummary);
-router.get("/:id/partnerships", validateObjectId("id"), getMatchPartnershipsSummary);
-router.get("/:id/squads", validateObjectId("id"), getMatchSquads);
+router.get("/", optionalProtect, getMatches);
+router.get("/:id", optionalProtect, validateObjectId("id"), getMatch);
+router.get("/:id/stats", optionalProtect, validateObjectId("id"), getMatchStats);
+router.get("/:id/live-stats", optionalProtect, validateObjectId("id"), getMatchLiveStats);
+router.get("/:id/summary", optionalProtect, validateObjectId("id"), getMatchSummary);
+router.get("/:id/partnerships", optionalProtect, validateObjectId("id"), getMatchPartnershipsSummary);
+router.get("/:id/squads", optionalProtect, validateObjectId("id"), getMatchSquads);
 router.get("/:id/partnerships/:inning", validateObjectId("id"), getMatchPartnerships);
 router.get("/:id/partnerships/:inning/active", validateObjectId("id"), getActivePartnership);
 router.get("/:id/wagon-wheel/:inning", validateObjectId("id"), getWagonWheelData);

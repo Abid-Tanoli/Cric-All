@@ -11,12 +11,14 @@ import { Link } from "react-router-dom";
 // computes a second, possibly divergent, set of numbers.
 //
 // Fixed, documented order and sizes:
-//   1. Mini points table — top 8
+//   1. Mini points table — top 8 (or the knockout bracket when there are no
+//      points rows, because a pure knockout has no league table)
 //   2. Top Wicket Takers  — top 3
 //   3. Top Run Scorers    — top 3
 
 export const MINI_TABLE_SIZE = 8;
 export const LEADER_SIZE = 3;
+export const SIDEBAR_BRACKET_STAGES = 3;
 
 function TeamRow({ row, index }) {
   const team = row.team || {};
@@ -60,8 +62,69 @@ function LeaderRow({ player, index, metric, value }) {
   );
 }
 
-export default function TournamentSidebar({ standings = [], stats = null }) {
+function BracketMatchRow({ match }) {
+  if (match?.placeholder) {
+    return (
+      <div className="px-2 py-1.5 rounded-lg bg-cric-bg/50">
+        <span className="block truncate text-[11px] font-bold text-cric-muted">{match.label || "TBD"}</span>
+        <span className="block text-[9px] text-cric-muted/70">Awaiting previous round</span>
+      </div>
+    );
+  }
+
+  const teams = match?.teams || [];
+  return (
+    <Link
+      to={match?.matchId ? `/match/${match.matchId}` : "#"}
+      className="block px-2 py-1.5 rounded-lg hover:bg-cric-bg transition-colors"
+    >
+      <span className="block truncate text-[11px] font-bold text-cric-text">
+        {teams.map((team) => `${team.isWinner ? "✓ " : ""}${team.shortName || team.name}`).join(" vs ") || "TBD"}
+      </span>
+      <span className="block truncate text-[9px] text-cric-muted">
+        {match?.result?.description ||
+          teams.map((team) => (team.score ? team.score.text : "-")).join(" - ")}
+      </span>
+    </Link>
+  );
+}
+
+function BracketPreview({ bracket }) {
+  const stages = (bracket?.stages || [])
+    .filter((stage) => (stage.matches || []).length > 0)
+    .slice(-SIDEBAR_BRACKET_STAGES);
+
+  return (
+    <div className="p-2 space-y-2">
+      {stages.map((stage) => (
+        <div key={stage.stage}>
+          <p className="px-2 pb-1 text-[9px] font-black uppercase tracking-widest text-cric-muted">{stage.label}</p>
+          <div className="space-y-0.5">
+            {(stage.matches || []).map((match, index) => (
+              <BracketMatchRow key={match.matchId || `${stage.stage}-${index}`} match={match} />
+            ))}
+          </div>
+        </div>
+      ))}
+      {bracket?.champion?._id && (
+        <Link
+          to={`/teams/${bracket.champion._id}`}
+          className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-green-50 hover:bg-green-100 transition-colors"
+        >
+          <span className="text-[9px] font-black uppercase tracking-widest text-green-800">Champion</span>
+          <span className="flex-1 truncate text-xs font-bold text-cric-text">
+            {bracket.champion.name || bracket.champion.shortName}
+          </span>
+        </Link>
+      )}
+    </div>
+  );
+}
+
+export default function TournamentSidebar({ standings = [], bracket = null, stats = null }) {
   const miniTable = [...standings].slice(0, MINI_TABLE_SIZE);
+  const hasBracket = Boolean(bracket?.isKnockout);
+  const showBracket = hasBracket && miniTable.length === 0;
   const wicketTakers = (stats?.topWicketTakers || []).slice(0, LEADER_SIZE);
   const runScorers = (stats?.topRunScorers || []).slice(0, LEADER_SIZE);
 
@@ -69,9 +132,11 @@ export default function TournamentSidebar({ standings = [], stats = null }) {
     <aside className="space-y-4" data-testid="tournament-sidebar">
       <section className="bg-cric-card rounded-2xl shadow-sm border border-cric-border overflow-hidden" data-testid="sidebar-table">
         <h3 className="px-4 py-3 border-b border-cric-border text-xs font-black uppercase tracking-widest text-cric-muted">
-          Points Table
+          {showBracket ? "Knockout" : "Points Table"}
         </h3>
-        {miniTable.length === 0 ? (
+        {showBracket ? (
+          <BracketPreview bracket={bracket} />
+        ) : miniTable.length === 0 ? (
           <p className="px-4 py-6 text-center text-xs text-cric-muted">No standings yet</p>
         ) : (
           <div className="p-2 space-y-0.5">

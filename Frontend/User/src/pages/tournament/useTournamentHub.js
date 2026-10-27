@@ -31,6 +31,7 @@ const baseState = {
   counts: { matches: 0, photos: 0, videos: 0, articles: 0 },
   matches: [],
   standings: [],
+  bracket: null,
   stats: { empty: true },
   squads: [],
   teams: [],
@@ -86,7 +87,9 @@ export default function useTournamentHub(seriesId) {
       }
 
       const resolvedContent = contentResult.status === "fulfilled" ? contentResult.value : null;
-      const standings = standingsResult.status === "fulfilled" ? standingsResult.value?.rows || [] : [];
+      const standingsPayload = standingsResult.status === "fulfilled" ? standingsResult.value : null;
+      const standings = standingsPayload?.rows || [];
+      const bracket = standingsPayload?.bracket || null;
       const stats = statsResult.status === "fulfilled" ? statsResult.value : { empty: true };
       const squads = squadResult.status === "fulfilled" ? squadResult.value || [] : [];
 
@@ -121,6 +124,7 @@ export default function useTournamentHub(seriesId) {
         },
         matches,
         standings,
+        bracket,
         stats: stats && typeof stats === "object" ? stats : { empty: true },
         squads: Array.isArray(squads) ? squads : [],
         teams: Array.isArray(tournament.teams) ? tournament.teams : [],
