@@ -159,7 +159,7 @@ const DetailedScorecard = ({ match }) => {
               <div key={idx} className="bg-cric-bg dark:bg-slate-700 rounded-lg p-3">
                 <p className="text-xs text-cric-muted dark:text-slate-400 font-semibold uppercase">{inn.team}</p>
                 <p className="text-2xl font-black text-cric-accent dark:text-white">{inn.score}</p>
-                <p className="text-xs text-cric-muted">({inn.overs} ov)</p>
+                <p className="text-xs text-cric-muted">({(typeof inn.balls === 'number') ? `${Math.floor(inn.balls/6)}.${inn.balls%6}` : inn.overs} ov)</p>
                 {inn.powerplay && (
                   <p className="text-xs text-purple-600 dark:text-purple-400 mt-1 font-semibold">PP: {inn.powerplay}</p>
                 )}
