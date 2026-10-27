@@ -29,5 +29,15 @@
   "Sky Sports::Ali": "CREATE:Ali (TBC)",
   "Orangi United::Attaulla": "CREATE:Attaulla (TBC)",
   "Orangi United::?": "CREATE:Unknown Bowler (TBC)",
-  "Orangi Warriors::MD": "CREATE:MD (TBC)"
+  "Orangi Warriors::MD": "CREATE:MD (TBC)",
+  "Khan Associates::Hamza": "Hamza Khan",
+  "Khan Associates::Waqar": "Waqar Kundi",
+  "Khan Associates::Umair": "Umar",
+  "Khan Associates::Taj": "Taj Afridi",
+  "Khan Associates::Imran": "N. Imran",
+  "Khan Associates::Pervez": "Parveez Butt",
+  "Khan Associates::Wabar": "Waqar Kundi",
+  "Khan Associates::Khan": "SM Khan",
+  "Ittehad Sports::Jawad": "Jawaad",
+  "Ittehad Sports::Arbaz": "Arbaaz"
 }
