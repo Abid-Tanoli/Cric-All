@@ -148,6 +148,12 @@ export const getTournament = async (req, res) => {
     // honour. The roster used to be populated with whole Player documents here.
     stripHiddenTeamRefs(tournament, new Set(await hiddenTeamIds()));
 
+    // Manual drafts are not part of the public fixture list. The Admin app sends
+    // an admin token and still sees them while editing/reviewing a tournament.
+    if (req.principalType !== "admin" && Array.isArray(tournament.matches)) {
+      tournament.matches = tournament.matches.filter((match) => !match?.manualDraft);
+    }
+
     res.status(200).json(tournament);
   } catch (error) {
     console.error("Error fetching tournament:", error);
@@ -455,7 +461,12 @@ export const getTournamentFixtures = async (req, res) => {
       return res.status(404).json({ message: "Tournament not found" });
     }
 
-    const matches = await Match.find({ tournament: req.params.id })
+    // Drafts are admin-only work in progress. Keep them out of the public
+    // fixtures feed; the Admin app's token still gets them.
+    const query = { tournament: req.params.id };
+    if (req.principalType !== "admin") query.manualDraft = { $ne: true };
+
+    const matches = await Match.find(query)
       .populate("teams", "name shortName logo")
       .populate("result.winner", "name")
       .sort({ startAt: 1 });

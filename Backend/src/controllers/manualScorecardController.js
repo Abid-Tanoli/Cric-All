@@ -2,11 +2,15 @@ import mongoose from "mongoose";
 import Match from "../models/Match.js";
 import Team from "../models/Team.js";
 import Tournament from "../models/Tournament.js";
-import { validateManualScorecard } from "../services/manualScorecard.js";
+import {
+  validateManualScorecard,
+  formatOversLabel,
+} from "../services/manualScorecard.js";
 import { recomputeTournamentPoints } from "../services/tournamentService.js";
 import { buildMatchInnings } from "../utils/matchInnings.js";
-import { recordAudit } from "../utils/audit.js";
+import { recordAudit, SYSTEM_ACTOR } from "../utils/audit.js";
 import { getIO } from "../socket/socket.js";
+import { invalidateTournamentStatsCache } from "./TournamentContentController.js";
 
 const idOf = (value) => String(value?._id || value || "");
 
@@ -132,6 +136,143 @@ const sendValidationError = (res, errors) =>
     errorLines: errors.map((e) => `${e.path}: ${e.message}`),
   });
 
+const sendManualError = (res, result) => {
+  if (result.errors) return sendValidationError(res, result.errors);
+  return res.status(result.status || 400).json({
+    message: result.message || "Failed to save the manual scorecard.",
+  });
+};
+
+// Every published manual write runs through this function. The Admin form
+// reaches it through PUT /matches/:id/manual, and the operator script reaches
+// it through publishManualMatch() below, so both publish the same way:
+// validate -> status completed/manualDraft false -> recompute standings ->
+// invalidate the public stats cache.
+const applyManualMatch = async (match, body, { req = null, requireComplete = true } = {}) => {
+  const ctx = await loadManualContext(body, match);
+  if (ctx.error) return { ok: false, ...ctx.error };
+
+  const { ok, errors, data } = runValidation(body, ctx, requireComplete);
+  if (!ok) return { ok: false, status: 400, errors };
+
+  const [teamA, teamB] = ctx.teams;
+  match.title = String(body.title || "").trim() || `${teamA.name} vs ${teamB.name}`;
+  match.matchType = ctx.matchType;
+  match.totalOvers = ctx.totalOvers;
+  if (body.venue !== undefined) match.venue = String(body.venue || "").trim();
+  if (body.matchCategory) match.matchCategory = body.matchCategory;
+  if (body.startAt) match.startAt = new Date(body.startAt);
+  match.stage = data.stage;
+  match.stageLabel = data.stageLabel;
+  match.round = data.stage || match.round;
+  match.manualDraft = !requireComplete;
+  match.status = requireComplete ? "completed" : "upcoming";
+  match.manualMeta = { ...(match.manualMeta || {}), lastEditedAt: new Date() };
+  match.tossWinner = data.tossWinner || null;
+  match.tossDecision = data.tossDecision || undefined;
+  match.result = data.result;
+  match.manOfMatch = data.manOfMatch || null;
+  applyInnings(match, data.innings, [ctx.teamA, ctx.teamB], requireComplete);
+  await match.save();
+
+  if (ctx.tournament && requireComplete) {
+    await recomputeTournamentPoints(ctx.tournament._id);
+    invalidateTournamentStatsCache(ctx.tournament._id);
+  }
+
+  await match.populate("teams", "name shortName logo");
+  emitMatchUpdate(match, ctx.tournament?._id);
+
+  await recordAudit({
+    req,
+    // The operator script has no HTTP principal; label its write as the system.
+    actor: req ? undefined : SYSTEM_ACTOR,
+    action: "match.manual_updated",
+    targetType: "match",
+    targetId: match._id,
+    targetLabel: match.title,
+    metadata: {
+      tournamentId: ctx.tournament?._id ? String(ctx.tournament._id) : null,
+      draft: !requireComplete,
+      via: req ? "admin" : "script",
+    },
+  });
+
+  return { ok: true, match };
+};
+
+/** Rebuild the form payload from the scorecard already stored on a draft. */
+export const manualMatchToPayload = (match) => {
+  const plain = typeof match?.toObject === "function" ? match.toObject() : match || {};
+  const innings = (plain.innings || []).map((innings) => ({
+    team: idOf(innings.team),
+    overs: Number(innings.balls) > 0
+      ? formatOversLabel(innings.balls)
+      : (Number(innings.overs) > 0 ? `${innings.overs}.0` : ""),
+    extras: {
+      wides: innings.extras?.wides || 0,
+      noBalls: innings.extras?.noBalls || 0,
+      byes: innings.extras?.byes || 0,
+      legByes: innings.extras?.legByes || 0,
+    },
+    batting: (innings.batting || []).map((row) => ({
+      player: idOf(row.player),
+      runs: row.runs || 0,
+      balls: row.balls || 0,
+      fours: row.fours || 0,
+      sixes: row.sixes || 0,
+      isOut: row.isOut === true,
+      isRetiredHurt: row.isRetiredHurt === true,
+      isRetired: row.isRetired === true,
+      dismissalType: row.dismissalType || "",
+      dismissalText: row.dismissalText || "",
+      dismissedBy: idOf(row.dismissedBy) || undefined,
+      fielder: idOf(row.fielder) || undefined,
+    })),
+    bowling: (innings.bowling || []).map((row) => ({
+      player: idOf(row.player),
+      overs: Number(row.balls) > 0
+        ? formatOversLabel(row.balls)
+        : (Number(row.overs) > 0 ? `${row.overs}.0` : ""),
+      maidens: row.maidens || 0,
+      runs: row.runs || 0,
+      wickets: row.wickets || 0,
+      wides: row.wides || 0,
+      noBalls: row.noBalls || 0,
+    })),
+    // The manual validator stores fall-of-wicket overs as balls.
+    fallOfWickets: (innings.fallOfWickets || []).map((row) => ({
+      runs: row.runs,
+      wickets: row.wickets ?? row.wicket,
+      player: idOf(row.player) || undefined,
+      overs: Number.isFinite(Number(row.overs)) ? formatOversLabel(Number(row.overs)) : "",
+    })),
+  }));
+
+  return {
+    tournamentId: idOf(plain.tournament) || undefined,
+    stage: plain.stage || "",
+    stageLabel: plain.stageLabel || "",
+    teamA: idOf(plain.teams?.[0]),
+    teamB: idOf(plain.teams?.[1]),
+    startAt: plain.startAt ? new Date(plain.startAt).toISOString() : undefined,
+    totalOvers: plain.totalOvers || 20,
+    venue: plain.venue || "",
+    title: plain.title || "",
+    tossWinner: idOf(plain.tossWinner) || undefined,
+    tossDecision: plain.tossDecision || undefined,
+    draft: false,
+    innings,
+    result: {
+      resultType: plain.result?.resultType || "normal",
+      winner: idOf(plain.result?.winner),
+      margin: plain.result?.margin || "",
+      note: plain.result?.description || "",
+    },
+    manOfMatch: idOf(plain.manOfMatch) || "",
+  };
+};
+
 export const createManualMatch = async (req, res) => {
   try {
     const body = req.body || {};
@@ -172,7 +313,10 @@ export const createManualMatch = async (req, res) => {
     if (ctx.tournament) {
       ctx.tournament.matches.push(match._id);
       await ctx.tournament.save();
-      if (requireComplete) await recomputeTournamentPoints(ctx.tournament._id);
+      if (requireComplete) {
+        await recomputeTournamentPoints(ctx.tournament._id);
+        invalidateTournamentStatsCache(ctx.tournament._id);
+      }
     }
 
     await match.populate("teams", "name shortName logo");
@@ -208,55 +352,86 @@ export const updateManualMatch = async (req, res) => {
     }
 
     const body = req.body || {};
-    const ctx = await loadManualContext(body, match);
-    if (ctx.error) return res.status(ctx.error.status).json({ message: ctx.error.message });
-
     const requireComplete = body.draft !== true;
-    const { ok, errors, data } = runValidation(body, ctx, requireComplete);
-    if (!ok) return sendValidationError(res, errors);
+    const result = await applyManualMatch(match, body, { req, requireComplete });
+    if (!result.ok) return sendManualError(res, result);
 
-    const [teamA, teamB] = ctx.teams;
-    match.title = String(body.title || "").trim() || `${teamA.name} vs ${teamB.name}`;
-    match.matchType = ctx.matchType;
-    match.totalOvers = ctx.totalOvers;
-    if (body.venue !== undefined) match.venue = String(body.venue || "").trim();
-    if (body.matchCategory) match.matchCategory = body.matchCategory;
-    if (body.startAt) match.startAt = new Date(body.startAt);
-    match.stage = data.stage;
-    match.stageLabel = data.stageLabel;
-    match.round = data.stage || match.round;
-    match.manualDraft = !requireComplete;
-    match.status = requireComplete ? "completed" : "upcoming";
-    match.manualMeta = { ...(match.manualMeta || {}), lastEditedAt: new Date() };
-    match.tossWinner = data.tossWinner || null;
-    match.tossDecision = data.tossDecision || undefined;
-    match.result = data.result;
-    match.manOfMatch = data.manOfMatch || null;
-    applyInnings(match, data.innings, [ctx.teamA, ctx.teamB], requireComplete);
-    await match.save();
-
-    if (ctx.tournament && requireComplete) await recomputeTournamentPoints(ctx.tournament._id);
-
-    await match.populate("teams", "name shortName logo");
-    emitMatchUpdate(match, ctx.tournament?._id);
-
-    recordAudit({
-      req,
-      action: "match.manual_updated",
-      targetType: "match",
-      targetId: match._id,
-      targetLabel: match.title,
-      metadata: {
-        tournamentId: ctx.tournament?._id ? String(ctx.tournament._id) : null,
-        draft: !requireComplete,
-      },
-    });
-
-    res.status(200).json({ match, message: requireComplete ? "Manual scorecard updated." : "Draft updated." });
+    res.status(200).json({ match: result.match, message: requireComplete ? "Manual scorecard updated." : "Draft updated." });
   } catch (error) {
     console.error("Error updating manual match:", error);
     res.status(400).json({ message: error.message || "Failed to update the manual scorecard." });
   }
 };
 
-export default { createManualMatch, updateManualMatch };
+/** Admin-only list for the Manual Scorecard page. Never filtered by creator. */
+export const getManualMatches = async (req, res) => {
+  try {
+    const matches = await Match.find({ source: "manual" })
+      .select([
+        "title",
+        "stage",
+        "stageLabel",
+        "round",
+        "startAt",
+        "status",
+        "source",
+        "manualDraft",
+        "manualMeta",
+        "tournament",
+        "teams",
+        "totalOvers",
+        "result",
+        "createdAt",
+        "updatedAt",
+      ].join(" "))
+      .populate("teams", "name shortName logo")
+      .populate("tournament", "name")
+      .sort({ manualDraft: -1, startAt: -1, updatedAt: -1 })
+      .lean();
+
+    res.status(200).json({ matches });
+  } catch (error) {
+    console.error("Error fetching manual matches:", error);
+    res.status(500).json({ message: "Failed to fetch manual matches." });
+  }
+};
+
+/**
+ * Publish a stored draft without re-entering its numbers. Shared by the
+ * operator script and the same applyManualMatch path the Admin PUT uses.
+ * dryRun validates without writing.
+ */
+export const publishManualMatch = async (matchId, { req = null, dryRun = false } = {}) => {
+  try {
+    const match = await Match.findById(matchId);
+    if (!match) return { ok: false, status: 404, message: "Match not found." };
+    if (match.source !== "manual") {
+      return { ok: false, status: 409, message: "Only a manual scorecard can be published here." };
+    }
+    if (match.manualDraft !== true) {
+      return { ok: true, skipped: true, match, message: "Match is already published." };
+    }
+
+    const body = manualMatchToPayload(match);
+    if (dryRun) {
+      const ctx = await loadManualContext(body, match);
+      if (ctx.error) return { ok: false, ...ctx.error };
+      const { ok, errors } = runValidation(body, ctx, true);
+      return ok
+        ? { ok: true, match, payload: body }
+        : { ok: false, status: 400, errors };
+    }
+
+    return await applyManualMatch(match, body, { req, requireComplete: true });
+  } catch (error) {
+    return { ok: false, status: 400, message: error.message || "Failed to publish the manual scorecard." };
+  }
+};
+
+export default {
+  createManualMatch,
+  updateManualMatch,
+  getManualMatches,
+  publishManualMatch,
+  manualMatchToPayload,
+};

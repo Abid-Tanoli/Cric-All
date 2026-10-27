@@ -61,9 +61,11 @@ before(async () => {
   mongod = await startTestDb();
 
   const { default: matchRoutes } = await import("../src/routes/matchRoutes.js");
+  const { default: tournamentRoutes } = await import("../src/routes/tournamentRoutes.js");
   const app = express();
   app.use(express.json());
   app.use("/matches", matchRoutes);
+  app.use("/tournaments", tournamentRoutes);
 
   server = http.createServer(app);
   await new Promise((resolve) => server.listen(0, resolve));
@@ -116,6 +118,20 @@ const makeTournament = async (teamA, teamB) =>
     type: "knockout",
     teams: [teamA._id, teamB._id],
   });
+
+// Public-list tests need names that the reserved-test-team filter does not hide.
+const makeVisibleClub = async () => {
+  seq += 1;
+  const playersA = await Player.create(
+    Array.from({ length: 4 }, (_, i) => ({ name: `Manual Public A${seq}_${i}` }))
+  );
+  const playersB = await Player.create(
+    Array.from({ length: 4 }, (_, i) => ({ name: `Manual Public B${seq}_${i}` }))
+  );
+  const teamA = await Team.create({ name: `Manual Public A ${seq}`, players: playersA.map((p) => p._id) });
+  const teamB = await Team.create({ name: `Manual Public B ${seq}`, players: playersB.map((p) => p._id) });
+  return { teamA, teamB, playersA, playersB };
+};
 
 const buildPayload = ({ teamA, teamB, playersA, playersB, tournamentId, draft = false } = {}) => ({
   tournamentId: tournamentId ? String(tournamentId) : undefined,
@@ -385,4 +401,99 @@ test("deleting a manual match audits the action and unlinks it from the tourname
 
   const audit = await AuditLog.findOne({ action: "match.manual_deleted", targetId: String(id) });
   assert.ok(audit, "a manual delete must write an audit entry");
+});
+
+// ---------------------------------------------------------------------------
+// Admin draft library + public draft exclusion
+// ---------------------------------------------------------------------------
+
+test("the admin manual-match list returns drafts and published matches for any creator", async () => {
+  const club = await makeClub();
+  const tournament = await makeTournament(club.teamA, club.teamB);
+  const draft = await call("POST", "/matches/manual", adminToken, {
+    ...buildPayload({ ...club, tournamentId: tournament._id }),
+    draft: true,
+    innings: [],
+    result: {},
+    manOfMatch: "",
+  });
+  assert.equal(draft.status, 201, JSON.stringify(draft.body));
+
+  const published = await call("POST", "/matches/manual", adminToken, buildPayload({ ...club, tournamentId: tournament._id }));
+  assert.equal(published.status, 201, JSON.stringify(published.body));
+
+  const anonymous = await call("GET", "/matches/manual");
+  assert.equal(anonymous.status, 401);
+
+  const user = await User.create({
+    name: "Manual Viewer",
+    email: `manual-viewer-${Math.random().toString(36).slice(2, 8)}@openctest.dev`,
+    password: "password-123",
+    role: "viewer",
+    emailVerified: true,
+  });
+  const nonAdmin = await call("GET", "/matches/manual", generateToken(user));
+  assert.equal(nonAdmin.status, 403);
+
+  const listed = await call("GET", "/matches/manual", adminToken);
+  assert.equal(listed.status, 200, JSON.stringify(listed.body));
+  const ids = listed.body.matches.map((match) => String(match._id));
+  assert.ok(ids.includes(String(draft.body.match._id)), "draft is listed");
+  assert.ok(ids.includes(String(published.body.match._id)), "published match is listed");
+
+  const draftRow = listed.body.matches.find((match) => String(match._id) === String(draft.body.match._id));
+  assert.equal(draftRow.manualDraft, true);
+  assert.equal(draftRow.stageLabel, "QF1");
+  assert.equal(draftRow.tournament.name, tournament.name);
+  assert.equal(draftRow.teams.length, 2);
+});
+
+test("manual drafts are never exposed by the public match or tournament reads", async () => {
+  const club = await makeVisibleClub();
+  const tournament = await makeTournament(club.teamA, club.teamB);
+  const draft = await call("POST", "/matches/manual", adminToken, {
+    ...buildPayload({ ...club, tournamentId: tournament._id }),
+    draft: true,
+    innings: [],
+    result: {},
+    manOfMatch: "",
+  });
+  assert.equal(draft.status, 201, JSON.stringify(draft.body));
+  const draftId = String(draft.body.match._id);
+
+  const publicFeed = await call("GET", "/matches");
+  assert.equal(publicFeed.status, 200);
+  assert.ok(!publicFeed.body.some((match) => String(match._id) === draftId), "draft absent from GET /matches");
+
+  const filteredFeed = await call("GET", `/matches?tournament=${tournament._id}`);
+  assert.ok(!filteredFeed.body.some((match) => String(match._id) === draftId));
+
+  const anonymousDetail = await call("GET", `/matches/${draftId}`);
+  assert.equal(anonymousDetail.status, 404, "anonymous draft detail is not addressable");
+
+  const user = await User.create({
+    name: "Manual Reader",
+    email: `manual-reader-${Math.random().toString(36).slice(2, 8)}@openctest.dev`,
+    password: "password-123",
+    role: "viewer",
+    emailVerified: true,
+  });
+  const nonAdminDetail = await call("GET", `/matches/${draftId}`, generateToken(user));
+  assert.equal(nonAdminDetail.status, 404, "a signed-in non-admin cannot open a draft");
+
+  const adminDetail = await call("GET", `/matches/${draftId}`, adminToken);
+  assert.equal(adminDetail.status, 200, JSON.stringify(adminDetail.body));
+  assert.equal(adminDetail.body.manualDraft, true);
+
+  const publicFixtures = await call("GET", `/tournaments/${tournament._id}/fixtures`);
+  assert.ok(!publicFixtures.body.some((match) => String(match._id) === draftId));
+
+  const adminFixtures = await call("GET", `/tournaments/${tournament._id}/fixtures`, adminToken);
+  assert.ok(adminFixtures.body.some((match) => String(match._id) === draftId));
+
+  const publicTournament = await call("GET", `/tournaments/${tournament._id}`);
+  assert.ok(!(publicTournament.body.matches || []).some((match) => String(match._id) === draftId));
+
+  const adminTournament = await call("GET", `/tournaments/${tournament._id}`, adminToken);
+  assert.ok((adminTournament.body.matches || []).some((match) => String(match._id) === draftId));
 });

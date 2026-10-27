@@ -330,7 +330,9 @@ export const getTeamMatches = async (req, res) => {
       return res.status(404).json({ message: "Team not found" });
     }
     const { default: Match } = await import("../models/Match.js");
-    const matches = await Match.find({ teams: req.params.id })
+    const query = { teams: req.params.id };
+    if (req.principalType !== "admin") query.manualDraft = { $ne: true };
+    const matches = await Match.find(query)
       .populate("teams", "name shortName logo")
       .sort({ startAt: -1 })
       .limit(20);

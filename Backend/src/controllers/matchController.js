@@ -201,6 +201,10 @@ export const getMatches = async (req, res) => {
     if (seriesFilter) query.series = seriesFilter;
     if (req.query.tournament) query.tournament = req.query.tournament;
 
+    // Draft manual scorecards are admin work-in-progress. They are listed only
+    // by GET /matches/manual and must never appear in the public match feed.
+    query.manualDraft = { $ne: true };
+
     // Fix B: the public match feed omits matches that involve a hidden team or
     // a fixture. Org-scoped reads (`GET /organizations/:id/matches`) live in
     // `orgMatchesController` and are not filtered — that is a member's view.
@@ -234,6 +238,12 @@ export const getMatch = async (req, res) => {
     const match = await populateMatch(Match.findById(req.params.id));
 
     if (!match) {
+      return res.status(404).json({ message: "Match not found" });
+    }
+
+    // A draft is addressable only from the Admin app. The public scorecard and
+    // any signed-in non-admin get the same 404 as a missing id.
+    if (match.manualDraft && req.principalType !== "admin") {
       return res.status(404).json({ message: "Match not found" });
     }
 

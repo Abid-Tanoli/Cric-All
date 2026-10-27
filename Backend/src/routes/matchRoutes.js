@@ -1,5 +1,5 @@
 import express from "express";
-import { protect, requireAdmin, requireVerifiedEmail } from "../middleware/authMiddleware.js";
+import { protect, optionalProtect, requireAdmin, requireVerifiedEmail } from "../middleware/authMiddleware.js";
 import validateObjectId from "../middleware/validateObjectId.js";
 import {
   getMatches,
@@ -51,7 +51,8 @@ import {
 } from "../controllers/inningsController.js";
 import {
   createManualMatch,
-  updateManualMatch
+  updateManualMatch,
+  getManualMatches
 } from "../controllers/manualScorecardController.js";
 import {
   getMatchPartnerships,
@@ -109,7 +110,10 @@ const squad = (idParam) => [protect, requireVerifiedEmail, requireMatchAccess(id
 const scoringRateLimit = rateLimiter({ windowMs: 1000, max: 12 });
 
 router.get("/", getMatches);
-router.get("/:id", validateObjectId("id"), getMatch);
+// Admin list for the Manual Scorecard page. Literal path must be declared
+// before `/:id` so "manual" is never parsed as a match id.
+router.get("/manual", ...adminOnly, getManualMatches);
+router.get("/:id", optionalProtect, validateObjectId("id"), getMatch);
 router.get("/:id/stats", validateObjectId("id"), getMatchStats);
 router.get("/:id/live-stats", validateObjectId("id"), getMatchLiveStats);
 router.get("/:id/summary", validateObjectId("id"), getMatchSummary);

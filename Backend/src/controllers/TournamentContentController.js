@@ -41,6 +41,21 @@ function parseIntQuery(value, min, max, fallback) {
 const statsCache = new Map();
 const STATS_TTL_MS = 15_000;
 
+/**
+ * Drop cached stats after a result changes. A specific tournament only clears
+ * that tournament's entries; no argument clears everything (content edits).
+ */
+export function invalidateTournamentStatsCache(tournamentId) {
+  if (!tournamentId) {
+    statsCache.clear();
+    return;
+  }
+  const prefix = `${String(tournamentId)}:`;
+  for (const key of statsCache.keys()) {
+    if (key.startsWith(prefix)) statsCache.delete(key);
+  }
+}
+
 async function requireTournament(req) {
   const tournament = await resolveTournament(req.params.id);
   if (!tournament) throw new HttpError(404, "Tournament not found");
@@ -361,7 +376,7 @@ export const adminUpdateContent = async (req, res) => {
     });
 
     const settings = readContentSettings(tournament);
-    statsCache.clear();
+    invalidateTournamentStatsCache();
     res.status(200).json({ settings, message: "Content settings updated" });
   } catch (error) {
     if (error instanceof HttpError) return res.status(error.status).json({ message: error.message });
