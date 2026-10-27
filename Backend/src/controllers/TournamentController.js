@@ -16,10 +16,16 @@ import {
   reservedNamesMongoClause,
   stripHiddenTeamRefs,
   PLAYER_ROSTER_SELECT,
+  PUBLIC_MATCH_FILTER,
+  isDraftMatchDoc,
 } from "../utils/publicProjection.js";
 import { deleteTournamentContent } from "../services/tournamentContent.js";
 
 const CONTROLLER_MATCH_CATEGORY = "Other";
+
+// Public reads hide manual drafts. A platform admin keeps seeing them so the
+// Admin fixtures/scorecard screens can work against the same endpoint.
+const canSeeDrafts = (req) => req?.principalType === "admin";
 
 const MIN_TEAMS_BY_TYPE = {
   knockout: 2,
@@ -143,16 +149,17 @@ export const getTournament = async (req, res) => {
       return res.status(404).json({ message: "Tournament not found" });
     }
 
+    // Draft manual scorecards are private until published. The fixtures payload
+    // is what the public hub groups, so a draft must not appear as an upcoming
+    // match. An admin keeps seeing them for editing.
+    if (!canSeeDrafts(req)) {
+      tournament.matches = (tournament.matches || []).filter((match) => !isDraftMatchDoc(match));
+    }
+
     // Fix B: detail-by-id stays reachable (ids are unguessable) but a guest's
     // tournament page does not carry a hidden team's standings, matches or
     // honour. The roster used to be populated with whole Player documents here.
     stripHiddenTeamRefs(tournament, new Set(await hiddenTeamIds()));
-
-    // Manual drafts are not part of the public fixture list. The Admin app sends
-    // an admin token and still sees them while editing/reviewing a tournament.
-    if (req.principalType !== "admin" && Array.isArray(tournament.matches)) {
-      tournament.matches = tournament.matches.filter((match) => !match?.manualDraft);
-    }
 
     res.status(200).json(tournament);
   } catch (error) {
@@ -461,12 +468,9 @@ export const getTournamentFixtures = async (req, res) => {
       return res.status(404).json({ message: "Tournament not found" });
     }
 
-    // Drafts are admin-only work in progress. Keep them out of the public
-    // fixtures feed; the Admin app's token still gets them.
-    const query = { tournament: req.params.id };
-    if (req.principalType !== "admin") query.manualDraft = { $ne: true };
-
-    const matches = await Match.find(query)
+    const filters = { tournament: req.params.id };
+    if (!canSeeDrafts(req)) Object.assign(filters, PUBLIC_MATCH_FILTER);
+    const matches = await Match.find(filters)
       .populate("teams", "name shortName logo")
       .populate("result.winner", "name")
       .sort({ startAt: 1 });

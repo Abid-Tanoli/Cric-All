@@ -10,7 +10,7 @@ import { recomputeTournamentPoints } from "../services/tournamentService.js";
 import { buildMatchInnings } from "../utils/matchInnings.js";
 import { recordAudit, SYSTEM_ACTOR } from "../utils/audit.js";
 import { getIO } from "../socket/socket.js";
-import { invalidateTournamentStatsCache } from "./TournamentContentController.js";
+import { invalidateTournamentStatsCache } from "../services/tournamentStats.js";
 
 const idOf = (value) => String(value?._id || value || "");
 

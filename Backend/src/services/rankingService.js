@@ -72,10 +72,18 @@ export async function computeTeamRanking(teamId) {
       if (inningsTeamId === teamId) {
         totalRunsScored += innings.runs || 0;
         totalWicketsTaken += innings.wickets || 0;
-        totalOversBatting += innings.overs || 0;
+        if (typeof innings.balls === 'number' && innings.balls > 0) {
+          totalOversBatting += innings.balls / 6;
+        } else {
+          totalOversBatting += innings.overs || 0;
+        }
       } else {
         totalRunsConceded += innings.runs || 0;
-        totalOversBowling += innings.overs || 0;
+        if (typeof innings.balls === 'number' && innings.balls > 0) {
+          totalOversBowling += innings.balls / 6;
+        } else {
+          totalOversBowling += innings.overs || 0;
+        }
       }
     }
   }

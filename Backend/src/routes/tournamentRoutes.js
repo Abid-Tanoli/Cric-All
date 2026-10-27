@@ -1,5 +1,5 @@
 import express from 'express';
-import { protect, optionalProtect, requireAdmin, requireVerifiedEmail } from '../middleware/authMiddleware.js';
+import { protect, requireAdmin, requireVerifiedEmail, optionalProtect } from '../middleware/authMiddleware.js';
 import { requireTournamentOwnerOrAdmin } from '../middleware/tournamentOwner.js';
 import validateObjectId from '../middleware/validateObjectId.js';
 import {

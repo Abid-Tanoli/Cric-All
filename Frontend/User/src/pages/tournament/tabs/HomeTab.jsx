@@ -24,11 +24,13 @@ function MiniMatchLink({ match }) {
   );
 }
 
-export default function HomeTab({ tournament, content, matches = [], stats = {}, basePath }) {
+export default function HomeTab({ content, matches = [], stats = {}, basePath }) {
   const { live, completed, upcoming } = groupMatches(matches);
   const overview = content?.overview || {};
-  const sixes = stats?.boundaryMeter?.sixes || 0;
-  const fours = stats?.boundaryMeter?.fours || 0;
+  const sixes = stats?.boundaryMeter?.sixes ?? stats?.totalSixes ?? 0;
+  const fours = stats?.boundaryMeter?.fours ?? stats?.totalFours ?? 0;
+  const totalRuns = stats?.totalRuns ?? stats?.tournamentTotals?.runs ?? 0;
+  const totalWickets = stats?.totalWickets ?? stats?.tournamentTotals?.wickets ?? 0;
 
   return (
     <div className="space-y-8">
@@ -41,12 +43,15 @@ export default function HomeTab({ tournament, content, matches = [], stats = {},
         </div>
       )}
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
         <StatBox value={matches.length} label="Total Matches" />
         <StatBox value={live.length} label="Live" tone="text-red-600" />
         <StatBox value={completed.length} label="Completed" tone="text-green-600" />
         <StatBox value={upcoming.length} label="Upcoming" tone="text-blue-600" />
-        <StatBox value={`${sixes}/${fours}`} label="6s / 4s" tone="text-purple-600" />
+        <StatBox value={sixes} label="Sixes" tone="text-purple-600" />
+        <StatBox value={fours} label="Fours" tone="text-purple-600" />
+        <StatBox value={totalRuns} label="Total Runs" tone="text-cric-accent" />
+        <StatBox value={totalWickets} label="Wickets" tone="text-amber-600" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
