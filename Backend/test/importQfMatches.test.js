@@ -20,6 +20,7 @@ import Team from "../src/models/Team.js";
 import Player from "../src/models/Player.js";
 import { validateManualScorecard } from "../src/services/manualScorecard.js";
 import {
+  MATCH_EXPECTATIONS,
   parseScorecardWorkbook,
   validateInnings,
   matchPlayerName,
@@ -27,7 +28,12 @@ import {
   isSkippableBattingRow,
   parseCreateMappingValue,
   collectCreateSpecs,
+  createSpecsForPlan,
   ensurePlaceholderPlayers,
+  groupSheetsByMatch,
+  matchNumberFromSheetName,
+  stageLabelForMatch,
+  parseMatchDate,
 } from "../src/scripts/importQfMatches.js";
 
 const BATTING_HEADERS = [
@@ -127,24 +133,103 @@ function bowlingTotalRow(innings) {
   return cells;
 }
 
-function buildWorkbook(innings = INNINGS) {
-  const rows = [["CRICKET MATCH SCORECARD - TINY VS TEST (fixture)"], []];
-  for (const [index, data] of Object.entries(innings)) {
-    if (index === "second") rows.push([]);
+function matchRows(title, innings) {
+  const rows = [[title], []];
+  innings.forEach((data, index) => {
+    if (index) rows.push([]);
     rows.push([data.header]);
     rows.push(BATTING_HEADERS);
     data.batting.forEach((row, position) => rows.push(battingRow(position + 1, row)));
     rows.push(battingTotalRow(data));
     rows.push([]);
-    rows.push([`BOWLING - ${index === "first" ? "TEST" : "TINY"}`]);
+    rows.push([`BOWLING - ${data.bowlingTeam}`]);
     rows.push(BOWLING_HEADERS);
     data.bowling.forEach((row, position) => rows.push(bowlingRow(position + 1, row)));
     rows.push(bowlingTotalRow(data));
-  }
-  const worksheet = xlsx.utils.aoa_to_sheet(rows);
+  });
+  return rows;
+}
+
+function workbookFromSheets(sheets) {
   const workbook = xlsx.utils.book_new();
-  xlsx.utils.book_append_sheet(workbook, worksheet, "Match 1 - Tiny vs Test");
+  for (const sheet of sheets) {
+    const worksheet = xlsx.utils.aoa_to_sheet(matchRows(sheet.title, sheet.innings));
+    xlsx.utils.book_append_sheet(workbook, worksheet, sheet.sheetName);
+  }
   return xlsx.write(workbook, { bookType: "xlsx", type: "buffer" });
+}
+
+function buildWorkbook(innings = INNINGS) {
+  const values = Object.values(innings);
+  return workbookFromSheets([
+    {
+      title: "CRICKET MATCH SCORECARD - TINY VS TEST (11 Oct 2026)",
+      sheetName: "Match 1 - Tiny vs Test",
+      innings: values.map((data, index) => ({
+        ...data,
+        bowlingTeam: index === 0 ? "TEST" : "TINY",
+      })),
+    },
+  ]);
+}
+
+// Small synthetic QF4 card with the real adjusted totals. It uses 11 batsmen
+// per innings (10 out + 1 not out) and seven bowlers, but is still hand-sized.
+const QF4_INNINGS = [
+  {
+    header: "1ST INNINGS - KHAN ASSOCIATES (BATTING) vs ITTEHAD SPORTS (BOWLING)",
+    bowlingTeam: "ITTEHAD SPORTS",
+    batting: [
+      ...Array.from({ length: 6 }, (_, i) => ({ name: `Khan Bat ${i + 1}`, balls: 20, runs: 30, fours: 0, sixes: 0, status: "Out" })),
+      { name: "Khan Bat 7", balls: 15, runs: 26, fours: 0, sixes: 0, status: "Out" },
+      { name: "Khan Bat 8", balls: 10, runs: 10, fours: 0, sixes: 0, status: "Out" },
+      { name: "Khan Bat 9", balls: 5, runs: 10, fours: 0, sixes: 0, status: "Out" },
+      { name: "Khan Bat 10", balls: 0, runs: 0, fours: 0, sixes: 0, status: "Out" },
+      { name: "Khan Bat 11", balls: 0, runs: 0, fours: 0, sixes: 0, status: "Not Out" },
+    ],
+    extras: 9,
+    total: 235,
+    bowling: [
+      { name: "Ittehad Bowl 1", overs: 3, runs: 40, wickets: 2 },
+      { name: "Ittehad Bowl 2", overs: 3, runs: 40, wickets: 2 },
+      { name: "Ittehad Bowl 3", overs: 3, runs: 40, wickets: 2 },
+      { name: "Ittehad Bowl 4", overs: 3, runs: 40, wickets: 2 },
+      { name: "Ittehad Bowl 5", overs: 3, runs: 33, wickets: 1 },
+      { name: "Ittehad Bowl 6", overs: 3, runs: 20, wickets: 1 },
+      { name: "Ittehad Bowl 7", overs: 2, runs: 13, wickets: 0 },
+    ],
+  },
+  {
+    header: "2ND INNINGS - ITTEHAD SPORTS (BATTING) vs KHAN ASSOCIATES (BOWLING)",
+    bowlingTeam: "KHAN ASSOCIATES",
+    batting: [
+      ...Array.from({ length: 8 }, (_, i) => ({ name: `Ittehad Bat ${i + 1}`, balls: 12, runs: 20, fours: 0, sixes: 0, status: "Out" })),
+      { name: "Ittehad Bat 9", balls: 11, runs: 12, fours: 0, sixes: 0, status: "Out" },
+      { name: "Ittehad Bat 10", balls: 0, runs: 0, fours: 0, sixes: 0, status: "Out" },
+      { name: "Ittehad Bat 11", balls: 0, runs: 0, fours: 0, sixes: 0, status: "Not Out" },
+    ],
+    extras: 60,
+    total: 232,
+    bowling: [
+      { name: "Khan Bowl 1", overs: 2, runs: 30, wickets: 0 },
+      { name: "Khan Bowl 2", overs: 2, runs: 30, wickets: 1 },
+      { name: "Khan Bowl 3", overs: 4, runs: 40, wickets: 2 },
+      { name: "Khan Bowl 4", overs: 3.5, runs: 35, wickets: 2 },
+      { name: "Khan Bowl 5", overs: 1, runs: 10, wickets: 0 },
+      { name: "Khan Bowl 6", overs: 4, runs: 30, wickets: 2 },
+      { name: "Khan Bowl 7", overs: 3, runs: 26, wickets: 3 },
+    ],
+  },
+];
+
+function buildQf4Workbook() {
+  return workbookFromSheets([
+    {
+      title: "CRICKET MATCH SCORECARD - KHAN ASSOCIATES VS ITTEHAD SPORTS (18 Oct 2026)",
+      sheetName: "Match 4 - Khan vs Ittehad",
+      innings: QF4_INNINGS,
+    },
+  ]);
 }
 
 test("reads both innings and their scorebook totals", () => {
@@ -172,6 +257,115 @@ test("reads both innings and their scorebook totals", () => {
   assert.equal(second.bowlingTeam, "TINY");
   assert.equal(second.battingTotal.runs, 21);
   assert.equal(second.bowlingTotal.wickets, 1);
+});
+
+test("sheet name Match 4 maps to QF4 and teams/date come from the sheet", () => {
+  const { sheets } = parseScorecardWorkbook(buildQf4Workbook());
+  assert.equal(sheets.length, 1);
+  const [sheet] = sheets;
+
+  assert.equal(matchNumberFromSheetName(sheet.sheetName), 4);
+  assert.equal(stageLabelForMatch(4), "QF4");
+  assert.equal(sheet.innings[0].battingTeam, "KHAN ASSOCIATES");
+  assert.equal(sheet.innings[0].bowlingTeam, "ITTEHAD SPORTS");
+  assert.equal(sheet.innings[1].battingTeam, "ITTEHAD SPORTS");
+  assert.equal(sheet.innings[1].bowlingTeam, "KHAN ASSOCIATES");
+  assert.equal(sheet.matchDate.toISOString(), "2026-10-18T00:00:00.000Z");
+  assert.equal(parseMatchDate("CRICKET MATCH SCORECARD - X VS Y (18 Oct 2026)").toISOString(), "2026-10-18T00:00:00.000Z");
+  assert.equal(parseMatchDate("no date here"), null);
+});
+
+test("QF4 validates 226+9=235 and 172+60=232 with the expected extras split", () => {
+  const { sheets } = parseScorecardWorkbook(buildQf4Workbook());
+  const [first, second] = sheets[0].innings;
+
+  const firstValidation = validateInnings(first, MATCH_EXPECTATIONS[4].innings[0]);
+  assert.deepEqual(firstValidation.errors, []);
+  assert.equal(firstValidation.model.runs, 235);
+  assert.equal(firstValidation.model.wickets, 10);
+  assert.equal(firstValidation.model.overs, "20");
+  assert.equal(firstValidation.model.raw.battingRuns, 226);
+  assert.equal(firstValidation.model.raw.extras, 9);
+  assert.equal(firstValidation.model.raw.bowlingRuns, 226);
+  assert.equal(firstValidation.model.extras.byes, 9);
+  assert.equal(firstValidation.model.extras.wides, 0);
+
+  const secondValidation = validateInnings(second, MATCH_EXPECTATIONS[4].innings[1]);
+  assert.deepEqual(secondValidation.errors, []);
+  assert.equal(secondValidation.model.runs, 232);
+  assert.equal(secondValidation.model.wickets, 10);
+  assert.equal(secondValidation.model.overs, "19.5");
+  assert.equal(secondValidation.model.raw.battingRuns, 172);
+  assert.equal(secondValidation.model.raw.extras, 60);
+  assert.equal(secondValidation.model.raw.bowlingRuns, 201);
+  assert.equal(secondValidation.model.extras.byes, 31);
+  assert.equal(secondValidation.model.extras.wides, 29);
+});
+
+test("generic Match N grouping keeps a three-sheet workbook at QF1-QF3", () => {
+  const workbook = workbookFromSheets([
+    {
+      title: "CRICKET MATCH SCORECARD - X VS Y (11 Oct 2026)",
+      sheetName: "Match 3 - Baldia vs Orangi",
+      innings: QF4_INNINGS,
+    },
+    {
+      title: "CRICKET MATCH SCORECARD - X VS Y (11 Oct 2026)",
+      sheetName: "Match 1 - Family vs Young",
+      innings: QF4_INNINGS,
+    },
+    {
+      title: "CRICKET MATCH SCORECARD - X VS Y (11 Oct 2026)",
+      sheetName: "Match 2 - Orangi vs Sky",
+      innings: QF4_INNINGS,
+    },
+  ]);
+  const { sheets } = parseScorecardWorkbook(workbook);
+  const grouped = groupSheetsByMatch(sheets);
+
+  assert.deepEqual(
+    grouped.map((sheet) => [sheet.matchNumber, stageLabelForMatch(sheet.matchNumber)]),
+    [
+      [1, "QF1"],
+      [2, "QF2"],
+      [3, "QF3"],
+    ],
+  );
+  assert.ok(grouped.every((sheet) => sheet.innings.length === 2));
+});
+
+test("the same first name resolves inside its own team squad", () => {
+  const khan = [
+    { _id: "k-sabir", name: "Sabir" },
+    { _id: "k-waqar", name: "Waqar Kundi" },
+    { _id: "k-hamza", name: "Hamza Khan" },
+  ];
+  const ittehad = [
+    { _id: "i-sabir", name: "Sabir" },
+    { _id: "i-waqar", name: "Waqar" },
+    { _id: "i-hamza", name: "Hamza" },
+  ];
+
+  assert.equal(matchPlayerName(khan, "Sabir").player._id, "k-sabir");
+  assert.equal(matchPlayerName(ittehad, "Sabir").player._id, "i-sabir");
+  assert.equal(matchPlayerName(khan, "Waqar").player._id, "k-waqar");
+  assert.equal(matchPlayerName(ittehad, "Waqar").player._id, "i-waqar");
+  assert.equal(matchPlayerName(khan, "Hamza").player._id, "k-hamza");
+  assert.equal(matchPlayerName(ittehad, "Hamza").player._id, "i-hamza");
+});
+
+test("CREATE: placeholders are filtered to matches that will be created", () => {
+  const specs = [
+    { rows: [{ matchNumber: 1 }] },
+    { rows: [{ matchNumber: 4 }] },
+  ];
+  const plan = {
+    matches: [
+      { action: "skip", spec: { number: 1 } },
+      { action: "create", spec: { number: 4 } },
+    ],
+  };
+  assert.deepEqual(createSpecsForPlan(specs, plan), [specs[1]]);
 });
 
 test("a consistent innings passes and derives byes from bowler runs", () => {
@@ -327,9 +521,19 @@ test("the Sky Sports::Ali CREATE mapping is one spec for its batting and bowling
         matchNumber: 2,
         innings: [
           // QF2 innings 1: Sky Sports is the bowling side.
-          { batting: [], bowling: [{ name: "Ali", row: 25 }] },
+          {
+            battingTeam: "Orangi United",
+            bowlingTeam: "Sky Sports",
+            batting: [],
+            bowling: [{ name: "Ali", row: 25 }],
+          },
           // QF2 innings 2: Sky Sports is the batting side.
-          { batting: [{ name: "Ali", row: 38 }], bowling: [] },
+          {
+            battingTeam: "Sky Sports",
+            bowlingTeam: "Orangi United",
+            batting: [{ name: "Ali", row: 38 }],
+            bowling: [],
+          },
         ],
       },
     ],
@@ -359,8 +563,18 @@ test("a CREATE: value with no name is reported, not silently ignored", () => {
       {
         matchNumber: 1,
         innings: [
-          { batting: [{ name: "Zahid", row: 4 }], bowling: [] },
-          { batting: [], bowling: [] },
+          {
+            battingTeam: "Young Star",
+            bowlingTeam: "Family Stallions",
+            batting: [{ name: "Zahid", row: 4 }],
+            bowling: [],
+          },
+          {
+            battingTeam: "Family Stallions",
+            bowlingTeam: "Young Star",
+            batting: [],
+            bowling: [],
+          },
         ],
       },
     ],
@@ -437,8 +651,18 @@ test("one shared CREATE: placeholder creates a single player for both rows", asy
         {
           matchNumber: 2,
           innings: [
-            { batting: [], bowling: [{ name: "Ali", row: 25 }] },
-            { batting: [{ name: "Ali", row: 38 }], bowling: [] },
+            {
+              battingTeam: "Orangi United",
+              bowlingTeam: "Sky Sports",
+              batting: [],
+              bowling: [{ name: "Ali", row: 25 }],
+            },
+            {
+              battingTeam: "Sky Sports",
+              bowlingTeam: "Orangi United",
+              batting: [{ name: "Ali", row: 38 }],
+              bowling: [],
+            },
           ],
         },
       ],

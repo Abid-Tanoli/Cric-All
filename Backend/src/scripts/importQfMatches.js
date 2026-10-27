@@ -1,16 +1,20 @@
-// Import the three 2026 All Baldia T20 quarter-finals from the paper scorecard
-// workbook into CricAll as DRAFT manual scorecards.
+// Import the 2026 All Baldia T20 quarter-finals from a paper-scorecard workbook
+// into CricAll as DRAFT manual scorecards.
 //
 //   node src/scripts/importQfMatches.js                 # dry run (default)
-//   node src/scripts/importQfMatches.js --apply         # write tournament + drafts
+//   node src/scripts/importQfMatches.js --apply         # write the DRAFT matches
 //   node src/scripts/importQfMatches.js --file <xlsx>   # explicit workbook
 //   node src/scripts/importQfMatches.js --force-test    # allow a *e2e NODE_ENV=test DB
 //
+// Sheets are mapped generically: a sheet named "Match N ..." is QF N. The two
+// teams come from the innings title rows, so the same script accepts the
+// original three-match workbook and the separate QF4 workbook.
+//
 // Safety and scope
 // ---------------
-//   * Dry run by default. --apply writes ONLY the tournament and three DRAFT
-//     manual matches. It never publishes, never creates teams, and never creates
-//     semi-finals or a final.
+//   * Dry run by default. --apply writes ONLY DRAFT manual matches in the
+//     existing tournament. It never creates the tournament, never publishes,
+//     never creates teams, and never creates semi-finals or a final.
 //   * Every innings is validated against the scorebook totals before a write:
 //       batsmen runs + extras                === innings total
 //       bowler runs + derived byes/leg-byes  === innings total
@@ -64,11 +68,11 @@ mongoose.set("autoIndex", false);
 
 const MAPPING_FILE = path.join(SCRIPT_DIR, "data", "qfNameMap.json");
 const TOURNAMENT_NAME = "All Baldia T20 Hard Ball Cricket Tournament";
-const MATCH_DATE = "2026-10-11T00:00:00.000Z";
 const CREATE_PREFIX = "CREATE:";
 const PLACEHOLDER_ID_PREFIX = "placeholder-player:";
 const TOTAL_OVERS = 20;
 const STAGE = "quarter_final";
+const STAGE_PREFIX = "QF";
 
 const TOURNAMENT_TEAMS = [
   { name: "Ittehad Sports", aliases: ["Ittehad Sports"] },
@@ -81,56 +85,91 @@ const TOURNAMENT_TEAMS = [
   { name: "Orangi Warriors", aliases: ["Orangi Warriors", "Orangi Sports"] },
 ];
 
-const MATCH_SPECS = [
-  {
-    number: 1,
-    stageLabel: "QF1",
-    teamA: { name: "Young Star", aliases: ["Young Star"] },
-    teamB: { name: "Family Stallions", aliases: ["Family Stallions", "Family Stallion"] },
+// The workbook carries the totals and the sheet title carries the date, but it
+// does not carry the match result. These pinned expectations are optional: a
+// new "Match N" sheet is still mapped to QF N and its result is derived from
+// the two innings. When an entry exists it is a cross-check, never a source of
+// numbers written to the database.
+export const MATCH_EXPECTATIONS = {
+  1: {
+    date: "2026-10-11",
     innings: [
-      { batting: "Young Star", runs: 277, wickets: 7, overs: "20" },
-      { batting: "Family Stallions", runs: 155, wickets: 8, overs: "15.4" },
+      { runs: 277, wickets: 7, overs: "20" },
+      { runs: 155, wickets: 8, overs: "15.4" },
     ],
-    result: { winner: "Young Star", margin: "122 runs", note: "Young Star won by 122 runs." },
-    adjustments: [],
+    result: { winner: "Young Star", margin: "122 runs" },
   },
-  {
-    number: 2,
-    stageLabel: "QF2",
-    teamA: { name: "Orangi United", aliases: ["Orangi United"] },
-    teamB: { name: "Sky Sports", aliases: ["Sky Sports"] },
+  2: {
+    date: "2026-10-11",
     innings: [
-      { batting: "Orangi United", runs: 162, wickets: 10, overs: "17" },
-      { batting: "Sky Sports", runs: 163, wickets: 6, overs: "17.2" },
+      { runs: 162, wickets: 10, overs: "17" },
+      { runs: 163, wickets: 6, overs: "17.2" },
     ],
-    result: { winner: "Sky Sports", margin: "4 wickets", note: "Sky Sports won by 4 wickets." },
-    adjustments: [],
+    result: { winner: "Sky Sports", margin: "4 wickets" },
   },
-  {
-    number: 3,
-    stageLabel: "QF3",
-    teamA: { name: "Baldia Zalmi", aliases: ["Baldia Zalmi"] },
-    teamB: { name: "Orangi Warriors", aliases: ["Orangi Warriors", "Orangi Sports"] },
+  3: {
+    date: "2026-10-11",
     innings: [
-      { batting: "Baldia Zalmi", runs: 279, wickets: 5, overs: "20" },
-      { batting: "Orangi Warriors", runs: 155, wickets: 10, overs: "15.4" },
+      { runs: 279, wickets: 5, overs: "20" },
+      { runs: 155, wickets: 10, overs: "15.4" },
     ],
-    result: { winner: "Baldia Zalmi", margin: "124 runs", note: "Baldia Zalmi won by 124 runs." },
-    adjustments: [],
+    result: { winner: "Baldia Zalmi", margin: "124 runs" },
   },
-  {
-    number: 4,
-    stageLabel: "QF4",
-    teamA: { name: "Khan Associates", aliases: ["Khan Associates", "KHAN ASSOCIATE", "Khan Associate"] },
-    teamB: { name: "Ittehad Sports", aliases: ["Ittehad Sports"] },
+  4: {
+    date: "2026-10-18",
     innings: [
-      { batting: "Khan Associates", runs: 235, wickets: 10, overs: "20" },
-      { batting: "Ittehad Sports", runs: 232, wickets: 10, overs: "19.5" },
+      { runs: 235, wickets: 10, overs: "20" },
+      { runs: 232, wickets: 10, overs: "19.5" },
     ],
-    result: { winner: "Khan Associates", margin: "3 runs", note: "Khan Associates won by 3 runs." },
-    adjustments: [],
+    result: { winner: "Khan Associates", margin: "3 runs" },
   },
-];
+};
+
+const MONTHS = new Map([
+  ["jan", 0],
+  ["feb", 1],
+  ["mar", 2],
+  ["apr", 3],
+  ["may", 4],
+  ["jun", 5],
+  ["jul", 6],
+  ["aug", 7],
+  ["sep", 8],
+  ["oct", 9],
+  ["nov", 10],
+  ["dec", 11],
+]);
+
+export function matchNumberFromSheetName(sheetName) {
+  const match = String(sheetName || "").match(/\bMatch\s*(\d+)\b/i);
+  return match ? Number(match[1]) : 0;
+}
+
+export function stageLabelForMatch(matchNumber) {
+  return `${STAGE_PREFIX}${Number(matchNumber)}`;
+}
+
+export function parseMatchDate(text) {
+  const match = String(text || "").match(
+    /\b(\d{1,2})\s+(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+(\d{4})\b/i,
+  );
+  if (!match) return null;
+  const day = Number(match[1]);
+  const month = MONTHS.get(match[2].slice(0, 3).toLowerCase());
+  const year = Number(match[3]);
+  if (!Number.isInteger(day) || month === undefined || !Number.isInteger(year)) return null;
+  const date = new Date(Date.UTC(year, month, day));
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month ||
+    date.getUTCDate() !== day
+  ) {
+    return null;
+  }
+  return date;
+}
+
+const isoDate = (value) => (value ? new Date(value).toISOString().slice(0, 10) : "");
 
 const HONORIFICS = new Set(["br", "dr", "mr", "mrs", "ms", "md", "muhammad", "mohammad", "mohammed"]);
 
@@ -239,40 +278,37 @@ export function findWorkbook(explicitPath) {
     return { file: resolved, source: "--file" };
   }
 
-  const desktop = path.join(os.homedir(), "Desktop");
-  const searchDirs = [desktop, path.join(SCRIPT_DIR, "data"), path.join(BACKEND_ROOT, "data"), path.join(process.cwd(), "data")];
-  const patterns = [/^AllBaldia_QF_Final\.xlsx$/i, /QF_Final.*\.xlsx$/i, /Cricket_Scorecards.*\.xlsx$/i, /Match.*QF.*\.xlsx$/i, /Match4.*\.xlsx$/i];
+  const home = os.homedir();
+  const searchDirs = [
+    { dir: path.join(home, "Desktop"), label: "Desktop" },
+    { dir: path.join(home, "Downloads"), label: "Downloads" },
+    { dir: path.join(SCRIPT_DIR, "data"), label: "script/data" },
+    { dir: path.join(BACKEND_ROOT, "data"), label: "Backend/data" },
+    { dir: path.join(process.cwd(), "data"), label: "cwd/data" },
+  ];
+  const scorecardPattern = /QF|Match\s*\d+|Match\d+|Cricket_Scorecards|AllBaldia/i;
 
-  for (const dir of searchDirs) {
-    const files = candidateWorkbookFiles(dir);
-    if (!files.length) continue;
-    for (const pattern of patterns) {
-      const matches = files.filter((file) => pattern.test(path.basename(file)));
-      if (matches.length) {
-        matches.sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
-        return {
-          file: matches[0],
-          source: dir === desktop ? "Desktop fallback" : "script/data fallback",
-          alternatives: matches.slice(1),
-        };
-      }
+  // Newest matching workbook wins. Desktop is searched first only to break ties.
+  const candidates = [];
+  searchDirs.forEach(({ dir, label }, order) => {
+    for (const file of candidateWorkbookFiles(dir)) {
+      const name = path.basename(file);
+      if (!scorecardPattern.test(name)) continue;
+      candidates.push({ file, label, order, mtimeMs: fs.statSync(file).mtimeMs });
     }
+  });
+  if (!candidates.length) {
+    throw new Error(
+      "No scorecard workbook found. Put Match4_QF4_import.xlsx (or a *QF*/*Match N* workbook) on the Desktop or in Downloads, or pass --file <xlsx>.",
+    );
   }
-  // If nothing matched by pattern but there are xlsx files on Desktop, pick newest (as per requirement: newest copy wins)
-  for (const dir of searchDirs) {
-    const files = candidateWorkbookFiles(dir);
-    if (files.length) {
-      files.sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
-      return {
-        file: files[0],
-        source: dir === desktop ? "Desktop fallback" : "script/data fallback",
-        alternatives: files.slice(1),
-      };
-    }
-  }
-  throw new Error(
-    "No scorecard workbook found. Put AllBaldia_QF_Final.xlsx (or *QF_Final*.xlsx / *Cricket_Scorecards*.xlsx) on the Desktop or in src/scripts/data, or pass --file <xlsx>.",
-  );
+  candidates.sort((a, b) => b.mtimeMs - a.mtimeMs || a.order - b.order);
+  const [chosen, ...alternatives] = candidates;
+  return {
+    file: chosen.file,
+    source: chosen.label,
+    alternatives: alternatives.map((row) => row.file),
+  };
 }
 
 function rowTexts(row) {
@@ -442,9 +478,9 @@ export function parseScorecardWorkbook(buffer) {
     const worksheet = workbook.Sheets[sheetName];
     const rows = xlsx.utils.sheet_to_json(worksheet, { header: 1, raw: true, defval: null, blankrows: true });
     const texts = xlsx.utils.sheet_to_json(worksheet, { header: 1, raw: false, defval: "", blankrows: true });
-    const matchNumber = Number((sheetName.match(/Match\s*(\d+)/i) || [])[1] || 0);
+    const matchNumber = matchNumberFromSheetName(sheetName);
     const sheetTitle = rowTexts(texts[0] || []).join(" ");
-    if (!matchNumber && !/CRICKET MATCH SCORECARD/i.test(sheetTitle)) continue;
+    if (!matchNumber) continue;
 
     const parsedInnings = [];
     for (let r = 0; r < texts.length; r += 1) {
@@ -484,10 +520,49 @@ export function parseScorecardWorkbook(buffer) {
       });
     }
     parsedInnings.sort((a, b) => a.inningsNumber - b.inningsNumber);
-    sheets.push({ sheetName, matchNumber, title: sheetTitle, innings: parsedInnings });
+    sheets.push({
+      sheetName,
+      matchNumber,
+      title: sheetTitle,
+      matchDate: parseMatchDate(sheetTitle),
+      innings: parsedInnings,
+    });
   }
   sheets.sort((a, b) => a.matchNumber - b.matchNumber);
   return { sheets };
+}
+
+/**
+ * Group sheets by the "Match N" prefix. A normal scorebook has one sheet per
+ * match with both innings; if a workbook splits the two innings across sheets,
+ * they are merged here and sorted by innings number.
+ */
+export function groupSheetsByMatch(sheets) {
+  const byMatch = new Map();
+  for (const sheet of sheets || []) {
+    if (!sheet?.matchNumber) continue;
+    if (!byMatch.has(sheet.matchNumber)) {
+      byMatch.set(sheet.matchNumber, {
+        matchNumber: sheet.matchNumber,
+        sheetName: sheet.sheetName,
+        title: sheet.title,
+        matchDate: sheet.matchDate || parseMatchDate(sheet.title),
+        innings: [],
+      });
+    }
+    const target = byMatch.get(sheet.matchNumber);
+    target.innings.push(...(sheet.innings || []));
+    if (sheet.sheetName && !target.sheetName.includes(sheet.sheetName)) {
+      target.sheetName = `${target.sheetName} | ${sheet.sheetName}`;
+    }
+    if (!target.matchDate && sheet.matchDate) target.matchDate = sheet.matchDate;
+  }
+  return [...byMatch.values()]
+    .map((sheet) => ({
+      ...sheet,
+      innings: sheet.innings.slice().sort((a, b) => a.inningsNumber - b.inningsNumber),
+    }))
+    .sort((a, b) => a.matchNumber - b.matchNumber);
 }
 
 function readNumericOvers(total) {
@@ -552,42 +627,19 @@ export function validateInnings(raw, specInnings, options = {}) {
   if (inningsRuns === null || inningsRuns === undefined) add("innings total is missing");
   if (extras === null || extras === undefined) add("extras total is missing");
   if (Number.isFinite(inningsRuns) && Number.isFinite(extras) && battingRuns + extras !== inningsRuns) {
-    // Allow the adjusted totals for QF4 as specified
-    const isQf4Adjusted =
-      (inningsRuns === 235 && battingRuns === 226 && extras === 9) ||
-      (inningsRuns === 232 && battingRuns === 172 && extras === 60);
-    if (!isQf4Adjusted) {
-      add(`batsman runs (${battingRuns}) + extras (${extras}) = ${battingRuns + extras}, not the innings total ${inningsRuns}`);
-    }
+    add(`batsman runs (${battingRuns}) + extras (${extras}) = ${battingRuns + extras}, not the innings total ${inningsRuns}`);
   }
   if (Number.isFinite(inningsRuns) && Number.isFinite(bowlingRuns)) {
-    let byes = inningsRuns - bowlingRuns;
+    const byes = inningsRuns - bowlingRuns;
     if (byes < 0) {
       add(`bowler runs (${bowlingRuns}) exceed the innings total (${inningsRuns}); byes/leg-byes would be ${byes}`);
     } else if (Number.isFinite(extras)) {
-      // Allow the adjusted totals for QF4 as specified
-      const isQf4Adjusted1 = inningsRuns === 235 && battingRuns === 226 && extras === 9 && bowlingRuns === 216;
-      const isQf4Adjusted2 = inningsRuns === 232 && battingRuns === 172 && extras === 60 && bowlingRuns === 201;
-      if (isQf4Adjusted1) {
-        byes = 9;
-        const widesAndNoBalls = extras - byes;
-        if (widesAndNoBalls + byes !== extras) {
-          add(`extras split does not add up: wides/no-balls ${widesAndNoBalls} + byes/leg-byes ${byes} != ${extras}`);
-        }
-      } else if (isQf4Adjusted2) {
-        byes = 31;
-        const widesAndNoBalls = extras - byes;
-        if (widesAndNoBalls + byes !== extras) {
-          add(`extras split does not add up: wides/no-balls ${widesAndNoBalls} + byes/leg-byes ${byes} != ${extras}`);
-        }
-      } else {
-        const widesAndNoBalls = extras - byes;
-        if (widesAndNoBalls < 0) {
-          add(`extras (${extras}) are less than the ${byes} bye/leg-bye runs implied by bowler runs (${bowlingRuns}) vs total (${inningsRuns}); combined wides/no-balls would be ${widesAndNoBalls}`);
-        }
-        if (widesAndNoBalls + byes !== extras) {
-          add(`extras split does not add up: wides/no-balls ${widesAndNoBalls} + byes/leg-byes ${byes} != ${extras}`);
-        }
+      const widesAndNoBalls = extras - byes;
+      if (widesAndNoBalls < 0) {
+        add(`extras (${extras}) are less than the ${byes} bye/leg-bye runs implied by bowler runs (${bowlingRuns}) vs total (${inningsRuns}); combined wides/no-balls would be ${widesAndNoBalls}`);
+      }
+      if (widesAndNoBalls + byes !== extras) {
+        add(`extras split does not add up: wides/no-balls ${widesAndNoBalls} + byes/leg-byes ${byes} != ${extras}`);
       }
     }
   }
@@ -686,18 +738,8 @@ export function validateInnings(raw, specInnings, options = {}) {
     warn(`zero-ball not-out rows (${zeroBallNotOuts.map((row) => row.name).join(", ")}) were kept exactly as listed; they may be did-not-bat rows`);
   }
 
-  let byes = Number.isFinite(inningsRuns) && Number.isFinite(bowlingRuns) ? inningsRuns - bowlingRuns : null;
-  let widesAndNoBalls = byes !== null && Number.isFinite(extras) ? extras - byes : null;
-  // Special handling for adjusted QF4 totals as specified
-  if (Number.isFinite(inningsRuns) && Number.isFinite(battingRuns) && Number.isFinite(extras)) {
-    if (inningsRuns === 235 && battingRuns === 226 && extras === 9 && Number.isFinite(bowlingRuns) && bowlingRuns === 216) {
-      byes = 9;
-      widesAndNoBalls = 0;
-    } else if (inningsRuns === 232 && battingRuns === 172 && extras === 60 && Number.isFinite(bowlingRuns) && bowlingRuns === 201) {
-      byes = 31;
-      widesAndNoBalls = 29;
-    }
-  }
+  const byes = Number.isFinite(inningsRuns) && Number.isFinite(bowlingRuns) ? inningsRuns - bowlingRuns : null;
+  const widesAndNoBalls = byes !== null && Number.isFinite(extras) ? extras - byes : null;
   const model = {
     batting,
     bowling,
@@ -738,6 +780,30 @@ function teamLabelSet(teamName) {
   return new Set((entry ? entry.aliases : [teamName]).map(normalizeName));
 }
 
+/**
+ * Resolve a team label from an innings title ("ORANGI SPORTS", "Khan
+ * Associates") to one of the resolved tournament team entries. Matching is
+ * alias-aware and case/punctuation insensitive; ambiguity is never guessed.
+ */
+export function teamEntryForLabel(teams, label) {
+  const normalized = normalizeTeamLabel(label);
+  if (!normalized) return { entry: null, reason: "blank team label", matches: [] };
+  const matches = (teams || []).filter((entry) =>
+    [...(entry.aliases || []), entry.name]
+      .filter(Boolean)
+      .some((alias) => normalizeTeamLabel(alias) === normalized),
+  );
+  if (matches.length === 1) return { entry: matches[0], reason: "", matches };
+  if (matches.length > 1) {
+    return {
+      entry: null,
+      reason: `team label "${label}" is ambiguous between ${matches.map((row) => row.name).join(", ")}`,
+      matches,
+    };
+  }
+  return { entry: null, reason: `team label "${label}" does not match a tournament team`, matches: [] };
+}
+
 export function mappingFor(mapping, teamName, sheetName) {
   if (!mapping) return null;
   const teamLabels = teamLabelSet(teamName);
@@ -763,47 +829,42 @@ export function mappingFor(mapping, teamName, sheetName) {
  * batting and bowling rows produces a single placeholder player. This is a pure
  * read: it never creates anything.
  */
-export function collectCreateSpecs({ parsed, teams, mapping }) {
+export function collectCreateSpecs({ parsed, teams, mapping, matches = null }) {
   const specs = new Map();
   const errors = [];
-  const teamByName = new Map(
-    (teams || []).filter((entry) => entry.team).map((entry) => [entry.name, entry.team]),
-  );
-  for (const spec of MATCH_SPECS) {
-    const sheet = (parsed?.sheets || []).find((row) => row.matchNumber === spec.number);
-    if (!sheet) continue;
-    const teamA = teamByName.get(spec.teamA.name);
-    const teamB = teamByName.get(spec.teamB.name);
-    if (!teamA || !teamB) continue;
-    spec.innings.forEach((_, index) => {
+  const sheets = matches || groupSheetsByMatch(parsed?.sheets || []);
+  for (const sheet of sheets) {
+    const stageLabel = stageLabelForMatch(sheet.matchNumber);
+    for (let index = 0; index < 2; index += 1) {
       const raw = sheet.innings?.[index];
-      if (!raw) return;
-      const battingTeam = index === 0 ? teamA : teamB;
-      const bowlingTeam = index === 0 ? teamB : teamA;
+      if (!raw) continue;
+      const batting = teamEntryForLabel(teams, raw.battingTeam).entry;
+      const bowling = teamEntryForLabel(teams, raw.bowlingTeam).entry;
+      if (!batting?.team || !bowling?.team) continue;
       for (const [role, rows, squadTeam] of [
-        ["batting", raw.batting || [], battingTeam],
-        ["bowling", raw.bowling || [], bowlingTeam],
+        ["batting", raw.batting || [], batting],
+        ["bowling", raw.bowling || [], bowling],
       ]) {
         for (const row of rows) {
           const create = parseCreateMappingValue(mappingFor(mapping, squadTeam.name, row.name));
           if (!create) continue;
           if (create.error) {
             errors.push(
-              `QF${spec.number} innings ${index + 1} ${role} "${row.name}" (${squadTeam.name}, row ${row.row}): ${create.error}`,
+              `${stageLabel} innings ${index + 1} ${role} "${row.name}" (${squadTeam.name}, row ${row.row}): ${create.error}`,
             );
             continue;
           }
-          const key = `${String(squadTeam._id)}::${normalizeName(create.name)}`;
+          const key = `${String(squadTeam.team._id)}::${normalizeName(create.name)}`;
           if (!specs.has(key)) {
             specs.set(key, {
-              teamId: String(squadTeam._id),
+              teamId: String(squadTeam.team._id),
               teamName: squadTeam.name,
               name: create.name,
               rows: [],
             });
           }
           specs.get(key).rows.push({
-            matchNumber: spec.number,
+            matchNumber: sheet.matchNumber,
             innings: index + 1,
             role,
             team: squadTeam.name,
@@ -812,9 +873,17 @@ export function collectCreateSpecs({ parsed, teams, mapping }) {
           });
         }
       }
-    });
+    }
   }
   return { specs: [...specs.values()], errors };
+}
+
+/** Keep CREATE: placeholders that belong to a match this run will actually create. */
+export function createSpecsForPlan(specs, plan) {
+  const createNumbers = new Set(
+    (plan?.matches || []).filter((match) => match.action === "create").map((match) => match.spec.number),
+  );
+  return (specs || []).filter((spec) => (spec.rows || []).some((row) => createNumbers.has(row.matchNumber)));
 }
 
 function candidateForMapping(value, squad) {
@@ -1123,15 +1192,59 @@ export async function ensurePlaceholderPlayers(specs, { dryRun = false } = {}) {
 
 function teamLabelMatches(label, teamSpec) {
   const normalized = normalizeTeamLabel(label);
-  return (teamSpec.aliases || [teamSpec.name]).some((alias) => normalizeTeamLabel(alias) === normalized);
+  return [teamSpec.name, ...(teamSpec.aliases || [])]
+    .filter(Boolean)
+    .some((alias) => normalizeTeamLabel(alias) === normalized);
 }
 
-function buildMatchPlan(spec, parsedSheet, tournament, teamA, teamB, squadByTeam, mapping) {
+function deriveMatchResult(matchPlan) {
+  const first = matchPlan.innings[0];
+  const second = matchPlan.innings[1];
+  const firstModel = first?.validation?.model;
+  const secondModel = second?.validation?.model;
+  if (!firstModel || !secondModel) return null;
+  if (firstModel.runs === secondModel.runs) {
+    return { winner: null, winnerName: null, margin: "", note: "Match tied.", resultType: "tie" };
+  }
+  if (secondModel.runs > firstModel.runs) {
+    const wickets = Math.max(0, 10 - secondModel.wickets);
+    const margin = `${wickets} wicket${wickets === 1 ? "" : "s"}`;
+    return {
+      winner: second.battingTeam,
+      winnerName: second.battingTeam.name,
+      margin,
+      note: `${second.battingTeam.name} won by ${margin}.`,
+      resultType: "normal",
+    };
+  }
+  const runs = firstModel.runs - secondModel.runs;
+  const margin = `${runs} run${runs === 1 ? "" : "s"}`;
+  return {
+    winner: first.battingTeam,
+    winnerName: first.battingTeam.name,
+    margin,
+    note: `${first.battingTeam.name} won by ${margin}.`,
+    resultType: "normal",
+  };
+}
+
+function buildMatchPlan(sheet, context) {
+  const { tournament, teams, squadByTeam, mapping, existingMatches } = context;
+  const expectation = MATCH_EXPECTATIONS[sheet.matchNumber] || null;
+  const stageLabel = stageLabelForMatch(sheet.matchNumber);
   const plan = {
-    spec,
-    sheet: parsedSheet || null,
-    teamA,
-    teamB,
+    spec: {
+      number: sheet.matchNumber,
+      stageLabel,
+      date: "",
+      innings: expectation?.innings || [],
+      result: expectation?.result || null,
+      teamA: null,
+      teamB: null,
+    },
+    sheet,
+    teamA: null,
+    teamB: null,
     innings: [],
     unresolved: [],
     errors: [],
@@ -1140,25 +1253,60 @@ function buildMatchPlan(spec, parsedSheet, tournament, teamA, teamB, squadByTeam
     existingMatch: null,
     payload: null,
     validator: null,
+    result: null,
   };
-  if (!parsedSheet) {
-    plan.errors.push(`no workbook sheet found for Match ${spec.number}`);
+  if (sheet.innings.length !== 2) {
+    plan.errors.push(`sheet "${sheet.sheetName}" has ${sheet.innings.length} innings; expected 2`);
     plan.action = "blocked";
     return plan;
   }
-  if (parsedSheet.innings.length !== 2) {
-    plan.errors.push(`sheet "${parsedSheet.sheetName}" has ${parsedSheet.innings.length} innings; expected 2`);
-  }
-  if (!teamA || !teamB) {
-    plan.errors.push("one or both teams could not be resolved");
+  const [first, second] = sheet.innings;
+  const teamALookup = teamEntryForLabel(teams, first.battingTeam);
+  const teamBLookup = teamEntryForLabel(teams, first.bowlingTeam);
+  if (!teamALookup.entry?.team) {
+    plan.errors.push(teamALookup.reason || "first-innings batting team could not be resolved");
     plan.action = "blocked";
+    return plan;
+  }
+  if (!teamBLookup.entry?.team) {
+    plan.errors.push(teamBLookup.reason || "first-innings bowling team could not be resolved");
+    plan.action = "blocked";
+    return plan;
+  }
+  plan.teamA = teamALookup.entry.team;
+  plan.teamB = teamBLookup.entry.team;
+  plan.spec.teamA = { name: teamALookup.entry.name, aliases: teamALookup.entry.aliases || [] };
+  plan.spec.teamB = { name: teamBLookup.entry.name, aliases: teamBLookup.entry.aliases || [] };
+
+  const parsedDate = sheet.matchDate ? isoDate(sheet.matchDate) : "";
+  if (!parsedDate) plan.errors.push(`sheet title "${sheet.title}" does not contain a match date`);
+  if (expectation?.date && parsedDate && parsedDate !== expectation.date) {
+    plan.errors.push(`sheet date ${parsedDate} does not match the expected ${expectation.date}`);
+  }
+  plan.spec.date = parsedDate || expectation?.date || "";
+  if (!teamLabelMatches(second.battingTeam, plan.spec.teamB)) {
+    plan.errors.push(
+      `second-innings batting label "${second.battingTeam}" does not match the first-innings bowling team "${teamBLookup.entry.name}"`,
+    );
+  }
+  if (!teamLabelMatches(second.bowlingTeam, plan.spec.teamA)) {
+    plan.errors.push(
+      `second-innings bowling label "${second.bowlingTeam}" does not match the first-innings batting team "${teamALookup.entry.name}"`,
+    );
+  }
+
+  if (tournament) attachExistingMatchState(plan, existingMatches);
+  if (plan.action !== "create") {
+    if (plan.errors.length) plan.action = "blocked";
     return plan;
   }
 
-  spec.innings.forEach((specInnings, index) => {
-    const raw = parsedSheet.innings[index];
-    const team = index === 0 ? teamA : teamB;
-    const opponent = index === 0 ? teamB : teamA;
+  for (let index = 0; index < 2; index += 1) {
+    const raw = sheet.innings[index];
+    const battingLookup = teamEntryForLabel(teams, raw.battingTeam);
+    const bowlingLookup = teamEntryForLabel(teams, raw.bowlingTeam);
+    const team = battingLookup.entry?.team || null;
+    const opponent = bowlingLookup.entry?.team || null;
     const inningsPlan = {
       index: index + 1,
       battingTeam: team,
@@ -1169,19 +1317,24 @@ function buildMatchPlan(spec, parsedSheet, tournament, teamA, teamB, squadByTeam
       errors: [],
       warnings: [],
     };
-    if (!raw) {
-      inningsPlan.errors.push(`innings ${index + 1} is missing`);
-      plan.innings.push(inningsPlan);
-      return;
-    }
-    if (
-      !teamLabelMatches(raw.battingTeam, {
-        name: team.name,
-        aliases: [...(index === 0 ? spec.teamA.aliases : spec.teamB.aliases), team.name],
-      })
-    ) {
+    if (!team || !opponent) {
       inningsPlan.errors.push(
-        `sheet batting label "${raw.battingTeam}" does not match the expected batting team "${specInnings.batting}"; refusing to assign the innings to the wrong team`,
+        `innings ${index + 1} has an unresolved team label ("${raw.battingTeam}" vs "${raw.bowlingTeam}")`,
+      );
+      plan.innings.push(inningsPlan);
+      plan.errors.push(...inningsPlan.errors);
+      continue;
+    }
+    const expectedBatting = index === 0 ? plan.spec.teamA : plan.spec.teamB;
+    const expectedBowling = index === 0 ? plan.spec.teamB : plan.spec.teamA;
+    if (!teamLabelMatches(raw.battingTeam, expectedBatting)) {
+      inningsPlan.errors.push(
+        `sheet batting label "${raw.battingTeam}" does not match the expected batting team "${expectedBatting.name}"; refusing to assign the innings to the wrong team`,
+      );
+    }
+    if (!teamLabelMatches(raw.bowlingTeam, expectedBowling)) {
+      inningsPlan.errors.push(
+        `sheet bowling label "${raw.bowlingTeam}" does not match the expected bowling team "${expectedBowling.name}"; refusing to assign the innings to the wrong team`,
       );
     }
     const battingSquad = squadByTeam.get(String(team._id)) || { players: [], source: "", warning: "" };
@@ -1225,7 +1378,7 @@ function buildMatchPlan(spec, parsedSheet, tournament, teamA, teamB, squadByTeam
               `${role} "${row.name}" (${squadTeam.name}, sheet row ${row.row}) is ${match.status.toUpperCase()}: ${match.reason}`,
             );
             plan.unresolved.push({
-              matchNumber: spec.number,
+              matchNumber: sheet.matchNumber,
               innings: index + 1,
               role,
               team: squadTeam.name,
@@ -1254,7 +1407,7 @@ function buildMatchPlan(spec, parsedSheet, tournament, teamA, teamB, squadByTeam
               `${role} "${row.name}" (${squadTeam.name}, sheet row ${row.row}) is ${match.status.toUpperCase()}: ${match.reason}`,
             );
             plan.unresolved.push({
-              matchNumber: spec.number,
+              matchNumber: sheet.matchNumber,
               innings: index + 1,
               role,
               team: squadTeam.name,
@@ -1273,7 +1426,7 @@ function buildMatchPlan(spec, parsedSheet, tournament, teamA, teamB, squadByTeam
             `${role} "${row.name}" (${squadTeam.name}, sheet row ${row.row}) is ${match.status.toUpperCase()}: ${match.reason}`,
           );
           plan.unresolved.push({
-            matchNumber: spec.number,
+            matchNumber: sheet.matchNumber,
             innings: index + 1,
             role,
             team: squadTeam.name,
@@ -1298,10 +1451,7 @@ function buildMatchPlan(spec, parsedSheet, tournament, teamA, teamB, squadByTeam
       ? { ...raw, batting: (raw.batting || []).filter((row) => !skippedRows.has(row.row)) }
       : raw;
 
-    const adjustments = (spec.adjustments || []).filter(
-      (adjustment) => adjustment.innings === index + 1 && normalizeName(adjustment.bowlingTeam) === normalizeName(opponent.name),
-    );
-    const validation = validateInnings(validationRaw, specInnings, { adjustments });
+    const validation = validateInnings(validationRaw, plan.spec.innings[index] || null);
     inningsPlan.validation = validation;
     inningsPlan.errors.push(...validation.errors);
     inningsPlan.warnings.push(...validation.warnings);
@@ -1310,8 +1460,42 @@ function buildMatchPlan(spec, parsedSheet, tournament, teamA, teamB, squadByTeam
     plan.innings.push(inningsPlan);
     plan.errors.push(...inningsPlan.errors);
     plan.warnings.push(...inningsPlan.warnings);
-  });
+  }
 
+  if (plan.errors.length) {
+    plan.action = "blocked";
+    return plan;
+  }
+
+  const derived = deriveMatchResult(plan);
+  if (!derived) {
+    plan.errors.push("could not derive a match result from the two validated innings");
+    plan.action = "blocked";
+    return plan;
+  }
+  if (plan.spec.result) {
+    const expectedWinner = teamEntryForLabel(teams, plan.spec.result.winner);
+    if (!expectedWinner.entry?.team) {
+      plan.errors.push(`expected winner "${plan.spec.result.winner}" could not be resolved`);
+    } else if (!derived.winner || String(derived.winner._id) !== String(expectedWinner.entry.team._id)) {
+      plan.errors.push(
+        `expected winner ${expectedWinner.entry.name}, but the scorecard totals give ${derived.winnerName || "no winner"}`,
+      );
+    } else if (normalizeName(derived.margin) !== normalizeName(plan.spec.result.margin)) {
+      plan.errors.push(
+        `expected margin "${plan.spec.result.margin}", but the scorecard totals give "${derived.margin}"`,
+      );
+    }
+    plan.result = {
+      winner: expectedWinner.entry?.team || null,
+      winnerName: expectedWinner.entry?.name || plan.spec.result.winner,
+      margin: plan.spec.result.margin,
+      note: `${expectedWinner.entry?.name || plan.spec.result.winner} won by ${plan.spec.result.margin}.`,
+      resultType: "normal",
+    };
+  } else {
+    plan.result = derived;
+  }
   if (plan.errors.length) plan.action = "blocked";
   return plan;
 }
@@ -1336,43 +1520,18 @@ function buildPayload(matchPlan, tournament) {
       wickets: model.wickets,
       overs: String(model.overs ?? ""),
       extras: model.extras,
-      batting: model.batting.map((row) => {
-        let fours = row.fours;
-        let sixes = row.sixes;
-        let runs = row.runs;
-        // Fix boundary totals if they exceed runs (manual validator requires fours*4 + sixes*6 <= runs)
-        if (fours * 4 + sixes * 6 > runs) {
-          // Try to adjust: prefer reducing sixes first, then fours
-          let boundaryRuns = fours * 4 + sixes * 6;
-          // Scale down proportionally or just cap
-          sixes = Math.floor(runs / 6);
-          boundaryRuns = fours * 4 + sixes * 6;
-          if (boundaryRuns > runs) {
-            sixes = Math.min(sixes, Math.floor(runs / 6));
-          }
-          // recompute
-          if (fours * 4 + sixes * 6 > runs) {
-            sixes = 0;
-            fours = Math.floor(runs / 4);
-          }
-          if (fours * 4 + sixes * 6 > runs) {
-            fours = 0;
-            sixes = 0;
-          }
-        }
-        return {
-          player: playerId("batting", row),
-          runs: runs,
-          balls: row.balls,
-          fours: fours,
-          sixes: sixes,
-          isOut: row.isOut,
-          isRetiredHurt: row.isRetiredHurt,
-          isRetired: row.isRetired,
-          dismissalType: row.dismissalType,
-          dismissalText: "",
-        };
-      }),
+      batting: model.batting.map((row) => ({
+        player: playerId("batting", row),
+        runs: row.runs,
+        balls: row.balls,
+        fours: row.fours,
+        sixes: row.sixes,
+        isOut: row.isOut,
+        isRetiredHurt: row.isRetiredHurt,
+        isRetired: row.isRetired,
+        dismissalType: row.dismissalType,
+        dismissalText: "",
+      })),
       bowling: model.bowling.map((row) => ({
         player: playerId("bowling", row),
         overs: String(row.overs ?? ""),
@@ -1384,13 +1543,9 @@ function buildPayload(matchPlan, tournament) {
     };
   });
   if (innings.some((row) => !row)) return null;
-  const winner =
-    spec.result.winner === spec.teamA.name
-      ? teamA
-      : spec.result.winner === spec.teamB.name
-        ? teamB
-        : null;
-  if (!winner) return null;
+  const result = matchPlan.result;
+  if (!result?.resultType) return null;
+  if (result.resultType === "normal" && !result.winner) return null;
   return {
     tournamentId: tournament ? String(tournament._id) : "",
     stage: STAGE,
@@ -1398,7 +1553,7 @@ function buildPayload(matchPlan, tournament) {
     round: spec.stageLabel,
     teamA: String(teamA._id),
     teamB: String(teamB._id),
-    startAt: MATCH_DATE,
+    startAt: new Date(`${spec.date}T00:00:00.000Z`).toISOString(),
     totalOvers: TOTAL_OVERS,
     venue: "",
     title: `${spec.stageLabel}: ${teamA.name} vs ${teamB.name}`,
@@ -1408,10 +1563,10 @@ function buildPayload(matchPlan, tournament) {
     draft: true,
     innings,
     result: {
-      resultType: "normal",
-      winner: String(winner._id),
-      margin: spec.result.margin,
-      note: spec.result.note,
+      resultType: result.resultType,
+      winner: result.winner ? String(result.winner._id) : "",
+      margin: result.margin || "",
+      note: result.note || "",
     },
     manOfMatch: "",
   };
@@ -1441,6 +1596,44 @@ function attachExistingMatchState(matchPlan, allMatches) {
   const { teamA, teamB, spec } = matchPlan;
   if (!teamA || !teamB) return;
   const samePair = summarizeExistingMatches(allMatches, teamA, teamB);
+  const slotMatches = allMatches.filter(
+    (match) =>
+      String(match.stage || "") === STAGE &&
+      String(match.stageLabel || match.round || "") === spec.stageLabel,
+  );
+  if (slotMatches.length > 1) {
+    matchPlan.errors.push(`${slotMatches.length} matches already use ${spec.stageLabel}; refusing to guess which one to use`);
+    matchPlan.action = "blocked";
+    return;
+  }
+  if (slotMatches.length === 1) {
+    const existing = slotMatches[0];
+    matchPlan.existingMatch = existing;
+    const ids = new Set((existing.teams || []).map(idOf));
+    const sameTeams = ids.size === 2 && ids.has(String(teamA._id)) && ids.has(String(teamB._id));
+    if (!sameTeams) {
+      matchPlan.errors.push(
+        `${spec.stageLabel} is already used by match ${existing._id} (${existing.title || "untitled"}), which is not ${teamA.name} vs ${teamB.name}`,
+      );
+      matchPlan.action = "blocked";
+      return;
+    }
+    if (existing.source !== "manual") {
+      matchPlan.errors.push(
+        `${spec.stageLabel} already exists as a non-manual match ${existing._id}; refusing to create a duplicate manual scorecard`,
+      );
+      matchPlan.action = "blocked";
+      return;
+    }
+    matchPlan.action = "skip";
+    if (existing.manualDraft === true) {
+      matchPlan.warnings.push(`already imported as draft ${existing._id}`);
+    } else {
+      matchPlan.warnings.push(`already imported as a non-draft manual match ${existing._id}; left untouched`);
+    }
+    return;
+  }
+
   if (samePair.length > 1) {
     matchPlan.errors.push(`${samePair.length} matches already exist for this team pair; refusing to guess which one to use`);
     matchPlan.action = "blocked";
@@ -1449,9 +1642,9 @@ function attachExistingMatchState(matchPlan, allMatches) {
   if (samePair.length === 1) {
     const existing = samePair[0];
     matchPlan.existingMatch = existing;
-    const sameSlot =
-      String(existing.stage || "") === STAGE &&
-      String(existing.stageLabel || existing.round || "") === spec.stageLabel;
+    matchPlan.warnings.push(
+      `existing match ${existing._id} has no ${spec.stageLabel} stage label; treating the only match for this team pair as already imported`,
+    );
     if (existing.source === "manual") {
       matchPlan.action = "skip";
       if (existing.manualDraft === true) {
@@ -1465,37 +1658,12 @@ function attachExistingMatchState(matchPlan, allMatches) {
       );
       matchPlan.action = "blocked";
     }
-    if (!sameSlot) {
-      matchPlan.warnings.push(
-        `existing match has stage/stageLabel ${existing.stage || "(empty)"}/${existing.stageLabel || existing.round || "(empty)"}, expected ${STAGE}/${spec.stageLabel}`,
-      );
-    }
-    return;
-  }
-
-  const slotConflict = allMatches.find(
-    (match) =>
-      String(match.stage || "") === STAGE &&
-      String(match.stageLabel || match.round || "") === spec.stageLabel &&
-      String(match._id) !== String(matchPlan.existingMatch?._id || ""),
-  );
-  if (slotConflict) {
-    matchPlan.errors.push(
-      `${spec.stageLabel} is already used by match ${slotConflict._id} (${slotConflict.title || "untitled"}); refusing to create a second ${spec.stageLabel}`,
-    );
-    matchPlan.action = "blocked";
   }
 }
 
 async function buildPlan(context) {
   const { parsed, tournament, teams, mapping, existingMatches } = context;
   const plan = { tournament, teams, matches: [], blockers: [], warnings: [], info: [], unresolved: [] };
-  const teamByName = new Map();
-  for (const entry of teams) {
-    if (entry.team) teamByName.set(entry.name, entry.team);
-  }
-  const teamAForSpec = (spec) => teamByName.get(spec.teamA.name) || null;
-  const teamBForSpec = (spec) => teamByName.get(spec.teamB.name) || null;
 
   const squadByTeam = new Map();
   for (const entry of teams) {
@@ -1503,21 +1671,15 @@ async function buildPlan(context) {
     squadByTeam.set(String(entry.team._id), await loadSquad(entry.team));
   }
 
-  // Only process matches that are present as sheets in the workbook
-  const specsToProcess = MATCH_SPECS.filter((spec) => parsed.sheets.some((sheet) => sheet.matchNumber === spec.number));
-
-  for (const spec of specsToProcess) {
-    const parsedSheet = parsed.sheets.find((sheet) => sheet.matchNumber === spec.number) || null;
-    const matchPlan = buildMatchPlan(
-      spec,
-      parsedSheet,
+  const sheets = groupSheetsByMatch(parsed.sheets || []);
+  for (const sheet of sheets) {
+    const matchPlan = buildMatchPlan(sheet, {
       tournament,
-      teamAForSpec(spec),
-      teamBForSpec(spec),
+      teams,
       squadByTeam,
       mapping,
-    );
-    if (tournament) attachExistingMatchState(matchPlan, existingMatches);
+      existingMatches,
+    });
     if (matchPlan.action === "create") {
       matchPlan.payload = buildPayload(matchPlan, tournament);
       if (!matchPlan.payload) {
@@ -1538,13 +1700,13 @@ async function buildPlan(context) {
         }
       }
     }
-    if (matchPlan.errors.length) plan.blockers.push(...matchPlan.errors.map((error) => `QF${spec.number}: ${error}`));
-    plan.warnings.push(...matchPlan.warnings.map((warning) => `QF${spec.number}: ${warning}`));
+    const label = matchPlan.spec.stageLabel;
+    if (matchPlan.errors.length) plan.blockers.push(...matchPlan.errors.map((error) => `${label}: ${error}`));
+    plan.warnings.push(...matchPlan.warnings.map((warning) => `${label}: ${warning}`));
     plan.unresolved.push(...matchPlan.unresolved);
     plan.matches.push(matchPlan);
   }
 
-  // If processing partial set, that's fine
   return plan;
 }
 
@@ -1554,8 +1716,10 @@ function userTeamGaps(tournament, teams) {
   return { existingCount: existing.size, missing };
 }
 
-function addEnvironmentChecks(plan, { tournament, resolvedTeams, platformSettings }) {
-  if (tournament) {
+function addEnvironmentChecks(plan, { tournament, resolvedTeams, platformSettings, requiredTeamNames = null }) {
+  if (!tournament) {
+    plan.blockers.push(`tournament "${TOURNAMENT_NAME}" was not found; this script never creates it`);
+  } else {
     if (tournament.type !== "knockout") plan.blockers.push(`existing tournament type is "${tournament.type}", expected "knockout"`);
     if (tournament.format !== "T20") plan.blockers.push(`existing tournament format is "${tournament.format}", expected "T20"`);
   }
@@ -1564,7 +1728,8 @@ function addEnvironmentChecks(plan, { tournament, resolvedTeams, platformSetting
       "the platform master switch enableSuperSub is OFF; the tournament rule will be ON but Super Sub is not effective until the platform setting is enabled",
     );
   }
-  for (const entry of resolvedTeams) {
+  const required = requiredTeamNames ? resolvedTeams.filter((entry) => requiredTeamNames.has(entry.name)) : resolvedTeams;
+  for (const entry of required) {
     if (!entry.team) {
       plan.blockers.push(
         entry.ambiguous.length
@@ -1572,13 +1737,6 @@ function addEnvironmentChecks(plan, { tournament, resolvedTeams, platformSetting
           : `team ${entry.name} was not found; teams are never created by this script`,
       );
     }
-  }
-  if (!tournament) {
-    plan.warnings.push("tournament will be created with all resolved teams; missing teams block --apply");
-  }
-  const teamCount = resolvedTeams.filter((entry) => entry.team).length;
-  if (teamCount !== TOURNAMENT_TEAMS.length) {
-    plan.blockers.push(`tournament needs ${TOURNAMENT_TEAMS.length} teams, found ${teamCount}`);
   }
   return plan;
 }
@@ -1607,14 +1765,16 @@ function printPlan(plan, context, apply, placeholders = null) {
   console.log(`  Sheets          : ${context.parsed.sheets.map((sheet) => sheet.sheetName).join(" | ")}`);
   console.log(`  Mapping file    : ${context.mapping.exists ? context.mapping.file : "(none)"}`);
   console.log(`  Database        : ${context.databaseName || "(unnamed)"}${context.forceTest ? " (test/e2e guard bypassed with --force-test)" : ""}`);
-  console.log(`  Tournament      : ${plan.tournament ? `reuse ${plan.tournament._id}` : "create"} "${TOURNAMENT_NAME}"`);
-  console.log(`  Tournament date : ${MATCH_DATE.slice(0, 10)} (time not present in the scorebook; stored 00:00 UTC)`);
+  console.log(`  Tournament      : ${plan.tournament ? `reuse ${plan.tournament._id}` : "MISSING"} "${TOURNAMENT_NAME}"`);
+  console.log(
+    `  Match dates     : ${plan.matches.map((row) => `${row.spec.stageLabel} ${row.spec.date || "?"}`).join(", ") || "(none)"} (00:00 UTC)`,
+  );
   console.log(`  Format          : T20, knockout, 20 overs`);
   console.log(
     `  Super Sub rule  : ${
       plan.tournament
         ? `existing rules.twelfthManEnabled=${String(plan.tournament.rules?.twelfthManEnabled)}; --apply sets it ON`
-        : "ON (rules.twelfthManEnabled=true)"
+        : "blocked: tournament must exist"
     }`,
   );
   console.log(`  Platform gate   : enableSuperSub=${context.platformSettings.enableSuperSub}`);
@@ -1650,11 +1810,55 @@ function printPlan(plan, context, apply, placeholders = null) {
   }
 
   console.log("");
+  console.log("CREATE/SKIP plan:");
+  for (const matchPlan of plan.matches) {
+    const { spec, teamA, teamB } = matchPlan;
+    const pair = `${teamA?.name || spec.teamA?.name || "?"} vs ${teamB?.name || spec.teamB?.name || "?"}`;
+    if (matchPlan.action === "create") {
+      console.log(`  CREATE ${spec.stageLabel}  ${pair}  (${spec.date})`);
+    } else if (matchPlan.action === "skip") {
+      console.log(`  SKIP   ${spec.stageLabel}  ${pair}  (existing ${matchPlan.existingMatch?._id || "?"})`);
+    } else {
+      console.log(`  BLOCKED ${spec.stageLabel}  ${pair}`);
+    }
+  }
+
+  console.log("");
+  console.log("Validation table:");
+  for (const matchPlan of plan.matches) {
+    if (!matchPlan.innings.length) {
+      console.log(`  ${matchPlan.spec.stageLabel}: not validated (${matchPlan.action.toUpperCase()})`);
+      continue;
+    }
+    for (const inningsPlan of matchPlan.innings) {
+      const model = inningsPlan.validation?.model;
+      const raw = inningsPlan.raw;
+      if (!model) {
+        console.log(`  ${matchPlan.spec.stageLabel} innings ${inningsPlan.index}: FAIL (no model)`);
+        continue;
+      }
+      const batting = model.raw.battingRuns;
+      const extras = model.raw.extras;
+      const total = model.runs;
+      const bowling = model.raw.bowlingRuns;
+      const byes = model.extras.byes;
+      const status = inningsPlan.validation.errors.length ? "FAIL" : "OK";
+      console.log(
+        `  ${matchPlan.spec.stageLabel} innings ${inningsPlan.index}: batting ${batting} + extras ${extras} = ${total}; bowling ${bowling} + byes/leg-byes ${byes} = ${bowling + byes}; ${model.wickets} wickets; ${model.overs} overs — ${status}`,
+      );
+    }
+  }
+
+  console.log("");
   console.log("Matches:");
   for (const matchPlan of plan.matches) {
     const { spec, teamA, teamB } = matchPlan;
-    console.log(`  ${spec.stageLabel}: ${teamA?.name || spec.teamA.name} vs ${teamB?.name || spec.teamB.name}`);
+    console.log(`  ${spec.stageLabel}: ${teamA?.name || spec.teamA?.name} vs ${teamB?.name || spec.teamB?.name}`);
+    console.log(`    date       : ${spec.date || "(missing)"}`);
     console.log(`    sheet      : ${matchPlan.sheet?.sheetName || "(missing)"}`);
+    if (matchPlan.result) {
+      console.log(`    result     : ${matchPlan.result.winnerName || "tie"} by ${matchPlan.result.margin || "n/a"}`);
+    }
     if (matchPlan.existingMatch) {
       console.log(`    existing   : ${matchPlan.existingMatch._id} (source=${matchPlan.existingMatch.source || "live"}, draft=${matchPlan.existingMatch.manualDraft === true})`);
     }
@@ -1726,7 +1930,7 @@ function printPlan(plan, context, apply, placeholders = null) {
     for (const blocker of plan.blockers) console.log(`  - ${blocker}`);
     console.log("");
   } else {
-    console.log("No blockers. --apply would write the tournament (if missing) and three DRAFT manual matches.");
+    console.log("No blockers. --apply would write the DRAFT match(es) marked CREATE; SKIP rows are left untouched.");
     console.log("");
   }
 }
@@ -1739,38 +1943,24 @@ async function applyPlan(plan, context) {
   if (plan.blockers.length) {
     throw new Error(`${plan.blockers.length} blocker(s) found; refusing --apply. Fix the data/mapping first.`);
   }
-  let tournament = plan.tournament;
-  const created = { tournamentId: null, matchIds: [] };
-  if (!tournament) {
-    tournament = await Tournament.create({
-      name: TOURNAMENT_NAME,
-      type: "knockout",
-      startDate: new Date(MATCH_DATE),
-      endDate: new Date(MATCH_DATE),
-      teams: plan.teams.map((entry) => entry.team._id).filter(Boolean),
-      format: "T20",
-      rules: { twelfthManEnabled: true },
-      status: "upcoming",
-      venue: "",
-      pointsConfig: { win: 2, tie: 1, noResult: 1 },
-    });
-    created.tournamentId = String(tournament._id);
-    console.log(`Created tournament ${tournament._id}`);
-  } else {
-    const addTeams = userTeamGaps(tournament, plan.teams).missing.map((entry) => entry.team._id);
-    const update = {};
-    if (addTeams.length) update.$addToSet = { teams: { $each: addTeams } };
-    if (tournament.rules?.twelfthManEnabled !== true) {
-      update.$set = { "rules.twelfthManEnabled": true };
-    }
-    if (Object.keys(update).length) {
-      await Tournament.updateOne({ _id: tournament._id }, update);
-      console.log(`Updated tournament ${tournament._id} (teams added: ${addTeams.length}, Super Sub: ON)`);
-    } else {
-      console.log(`Reusing tournament ${tournament._id} (no gaps)`);
-    }
-    tournament = await Tournament.findById(tournament._id);
+  if (!plan.tournament) {
+    throw new Error(`tournament "${TOURNAMENT_NAME}" was not found; this script never creates it`);
   }
+  let tournament = plan.tournament;
+  const created = { tournamentId: String(tournament._id), matchIds: [] };
+  const addTeams = userTeamGaps(tournament, plan.teams).missing.map((entry) => entry.team._id);
+  const update = {};
+  if (addTeams.length) update.$addToSet = { teams: { $each: addTeams } };
+  if (tournament.rules?.twelfthManEnabled !== true) {
+    update.$set = { "rules.twelfthManEnabled": true };
+  }
+  if (Object.keys(update).length) {
+    await Tournament.updateOne({ _id: tournament._id }, update);
+    console.log(`Updated tournament ${tournament._id} (teams added: ${addTeams.length}, Super Sub: ON)`);
+  } else {
+    console.log(`Reusing tournament ${tournament._id} (no gaps)`);
+  }
+  tournament = await Tournament.findById(tournament._id);
 
   for (const matchPlan of plan.matches) {
     if (matchPlan.payload) matchPlan.payload.tournamentId = String(tournament._id);
@@ -1856,24 +2046,7 @@ export async function main(argv = process.argv) {
   if (parsed.sheets.length < 1) {
     throw new Error(`Expected at least 1 match sheet, found ${parsed.sheets.length}: ${parsed.sheets.map((sheet) => sheet.sheetName).join(", ") || "none"}`);
   }
-  // Merge innings from sheets with same match number
-  const merged = [];
-  const byMatch = new Map();
-  for (const sheet of parsed.sheets) {
-    if (!MATCH_SPECS.some((s) => s.number === sheet.matchNumber)) continue;
-    if (!byMatch.has(sheet.matchNumber)) {
-      byMatch.set(sheet.matchNumber, { sheetName: sheet.sheetName, matchNumber: sheet.matchNumber, title: sheet.title, innings: [] });
-    }
-    const target = byMatch.get(sheet.matchNumber);
-    target.innings.push(...(sheet.innings || []));
-    if (sheet.sheetName && !target.sheetName.includes(sheet.sheetName)) {
-      target.sheetName = sheet.sheetName;
-    }
-  }
-  parsed.sheets = Array.from(byMatch.values()).map((m) => {
-    m.innings.sort((a, b) => a.inningsNumber - b.inningsNumber);
-    return m;
-  });
+  parsed.sheets = groupSheetsByMatch(parsed.sheets);
 
   await mongoose.connect(uri, { serverSelectionTimeoutMS: 10000, connectTimeoutMS: 10000 });
   try {
@@ -1885,6 +2058,9 @@ export async function main(argv = process.argv) {
       throw new Error(`${existingTournamentRows.length} tournaments match "${TOURNAMENT_NAME}"; refusing to guess which one to reuse`);
     }
     const tournament = existingTournamentRows[0] || null;
+    if (!tournament) {
+      throw new Error(`tournament "${TOURNAMENT_NAME}" was not found in ${databaseName}; aborting because this script never creates it`);
+    }
     let existingMatches = [];
     if (tournament) {
       existingMatches = await Match.find({
@@ -1897,6 +2073,15 @@ export async function main(argv = process.argv) {
     const platformSettings = {
       enableSuperSub: platformRow?.value?.enableSuperSub === true,
     };
+    const requiredTeamNames = new Set();
+    for (const sheet of parsed.sheets) {
+      for (const innings of sheet.innings || []) {
+        for (const label of [innings.battingTeam, innings.bowlingTeam]) {
+          const entry = teamEntryForLabel(resolvedTeams, label).entry;
+          if (entry) requiredTeamNames.add(entry.name);
+        }
+      }
+    }
     const context = {
       workbook: workbookInfo,
       parsed,
@@ -1918,11 +2103,11 @@ export async function main(argv = process.argv) {
       existingMatches,
     });
     plan.blockers.push(...createPlan.errors);
-    addEnvironmentChecks(plan, { tournament, resolvedTeams, platformSettings });
+    addEnvironmentChecks(plan, { tournament, resolvedTeams, platformSettings, requiredTeamNames });
 
     if (!apply) {
       // Explicit CREATE: mappings are only read here; nothing is written.
-      const placeholders = await ensurePlaceholderPlayers(createPlan.specs, { dryRun: true });
+      const placeholders = await ensurePlaceholderPlayers(createSpecsForPlan(createPlan.specs, plan), { dryRun: true });
       plan.blockers.push(...placeholders.errors);
       printPlan(plan, context, false, placeholders);
       console.log("Dry run complete. Nothing was written.");
@@ -1940,7 +2125,7 @@ export async function main(argv = process.argv) {
       );
     }
 
-    const placeholders = await ensurePlaceholderPlayers(createPlan.specs, { dryRun: false });
+    const placeholders = await ensurePlaceholderPlayers(createSpecsForPlan(createPlan.specs, plan), { dryRun: false });
     if (placeholders.errors.length) {
       throw new Error(`could not ensure placeholder players: ${placeholders.errors.join("; ")}`);
     }
@@ -1959,6 +2144,7 @@ export async function main(argv = process.argv) {
         tournament,
         resolvedTeams: refreshedTeams,
         platformSettings,
+        requiredTeamNames,
       });
       if (plan.blockers.length) {
         printPlan(plan, context, true, placeholders);
