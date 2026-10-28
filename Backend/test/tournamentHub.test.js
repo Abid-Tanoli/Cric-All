@@ -711,6 +711,94 @@ test("manual drafts are hidden from public tournament/match reads but visible to
   assert.equal(adminMatch.body._id, String(draft._id));
 });
 
+test("published manual matches expose both team names on the public tournament and fixtures endpoints", async () => {
+  const tournament = await makeTournament("Manual Team Names", { type: "knockout" });
+  const teamA = await makeTeam("Manual Names A", {
+    shortName: "MNA",
+    logo: "/uploads/manual-names-a.png",
+  });
+  const teamB = await makeTeam("Manual Names B", {
+    shortName: "MNB",
+    logo: "/uploads/manual-names-b.png",
+  });
+  tournament.teams = [teamA._id, teamB._id];
+  await tournament.save();
+
+  const match = await Match.create({
+    title: uniq("Published manual QF"),
+    tournament: tournament._id,
+    teams: [teamA._id, teamB._id],
+    stage: "quarter_final",
+    stageLabel: "QF1",
+    status: "completed",
+    source: "manual",
+    manualDraft: false,
+    result: {
+      resultType: "normal",
+      winner: teamA._id,
+      description: `${teamA.name} won by 5 runs.`,
+    },
+    innings: [
+      { team: teamA._id, runs: 150, wickets: 5, balls: 120, status: "completed" },
+      { team: teamB._id, runs: 145, wickets: 8, balls: 120, status: "completed" },
+    ],
+  });
+  // The hub reads the tournament's linked matches, not a Match.find().
+  tournament.matches = [match._id];
+  await tournament.save();
+
+  const hub = await req("GET", `/api/tournaments/${tournament._id}`);
+  assert.equal(hub.status, 200, JSON.stringify(hub.body));
+  const hubMatch = (hub.body.matches || []).find((row) => String(row._id) === String(match._id));
+  assert.ok(hubMatch, "the published manual match is in the hub payload");
+  assert.deepEqual(
+    hubMatch.teams.map((team) => team.name).sort(),
+    [teamA.name, teamB.name].sort(),
+    "both match teams are populated on the hub payload",
+  );
+  assert.deepEqual(
+    hubMatch.teams.map((team) => team.shortName).sort(),
+    [teamA.shortName, teamB.shortName].sort(),
+    "short names are available for the fixture card",
+  );
+  assert.deepEqual(
+    hubMatch.teams.map((team) => team.logo).sort(),
+    [teamA.logo, teamB.logo].sort(),
+    "logos are available for the fixture card",
+  );
+  assert.deepEqual(
+    hubMatch.innings.map((row) => row.team.name),
+    [teamA.name, teamB.name],
+    "innings team refs are populated in batting order",
+  );
+  assert.deepEqual(
+    hubMatch.innings.map((row) => row.team.shortName),
+    [teamA.shortName, teamB.shortName],
+  );
+
+  const fixtures = await req("GET", `/api/tournaments/${tournament._id}/fixtures`);
+  assert.equal(fixtures.status, 200, JSON.stringify(fixtures.body));
+  const fixtureMatch = (fixtures.body || []).find((row) => String(row._id) === String(match._id));
+  assert.ok(fixtureMatch, "the published manual match is in the fixtures fallback payload");
+  assert.deepEqual(
+    fixtureMatch.teams.map((team) => team.name).sort(),
+    [teamA.name, teamB.name].sort(),
+  );
+  assert.deepEqual(
+    fixtureMatch.innings.map((row) => row.team.name),
+    [teamA.name, teamB.name],
+    "the fixtures fallback also populates innings team refs",
+  );
+
+  const detail = await req("GET", `/api/matches/${match._id}`);
+  assert.equal(detail.status, 200, JSON.stringify(detail.body));
+  assert.deepEqual(
+    detail.body.teams.map((team) => team.name).sort(),
+    [teamA.name, teamB.name].sort(),
+    "match detail remains populated",
+  );
+});
+
 // ---------------------------------------------------------------------------
 // Photo upload + delete + orphan-free tournament delete
 // ---------------------------------------------------------------------------
