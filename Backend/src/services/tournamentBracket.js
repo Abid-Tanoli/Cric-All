@@ -105,7 +105,7 @@ function cardForMatch(match, stage) {
   };
 }
 
-function placeholderFor(stage, label) {
+function placeholderFor(stage, label, slots = []) {
   return {
     placeholder: true,
     matchId: null,
@@ -118,6 +118,9 @@ function placeholderFor(stage, label) {
     winner: null,
     result: { resultType: "", description: "", winnerId: "" },
     label,
+    // A final has two entrants, so its placeholder names both semi-final
+    // winners instead of pretending the match has only one slot.
+    slots,
   };
 }
 
@@ -178,10 +181,13 @@ export function buildTournamentBracket(matches = [], opts = {}) {
           ? `Winner ${qf.stageLabel || `${short}${index * 2 + 1}`}`
           : `Winner QF${index * 2 + 1}`;
       } else if (stage === "final") {
-        const sf = existing.get("semi_final")[index];
-        sourceLabel = sf
-          ? `Winner ${sf.stageLabel || `SF${index + 1}`}`
-          : `Winner SF${index + 1}`;
+        const semiFinals = existing.get("semi_final") || [];
+        const slots = [0, 1].map((slotIndex) => {
+          const sf = semiFinals[slotIndex];
+          return `Winner ${sf?.stageLabel || `SF${slotIndex + 1}`}`;
+        });
+        placeholders.push(placeholderFor(stage, slots.join(" vs "), slots));
+        continue;
       }
       placeholders.push(placeholderFor(stage, sourceLabel));
     }

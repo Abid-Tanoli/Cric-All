@@ -354,7 +354,8 @@ test("buildTournamentBracket renders quarter-finals, auto-advanced semis, placeh
   assert.equal(stage("semi_final").matches[1].label, "Winner QF3");
   assert.equal(stage("final").matches.length, 1);
   assert.equal(stage("final").matches[0].placeholder, true);
-  assert.equal(stage("final").matches[0].label, "Winner SF1");
+  assert.equal(stage("final").matches[0].label, "Winner SF1 vs Winner SF2");
+  assert.deepEqual(stage("final").matches[0].slots, ["Winner SF1", "Winner SF2"]);
   assert.equal(beforeFinal.champion, null);
 
   const final = {
@@ -646,7 +647,8 @@ test("GET /api/tournaments/:id/standings returns a knockout bracket and hides dr
   assert.ok(!qfIds.includes(String(qfDraft._id)), "the draft quarter-final is not public");
   assert.equal(stages.semi_final.matches[0].teams[0]._id, String(teamA._id));
   assert.equal(stages.final.matches[0].placeholder, true);
-  assert.equal(stages.final.matches[0].label, "Winner SF1");
+  assert.equal(stages.final.matches[0].label, "Winner SF1 vs Winner SF2");
+  assert.deepEqual(stages.final.matches[0].slots, ["Winner SF1", "Winner SF2"]);
 });
 
 test("manual drafts are hidden from public tournament/match reads but visible to an admin", async () => {
