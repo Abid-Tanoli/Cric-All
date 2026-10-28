@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import api from '../../services/api';
 import { useToast } from '../Toast';
+import { battingPositionLabel } from '@shared/battingPositions';
 
 // Task B — the "12th Man" rule (formerly "Super Sub" / "Impact Player").
 // A team's nominated 12th man may replace one player of the playing XI once,
@@ -141,7 +142,7 @@ const ImpactPlayerSetup = ({ match, matchId }) => {
                                         {candidates.length === 0 && <option value="">No substitute available</option>}
                                         {candidates.map((p) => (
                                             <option key={idOf(p)} value={idOf(p)}>
-                                                {p.name}
+                                                {p.name}{battingPositionLabel(p.battingPosition) ? ` — ${battingPositionLabel(p.battingPosition)}` : ''}
                                             </option>
                                         ))}
                                     </select>
@@ -173,7 +174,7 @@ const ImpactPlayerSetup = ({ match, matchId }) => {
                                             <option value="">Select player...</option>
                                             {xi.map((p) => (
                                                 <option key={idOf(p)} value={idOf(p)}>
-                                                    {p.name}
+                                                    {p.name}{battingPositionLabel(p.battingPosition) ? ` — ${battingPositionLabel(p.battingPosition)}` : ''}
                                                 </option>
                                             ))}
                                         </select>

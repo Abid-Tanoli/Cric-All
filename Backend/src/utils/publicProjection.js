@@ -59,6 +59,7 @@ export const PLAYER_PUBLIC_FIELDS = Object.freeze([
   "name",
   "role",
   "playingRole",
+  "battingPosition",
   "battingStyle",
   "bowlingStyle",
   "campus",
@@ -92,6 +93,7 @@ export const PLAYER_ROSTER_FIELDS = Object.freeze([
   "name",
   "role",
   "playingRole",
+  "battingPosition",
   "imageUrl",
 ]);
 
@@ -339,7 +341,7 @@ export function sanitizeRosterPlayer(doc) {
 }
 
 function emptyRoster() {
-  return { name: "", role: "", playingRole: "", imageUrl: "" };
+  return { name: "", role: "", playingRole: "", battingPosition: "", imageUrl: "" };
 }
 
 // ---------------------------------------------------------------------------

@@ -174,7 +174,7 @@ export async function getTeamProfile(teamId, viewer = null) {
   }
 
   const playerRankings = await TeamPlayerRanking.find({ team: teamId })
-    .populate("player", "name imageUrl role playingRole");
+    .populate("player", "name imageUrl role playingRole battingPosition");
 
   return {
     team,

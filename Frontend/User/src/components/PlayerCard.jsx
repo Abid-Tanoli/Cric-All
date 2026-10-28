@@ -1,6 +1,7 @@
 import React from "react";
 import { Link } from "react-router-dom";
 import SafeImage from "../../../Shared/components/SafeImage.jsx";
+import BattingPositionBadge from "@shared/components/BattingPositionBadge";
 
 const PlayerCard = ({ player }) => {
   return (
@@ -24,7 +25,10 @@ const PlayerCard = ({ player }) => {
           </div>
           <div className="flex-1 min-w-0">
               <h4 className="font-black text-cric-text uppercase tracking-tighter truncate leading-tight group-hover:text-cric-accent transition-colors">{player.name}</h4>
-              <p className="text-[9px] font-black text-cric-muted uppercase tracking-widest mb-1">{player.role || "Prospect"}</p>
+              <div className="mb-1 flex flex-wrap items-center gap-1.5">
+                <p className="text-[9px] font-black text-cric-muted uppercase tracking-widest">{player.role || "Prospect"}</p>
+                <BattingPositionBadge value={player.battingPosition} />
+              </div>
               <p className="text-[8px] font-bold text-cric-accent bg-cric-bg px-2 py-0.5 rounded-full inline-block uppercase tracking-wider">
                {player.team?.name || player.team || "Free Agent"}
              </p>

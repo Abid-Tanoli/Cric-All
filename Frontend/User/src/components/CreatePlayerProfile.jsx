@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../services/api";
-import { AGE_GROUPS, BATTING_STYLES, BOWLING_STYLES, PLAYER_CATEGORIES, PLAYING_ROLES } from "../lib/playerFields";
+import { AGE_GROUPS, BATTING_POSITION_OPTIONS, BATTING_STYLES, BOWLING_STYLES, PLAYER_CATEGORIES, PLAYING_ROLES } from "../lib/playerFields";
 
 // The quick "enlist" modal. It posts to the same self-service endpoint as
 // /my-players and, like it, has no team picker: squad membership is granted by a
@@ -12,6 +12,7 @@ export default function CreatePlayerProfile({ onSuccess, onCancel }) {
   const [form, setForm] = useState({
     name: "",
     playingRole: "",
+    battingPosition: "",
     battingStyle: "",
     bowlingStyle: "",
     imageUrl: "",
@@ -48,7 +49,7 @@ export default function CreatePlayerProfile({ onSuccess, onCancel }) {
       delete payload["address.city"];
       delete payload["address.province"];
       // Drop the empty selects rather than sending "" for an optional enum.
-      for (const key of ["playingRole", "battingStyle", "bowlingStyle", "subCategory", "imageUrl", "organization"]) {
+      for (const key of ["playingRole", "battingPosition", "battingStyle", "bowlingStyle", "subCategory", "imageUrl", "organization"]) {
         if (!payload[key]) delete payload[key];
       }
       for (const key of Object.keys(payload.address)) {
@@ -90,6 +91,14 @@ export default function CreatePlayerProfile({ onSuccess, onCancel }) {
             <select value={form.playingRole} onChange={set("playingRole")} className="w-full p-3 bg-cric-bg border border-cric-border rounded-xl focus:ring-2 focus:ring-cric-accent outline-none font-bold text-cric-text">
               <option value="">Select Role</option>
               {PLAYING_ROLES.map(r => <option key={r} value={r}>{r}</option>)}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-[9px] font-black uppercase tracking-widest text-cric-muted mb-2">Batting Position</label>
+            <select value={form.battingPosition} onChange={set("battingPosition")} className="w-full p-3 bg-cric-bg border border-cric-border rounded-xl focus:ring-2 focus:ring-cric-accent outline-none font-bold text-cric-text">
+              <option value="">Not set</option>
+              {BATTING_POSITION_OPTIONS.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}
             </select>
           </div>
 

@@ -1,6 +1,7 @@
 import { number, idOf, sameId, longTeamName, playerName, formatDate, getTossLine, getPlayingXI, statusLabel } from "../utils/matchHelpers";
 import InfoCard from "./InfoCard";
 import InfoRow from "./InfoRow";
+import BattingPositionBadge from "@shared/components/BattingPositionBadge";
 
 export default function MatchInfoTab({ match }) {
   const weather = match.weather?.condition
@@ -29,9 +30,18 @@ export default function MatchInfoTab({ match }) {
       </InfoCard>
       {(match.teams || []).map((team) => (
         <InfoCard key={idOf(team)} title={`${longTeamName(team)} Playing XI`}>
-          <p className="text-xs sm:text-sm leading-6 sm:leading-7 text-cric-text">
-            {getPlayingXI(match, team).map((player) => playerName(player)).join(", ") || "Playing XI not announced"}
-          </p>
+          {getPlayingXI(match, team).length ? (
+            <div className="flex flex-wrap gap-x-2 gap-y-1 text-xs sm:text-sm leading-6 sm:leading-7 text-cric-text">
+              {getPlayingXI(match, team).map((player, index) => (
+                <span key={idOf(player) || index} className="inline-flex items-center gap-1">
+                  <span>{playerName(player)}{index < getPlayingXI(match, team).length - 1 ? "," : ""}</span>
+                  <BattingPositionBadge value={player?.battingPosition} />
+                </span>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs sm:text-sm leading-6 sm:leading-7 text-cric-text">Playing XI not announced</p>
+          )}
         </InfoCard>
       ))}
     </section>

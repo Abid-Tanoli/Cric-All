@@ -5,6 +5,7 @@ import { useSelector } from 'react-redux';
 import WagonWheel from '../components/ScoreManagement/WagonWheel';
 import PartnershipBuilder from '../components/ScoreManagement/PartnershipBuilder';
 import { API_BASE_URL } from '../services/api';
+import BattingPositionBadge from '@shared/components/BattingPositionBadge';
 
 const TABS = ['Live', 'Scorecard', 'Commentary', 'Stats', 'Overs', 'Playing XI', 'Wagon Wheel', 'Partnerships', 'Photos', 'Videos', 'Blogs'];
 
@@ -480,7 +481,10 @@ export default function LiveMatchView() {
                                   <span className="w-6 h-6 rounded-full bg-[#334155] flex items-center justify-center text-[10px] font-bold text-white">{i+1}</span>
                                   <div>
                                     <div className="font-bold text-white text-[15px]">{p.name || 'Player'}</div>
-                                    <div className="text-[10px] text-[#94a3b8]">{p.playingRole || ''}</div>
+                                    <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-[#94a3b8]">
+                                      <span>{p.playingRole || ''}</span>
+                                      <BattingPositionBadge value={p.battingPosition} />
+                                    </div>
                                   </div>
                                 </div>
                                 <div className="flex items-center gap-2">

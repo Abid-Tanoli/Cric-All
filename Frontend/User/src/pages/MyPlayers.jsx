@@ -11,12 +11,14 @@ import { Link, Navigate } from "react-router-dom";
 import { createMyPlayer, deleteMyPlayer, listMyPlayers, updateMyPlayer } from "../services/playerApi";
 import { useStoredUser } from "./auth/auth";
 import { Banner, card, dangerButton, eyebrow, primaryButton, secondaryButton, Field, input } from "./organization/orgStyles";
-import { PLAYING_ROLES, BATTING_STYLES, BOWLING_STYLES, PLAYER_CATEGORIES, AGE_GROUPS } from "../lib/playerFields";
+import { PLAYING_ROLES, BATTING_POSITION_OPTIONS, BATTING_STYLES, BOWLING_STYLES, PLAYER_CATEGORIES, AGE_GROUPS } from "../lib/playerFields";
+import BattingPositionBadge from "@shared/components/BattingPositionBadge";
 import { featureFlags } from "../config/features";
 
 const EMPTY = {
   name: "",
   playingRole: "",
+  battingPosition: "",
   battingStyle: "",
   bowlingStyle: "",
   category: "",
@@ -74,6 +76,14 @@ function PlayerFormFields({ form, setForm }) {
       </Field>
       <div className="grid gap-4 sm:grid-cols-3">
         <Field label="Playing role">{select("playingRole", PLAYING_ROLES, "Select role")}</Field>
+        <Field label="Batting position">
+          <select value={form.battingPosition || ""} onChange={set("battingPosition")} className={input}>
+            <option value="">Not set</option>
+            {BATTING_POSITION_OPTIONS.map(({ value, label }) => (
+              <option key={value} value={value}>{label}</option>
+            ))}
+          </select>
+        </Field>
         <Field label="Batting style">{select("battingStyle", BATTING_STYLES, "Select style")}</Field>
         <Field label="Bowling style">{select("bowlingStyle", BOWLING_STYLES, "Select style")}</Field>
       </div>
@@ -110,7 +120,10 @@ function PlayerRow({ player, onEdit, onDelete, busyId }) {
   return (
     <div className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-cric-border bg-cric-bg p-4">
       <div className="min-w-0">
-        <p className="truncate text-sm font-black uppercase tracking-wide text-cric-text">{player.name}</p>
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="truncate text-sm font-black uppercase tracking-wide text-cric-text">{player.name}</p>
+          <BattingPositionBadge value={player.battingPosition} />
+        </div>
         <p className="mt-1 text-xs font-semibold text-cric-muted">
           {[player.playingRole, player.battingStyle, player.category, player.ageGroup]
             .filter(Boolean)
@@ -215,6 +228,7 @@ export default function MyPlayers() {
       ...EMPTY,
       name: player.name || "",
       playingRole: player.playingRole || "",
+      battingPosition: player.battingPosition || "",
       battingStyle: player.battingStyle || "",
       bowlingStyle: player.bowlingStyle || "",
       category: player.category || "",

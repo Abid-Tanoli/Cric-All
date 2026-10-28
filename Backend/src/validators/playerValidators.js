@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { BATTING_POSITIONS } from '../constants/battingPositions.js';
 
 // Phase 5: player profiles.
 //
@@ -29,6 +30,14 @@ export const PLAYING_ROLES = [
 ];
 
 export const BATTING_STYLES = ['Right-handed', 'Left-handed'];
+
+// `null` is accepted as a clear signal from clients that PATCH the field, and
+// `""` is what the model stores for "not set". Anything else outside the enum
+// is a 400 at the route rather than a Mongoose validation error.
+const battingPositionSchema = z.preprocess(
+  (value) => (value === null ? '' : value),
+  z.enum(['', ...BATTING_POSITIONS]),
+);
 
 export const BOWLING_STYLES = [
   'Right-arm Fast',
@@ -159,6 +168,7 @@ export const SELF_SERVICE_PLAYER_FIELDS = [
   'name',
   'role',
   'playingRole',
+  'battingPosition',
   'battingStyle',
   'bowlingStyle',
   'campus',
@@ -183,6 +193,7 @@ export const createPlayerSchema = z
     name: z.string().trim().min(1, 'Player name is required').max(150),
     role: z.string().trim().max(120).optional(),
     playingRole: z.enum(PLAYING_ROLES).optional(),
+    battingPosition: battingPositionSchema.optional(),
     battingStyle: z.enum(BATTING_STYLES).optional(),
     bowlingStyle: z.enum(BOWLING_STYLES).optional(),
     campus: z.string().trim().max(150).optional(),
@@ -310,6 +321,7 @@ export default {
   adminUpdatePlayerSchema,
   SELF_SERVICE_PLAYER_FIELDS,
   PLAYING_ROLES,
+  BATTING_POSITIONS,
   BATTING_STYLES,
   BOWLING_STYLES,
   PLAYER_CATEGORIES,

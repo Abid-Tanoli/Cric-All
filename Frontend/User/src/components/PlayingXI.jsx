@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { api } from "../services/api";
+import BattingPositionBadge from "@shared/components/BattingPositionBadge";
 
 const idOf = (value) => {
   if (!value) return "";
@@ -168,7 +169,8 @@ export default function PlayingXI({ matchId, compact = false, className = "" }) 
                   return (
                     <li key={i} className="flex items-center justify-between text-gray-200 text-xs">
                       <span className="truncate">{playerName(p)}</span>
-                      <span className="flex gap-1 shrink-0">
+                      <span className="flex gap-1 shrink-0 items-center">
+                        <BattingPositionBadge value={p.battingPosition} className="!bg-white/10 !text-white/70 !ring-white/20" />
                         {sameId(roles.captain, pid) && <span className="text-[9px] text-blue-400 font-black">C</span>}
                         {sameId(roles.viceCaptain, pid) && <span className="text-[9px] text-emerald-400 font-black">VC</span>}
                         {(roles.wicketKeepers || []).some(wk => sameId(wk, pid)) && <span className="text-[9px] text-amber-400 font-black">WK</span>}
@@ -305,7 +307,8 @@ export default function PlayingXI({ matchId, compact = false, className = "" }) 
                     ) : (
                       role && <p className="text-[10px] text-cric-muted font-medium mt-0.5">{role}</p>
                     )}
-                    <div className="flex gap-1 mt-0.5">
+                    <div className="flex items-center gap-1 mt-0.5">
+                      <BattingPositionBadge value={p.battingPosition} />
                       {isCaptain && <span className="rounded-full bg-blue-50 px-1.5 py-0.5 text-[9px] font-black text-blue-700 leading-none">C</span>}
                       {isViceCaptain && <span className="rounded-full bg-emerald-50 px-1.5 py-0.5 text-[9px] font-black text-emerald-700 leading-none">VC</span>}
                       {isKeeper && <span className="rounded-full bg-amber-50 px-1.5 py-0.5 text-[9px] font-black text-amber-700 leading-none">WK</span>}

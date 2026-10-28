@@ -13,6 +13,7 @@ import { initSocket } from '../store/socket';
 import { useToast } from '../components/Toast';
 import ConfirmModal from '../components/ConfirmModal';
 import api from '../services/api';
+import BattingPositionBadge from '@shared/components/BattingPositionBadge';
 
 const matchTypes = ['T6', 'T8', 'T10', 'T20', 'ODI', 'Test', 'Tape Ball'];
 
@@ -324,7 +325,10 @@ const ManageMatches = () => {
                                     >
                                         <div>
                                             <p className="font-bold text-[#031d44]">{player.name || 'Player'}</p>
-                                            <p className="text-sm text-slate-500">{player.role}</p>
+                                            <p className="flex flex-wrap items-center gap-1.5 text-sm text-slate-500">
+                                                <span>{player.playingRole || player.role || 'Player'}</span>
+                                                <BattingPositionBadge value={player.battingPosition} />
+                                            </p>
                                         </div>
                                         <div
                                             className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${selectedXI.includes(player._id || player)

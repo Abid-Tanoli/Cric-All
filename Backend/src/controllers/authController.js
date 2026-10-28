@@ -127,6 +127,7 @@ export const registerUser = async (req, res) => {
       await Player.create({
         name,
         playingRole: playerProfile.playingRole || "",
+        battingPosition: playerProfile.battingPosition || "",
         battingStyle: playerProfile.battingStyle || "",
         bowlingStyle: playerProfile.bowlingStyle || "",
         category: playerProfile.category || "Other",

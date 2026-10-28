@@ -82,7 +82,7 @@ export const getTeamsByType = async (req, res) => {
     // here cannot become a second player directory.
     const teams = await Team.find({ type: teamType, ...publicTeamClause() })
       .select(TEAM_PUBLIC_SELECT)
-      .populate("players", "name role")
+      .populate("players", "name role playingRole battingPosition")
       .sort({ name: 1 });
 
     res.json(sanitizeTeamsPublic(teams));

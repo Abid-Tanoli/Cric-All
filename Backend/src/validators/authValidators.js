@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { BATTING_POSITIONS } from "../constants/battingPositions.js";
 import { isValidPhone, normalizePhone } from "../utils/phone.js";
 
 // Auth request validation.
@@ -62,6 +63,9 @@ export const registerSchema = z
     playerProfile: z
       .object({
         playingRole: z.string().max(60).optional(),
+        // Optional, but if a client sends it, it must be a known value. An
+        // empty string means "not set" and is dropped by the controller.
+        battingPosition: z.enum(["", ...BATTING_POSITIONS]).optional(),
         battingStyle: z.string().max(60).optional(),
         bowlingStyle: z.string().max(60).optional(),
         category: z.string().max(60).optional(),

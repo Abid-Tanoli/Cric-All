@@ -19,6 +19,9 @@
 //     `role` column. Rows whose role is blank get no playingRole from this
 //     script: nothing is invented, and they are listed under "role to confirm"
 //     (the model's own default then applies).
+//   * Player.battingPosition from the OPTIONAL `batting_position` column.
+//     Without that column the importer behaves exactly as before (7 columns,
+//     no position written). Blank cells are left unset rather than guessed.
 //   * Team.captain / Team.viceCaptain from the CSV is_captain / is_vice_captain
 //     flags.
 //
@@ -70,6 +73,8 @@
 // invalid file fails without a single write.
 
 import fs from "fs";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
 import mongoose from "mongoose";
 import Team from "../models/Team.js";
 import Player from "../models/Player.js";
@@ -80,6 +85,10 @@ import { normalizePlayerName } from "../services/playerService.js";
 import { generateOrgSlug } from "../services/membershipService.js";
 import { getMongoTarget } from "../utils/mongoTarget.js";
 import { isReservedTestName } from "../utils/publicProjection.js";
+import {
+  BATTING_POSITIONS,
+  normalizeBattingPosition,
+} from "../constants/battingPositions.js";
 
 // No background index build while we re-read existing names and insert.
 mongoose.set("autoIndex", false);
@@ -99,6 +108,9 @@ const REQUIRED_HEADERS = [
   "is_vice_captain",
   "note",
 ];
+// Optional: when present, rows become 8 columns. When absent, the original
+// 7-column file is accepted unchanged and no position is written.
+const BATTING_POSITION_HEADER = "batting_position";
 
 // CSV text -> Player.playingRole. The platform enum is
 // ["Batsman","Bowler","All-Rounder","Batting-All-Rounder",
@@ -230,9 +242,11 @@ export function validateSquads(rows) {
     if (at === -1) problems.push(`missing required column "${name}"`);
     index[name] = at;
   }
+  const battingPositionIndex = header.indexOf(BATTING_POSITION_HEADER);
   if (problems.length > 0) {
     throw new Error(`Invalid CSV header: ${problems.join("; ")}.`);
   }
+  const expectedColumns = REQUIRED_HEADERS.length + (battingPositionIndex === -1 ? 0 : 1);
 
   const records = [];
   const teamsByKey = new Map();
@@ -240,9 +254,9 @@ export function validateSquads(rows) {
   for (let r = 1; r < rows.length; r += 1) {
     const line = r + 1; // 1-based file line for the operator
     const cells = rows[r];
-    if (cells.length !== REQUIRED_HEADERS.length) {
+    if (cells.length !== expectedColumns) {
       problems.push(
-        `line ${line}: expected ${REQUIRED_HEADERS.length} columns, found ${cells.length}`,
+        `line ${line}: expected ${expectedColumns} columns, found ${cells.length}`,
       );
       continue;
     }
@@ -275,6 +289,23 @@ export function validateSquads(rows) {
       }
     }
 
+    // Optional column: a blank cell means "not set" (nothing is invented); a
+    // non-blank cell must be a known value, otherwise the whole file is refused
+    // before the database is touched.
+    let battingPosition = null;
+    if (battingPositionIndex !== -1) {
+      const raw = String(cells[battingPositionIndex] ?? "").trim();
+      if (raw) {
+        battingPosition = normalizeBattingPosition(raw);
+        if (!battingPosition) {
+          problems.push(
+            `line ${line}: unknown batting_position "${raw}" for ${playerName} ` +
+              `(allowed: ${BATTING_POSITIONS.join(", ")})`,
+          );
+        }
+      }
+    }
+
     for (const [label, value] of [
       ["club", club],
       ["team", team],
@@ -298,6 +329,7 @@ export function validateSquads(rows) {
       playerName,
       roleRaw,
       playingRole,
+      battingPosition,
       isCaptain: isCaptain === true,
       isViceCaptain: isViceCaptain === true,
       note,
@@ -511,6 +543,7 @@ async function executePlan(plan) {
       } else {
         const payload = { name: player.playerName, team: teamDoc._id };
         if (player.playingRole) payload.playingRole = player.playingRole;
+        if (player.battingPosition) payload.battingPosition = player.battingPosition;
         playerDoc = await Player.create(payload);
         player.id = playerDoc._id;
         player.status = "created";
@@ -584,8 +617,9 @@ function printPlan(plan, apply) {
       for (const player of plan.players.filter((p) => p.teamKey === team.key)) {
         const playerTag = player.status === "create" ? "CREATE" : "exists";
         const role = player.playingRole ? player.playingRole : "(role to confirm)";
+        const position = player.battingPosition ? ` [${player.battingPosition}]` : "";
         const marks = [player.isCaptain ? "C" : "", player.isViceCaptain ? "VC" : ""].filter(Boolean).join(",");
-        console.log(`      [player:${playerTag}] ${player.playerName} — ${role}${marks ? ` [${marks}]` : ""}`);
+        console.log(`      [player:${playerTag}] ${player.playerName} — ${role}${position}${marks ? ` [${marks}]` : ""}`);
       }
     }
   }
@@ -706,8 +740,13 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  console.error("");
-  console.error(`REFUSING TO RUN: ${error.message}`);
-  process.exitCode = 1;
-});
+const isMain =
+  process.argv[1] &&
+  pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url;
+if (isMain) {
+  main().catch((error) => {
+    console.error("");
+    console.error(`REFUSING TO RUN: ${error.message}`);
+    process.exitCode = 1;
+  });
+}

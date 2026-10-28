@@ -1,5 +1,6 @@
 import React from "react";
 import { Link } from "react-router-dom";
+import BattingPositionBadge from "@shared/components/BattingPositionBadge";
 
 function SquadCard({ squad }) {
   const team = squad.team || {};
@@ -33,6 +34,7 @@ function SquadCard({ squad }) {
                   className="px-3 py-1.5 bg-cric-bg hover:bg-cric-card hover:text-cric-accent rounded-lg text-xs font-bold transition-colors flex items-center gap-1"
                 >
                   {player.name}
+                  <BattingPositionBadge value={player.battingPosition} />
                   {isC(id) && <span className="text-cric-accent">(C)</span>}
                   {isVC(id) && <span className="text-green-600">(VC)</span>}
                   {isWK(id) && <span className="text-orange-600">(WK)</span>}

@@ -10,6 +10,7 @@ import ConfirmModal from '../components/ConfirmModal';
 import LiveTab from '../components/ScoreManagement/LiveTab';
 import ScorecardTab from '../components/ScoreManagement/ScorecardTab';
 import CommentaryTab from '../components/ScoreManagement/CommentaryTab';
+import BattingPositionBadge from '@shared/components/BattingPositionBadge';
 import StatsTab from '../components/ScoreManagement/StatsTab';
 import { TABS, getScoreTabPath, formatOvers, FIELD_POSITIONS, WICKET_TYPES } from '../components/ScoreManagement/constants';
 import ScoringMobileBar from '../components/ScoringMobileBar';
@@ -680,7 +681,10 @@ export default function ManageScore() {
                                         {getPlayingXI(team?._id).map((p, pIdx) => (
                                             <div key={pIdx} className="bg-black/[0.03] dark:bg-white/[0.03] p-4 rounded-2xl border border-cric-border/50 flex justify-between items-center group hover:border-cric-accent/30 transition-all">
                                                 <span className="font-bold text-cric-text group-hover:text-cric-accent transition-all">{p.name}</span>
-                                                <span className="text-[10px] font-black text-cric-accent uppercase tracking-widest">{p.playingRole || 'Player'}</span>
+                                                <span className="flex items-center gap-1.5 text-[10px] font-black text-cric-accent uppercase tracking-widest">
+                                                    {p.playingRole || 'Player'}
+                                                    <BattingPositionBadge value={p.battingPosition} />
+                                                </span>
                                             </div>
                                         ))}
                                     </div>

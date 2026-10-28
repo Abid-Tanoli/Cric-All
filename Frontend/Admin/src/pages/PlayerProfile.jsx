@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import api from "../services/api";
+import BattingPositionBadge from "@shared/components/BattingPositionBadge";
 
 const ROLE_COLORS = {
     Batsman: "bg-blue-100 text-blue-700 border-blue-300",
@@ -93,8 +94,9 @@ export default function PlayerProfile() {
                     )}
                     <div className="text-center md:text-left">
                         <h1 className="text-4xl font-black text-[#031d44]">{player.name}</h1>
-                        <p className="text-lg font-bold text-slate-600 mt-1">
-                            {roleEmoji} {player.playingRole}
+                        <p className="mt-1 flex items-center justify-center gap-2 text-lg font-bold text-slate-600 md:justify-start">
+                            <span>{roleEmoji} {player.playingRole}</span>
+                            <BattingPositionBadge value={player.battingPosition} />
                         </p>
                         <p className="text-sm text-slate-500 mt-1">
                             {player.battingStyle} • {player.bowlingStyle}

@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { BATTING_POSITIONS } from "../constants/battingPositions.js";
 
 const playerSchema = new mongoose.Schema(
   {
@@ -8,6 +9,15 @@ const playerSchema = new mongoose.Schema(
       type: String,
       enum: ["Batsman", "Bowler", "All-Rounder", "Batting-All-Rounder", "Bowling-All-Rounder", "Wicket-Keeper"],
       default: "Batsman"
+    },
+    // Optional classification used by the XI pickers and public squad lists.
+    // `""` is a first-class value (not set) so every player created before this
+    // field existed stays valid without a backfill; null clears it to the same
+    // state via the validator's preprocessor.
+    battingPosition: {
+      type: String,
+      enum: ["", ...BATTING_POSITIONS],
+      default: ""
     },
     battingStyle: {
       type: String,

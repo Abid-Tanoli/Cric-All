@@ -7,6 +7,23 @@
 // form that offers "Left-arm Chinaman" nowhere but the database accepts it is a
 // silent data-entry gap, and one that offers a spelling the server rejects is a
 // 400 the user cannot act on.
+//
+// `battingPosition` is different: its values/labels live in one shared module
+// consumed by both frontends, so it is re-exported here rather than copied a
+// second time.
+import {
+  BATTING_POSITION_LABELS,
+  BATTING_POSITION_OPTIONS,
+  BATTING_POSITION_VALUES,
+  battingPositionLabel,
+} from "@shared/battingPositions";
+
+export {
+  BATTING_POSITION_LABELS,
+  BATTING_POSITION_OPTIONS,
+  BATTING_POSITION_VALUES,
+  battingPositionLabel,
+};
 
 export const PLAYING_ROLES = [
   "Batsman",
@@ -57,4 +74,8 @@ export default {
   BOWLING_STYLES,
   PLAYER_CATEGORIES,
   AGE_GROUPS,
+  BATTING_POSITION_OPTIONS,
+  BATTING_POSITION_VALUES,
+  BATTING_POSITION_LABELS,
+  battingPositionLabel,
 };
