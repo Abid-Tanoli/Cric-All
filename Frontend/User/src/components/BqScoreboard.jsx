@@ -295,7 +295,7 @@ const BqScoreboard = ({ match }) => {
                 <div key={idx} className="flex-1 text-center py-3 rounded-lg bg-cric-bg">
                   <p className="text-[10px] text-cric-muted dark:text-cric-muted font-bold uppercase truncate">{inn.team}</p>
                   <p className="text-2xl font-black text-cric-text dark:text-white">{inn.score}</p>
-                  <p className="text-xs text-cric-muted">({inn.overs} ov)</p>
+                  <p className="text-xs text-cric-muted">({(typeof inn.balls === 'number') ? `${Math.floor(inn.balls/6)}.${inn.balls%6}` : inn.overs} ov)</p>
                   {inn.powerplay && (
                     <p className="text-[10px] text-purple-600 dark:text-purple-400 mt-0.5 font-semibold">PP: {inn.powerplay}</p>
                   )}

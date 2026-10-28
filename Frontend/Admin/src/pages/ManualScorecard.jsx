@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import api from "../services/api";
 import { useToast } from "../components/Toast";
@@ -41,6 +41,182 @@ const inningsRuns = (inn) =>
 
 const inningsWickets = (inn) => inn.batting.filter((row) => row.isOut).length;
 
+const idOf = (value) => String(value?._id || value || "");
+
+const oversText = (balls, overs) => {
+  const totalBalls = Number(balls);
+  if (Number.isFinite(totalBalls) && totalBalls > 0) {
+    return `${Math.floor(totalBalls / 6)}.${totalBalls % 6}`;
+  }
+  const whole = Number(overs);
+  return Number.isFinite(whole) && whole > 0 ? `${whole}.0` : "";
+};
+
+const localDateTimeValue = (value) => {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+};
+
+const teamName = (team) => team?.name || team?.shortName || "Team";
+
+const matchHeading = (match) => {
+  const teams = (match?.teams || []).map(teamName);
+  if (teams.length === 2) return `${teams[0]} vs ${teams[1]}`;
+  return match?.title || "Manual scorecard";
+};
+
+const matchDate = (match) => {
+  if (!match?.startAt) return "";
+  const date = new Date(match.startAt);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+};
+
+const playerOption = (player) => {
+  const id = idOf(player);
+  if (!id) return null;
+  return {
+    _id: id,
+    name: player?.name || "Player",
+    playingRole: player?.playingRole || player?.role || "",
+  };
+};
+
+const mergePlayerLists = (existing = [], incoming = []) => {
+  const seen = new Set(existing.map((player) => idOf(player)));
+  const merged = [...existing];
+  for (const player of incoming || []) {
+    const option = playerOption(player);
+    if (!option || seen.has(option._id)) continue;
+    seen.add(option._id);
+    merged.push(option);
+  }
+  return merged;
+};
+
+/** Roster/participants from a loaded match, so imported player ids stay selectable. */
+const playersFromMatch = (match) => {
+  const result = {};
+  const teamIds = (match?.teams || []).map(idOf);
+
+  const add = (teamId, player) => {
+    const key = idOf(teamId);
+    const option = playerOption(player);
+    if (!key || !option) return;
+    if (!result[key]) result[key] = [];
+    if (!result[key].some((row) => row._id === option._id)) result[key].push(option);
+  };
+
+  for (const team of match?.teams || []) {
+    for (const player of team?.players || []) add(idOf(team), player);
+  }
+
+  for (const innings of match?.innings || []) {
+    const battingTeam = idOf(innings?.team);
+    const bowlingTeam = teamIds.find((teamId) => teamId && teamId !== battingTeam);
+    for (const row of innings?.batting || []) add(battingTeam, row?.player);
+    for (const row of innings?.bowling || []) add(bowlingTeam, row?.player);
+    for (const row of innings?.fallOfWickets || []) add(battingTeam, row?.player);
+  }
+
+  return result;
+};
+
+const formFromMatch = (match) => {
+  const teamIds = (match?.teams || []).map(idOf);
+  const storedInnings = Array.isArray(match?.innings) ? match.innings : [];
+  const innings = [0, 1].map((index) => {
+    const source = storedInnings[index] || {};
+    const base = emptyInnings();
+    return {
+      ...base,
+      team: idOf(source.team) || teamIds[index] || "",
+      batting: (source.batting || []).map((row) => ({
+        player: idOf(row.player),
+        runs: row.runs ?? 0,
+        balls: row.balls ?? 0,
+        fours: row.fours ?? 0,
+        sixes: row.sixes ?? 0,
+        isOut: row.isOut === true,
+        dismissalType: row.dismissalType || "",
+        dismissalText: row.dismissalText || "",
+        isRetiredHurt: row.isRetiredHurt === true,
+        isRetired: row.isRetired === true,
+      })),
+      bowling: (source.bowling || []).map((row) => ({
+        player: idOf(row.player),
+        overs: oversText(row.balls, row.overs),
+        maidens: row.maidens ?? 0,
+        runs: row.runs ?? 0,
+        wickets: row.wickets ?? 0,
+        wides: row.wides ?? 0,
+        noBalls: row.noBalls ?? 0,
+      })),
+      extras: { ...base.extras, ...(source.extras || {}) },
+      overs: oversText(source.balls, source.overs),
+      fallOfWickets: (source.fallOfWickets || []).map((row) => ({
+        runs: row.runs,
+        wickets: row.wickets ?? row.wicket,
+        player: idOf(row.player),
+        // Manual scorecards store this as balls, matching the validator.
+        overs: Number.isFinite(Number(row.overs)) ? oversText(row.overs, 0) : "",
+      })),
+    };
+  });
+
+  return {
+    meta: {
+      tournamentId: idOf(match?.tournament),
+      stage: match?.stage || "",
+      stageLabel: match?.stageLabel || "",
+      teamA: teamIds[0] || "",
+      teamB: teamIds[1] || "",
+      startAt: localDateTimeValue(match?.startAt),
+      totalOvers: match?.totalOvers || 20,
+      venue: match?.venue || "",
+      title: match?.title || "",
+      tossWinner: idOf(match?.tossWinner),
+      tossDecision: match?.tossDecision || "bat",
+    },
+    innings,
+    result: {
+      resultType: match?.result?.resultType || "normal",
+      winner: idOf(match?.result?.winner),
+      margin: match?.result?.margin || "",
+      note: match?.result?.description || "",
+    },
+    manOfMatch: idOf(match?.manOfMatch),
+    playersByTeam: playersFromMatch(match),
+  };
+};
+
+function ManualMatchRow({ match, action, onOpen }) {
+  const details = [
+    match.stageLabel || match.stage || "Manual match",
+    match.tournament?.name || "",
+    matchDate(match),
+  ].filter(Boolean);
+
+  return (
+    <div className="flex flex-col gap-2 rounded-lg border border-cric-border bg-cric-bg/60 p-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="min-w-0">
+        <p className="truncate text-sm font-black">{matchHeading(match)}</p>
+        <p className="mt-0.5 text-xs text-cric-muted">{details.join(" · ")}</p>
+      </div>
+      <button
+        type="button"
+        onClick={() => onOpen(match)}
+        className="shrink-0 rounded-lg border border-cric-border px-3 py-1.5 text-xs font-black text-cric-accent"
+      >
+        {action}
+      </button>
+    </div>
+  );
+}
+
 export default function ManualScorecard() {
   const { id: editId } = useParams();
   const navigate = useNavigate();
@@ -70,12 +246,67 @@ export default function ManualScorecard() {
   const [errors, setErrors] = useState([]);
   const [saving, setSaving] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
+  const [manualMatches, setManualMatches] = useState([]);
+  const [matchesLoading, setMatchesLoading] = useState(true);
+  const [matchesError, setMatchesError] = useState("");
+  const [loadingEdit, setLoadingEdit] = useState(false);
 
   const teams = tournament?.teams || [];
   const teamOptions = useMemo(
     () => teams.map((team) => ({ value: String(team._id || team), label: team.name || team.shortName || "Team" })),
     [teams]
   );
+  const drafts = useMemo(() => manualMatches.filter((match) => match.manualDraft === true), [manualMatches]);
+  const published = useMemo(() => manualMatches.filter((match) => match.manualDraft !== true), [manualMatches]);
+
+  const loadManualMatches = useCallback(async () => {
+    setMatchesLoading(true);
+    setMatchesError("");
+    try {
+      const res = await api.get("/matches/manual");
+      const list = res.data?.matches || res.data || [];
+      setManualMatches(Array.isArray(list) ? list : []);
+    } catch (error) {
+      setMatchesError(error.response?.data?.message || "Failed to load manual scorecards.");
+    } finally {
+      setMatchesLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadManualMatches();
+  }, [loadManualMatches]);
+
+  useEffect(() => {
+    if (!editId) return;
+    let active = true;
+    setLoadingEdit(true);
+    setErrors([]);
+    api.get(`/matches/${editId}`)
+      .then((res) => {
+        if (!active) return;
+        const match = res.data?.match || res.data;
+        if (!match?._id) throw new Error("Manual scorecard not found.");
+        const form = formFromMatch(match);
+        setMeta(form.meta);
+        setInnings(form.innings);
+        setResult(form.result);
+        setManOfMatch(form.manOfMatch);
+        setPlayersByTeam((prev) => {
+          const next = { ...prev };
+          for (const [teamId, players] of Object.entries(form.playersByTeam)) {
+            next[teamId] = mergePlayerLists(next[teamId] || [], players);
+          }
+          return next;
+        });
+      })
+      .catch((error) => {
+        if (!active) return;
+        setErrors([error.response?.data?.message || error.message || "Failed to load the manual scorecard."]);
+      })
+      .finally(() => { if (active) setLoadingEdit(false); });
+    return () => { active = false; };
+  }, [editId]);
 
   useEffect(() => {
     let active = true;
@@ -114,13 +345,29 @@ export default function ManualScorecard() {
       api.get(`/teams/${teamId}/players`)
         .then((res) => {
           const list = Array.isArray(res.data) ? res.data : (res.data?.players || []);
-          setPlayersByTeam((prev) => ({ ...prev, [teamId]: list }));
+          setPlayersByTeam((prev) => ({
+            ...prev,
+            [teamId]: mergePlayerLists(prev[teamId] || [], list),
+          }));
         })
-        .catch(() => setPlayersByTeam((prev) => ({ ...prev, [teamId]: [] })));
+        .catch(() => setPlayersByTeam((prev) => (prev[teamId] ? prev : { ...prev, [teamId]: [] })));
     });
   }, [meta.teamA, meta.teamB, playersByTeam]);
 
   const playersFor = (teamId) => playersByTeam[teamId] || [];
+  const manOfMatchOptions = useMemo(() => {
+    const seen = new Set();
+    const options = [];
+    for (const teamId of [meta.teamA, meta.teamB]) {
+      for (const player of playersByTeam[teamId] || []) {
+        const playerId = idOf(player);
+        if (!playerId || seen.has(playerId)) continue;
+        seen.add(playerId);
+        options.push(player);
+      }
+    }
+    return options;
+  }, [meta.teamA, meta.teamB, playersByTeam]);
 
   const setMetaField = (key, value) => setMeta((prev) => ({ ...prev, [key]: value }));
 
@@ -164,7 +411,7 @@ export default function ManualScorecard() {
     stageLabel: meta.stageLabel || "",
     teamA: meta.teamA,
     teamB: meta.teamB,
-    startAt: meta.startAt || undefined,
+    startAt: meta.startAt ? new Date(meta.startAt).toISOString() : undefined,
     totalOvers: num(meta.totalOvers) || 20,
     venue: meta.venue,
     title: meta.title,
@@ -189,6 +436,8 @@ export default function ManualScorecard() {
         fours: num(row.fours),
         sixes: num(row.sixes),
         isOut: !!row.isOut,
+        isRetiredHurt: !!row.isRetiredHurt,
+        isRetired: !!row.isRetired,
         dismissalType: row.dismissalType || "",
         dismissalText: row.dismissalText || "",
       })),
@@ -198,7 +447,19 @@ export default function ManualScorecard() {
         maidens: num(row.maidens),
         runs: num(row.runs),
         wickets: num(row.wickets),
+        wides: num(row.wides),
+        noBalls: num(row.noBalls),
       })),
+      // Kept out of the visible form, but preserved when an imported draft is
+      // opened and re-published so editing does not drop the fall of wickets.
+      fallOfWickets: (inn.fallOfWickets || [])
+        .filter((row) => row && row.wickets)
+        .map((row) => ({
+          runs: num(row.runs),
+          wickets: num(row.wickets),
+          player: row.player || undefined,
+          overs: row.overs || undefined,
+        })),
     })),
     result: {
       resultType: result.resultType,
@@ -219,6 +480,7 @@ export default function ManualScorecard() {
         : await api.post("/matches/manual", payload);
       const saved = res.data?.match;
       showToast?.(draft ? "Draft saved." : "Manual scorecard published.", "success");
+      await loadManualMatches();
       if (!editId && saved?._id) {
         navigate(`/admin/manual-scorecard/${saved._id}`, { replace: true });
       }
@@ -241,17 +503,26 @@ export default function ManualScorecard() {
             <p className="text-xs text-cric-muted mt-1">Enter a completed match from the paper scorebook.</p>
           </div>
           <div className="flex flex-wrap gap-2">
+            {editId && (
+              <button type="button" onClick={() => navigate("/admin/manual-scorecard")} className="px-3 py-2 rounded-lg border border-cric-border text-sm font-bold">
+                Back to scorecards
+              </button>
+            )}
             <button type="button" onClick={() => setShowPreview((v) => !v)} className="px-3 py-2 rounded-lg border border-cric-border text-sm font-bold">
               {showPreview ? "Hide preview" : "Preview scorecard"}
             </button>
-            <button type="button" disabled={saving} onClick={() => save(true)} className="px-3 py-2 rounded-lg border border-cric-border text-sm font-bold disabled:opacity-50">
+            <button type="button" disabled={saving || loadingEdit} onClick={() => save(true)} className="px-3 py-2 rounded-lg border border-cric-border text-sm font-bold disabled:opacity-50">
               Save draft
             </button>
-            <button type="button" disabled={saving} onClick={() => save(false)} className="px-4 py-2 rounded-lg bg-cric-accent text-white text-sm font-black disabled:opacity-50">
+            <button type="button" disabled={saving || loadingEdit} onClick={() => save(false)} className="px-4 py-2 rounded-lg bg-cric-accent text-white text-sm font-black disabled:opacity-50">
               Publish
             </button>
           </div>
         </header>
+
+        {loadingEdit && (
+          <p role="status" className="text-sm font-bold text-cric-muted">Loading scorecard…</p>
+        )}
 
         {errors.length > 0 && (
           <div role="alert" className="rounded-lg border border-red-500/40 bg-red-500/10 p-3 text-sm">
@@ -260,6 +531,68 @@ export default function ManualScorecard() {
               {errors.map((line, i) => <li key={i}>{line}</li>)}
             </ul>
           </div>
+        )}
+
+        {!editId && (
+          <section className="rounded-xl border border-cric-border bg-cric-card p-4" data-testid="manual-scorecard-library">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h2 className="text-sm font-black uppercase tracking-wider text-cric-muted">Manual scorecards</h2>
+                <p className="mt-1 text-xs text-cric-muted">Drafts stay out of the public site until you publish them.</p>
+              </div>
+              <button type="button" onClick={loadManualMatches} disabled={matchesLoading} className="rounded-lg border border-cric-border px-3 py-1.5 text-xs font-bold disabled:opacity-50">
+                {matchesLoading ? "Loading…" : "Refresh"}
+              </button>
+            </div>
+
+            {matchesError && (
+              <p role="alert" className="mb-3 rounded-lg border border-red-500/40 bg-red-500/10 p-2 text-xs">
+                {matchesError}
+              </p>
+            )}
+
+            <div className="space-y-3">
+              <div>
+                <h3 className="mb-2 text-xs font-black uppercase tracking-wider text-cric-muted">
+                  Drafts ({drafts.length})
+                </h3>
+                {drafts.length === 0 ? (
+                  <p className="text-xs text-cric-muted">No manual drafts.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {drafts.map((match) => (
+                      <ManualMatchRow
+                        key={match._id}
+                        match={match}
+                        action="Open draft"
+                        onOpen={(row) => navigate(`/admin/manual-scorecard/${row._id}`)}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <h3 className="mb-2 text-xs font-black uppercase tracking-wider text-cric-muted">
+                  Published ({published.length})
+                </h3>
+                {published.length === 0 ? (
+                  <p className="text-xs text-cric-muted">No published manual scorecards.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {published.map((match) => (
+                      <ManualMatchRow
+                        key={match._id}
+                        match={match}
+                        action="Edit"
+                        onOpen={(row) => navigate(`/admin/manual-scorecard/${row._id}`)}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </section>
         )}
 
         <section className="rounded-xl border border-cric-border bg-cric-card p-4">
@@ -454,7 +787,7 @@ export default function ManualScorecard() {
               Player of the match
               <select aria-label="Player of the match" value={manOfMatch} onChange={(e) => setManOfMatch(e.target.value)} className="mt-1 w-full rounded border border-cric-border bg-cric-bg px-2 py-1.5 text-sm font-normal">
                 <option value="">— select —</option>
-                {[...playersFor(meta.teamA), ...playersFor(meta.teamB)].map((p) => (
+                {manOfMatchOptions.map((p) => (
                   <option key={p._id} value={p._id}>{p.name}</option>
                 ))}
               </select>

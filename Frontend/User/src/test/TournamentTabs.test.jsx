@@ -62,6 +62,22 @@ describe("tournament tab registry", () => {
     expect(tabs.some((t) => t.key === "stats")).toBe(false);
   });
 
+  it("shows the Table tab for a knockout bracket even with no points rows", () => {
+    const ctx = {
+      ...fullCtx,
+      standings: [],
+      bracket: { isKnockout: true, stages: [{ stage: "final", matches: [{ matchId: "m1" }] }] },
+    };
+    expect(isTabVisible("table", ctx)).toBe(true);
+    expect(tabByPath("table", ctx).key).toBe("table");
+  });
+
+  it("hides the Table tab when there are neither points rows nor a bracket", () => {
+    const ctx = { ...fullCtx, standings: [], bracket: null };
+    expect(isTabVisible("table", ctx)).toBe(false);
+    expect(resolveTabs(ctx).some((tab) => tab.key === "table")).toBe(false);
+  });
+
   it("resolves a tab by its path, and Home by the empty string", () => {
     expect(tabByPath("", fullCtx).key).toBe("home");
     expect(tabByPath("fixtures", fullCtx).key).toBe("fixtures");

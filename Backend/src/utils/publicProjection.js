@@ -533,6 +533,15 @@ const TEST_NAME_PREFIXES = [
   "CRICALL_TEST_",
 ];
 
+// A manual scorecard saved before publishing is a private working copy. These
+// two helpers keep it out of every public match/tournament read; admin callers
+// opt back in explicitly (see `optionalProtect` on the match routes).
+export function isDraftMatchDoc(match) {
+  return Boolean(match && (match.manualDraft === true || match.isDraft === true));
+}
+
+export const PUBLIC_MATCH_FILTER = Object.freeze({ manualDraft: { $ne: true } });
+
 export function isReservedTestName(value) {
   if (!value) return false;
   const s = String(value).trim().toUpperCase();
@@ -648,6 +657,8 @@ export function stripHiddenTeamRefs(payload, hiddenIdSet) {
 
 export default {
   isReservedTestName,
+  isDraftMatchDoc,
+  PUBLIC_MATCH_FILTER,
   reservedNamesRegex,
   reservedNamesMongoClause,
   publicTeamClause,

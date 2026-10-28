@@ -8,13 +8,23 @@ import Tournament from "../models/Tournament.js";
 import Partnership from "../models/Partnership.js";
 import { getIO } from "../socket/socket.js";
 import { getBallRunText, normalizeBallRunText } from "../utils/cricketHelpers.js";
-import { hiddenTeamIds, reservedNamesMongoClause } from "../utils/publicProjection.js";
+import {
+  hiddenTeamIds,
+  reservedNamesMongoClause,
+  isDraftMatchDoc,
+  PUBLIC_MATCH_FILTER,
+} from "../utils/publicProjection.js";
 import { getPlatformSettings } from "../models/SystemSettings.js";
 import { recordAudit } from "../utils/audit.js";
 import { buildMatchInnings, ensureMatchInnings } from "../utils/matchInnings.js";
 import { updateTournamentPoints } from "../services/tournamentService.js";
 
 const normalStatus = (status = "upcoming") => (status === "innings-break" ? "innings_break" : status);
+
+// The public match routes are token-optional; only a platform admin may read a
+// manual draft before it is published.
+const canSeeDrafts = (req) => req?.principalType === "admin";
+const isPrivateDraft = (req, match) => isDraftMatchDoc(match) && !canSeeDrafts(req);
 const legalMatchStatuses = [
   "upcoming",
   "toss_done",
@@ -200,6 +210,7 @@ export const getMatches = async (req, res) => {
     const seriesFilter = req.query.series || req.query.seriesId;
     if (seriesFilter) query.series = seriesFilter;
     if (req.query.tournament) query.tournament = req.query.tournament;
+    if (!canSeeDrafts(req)) query.manualDraft = { $ne: true };
 
     // Fix B: the public match feed omits matches that involve a hidden team or
     // a fixture. Org-scoped reads (`GET /organizations/:id/matches`) live in
@@ -233,7 +244,7 @@ export const getMatch = async (req, res) => {
   try {
     const match = await populateMatch(Match.findById(req.params.id));
 
-    if (!match) {
+    if (!match || isPrivateDraft(req, match)) {
       return res.status(404).json({ message: "Match not found" });
     }
 
@@ -631,7 +642,7 @@ export const getMatchStats = async (req, res) => {
       .populate("innings.batting.player", "name")
       .populate("innings.bowling.player", "name");
 
-    if (!match) {
+    if (!match || isPrivateDraft(req, match)) {
       return res.status(404).json({ message: "Match not found" });
     }
 
@@ -687,7 +698,7 @@ export const getMatchLiveStats = async (req, res) => {
       .populate("innings.batting.player", "name playingRole role")
       .populate("innings.bowling.player", "name playingRole role");
 
-    if (!match) {
+    if (!match || isPrivateDraft(req, match)) {
       return res.status(404).json({ message: "Match not found" });
     }
 
@@ -751,7 +762,7 @@ export const getMatchSummary = async (req, res) => {
   try {
     const match = await populateMatch(Match.findById(req.params.id));
 
-    if (!match) {
+    if (!match || isPrivateDraft(req, match)) {
       return res.status(404).json({ message: "Match not found" });
     }
 
@@ -820,7 +831,7 @@ export const getMatchPartnershipsSummary = async (req, res) => {
   try {
     const match = await populateMatch(Match.findById(req.params.id));
 
-    if (!match) {
+    if (!match || isPrivateDraft(req, match)) {
       return res.status(404).json({ message: "Match not found" });
     }
 
@@ -891,7 +902,7 @@ export const getMatchSquads = async (req, res) => {
   try {
     const match = await populateMatch(Match.findById(req.params.id));
 
-    if (!match) {
+    if (!match || isPrivateDraft(req, match)) {
       return res.status(404).json({ message: "Match not found" });
     }
 

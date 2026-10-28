@@ -10,6 +10,7 @@ import {
   sanitizePlayersPublic,
   isHiddenTeamDoc,
   canViewTeamPrivate,
+  PUBLIC_MATCH_FILTER,
 } from "../utils/publicProjection.js";
 
 const isTransientDbError = (error) => (
@@ -330,7 +331,9 @@ export const getTeamMatches = async (req, res) => {
       return res.status(404).json({ message: "Team not found" });
     }
     const { default: Match } = await import("../models/Match.js");
-    const matches = await Match.find({ teams: req.params.id })
+    const query = { teams: req.params.id };
+    if (req.principalType !== "admin") Object.assign(query, PUBLIC_MATCH_FILTER);
+    const matches = await Match.find(query)
       .populate("teams", "name shortName logo")
       .sort({ startAt: -1 })
       .limit(20);

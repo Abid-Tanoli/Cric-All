@@ -72,4 +72,42 @@ describe("TournamentSidebar", () => {
     expect(screen.getByText("No bowling stats yet")).toBeInTheDocument();
     expect(screen.getByText("No batting stats yet")).toBeInTheDocument();
   });
+
+  it("swaps an empty points table for the knockout bracket", () => {
+    const bracket = {
+      isKnockout: true,
+      champion: null,
+      stages: [
+        {
+          stage: "quarter_final",
+          label: "Quarter Finals",
+          matches: [
+            {
+              matchId: "qf1",
+              placeholder: false,
+              stageLabel: "QF1",
+              teams: [
+                { _id: "t1", name: "Reds", shortName: "RED", isWinner: true, score: { text: "150/5" } },
+                { _id: "t2", name: "Blues", shortName: "BLU", isWinner: false, score: { text: "149/8" } },
+              ],
+              result: { description: "Reds won by 5 wickets" },
+            },
+          ],
+        },
+        {
+          stage: "final",
+          label: "Final",
+          matches: [{ placeholder: true, label: "Winner SF1" }],
+        },
+      ],
+    };
+
+    renderSidebar({ standings: [], bracket });
+
+    expect(screen.getByText("Knockout")).toBeInTheDocument();
+    expect(screen.queryByText("No standings yet")).not.toBeInTheDocument();
+    expect(screen.getByText("✓ RED vs BLU")).toBeInTheDocument();
+    expect(screen.getByText("Winner SF1")).toBeInTheDocument();
+    expect(screen.getByText("Quarter Finals")).toBeInTheDocument();
+  });
 });
