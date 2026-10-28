@@ -138,7 +138,19 @@ export const getTournament = async (req, res) => {
     const query = mongoose.isValidObjectId(id) ? { _id: id } : { slug: id };
     const tournament = await Tournament.findOne(query)
       .populate("teams", "name shortName logo")
-      .populate("matches")
+      // The hub renders `tournament.matches` directly. Populating only the
+      // match documents leaves `teams` and `innings[].team` as ObjectIds, so
+      // every fixture card falls through to "TBD" even though the match has
+      // two real teams. Live and manual matches store the same refs, so both
+      // shapes are populated here rather than special-casing source:"manual".
+      .populate({
+        path: "matches",
+        populate: [
+          { path: "teams", select: "name shortName logo" },
+          { path: "innings.team", select: "name shortName logo" },
+          { path: "result.winner", select: "name shortName logo" },
+        ],
+      })
       .populate("pointsTable.team", "name shortName logo")
       .populate("groups.teams", "name shortName logo")
       .populate("winner", "name shortName logo")
@@ -470,9 +482,13 @@ export const getTournamentFixtures = async (req, res) => {
 
     const filters = { tournament: req.params.id };
     if (!canSeeDrafts(req)) Object.assign(filters, PUBLIC_MATCH_FILTER);
+    // Keep this fallback payload in the same shape as GET /tournaments/:id:
+    // FixtureCard prefers innings[].team and uses teams[idx] only when the
+    // innings ref is not populated, so both paths need their teams expanded.
     const matches = await Match.find(filters)
       .populate("teams", "name shortName logo")
-      .populate("result.winner", "name")
+      .populate("innings.team", "name shortName logo")
+      .populate("result.winner", "name shortName logo")
       .sort({ startAt: 1 });
 
     res.status(200).json(matches);
