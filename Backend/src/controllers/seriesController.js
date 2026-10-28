@@ -37,18 +37,18 @@ const matchPopulate = (query) => query
   .populate('teams', 'name shortName logo players')
   .populate({
     path: 'teams',
-    populate: { path: 'players', select: 'name role playingRole' }
+    populate: { path: 'players', select: 'name role playingRole battingPosition' }
   })
   .populate('result.winner', 'name shortName logo')
   .populate('innings.team', 'name shortName logo')
-  .populate('innings.batting.player', 'name role playingRole')
-  .populate('innings.bowling.player', 'name role playingRole')
+  .populate('innings.batting.player', 'name role playingRole battingPosition')
+  .populate('innings.bowling.player', 'name role playingRole battingPosition')
   .populate('playingXI.team', 'name shortName logo')
-  .populate('playingXI.players', 'name role playingRole')
+  .populate('playingXI.players', 'name role playingRole battingPosition')
   .populate('squad15.team', 'name shortName logo')
-  .populate('squad15.players', 'name role playingRole')
+  .populate('squad15.players', 'name role playingRole battingPosition')
   .populate('twelfthMan.team', 'name shortName logo')
-  .populate('twelfthMan.player', 'name role playingRole');
+  .populate('twelfthMan.player', 'name role playingRole battingPosition');
 
 const findSeriesOrEvent = async (id) => {
   const query = mongoose.isValidObjectId(id) ? { _id: id } : { slug: id };
@@ -280,7 +280,7 @@ const aggregateSeriesSquads = async (entity, matches) => {
 
   const missingTeamIds = Array.from(teamMap.keys()).filter((teamId) => !teamMap.get(teamId).players.size);
   if (missingTeamIds.length) {
-    const fullTeams = await Team.find({ _id: { $in: missingTeamIds } }).populate("players", "name role playingRole");
+    const fullTeams = await Team.find({ _id: { $in: missingTeamIds } }).populate("players", "name role playingRole battingPosition");
     fullTeams.forEach((team) => {
       const entry = teamMap.get(idOf(team));
       (team.players || []).forEach((player) => {
@@ -298,6 +298,7 @@ const aggregateSeriesSquads = async (entity, matches) => {
         name: player.name || "Unknown",
         role: player.role || player.playingRole || "",
         playingRole: player.playingRole || player.role || "",
+        battingPosition: player.battingPosition || "",
         isPlayingXI: !!player.isPlayingXI
       }))
     }))

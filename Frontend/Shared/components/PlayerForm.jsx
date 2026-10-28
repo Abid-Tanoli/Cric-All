@@ -1,8 +1,9 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import PhotoInput from "./PhotoInput.jsx";
+import { BATTING_POSITION_OPTIONS } from "../battingPositions.js";
 
 const SOCIAL_KEYS = ["facebook", "instagram", "twitter", "youtube", "whatsapp"];
 const PRIVACY_KEYS = [
@@ -16,6 +17,7 @@ const userSchema = z.object({
   email: z.string().email("Invalid email address"),
   password: z.string().min(8, "Password must be at least 8 characters"),
   playingRole: z.string().min(1, "Playing role is required"),
+  battingPosition: z.string().optional(),
   battingStyle: z.string().min(1, "Batting style is required"),
   bowlingStyle: z.string().min(1, "Bowling style is required"),
   category: z.string().optional(),
@@ -33,6 +35,7 @@ const userSchema = z.object({
 const adminSchema = z.object({
   name: z.string().min(1, "Full name is required"),
   playingRole: z.string().min(1, "Playing role is required"),
+  battingPosition: z.string().optional(),
   battingStyle: z.string().min(1, "Batting style is required"),
   bowlingStyle: z.string().min(1, "Bowling style is required"),
   team: z.string().optional(),
@@ -116,10 +119,11 @@ export default function PlayerForm({
   submitButtonText,
 }) {
   const schema = mode === "user" ? userSchema : adminSchema;
-  const { register, handleSubmit, setValue, watch, formState: { errors } } = useForm({
+  const { register, handleSubmit, reset, setValue, watch, formState: { errors } } = useForm({
     resolver: zodResolver(schema),
     defaultValues,
   });
+  const lastEditingId = useRef(editingId);
 
   const [gallery, setGallery] = useState([]);
   const [videos, setVideos] = useState([]);
@@ -132,6 +136,15 @@ export default function PlayerForm({
     setSocial({ facebook: "", instagram: "", twitter: "", youtube: "", whatsapp: "", ...(defaultValues.socialLinks || {}) });
     setPrivacy({ contactInfo: "public", socialLinks: "public", location: "public", ...(defaultValues.privacy || {}) });
   }, [editingId, defaultValues]);
+
+  // React Hook Form only reads defaultValues on mount. Reload them when the
+  // parent switches from create to edit (or between players) so the form shows
+  // the stored profile instead of the previous/blank values.
+  useEffect(() => {
+    if (lastEditingId.current === editingId) return;
+    lastEditingId.current = editingId;
+    reset(defaultValues);
+  }, [editingId, defaultValues, reset]);
 
   const handleFormSubmit = async (data) => {
     const payload = {
@@ -181,6 +194,15 @@ export default function PlayerForm({
         <Select register={register} name="playingRole" error={errors.playingRole?.message}>
           <option value="">Select Role</option>
           {playingRoles.map(r => <option key={r} value={r}>{r}</option>)}
+        </Select>
+      </FormField>
+
+      <FormField label="Batting Position">
+        <Select register={register} name="battingPosition">
+          <option value="">Not set</option>
+          {BATTING_POSITION_OPTIONS.map(({ value, label }) => (
+            <option key={value} value={value}>{label}</option>
+          ))}
         </Select>
       </FormField>
 

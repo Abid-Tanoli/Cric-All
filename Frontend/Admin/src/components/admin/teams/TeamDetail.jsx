@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import api from '../../../services/api';
+import BattingPositionBadge from '@shared/components/BattingPositionBadge';
 
 export default function TeamDetail() {
   const { id } = useParams();
@@ -264,8 +265,9 @@ export default function TeamDetail() {
                             )}
                           </td>
                           <td className="px-4 py-4">
-                            <span className={`px-2 py-1 rounded-full text-xs font-bold ${getRoleBadge(player.playingRole)}`}>
-                              {player.playingRole || player.role || 'Player'}
+                            <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-bold ${getRoleBadge(player.playingRole)}`}>
+                              <span>{player.playingRole || player.role || 'Player'}</span>
+                              <BattingPositionBadge value={player.battingPosition} />
                             </span>
                           </td>
                           <td className="px-4 py-4 text-center font-bold">{player.stats?.runs || 0}</td>

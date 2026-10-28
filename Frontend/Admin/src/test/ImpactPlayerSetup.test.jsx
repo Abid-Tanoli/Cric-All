@@ -43,4 +43,35 @@ describe("12th Man setup wording", () => {
     expect(screen.getByText(/12th Man Bob replaced Alice/)).toBeInTheDocument();
     expect(screen.queryByText(/impact player/i)).toBeNull();
   });
+
+  it("labels 12th Man candidates with their batting position", async () => {
+    get.mockResolvedValue({
+      data: {
+        ...match,
+        twelfthMan: [],
+        impactPlayers: [],
+      },
+    });
+    const positioned = {
+      ...teamA,
+      players: [
+        { _id: "p1", name: "Alice", playingRole: "Batsman" },
+        { _id: "p2", name: "Bob", playingRole: "Bowler", battingPosition: "middle_order" },
+        { _id: "p3", name: "Cara", playingRole: "Batsman" },
+      ],
+    };
+
+    render(
+      <ImpactPlayerSetup
+        match={{ ...match, teams: [positioned, teamB] }}
+        matchId="m1"
+      />
+    );
+
+    const select = await screen.findByLabelText("Team A 12th man");
+    const labels = Array.from(select.querySelectorAll("option")).map((o) => o.textContent);
+    expect(labels).toContain("Bob — Middle Order");
+    expect(labels).toContain("Cara");
+    expect(labels.some((label) => label.includes("Alice"))).toBe(false);
+  });
 });

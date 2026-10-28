@@ -6,6 +6,7 @@ import { Link } from "react-router-dom";
 import { useToast } from "../components/Toast";
 import ConfirmModal from "../components/ConfirmModal";
 import PlayerForm from "@shared/components/PlayerForm";
+import BattingPositionBadge from "@shared/components/BattingPositionBadge";
 
 export default function ManagePlayers() {
   const dispatch = useDispatch();
@@ -63,6 +64,7 @@ export default function ManagePlayers() {
     setEditingData({
       name: p.name,
       playingRole: p.playingRole || p.role || "",
+      battingPosition: p.battingPosition || "",
       battingStyle: p.battingStyle || "",
       bowlingStyle: p.bowlingStyle || "",
       imageUrl: p.imageUrl || "",
@@ -303,8 +305,9 @@ export default function ManagePlayers() {
                       >
                         {p.name}
                       </Link>
-                      <p className="text-xs font-bold text-cric-muted mt-1">
-                        {p.role || "Prospect"}
+                      <p className="mt-1 flex flex-wrap items-center gap-1.5 text-xs font-bold text-cric-muted">
+                        <span>{p.role || "Prospect"}</span>
+                        <BattingPositionBadge value={p.battingPosition} />
                       </p>
                       <p className="text-[10px] font-bold text-cric-accent mt-1">
                         {p.team?.name || "Free Agent"}

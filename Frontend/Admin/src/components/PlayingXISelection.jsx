@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import api from '../services/api';
 import { useToast } from './Toast';
+import BattingPositionBadge from '@shared/components/BattingPositionBadge';
 
 const PlayingXISelection = ({ match, team, eventSquad, onClose, onSuccess }) => {
     const [squadPlayers, setSquadPlayers] = useState([]);
@@ -293,7 +294,10 @@ const PlayingXISelection = ({ match, team, eventSquad, onClose, onSuccess }) => 
                                                             <span className="bg-orange-100 text-orange-700 text-[10px] font-black px-2 py-0.5 rounded uppercase">WK</span>
                                                         )}
                                                     </div>
-                                                    <p className="text-xs text-slate-500">{player.playingRole || player.role}</p>
+                                                    <p className="flex flex-wrap items-center gap-1.5 text-xs text-slate-500">
+                                                        <span>{player.playingRole || player.role}</span>
+                                                        <BattingPositionBadge value={player.battingPosition} />
+                                                    </p>
                                                 </div>
                                             </div>
 

@@ -1,5 +1,6 @@
 import { number, idOf, sameId, teamName, longTeamName, playerName, getPlayingXI, getTossLine, statusLabel, formatOvers, currentInningsOf } from "../utils/matchHelpers";
 import SquadSection from "./SquadSection";
+import BattingPositionBadge from "@shared/components/BattingPositionBadge";
 
 export default function PlayingXITab({ match, players }) {
   const currentTeamId = match?.innings?.[match?.currentInnings || 0]?.team;
@@ -86,7 +87,10 @@ export default function PlayingXITab({ match, players }) {
                           </div>
                         </div>
                       </div>
-                      <span className="text-[9px] sm:text-[10px] font-bold uppercase text-cric-muted shrink-0">{player?.playingRole || player?.role || ""}</span>
+                      <span className="flex shrink-0 items-center gap-1 text-[9px] sm:text-[10px] font-bold uppercase text-cric-muted">
+                          <span>{player?.playingRole || player?.role || ""}</span>
+                          <BattingPositionBadge value={player?.battingPosition} />
+                        </span>
                     </div>
                   );
                 })}

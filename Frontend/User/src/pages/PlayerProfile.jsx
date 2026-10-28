@@ -7,6 +7,8 @@ import { featureFlags } from "../config/features";
 import { useCommunityConfig } from "../community/CommunityConfigContext";
 import PostsTab from "../community/PostsTab";
 import ShareMenu from "../community/ShareMenu";
+import BattingPositionBadge from "@shared/components/BattingPositionBadge";
+import { battingPositionLabel } from "@shared/battingPositions";
 
 export default function PlayerProfile() {
   const { playerId } = useParams();
@@ -107,6 +109,7 @@ export default function PlayerProfile() {
                 <span className="px-4 py-1.5 bg-cric-accent text-white rounded-full text-xs font-black uppercase tracking-widest">
                   {playingRole}
                 </span>
+                <BattingPositionBadge value={player.battingPosition} />
                 {player.team && (
                   <Link to={`/teams/${player.team._id}`} className="px-4 py-1.5 bg-white/10 backdrop-blur-sm border border-white/20 text-white rounded-full text-xs font-bold uppercase tracking-widest hover:bg-white/20 transition-all">
                     {player.team.name || player.team.shortName}
@@ -666,6 +669,9 @@ export default function PlayerProfile() {
                   <InfoRow label="Age" value={player.age ? `${player.age} years` : player.dateOfBirth ? `${new Date().getFullYear() - new Date(player.dateOfBirth).getFullYear()} years` : 'N/A'} />
                   <InfoRow label="Nationality" value={player.nationality || player.country || 'N/A'} />
                   <InfoRow label="Playing Role" value={playingRole} />
+                  {battingPositionLabel(player.battingPosition) && (
+                    <InfoRow label="Batting Position" value={battingPositionLabel(player.battingPosition)} />
+                  )}
                   <InfoRow label="Batting Style" value={battingStyle} />
                   <InfoRow label="Bowling Style" value={bowlingStyle} />
                 </div>

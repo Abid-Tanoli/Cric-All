@@ -110,7 +110,7 @@ export const getEvent = async (req, res) => {
         .populate("teams", "name shortName logo players")
         .populate("matches")
         .populate("eventSquads.team", "name shortName logo")
-        .populate("eventSquads.players", "name role playingRole imageUrl battingStyle bowlingStyle")
+        .populate("eventSquads.players", "name role playingRole battingPosition imageUrl battingStyle bowlingStyle")
         .populate("eventSquads.captain", "name")
         .populate("eventSquads.viceCaptain", "name")
         .populate("eventSquads.wicketKeepers", "name")
@@ -122,7 +122,7 @@ export const getEvent = async (req, res) => {
         .populate("teams", "name shortName logo players")
         .populate("matches")
         .populate("eventSquads.team", "name shortName logo")
-        .populate("eventSquads.players", "name role playingRole imageUrl battingStyle bowlingStyle")
+        .populate("eventSquads.players", "name role playingRole battingPosition imageUrl battingStyle bowlingStyle")
         .populate("eventSquads.captain", "name")
         .populate("eventSquads.viceCaptain", "name")
         .populate("eventSquads.wicketKeepers", "name")
@@ -287,7 +287,7 @@ export const setEventSquad = async (req, res) => {
 
     await event.save();
     await event.populate("eventSquads.team", "name shortName logo");
-    await event.populate("eventSquads.players", "name role playingRole");
+    await event.populate("eventSquads.players", "name role playingRole battingPosition");
 
     try { getIO().emit("event:squadUpdated", { eventId, teamId }); } catch { }
 
@@ -302,9 +302,9 @@ export const getEventSquad = async (req, res) => {
     const { eventId, teamId } = req.params;
     const event = await Event.findById(eventId)
       .populate("eventSquads.team", "name shortName logo")
-      .populate("eventSquads.players", "name role playingRole imageUrl battingStyle bowlingStyle")
-      .populate("eventSquads.playerChanges.outPlayer", "name role playingRole")
-      .populate("eventSquads.playerChanges.inPlayer", "name role playingRole");
+      .populate("eventSquads.players", "name role playingRole battingPosition imageUrl battingStyle bowlingStyle")
+      .populate("eventSquads.playerChanges.outPlayer", "name role playingRole battingPosition")
+      .populate("eventSquads.playerChanges.inPlayer", "name role playingRole battingPosition");
 
     if (!event) return res.status(404).json({ message: "Event not found" });
 
@@ -364,9 +364,9 @@ export const changeEventSquadPlayer = async (req, res) => {
     });
 
     await event.save();
-    await event.populate("eventSquads.players", "name role playingRole");
-    await event.populate("eventSquads.playerChanges.outPlayer", "name role playingRole");
-    await event.populate("eventSquads.playerChanges.inPlayer", "name role playingRole");
+    await event.populate("eventSquads.players", "name role playingRole battingPosition");
+    await event.populate("eventSquads.playerChanges.outPlayer", "name role playingRole battingPosition");
+    await event.populate("eventSquads.playerChanges.inPlayer", "name role playingRole battingPosition");
 
     try { getIO().emit("event:squadPlayerChanged", { eventId, teamId, outPlayerId, inPlayerId, reason: changeReason }); } catch {}
 

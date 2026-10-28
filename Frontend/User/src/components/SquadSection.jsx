@@ -1,4 +1,5 @@
 import { idOf, playerName } from "../utils/matchHelpers";
+import BattingPositionBadge from "@shared/components/BattingPositionBadge";
 
 export default function SquadSection({ title, players: squadPlayers, allPlayers, muted = false }) {
   return (
@@ -8,7 +9,10 @@ export default function SquadSection({ title, players: squadPlayers, allPlayers,
         {squadPlayers.map((player) => (
           <div key={idOf(player)} className={`flex items-center justify-between rounded-lg px-2 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm ${muted ? "bg-cric-card text-cric-text" : "bg-cric-bg text-cric-text"}`}>
             <span className="font-bold truncate min-w-0">{playerName(player, allPlayers)}</span>
-            <span className="text-[9px] sm:text-[10px] font-bold uppercase text-cric-muted shrink-0 ml-2">{player?.playingRole || player?.role || "Player"}</span>
+            <span className="ml-2 flex shrink-0 items-center gap-1 text-[9px] sm:text-[10px] font-bold uppercase text-cric-muted">
+              <span>{player?.playingRole || player?.role || "Player"}</span>
+              <BattingPositionBadge value={player?.battingPosition} />
+            </span>
           </div>
         ))}
       </div>

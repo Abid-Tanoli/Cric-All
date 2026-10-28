@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import api from '../services/api';
 import { useToast } from './Toast';
+import BattingPositionBadge from '@shared/components/BattingPositionBadge';
+import { battingPositionLabel } from '@shared/battingPositions';
 
 const REASONS = [
   { value: 'injury',       label: 'Injury',        color: 'red',    icon: '🤕' },
@@ -322,7 +324,10 @@ export default function EventSquadModal({ event, team, onClose, onSuccess }) {
                                   {isVC && <span className="bg-purple-600 text-white text-[9px] font-black px-1.5 py-0.5 rounded uppercase">VC</span>}
                                   {isWK && <span className="bg-orange-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded uppercase">WK</span>}
                                 </div>
-                                <p className="text-[11px] text-slate-400 mt-0.5">{player.playingRole || player.role || 'Player'}</p>
+                                <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] text-slate-400">
+                                  <span>{player.playingRole || player.role || 'Player'}</span>
+                                  <BattingPositionBadge value={player.battingPosition} />
+                                </p>
                               </div>
                             </div>
 
@@ -406,7 +411,7 @@ export default function EventSquadModal({ event, team, onClose, onSuccess }) {
                       <option value="">— Select player going out —</option>
                       {squadPlayers.map(p => (
                         <option key={p._id} value={p._id}>
-                          {p.name} ({p.playingRole || p.role || 'Player'})
+                          {p.name} ({p.playingRole || p.role || 'Player'}{battingPositionLabel(p.battingPosition) ? ` · ${battingPositionLabel(p.battingPosition)}` : ''})
                         </option>
                       ))}
                     </select>
@@ -435,7 +440,7 @@ export default function EventSquadModal({ event, team, onClose, onSuccess }) {
                         .filter(p => p.name?.toLowerCase().includes(inPlayerSearch.toLowerCase()))
                         .map(p => (
                           <option key={p._id} value={p._id}>
-                            {p.name} ({p.playingRole || p.role || 'Player'})
+                            {p.name} ({p.playingRole || p.role || 'Player'}{battingPositionLabel(p.battingPosition) ? ` · ${battingPositionLabel(p.battingPosition)}` : ''})
                           </option>
                         ))}
                     </select>

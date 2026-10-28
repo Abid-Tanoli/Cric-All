@@ -62,6 +62,7 @@ export default function Register({ onSuccess, onCancel, embedded = false }) {
         phone: data.phone || '',
         playerProfile: {
           playingRole: data.playingRole,
+          battingPosition: data.battingPosition || "",
           battingStyle: data.battingStyle,
           bowlingStyle: data.bowlingStyle,
           category: data.category || 'Other',

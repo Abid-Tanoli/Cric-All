@@ -83,7 +83,8 @@ const playerPayload = (player) => ({
   _id: player?._id || player,
   name: player?.name || "Unknown",
   role: player?.role || player?.playingRole || "",
-  playingRole: player?.playingRole || player?.role || ""
+  playingRole: player?.playingRole || player?.role || "",
+  battingPosition: player?.battingPosition || ""
 });
 
 const populateMatch = (query) => {
@@ -91,7 +92,7 @@ const populateMatch = (query) => {
     .populate({
       path: "teams",
       select: "name shortName logo players",
-      populate: { path: "players", select: "name playingRole role" }
+      populate: { path: "players", select: "name playingRole role battingPosition" }
     })
     .populate({
       path: 'tournament',
@@ -99,35 +100,35 @@ const populateMatch = (query) => {
       populate: { path: 'pointsTable.team', select: 'name shortName logo' }
     })
     .populate("innings.team", "name shortName")
-    .populate("innings.batting.player", "name playingRole role")
-    .populate("innings.bowling.player", "name playingRole role")
-    .populate("innings.currentBatsman1", "name playingRole role")
-    .populate("innings.currentBatsman2", "name playingRole role")
-    .populate("innings.onStrikeBatsman", "name playingRole role")
-    .populate("innings.currentBowler", "name playingRole role")
-    .populate("innings.fallOfWickets.player", "name playingRole role")
-    .populate("innings.partnerships.batsman1", "name playingRole role")
-    .populate("innings.partnerships.batsman2", "name playingRole role")
+    .populate("innings.batting.player", "name playingRole role battingPosition")
+    .populate("innings.bowling.player", "name playingRole role battingPosition")
+    .populate("innings.currentBatsman1", "name playingRole role battingPosition")
+    .populate("innings.currentBatsman2", "name playingRole role battingPosition")
+    .populate("innings.onStrikeBatsman", "name playingRole role battingPosition")
+    .populate("innings.currentBowler", "name playingRole role battingPosition")
+    .populate("innings.fallOfWickets.player", "name playingRole role battingPosition")
+    .populate("innings.partnerships.batsman1", "name playingRole role battingPosition")
+    .populate("innings.partnerships.batsman2", "name playingRole role battingPosition")
     .populate("result.winner", "name shortName")
     .populate("tossWinner", "name shortName")
-    .populate("manOfMatch", "name playingRole role")
-    .populate("playingXI.players", "name playingRole role")
+    .populate("manOfMatch", "name playingRole role battingPosition")
+    .populate("playingXI.players", "name playingRole role battingPosition")
     .populate("playingXI.team", "name shortName logo")
-    .populate("squad15.players", "name playingRole role")
+    .populate("squad15.players", "name playingRole role battingPosition")
     .populate("squad15.team", "name shortName logo")
-    .populate("squad15.captain", "name playingRole role")
-    .populate("squad15.viceCaptain", "name playingRole role")
-    .populate("squad15.wicketKeepers", "name playingRole role")
+    .populate("squad15.captain", "name playingRole role battingPosition")
+    .populate("squad15.viceCaptain", "name playingRole role battingPosition")
+    .populate("squad15.wicketKeepers", "name playingRole role battingPosition")
     .populate("twelfthMan.team", "name shortName logo")
-    .populate("twelfthMan.player", "name playingRole role")
+    .populate("twelfthMan.player", "name playingRole role battingPosition")
     .populate("impactPlayers.team", "name shortName logo")
-    .populate("impactPlayers.player", "name playingRole role")
-    .populate("impactPlayers.replaces", "name playingRole role")
-    .populate("bowlingXI.players", "name playingRole role")
+    .populate("impactPlayers.player", "name playingRole role battingPosition")
+    .populate("impactPlayers.replaces", "name playingRole role battingPosition")
+    .populate("bowlingXI.players", "name playingRole role battingPosition")
     .populate("bowlingXI.team", "name shortName logo")
-    .populate("teamRoles.captain", "name playingRole role")
-    .populate("teamRoles.viceCaptain", "name playingRole role")
-    .populate("teamRoles.wicketKeepers", "name playingRole role");
+    .populate("teamRoles.captain", "name playingRole role battingPosition")
+    .populate("teamRoles.viceCaptain", "name playingRole role battingPosition")
+    .populate("teamRoles.wicketKeepers", "name playingRole role battingPosition");
 };
 
 const populateMatchList = (query) => {
@@ -181,7 +182,7 @@ const populateMatchList = (query) => {
     .populate("innings.team", "name shortName logo")
     .populate("result.winner", "name shortName logo")
     .populate("tossWinner", "name shortName")
-    .populate("manOfMatch", "name playingRole role");
+    .populate("manOfMatch", "name playingRole role battingPosition");
 };
 
 const matchRoom = (matchId) => `match-${matchId}`;
@@ -695,8 +696,8 @@ export const getMatchLiveStats = async (req, res) => {
   try {
     const match = await Match.findById(req.params.id)
       .populate("innings.team", "name shortName")
-      .populate("innings.batting.player", "name playingRole role")
-      .populate("innings.bowling.player", "name playingRole role");
+      .populate("innings.batting.player", "name playingRole role battingPosition")
+      .populate("innings.bowling.player", "name playingRole role battingPosition");
 
     if (!match || isPrivateDraft(req, match)) {
       return res.status(404).json({ message: "Match not found" });
@@ -858,8 +859,8 @@ export const getMatchPartnershipsSummary = async (req, res) => {
       let partnerships = mapEmbedded(inn, index);
       if (!partnerships.length) {
         const stored = await Partnership.find({ matchId: match._id, inning: index + 1 })
-          .populate("batsman1Id", "name playingRole role")
-          .populate("batsman2Id", "name playingRole role")
+          .populate("batsman1Id", "name playingRole role battingPosition")
+          .populate("batsman2Id", "name playingRole role battingPosition")
           .sort({ wicketNumber: 1 });
         partnerships = stored.map((partnership) => ({
           _id: partnership._id,
@@ -1374,7 +1375,7 @@ export const setSquad15 = async (req, res) => {
 
     await match.save({ validateModifiedOnly: true });
     await match.populate("squad15.team", "name shortName logo");
-    await match.populate("squad15.players", "name role playingRole");
+    await match.populate("squad15.players", "name role playingRole battingPosition");
 
     try {
       const io = getIO();
@@ -1428,7 +1429,7 @@ export const setTwelfthMan = async (req, res) => {
 
     await match.save({ validateModifiedOnly: true });
     await match.populate("twelfthMan.team", "name shortName logo");
-    await match.populate("twelfthMan.player", "name role playingRole");
+    await match.populate("twelfthMan.player", "name role playingRole battingPosition");
 
     try {
       const io = getIO();
@@ -1584,8 +1585,8 @@ export const setImpactPlayer = async (req, res) => {
 
     await match.save({ validateModifiedOnly: true });
     await match.populate("impactPlayers.team", "name shortName logo");
-    await match.populate("impactPlayers.player", "name playingRole role");
-    await match.populate("impactPlayers.replaces", "name playingRole role");
+    await match.populate("impactPlayers.player", "name playingRole role battingPosition");
+    await match.populate("impactPlayers.replaces", "name playingRole role battingPosition");
 
     try {
       const io = getIO();
@@ -1645,7 +1646,7 @@ export const setBowlingXI = async (req, res) => {
 
     await match.save({ validateModifiedOnly: true });
     await match.populate("bowlingXI.team", "name shortName logo");
-    await match.populate("bowlingXI.players", "name role playingRole");
+    await match.populate("bowlingXI.players", "name role playingRole battingPosition");
 
     try {
       const io = getIO();
@@ -1722,9 +1723,9 @@ export const setTeamRoles = async (req, res) => {
 
     await match.save({ validateModifiedOnly: true });
     await match.populate("teamRoles.team", "name shortName logo");
-    await match.populate("teamRoles.captain", "name role playingRole");
-    await match.populate("teamRoles.viceCaptain", "name role playingRole");
-    await match.populate("teamRoles.wicketKeepers", "name role playingRole");
+    await match.populate("teamRoles.captain", "name role playingRole battingPosition");
+    await match.populate("teamRoles.viceCaptain", "name role playingRole battingPosition");
+    await match.populate("teamRoles.wicketKeepers", "name role playingRole battingPosition");
 
     try {
       const io = getIO();

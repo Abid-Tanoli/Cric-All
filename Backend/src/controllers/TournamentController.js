@@ -133,7 +133,7 @@ export const getTournaments = async (req, res) => {
       .populate("teams", "name shortName logo")
       .populate("winner", "name shortName logo")
       .populate("runnerUp", "name shortName logo")
-      .populate("awards.playerOfTournament awards.bestBatsman awards.bestBowler", "name playingRole role")
+      .populate("awards.playerOfTournament awards.bestBatsman awards.bestBowler", "name playingRole role battingPosition")
       .sort({ startDate: -1 })
       .skip((page - 1) * limit)
       .limit(limit)
@@ -176,7 +176,7 @@ export const getTournament = async (req, res) => {
       .populate("groups.teams", "name shortName logo")
       .populate("winner", "name shortName logo")
       .populate("runnerUp", "name shortName logo")
-      .populate("awards.playerOfTournament awards.bestBatsman awards.bestBowler", "name playingRole role");
+      .populate("awards.playerOfTournament awards.bestBatsman awards.bestBowler", "name playingRole role battingPosition");
 
     if (!tournament) {
       return res.status(404).json({ message: "Tournament not found" });
@@ -582,7 +582,7 @@ export const setTournamentSquad = async (req, res) => {
 
     await tournament.save();
     await tournament.populate("tournamentSquads.team", "name shortName logo");
-    await tournament.populate("tournamentSquads.players", "name role playingRole");
+    await tournament.populate("tournamentSquads.players", "name role playingRole battingPosition");
 
     try {
       const io = getIO();
@@ -610,7 +610,7 @@ export const getTournamentSquad = async (req, res) => {
 
     const tournament = await Tournament.findById(tournamentId)
       .populate("tournamentSquads.team", "name shortName logo")
-      .populate("tournamentSquads.players", "name role playingRole imageUrl battingStyle bowlingStyle");
+      .populate("tournamentSquads.players", "name role playingRole battingPosition imageUrl battingStyle bowlingStyle");
 
     if (!tournament) {
       return res.status(404).json({ message: "Tournament not found" });
@@ -787,7 +787,7 @@ export const setTournamentAwards = async (req, res) => {
     await tournament.populate("teams", "name shortName logo");
     await tournament.populate("winner", "name shortName logo");
     await tournament.populate("runnerUp", "name shortName logo");
-    await tournament.populate("awards.playerOfTournament awards.bestBatsman awards.bestBowler", "name playingRole role");
+    await tournament.populate("awards.playerOfTournament awards.bestBatsman awards.bestBowler", "name playingRole role battingPosition");
 
     recordAudit({
       req,

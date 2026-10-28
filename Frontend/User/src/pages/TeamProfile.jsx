@@ -5,6 +5,7 @@ import SafeImage from '../../../Shared/components/SafeImage.jsx';
 import ShareMenu from '../community/ShareMenu';
 import { useCommunityConfig } from '../community/CommunityConfigContext';
 import PostsTab from '../community/PostsTab';
+import BattingPositionBadge from '@shared/components/BattingPositionBadge';
 
 const idOf = (v) => v?._id || v?.id || v;
 
@@ -420,8 +421,9 @@ export default function TeamProfile() {
                       </div>
                       <div>
                         <h3 className="font-bold text-cric-accent group-hover:text-cric-accent transition-colors">{player.name}</h3>
-                        <span className={`inline-block mt-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${getRoleColor(player.playingRole)}`}>
-                          {player.playingRole || player.role || 'Player'}
+                        <span className={`mt-1 inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold ${getRoleColor(player.playingRole)}`}>
+                          <span>{player.playingRole || player.role || 'Player'}</span>
+                          <BattingPositionBadge value={player.battingPosition} />
                         </span>
                       </div>
                     </div>

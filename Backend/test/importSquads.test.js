@@ -160,6 +160,20 @@ function writeFixture(name, rows) {
 /** Deep-clone rows so a mutation cannot leak into another test. */
 const cloneRows = (rows) => rows.map((r) => r.slice());
 
+const POSITION_CYCLE = ["opener", "middle_order", "lower_order", "tailender"];
+
+/**
+ * The original fixture plus the optional 8th column. Row 1 (P001) is opener,
+ * row 2 middle_order, and so on, so a test can assert every stored value without
+ * relying on per-row special cases.
+ */
+function withBattingPositions(rows = buildRows()) {
+  const next = cloneRows(rows);
+  next[0].push("batting_position");
+  next.slice(1).forEach((row, index) => row.push(POSITION_CYCLE[index % POSITION_CYCLE.length]));
+  return next;
+}
+
 // ---------------------------------------------------------------------------
 // Running the script
 // ---------------------------------------------------------------------------
@@ -278,6 +292,60 @@ test("CSV roles are mapped onto Player.playingRole", async () => {
   // A blank CSV role is not invented: the row was flagged as "role to confirm",
   // and playingRole is only the schema default.
   assert.strictEqual(byName.get("P006").playingRole, "Batsman");
+});
+
+test("the optional batting_position column is written when present", async () => {
+  const file = writeFixture("positions.csv", withBattingPositions());
+
+  const dry = dryRun(file);
+  assert.strictEqual(dry.code, 0, dry.stderr || dry.stdout);
+  assert.match(dry.stdout, /\[opener\]/, "the dry-run plan shows the position");
+  assert.deepStrictEqual(await counts(), { clubs: 0, teams: 0, players: 0, memberships: 0 });
+
+  const applied = apply(file);
+  assert.strictEqual(applied.code, 0, applied.stderr || applied.stdout);
+
+  const team = await Team.findOne({ name: "Northside Cricket Club XI" });
+  const byName = new Map((await Player.find({ team: team._id }).lean()).map((p) => [p.name, p]));
+  assert.strictEqual(byName.get("P001").battingPosition, "opener");
+  assert.strictEqual(byName.get("P002").battingPosition, "middle_order");
+  assert.strictEqual(byName.get("P003").battingPosition, "lower_order");
+  assert.strictEqual(byName.get("P004").battingPosition, "tailender");
+  assert.strictEqual(byName.get("P005").battingPosition, "opener");
+});
+
+test("a blank optional batting_position cell is left unset, never guessed", async () => {
+  const rows = withBattingPositions();
+  const row = rows.findIndex((r, i) => i > 0 && r[2] === "P001");
+  rows[row][7] = "";
+  const file = writeFixture("positions-blank.csv", rows);
+  const { code, stderr } = apply(file);
+  assert.strictEqual(code, 0, stderr);
+
+  const player = await Player.findOne({ name: "P001" });
+  assert.strictEqual(player.battingPosition, "");
+});
+
+test("an unknown batting_position value aborts before a single write", async () => {
+  const rows = withBattingPositions();
+  const row = rows.findIndex((r, i) => i > 0 && r[2] === "P001");
+  rows[row][7] = "sweeper";
+  const file = writeFixture("positions-bad.csv", rows);
+
+  const { code, stderr } = apply(file);
+  assert.strictEqual(code, 1, stderr);
+  assert.match(stderr, /unknown batting_position "sweeper"/);
+  assert.match(stderr, /allowed: opener, middle_order, lower_order, tailender/);
+  assert.deepStrictEqual(await counts(), { clubs: 0, teams: 0, players: 0, memberships: 0 });
+});
+
+test("a 7-column file still works and writes no position", async () => {
+  const file = writeFixture("valid.csv", buildRows());
+  const { code, stderr } = apply(file);
+  assert.strictEqual(code, 0, stderr);
+
+  const player = await Player.findOne({ name: "P001" });
+  assert.strictEqual(player.battingPosition, "", "the legacy shape is not backfilled");
 });
 
 test("captain and vice-captain are set from the CSV flags", async () => {

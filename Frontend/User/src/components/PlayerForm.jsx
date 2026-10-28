@@ -2,6 +2,7 @@ import React from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
+import { BATTING_POSITION_OPTIONS } from "@shared/battingPositions";
 
 const userSchema = z.object({
   name: z.string().min(1, "Full name is required"),
@@ -9,6 +10,7 @@ const userSchema = z.object({
   password: z.string().min(8, "Password must be at least 8 characters"),
   phone: z.string().optional(),
   playingRole: z.string().min(1, "Playing role is required"),
+  battingPosition: z.string().optional(),
   battingStyle: z.string().min(1, "Batting style is required"),
   bowlingStyle: z.string().min(1, "Bowling style is required"),
   category: z.string().optional(),
@@ -26,6 +28,7 @@ const userSchema = z.object({
 const adminSchema = z.object({
   name: z.string().min(1, "Full name is required"),
   playingRole: z.string().min(1, "Playing role is required"),
+  battingPosition: z.string().optional(),
   battingStyle: z.string().min(1, "Batting style is required"),
   bowlingStyle: z.string().min(1, "Bowling style is required"),
   team: z.string().optional(),
@@ -143,6 +146,15 @@ export default function PlayerForm({
         <Select register={register} name="playingRole" error={errors.playingRole?.message}>
           <option value="">Select Role</option>
           {playingRoles.map(r => <option key={r} value={r}>{r}</option>)}
+        </Select>
+      </FormField>
+
+      <FormField label="Batting Position">
+        <Select register={register} name="battingPosition">
+          <option value="">Not set</option>
+          {BATTING_POSITION_OPTIONS.map(({ value, label }) => (
+            <option key={value} value={value}>{label}</option>
+          ))}
         </Select>
       </FormField>
 

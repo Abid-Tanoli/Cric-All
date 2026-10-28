@@ -87,7 +87,7 @@ export const listOrgTeams = async (req, res) => {
     const playerIds = [...new Set(teams.flatMap((team) => (team.players || []).map(String)))];
     const players = playerIds.length
       ? await Player.find({ _id: { $in: playerIds } })
-          .select("name playingRole imageUrl")
+          .select("name playingRole battingPosition imageUrl")
           .lean()
       : [];
     const playerById = new Map(players.map((player) => [String(player._id), player]));
@@ -101,6 +101,7 @@ export const listOrgTeams = async (req, res) => {
           _id: player._id,
           name: player.name,
           playingRole: player.playingRole || "",
+          battingPosition: player.battingPosition || "",
           imageUrl: player.imageUrl || "",
         })),
     }));
@@ -221,7 +222,7 @@ export const addOrgTeamPlayers = async (req, res) => {
       metadata: { playerIds: assigned.map(String) },
     });
 
-    const fresh = await Team.findById(team._id).populate("players", "name role playingRole imageUrl");
+    const fresh = await Team.findById(team._id).populate("players", "name role playingRole battingPosition imageUrl");
     res.status(200).json({ team: teamPayload(fresh), message: "Players added successfully" });
   } catch (error) {
     if (/Player not found/i.test(error.message || "")) {
@@ -250,7 +251,7 @@ export const removeOrgTeamPlayers = async (req, res) => {
       metadata: { playerIds: req.body.playerIds.map(String) },
     });
 
-    const fresh = await Team.findById(team._id).populate("players", "name role playingRole imageUrl");
+    const fresh = await Team.findById(team._id).populate("players", "name role playingRole battingPosition imageUrl");
     res.status(200).json({ team: teamPayload(fresh), message: "Players removed successfully" });
   } catch (error) {
     res.status(400).json({ message: "Failed to remove players", error: error.message });

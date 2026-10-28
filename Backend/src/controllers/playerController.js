@@ -491,8 +491,8 @@ export const getHeadToHead = async (req, res) => {
     const { batsmanId, bowlerId } = req.params;
 
     const [batsman, bowler] = await Promise.all([
-      Player.findById(batsmanId).select("name playingRole"),
-      Player.findById(bowlerId).select("name playingRole"),
+      Player.findById(batsmanId).select("name playingRole battingPosition"),
+      Player.findById(bowlerId).select("name playingRole battingPosition"),
     ]);
 
     if (!batsman || !bowler) {
@@ -535,8 +535,8 @@ export const getHeadToHead = async (req, res) => {
     }
 
     res.json({
-      batsman: { _id: batsman._id, name: batsman.name, playingRole: batsman.playingRole },
-      bowler: { _id: bowler._id, name: bowler.name, playingRole: bowler.playingRole },
+      batsman: { _id: batsman._id, name: batsman.name, playingRole: batsman.playingRole, battingPosition: batsman.battingPosition || "" },
+      bowler: { _id: bowler._id, name: bowler.name, playingRole: bowler.playingRole, battingPosition: bowler.battingPosition || "" },
       ballsFaced,
       runsScored,
       fours,
