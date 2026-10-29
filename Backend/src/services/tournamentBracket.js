@@ -105,7 +105,7 @@ function cardForMatch(match, stage) {
   };
 }
 
-function placeholderFor(stage, label, slots = []) {
+function placeholderFor(stage, label, slots = [], teams = []) {
   return {
     placeholder: true,
     matchId: null,
@@ -114,7 +114,7 @@ function placeholderFor(stage, label, slots = []) {
     title: label,
     status: "upcoming",
     startAt: null,
-    teams: [],
+    teams,
     winner: null,
     result: { resultType: "", description: "", winnerId: "" },
     label,
@@ -186,7 +186,15 @@ export function buildTournamentBracket(matches = [], opts = {}) {
           const sf = semiFinals[slotIndex];
           return `Winner ${sf?.stageLabel || `SF${slotIndex + 1}`}`;
         });
-        placeholders.push(placeholderFor(stage, slots.join(" vs "), slots));
+        const entrants = slots.map((slot, slotIndex) => {
+          const semiFinal = semiFinals[slotIndex];
+          const winnerId = idOf(semiFinal?.result?.winner);
+          const winner = (semiFinal?.teams || []).find((team) => idOf(team) === winnerId);
+          return winner
+            ? teamRef(winner, null, winnerId)
+            : { _id: "", name: slot, shortName: "", logo: "", score: null, isWinner: false };
+        });
+        placeholders.push(placeholderFor(stage, slots.join(" vs "), slots, entrants));
         continue;
       }
       placeholders.push(placeholderFor(stage, sourceLabel));

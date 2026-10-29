@@ -32,7 +32,14 @@ const bracket = {
     {
       stage: "final",
       label: "Final",
-      matches: [{ placeholder: true, label: "Winner SF1" }],
+      matches: [{
+        placeholder: true,
+        label: "Winner SF1 vs Winner SF2",
+        teams: [
+          { _id: "t1", name: "Reds", isWinner: true },
+          { _id: "", name: "Winner SF2", isWinner: false },
+        ],
+      }],
     },
   ],
 };
@@ -43,9 +50,10 @@ describe("tournament stats tabs", () => {
 
     expect(screen.getByText("Knockout Bracket")).toBeInTheDocument();
     expect(screen.getByText("Quarter Finals")).toBeInTheDocument();
-    expect(screen.getByText("Winner SF1")).toBeInTheDocument();
+    expect(screen.getByText("Final fixture not yet scheduled")).toBeInTheDocument();
+    expect(screen.getByText("Winner SF2")).toBeInTheDocument();
     expect(screen.getByText("Champion")).toBeInTheDocument();
-    expect(screen.getByText("Reds")).toBeInTheDocument();
+    expect(screen.getAllByText("Reds")).toHaveLength(2);
     expect(screen.queryByText("Points Table Not Available")).not.toBeInTheDocument();
     expect(screen.queryByText("Points Table")).not.toBeInTheDocument();
   });

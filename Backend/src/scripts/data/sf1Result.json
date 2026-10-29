@@ -1,0 +1,205 @@
+{
+  "tournamentName": "All Baldia T20 Hard Ball Cricket Tournament",
+  "match": {
+    "stage": "semi_final",
+    "stageLabel": "SF1",
+    "teamA": "Baldia Zalmi",
+    "teamB": "Sky Sports",
+    "title": "SF1: Baldia Zalmi vs Sky Sports",
+    "venue": "Tahirabad Ground",
+    "startAt": "2026-10-25T04:30:00.000Z",
+    "totalOvers": 20,
+    "matchCategory": "Club",
+    "tossWinner": "Baldia Zalmi",
+    "tossDecision": "bat"
+  },
+  "result": {
+    "sourceResultType": "wickets",
+    "resultType": "normal",
+    "winner": "Sky Sports",
+    "margin": "6 wickets",
+    "note": "Sky Sports won by 6 wickets (6 balls remaining)."
+  },
+  "manOfMatch": "",
+  "innings": [
+    {
+      "number": 1,
+      "battingTeam": "Baldia Zalmi",
+      "bowlingTeam": "Sky Sports",
+      "runs": 274,
+      "wickets": 5,
+      "overs": "20.0",
+      "extras": {
+        "wides": 30,
+        "noBalls": 0,
+        "byes": 0,
+        "legByes": 0,
+        "penalties": 0
+      },
+      "batting": [
+        {
+          "name": "Nasir lefti",
+          "runs": 11,
+          "balls": 6,
+          "fours": 2,
+          "sixes": 0,
+          "dismissal": { "type": "bowled", "bowler": "Shah Nawaz" }
+        },
+        {
+          "name": "Taeem khan",
+          "runs": 11,
+          "balls": 6,
+          "fours": 1,
+          "sixes": 1,
+          "dismissal": { "type": "bowled", "bowler": "Attack 1" }
+        },
+        {
+          "name": "Ijaz Swati",
+          "runs": 107,
+          "balls": 48,
+          "fours": 15,
+          "sixes": 5,
+          "dismissal": { "type": "caught", "bowler": "Reheel" }
+        },
+        {
+          "name": "Wali amber",
+          "runs": 69,
+          "balls": 41,
+          "fours": 7,
+          "sixes": 2,
+          "dismissal": { "type": "caught", "bowler": "Kamran" }
+        },
+        {
+          "name": "Javed Afridi",
+          "runs": 11,
+          "balls": 3,
+          "fours": 1,
+          "sixes": 1,
+          "dismissal": { "type": "caught", "bowler": "Akbar" }
+        },
+        {
+          "name": "Zahid",
+          "runs": 15,
+          "balls": 9,
+          "fours": 3,
+          "sixes": 0,
+          "dismissal": { "type": "not out" }
+        },
+        {
+          "name": "Lal zada",
+          "runs": 20,
+          "balls": 5,
+          "fours": 1,
+          "sixes": 2,
+          "dismissal": { "type": "not out" }
+        }
+      ],
+      "bowling": [
+        { "name": "Attack", "overs": "1.0", "maidens": 0, "runs": 12, "wickets": 0 },
+        { "name": "Attack 1", "overs": "1.0", "maidens": 0, "runs": 9, "wickets": 1 },
+        { "name": "Kamran", "overs": "2.0", "maidens": 0, "runs": 37, "wickets": 1 },
+        { "name": "Shah Nawaz", "overs": "3.0", "maidens": 0, "runs": 24, "wickets": 1 },
+        { "name": "Ali", "overs": "1.0", "maidens": 0, "runs": 19, "wickets": 0 },
+        { "name": "Akbar", "overs": "4.0", "maidens": 0, "runs": 42, "wickets": 1 },
+        { "name": "Wajid", "overs": "1.0", "maidens": 0, "runs": 16, "wickets": 0 },
+        { "name": "Usman", "overs": "1.0", "maidens": 0, "runs": 15, "wickets": 0 },
+        { "name": "Rehman", "overs": "3.0", "maidens": 0, "runs": 53, "wickets": 0 },
+        { "name": "Zarnain", "overs": "1.0", "maidens": 0, "runs": 16, "wickets": 0 },
+        { "name": "Reheel", "overs": "2.0", "maidens": 0, "runs": 31, "wickets": 1 }
+      ],
+      "fallOfWickets": [
+        { "player": "Taeem khan", "runs": 17, "wickets": 1, "overs": "1.4" },
+        { "player": "Nasir lefti", "runs": 36, "wickets": 2, "overs": "3.1" },
+        { "player": "Ijaz Swati", "runs": 196, "wickets": 3, "overs": "15.5" },
+        { "player": "Javed Afridi", "runs": 211, "wickets": 4, "overs": "16.5" },
+        { "player": "Wali amber", "runs": 243, "wickets": 5, "overs": "18.4" }
+      ]
+    },
+    {
+      "number": 2,
+      "battingTeam": "Sky Sports",
+      "bowlingTeam": "Baldia Zalmi",
+      "runs": 275,
+      "wickets": 4,
+      "overs": "19.0",
+      "extras": {
+        "wides": 10,
+        "noBalls": 2,
+        "byes": 4,
+        "legByes": 1,
+        "penalties": 0
+      },
+      "batting": [
+        {
+          "name": "Rehman",
+          "runs": 116,
+          "balls": 49,
+          "fours": 14,
+          "sixes": 7,
+          "dismissal": { "type": "run out" }
+        },
+        {
+          "name": "Raheel",
+          "runs": 8,
+          "balls": 4,
+          "fours": 2,
+          "sixes": 0,
+          "dismissal": { "type": "caught", "bowler": "Lalzada" }
+        },
+        {
+          "name": "Wajid",
+          "runs": 94,
+          "balls": 49,
+          "fours": 13,
+          "sixes": 3,
+          "dismissal": { "type": "caught", "bowler": "Saud" }
+        },
+        {
+          "name": "Kamran",
+          "runs": 0,
+          "balls": 1,
+          "fours": 0,
+          "sixes": 0,
+          "dismissal": { "type": "bowled", "bowler": "Saud" }
+        },
+        {
+          "name": "Farooq",
+          "runs": 39,
+          "balls": 12,
+          "fours": 4,
+          "sixes": 3,
+          "dismissal": { "type": "not out" }
+        },
+        {
+          "name": "Akbar",
+          "runs": 1,
+          "balls": 1,
+          "fours": 0,
+          "sixes": 0,
+          "dismissal": { "type": "not out" }
+        }
+      ],
+      "bowling": [
+        { "name": "Saud", "overs": "4.0", "maidens": 0, "runs": 39, "wickets": 2 },
+        { "name": "Lalzada", "overs": "3.0", "maidens": 0, "runs": 33, "wickets": 1 },
+        { "name": "Gufran", "overs": "4.0", "maidens": 0, "runs": 66, "wickets": 0 },
+        { "name": "Fazal", "overs": "3.0", "maidens": 0, "runs": 38, "wickets": 0 },
+        { "name": "Danish", "overs": "3.0", "maidens": 0, "runs": 59, "wickets": 0 },
+        { "name": "Ijaz", "overs": "1.0", "maidens": 0, "runs": 19, "wickets": 0 },
+        { "name": "Taheem", "overs": "1.0", "maidens": 0, "runs": 16, "wickets": 0 }
+      ],
+      "fallOfWickets": [
+        { "player": "Raheel", "runs": 22, "wickets": 1, "overs": "2.3" },
+        { "player": "Wajid", "runs": 216, "wickets": 2, "overs": "15.4" },
+        { "player": "Kamran", "runs": 216, "wickets": 3, "overs": "15.5" },
+        { "player": "Rehman", "runs": 260, "wickets": 4, "overs": "18.2" }
+      ]
+    }
+  ],
+  "assumptions": [
+    "Innings 1 extras are all wides (30) because the source scorecard did not record an extras split.",
+    "Akbar is entered as 1 run from 1 ball (the scorer app showed 0 (0)); the ball-by-ball history is exactly one run and one ball short.",
+    "Sky Sports placeholders Attack (TBC), Attack 1 (TBC) and Ali (TBC) are created because the source names cannot be matched unambiguously.",
+    "No man of the match is set; the owner chooses it in Admin."
+  ]
+}

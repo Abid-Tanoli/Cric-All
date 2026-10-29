@@ -48,9 +48,17 @@ function BracketTeam({ team }) {
 function BracketMatch({ match }) {
   if (match.placeholder) {
     return (
-      <div className="border border-dashed border-cric-border rounded-xl p-4 text-center bg-cric-bg/40">
-        <p className="text-[10px] font-black uppercase tracking-widest text-cric-muted">{match.label || "TBD"}</p>
-        <p className="text-[10px] text-cric-muted/60 mt-1">Awaiting previous round</p>
+      <div className="border border-dashed border-cric-border rounded-xl overflow-hidden bg-cric-bg/40">
+        <p className="px-3 py-2 text-center text-[10px] font-black uppercase tracking-widest text-cric-muted">
+          {match.teams?.length ? "Final fixture not yet scheduled" : match.label || "TBD"}
+        </p>
+        {match.teams?.length ? (
+          <div className="divide-y divide-cric-border">
+            {match.teams.map((team, index) => <BracketTeam key={team._id || team.name || index} team={team} />)}
+          </div>
+        ) : (
+          <p className="pb-3 text-center text-[10px] text-cric-muted/60">Awaiting previous round</p>
+        )}
       </div>
     );
   }
