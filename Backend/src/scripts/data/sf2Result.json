@@ -1,0 +1,233 @@
+{
+  "tournamentName": "All Baldia T20 Hard Ball Cricket Tournament",
+  "match": {
+    "stage": "semi_final",
+    "stageLabel": "SF2",
+    "teamA": "Young Star",
+    "teamB": "Khan Associates",
+    "title": "SF2: Young Star vs Khan Associates",
+    "venue": "Tahirabad Ground",
+    "startAt": "2026-10-25T05:00:00.000Z",
+    "totalOvers": 20,
+    "matchCategory": "Club",
+    "tossWinner": "",
+    "tossDecision": ""
+  },
+  "result": {
+    "sourceResultType": "wickets",
+    "resultType": "normal",
+    "winner": "Young Star",
+    "margin": "6 wickets",
+    "note": "Young Star won by 6 wickets (30 balls remaining)."
+  },
+  "manOfMatch": "",
+  "innings": [
+    {
+      "number": 1,
+      "battingTeam": "Khan Associates",
+      "bowlingTeam": "Young Star",
+      "runs": 198,
+      "wickets": 9,
+      "overs": "19.0",
+      "extras": {
+        "wides": 11,
+        "noBalls": 0,
+        "byes": 8,
+        "legByes": 0,
+        "penalties": 0
+      },
+      "batting": [
+        {
+          "name": "Shan",
+          "runs": 27,
+          "balls": 10,
+          "fours": 3,
+          "sixes": 2,
+          "dismissal": { "type": "out" }
+        },
+        {
+          "name": "Hamza",
+          "runs": 42,
+          "balls": 14,
+          "fours": 4,
+          "sixes": 3,
+          "dismissal": { "type": "out" }
+        },
+        {
+          "name": "Waqar",
+          "runs": 9,
+          "balls": 7,
+          "fours": 2,
+          "sixes": 0,
+          "dismissal": { "type": "out" }
+        },
+        {
+          "name": "Imran",
+          "runs": 34,
+          "balls": 24,
+          "fours": 3,
+          "sixes": 2,
+          "dismissal": { "type": "out" }
+        },
+        {
+          "name": "Sajad",
+          "runs": 14,
+          "balls": 6,
+          "fours": 1,
+          "sixes": 1,
+          "dismissal": { "type": "out" }
+        },
+        {
+          "name": "Parvez",
+          "runs": 26,
+          "balls": 17,
+          "fours": 1,
+          "sixes": 2,
+          "dismissal": { "type": "out" }
+        },
+        {
+          "name": "Sabir",
+          "runs": 17,
+          "balls": 14,
+          "fours": 1,
+          "sixes": 1,
+          "dismissal": { "type": "out" }
+        },
+        {
+          "name": "Umair",
+          "runs": 4,
+          "balls": 4,
+          "fours": 1,
+          "sixes": 0,
+          "dismissal": { "type": "out" }
+        },
+        {
+          "name": "Khan",
+          "runs": 5,
+          "balls": 2,
+          "fours": 1,
+          "sixes": 0,
+          "dismissal": { "type": "out" }
+        },
+        {
+          "name": "Sad",
+          "runs": 1,
+          "balls": 1,
+          "fours": 0,
+          "sixes": 0,
+          "dismissal": { "type": "not out" }
+        }
+      ],
+      "bowling": [
+        { "name": "Ejaz", "overs": "4.0", "maidens": 0, "runs": 48, "wickets": 2 },
+        { "name": "Kamran", "overs": "4.0", "maidens": 0, "runs": 48, "wickets": 1 },
+        { "name": "Usman", "overs": "4.0", "maidens": 0, "runs": 32, "wickets": 2 },
+        { "name": "Saleem", "overs": "3.0", "maidens": 0, "runs": 24, "wickets": 1 },
+        { "name": "Umair", "overs": "4.0", "maidens": 0, "runs": 38, "wickets": 3 }
+      ],
+      "fallOfWickets": [
+        { "runs": 41, "wickets": 1 },
+        { "runs": 72, "wickets": 2 },
+        { "runs": 97, "wickets": 3 },
+        { "runs": 143, "wickets": 4 },
+        { "runs": 144, "wickets": 5 },
+        { "runs": 177, "wickets": 6 },
+        { "runs": 186, "wickets": 7 },
+        { "runs": 191, "wickets": 8 },
+        { "runs": 198, "wickets": 9 }
+      ]
+    },
+    {
+      "number": 2,
+      "battingTeam": "Young Star",
+      "bowlingTeam": "Khan Associates",
+      "runs": 199,
+      "wickets": 4,
+      "overs": "15.0",
+      "extras": {
+        "wides": 17,
+        "noBalls": 5,
+        "byes": 1,
+        "legByes": 1,
+        "penalties": 0
+      },
+      "batting": [
+        {
+          "name": "Zahid",
+          "runs": 38,
+          "balls": 21,
+          "fours": 6,
+          "sixes": 1,
+          "dismissal": { "type": "bowled", "bowler": "Parvez" }
+        },
+        {
+          "name": "Salman Sr",
+          "runs": 2,
+          "balls": 3,
+          "fours": 0,
+          "sixes": 0,
+          "dismissal": { "type": "caught", "bowler": "Saad" }
+        },
+        {
+          "name": "Aqal",
+          "runs": 16,
+          "balls": 14,
+          "fours": 3,
+          "sixes": 0,
+          "dismissal": { "type": "bowled", "bowler": "Parvez" }
+        },
+        {
+          "name": "Luqman",
+          "runs": 12,
+          "balls": 6,
+          "fours": 1,
+          "sixes": 1,
+          "dismissal": { "type": "caught", "bowler": "Humza" }
+        },
+        {
+          "name": "Ijaz",
+          "runs": 94,
+          "balls": 32,
+          "fours": 3,
+          "sixes": 13,
+          "dismissal": { "type": "not out" }
+        },
+        {
+          "name": "Majid",
+          "runs": 13,
+          "balls": 14,
+          "fours": 2,
+          "sixes": 0,
+          "dismissal": { "type": "not out" }
+        }
+      ],
+      "bowling": [
+        { "name": "Player3", "overs": "0.0", "maidens": 0, "runs": 3, "wickets": 0 },
+        { "name": "Saad", "overs": "3.0", "maidens": 0, "runs": 28, "wickets": 1 },
+        { "name": "Parvez", "overs": "4.0", "maidens": 0, "runs": 44, "wickets": 2 },
+        { "name": "Imran", "overs": "4.0", "maidens": 0, "runs": 43, "wickets": 0 },
+        { "name": "Humza", "overs": "2.0", "maidens": 0, "runs": 40, "wickets": 1 },
+        { "name": "Shani", "overs": "1.0", "maidens": 0, "runs": 20, "wickets": 0 },
+        { "name": "Khan", "overs": "1.0", "maidens": 0, "runs": 19, "wickets": 0 }
+      ],
+      "fallOfWickets": [
+        { "player": "Salman Sr", "runs": 29, "wickets": 1, "overs": "2.1" },
+        { "player": "Aqal", "runs": 53, "wickets": 2, "overs": "5.0" },
+        { "player": "Luqman", "runs": 67, "wickets": 3, "overs": "6.2" },
+        { "player": "Zahid", "runs": 99, "wickets": 4, "overs": "8.3" }
+      ]
+    }
+  ],
+  "assumptions": [
+    "Innings 1 is a reconstruction from a hard-to-read paper book. The nine Khan Associates dismissals are recorded as the generic type \"out\" because the source did not record how they were dismissed; no bowlers or fielders were invented.",
+    "Parvez's 26 runs from 17 balls is estimated from his ball-by-ball string because the paper totals box for that row was blank.",
+    "Khan Associates extras are a plug approved by the owner: the source did not record an extras split, so 19 extras are entered as 11 wides and 8 byes. Byes are not charged to the bowlers; wides are already included in the bowlers' runs.",
+    "Ejaz's 4.0-over spell is 3.0 overs for 41 runs in the book plus the missing 19th over of 7 runs, assigned to Ejaz by default.",
+    "Khan Associates fall of wickets are entered as scores only (41/1 to 198/9) with no batter names because the source did not identify them. The schema permits a null player.",
+    "Young Star extras are a plug approved by the owner: the app showed 24 extras but the listed split added to 19, so the missing 5 runs are entered as no-balls.",
+    "The unidentified Khan Associates bowler recorded as Player3 is entered as 0.0 overs for 3 runs (source said 1 run; raised by 2 by owner-approved plug so the bowler total reconciles) and becomes the team-scoped placeholder Player3 (TBC).",
+    "Ahmad (0.0 overs, 0 runs) was dropped from the Khan Associates bowling card.",
+    "No toss is recorded and no man of the match is set; the owner chooses them in Admin.",
+    "The SF2 fixture team order is Young Star then Khan Associates. The manual-scorecard save stores innings in that fixed team order, so the public card shows Young Star's innings first even though Khan Associates batted first; the scores, result and bracket are unaffected."
+  ]
+}
