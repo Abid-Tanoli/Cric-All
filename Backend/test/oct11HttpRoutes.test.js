@@ -27,6 +27,7 @@ import Admin from "../src/models/Admin.js";
 import User from "../src/models/User.js";
 import Team from "../src/models/Team.js";
 import Match from "../src/models/Match.js";
+import Player from "../src/models/Player.js";
 
 // Terminal A / oct11: exercise the real Express routers over HTTP. The earlier
 // tournament tests call controllers directly with mock req/res; these go through
@@ -238,6 +239,101 @@ test("POST /api/players returns 409 for a duplicate name in the same team", asyn
   const second = await req("POST", "/api/players", { token, body: { name, team: String(team._id) } });
   assert.equal(second.status, 409);
   assert.equal(second.body.code, "PLAYER_DUPLICATE");
+});
+
+test("an existing player without battingPosition can be read, edited and cleared over HTTP", async () => {
+  const token = await makeAdminToken();
+  const name = uniqueName("Legacy Batting Position");
+
+  // Insert through the raw collection so the document genuinely has no
+  // battingPosition key. A Mongoose create() would apply the model default and
+  // would not exercise the "player created before the field existed" case.
+  const { insertedId } = await Player.collection.insertOne({
+    name,
+    role: "Batsman",
+    playingRole: "Batsman",
+  });
+  const playerId = String(insertedId);
+
+  const before = await req("GET", `/api/players/${playerId}`);
+  assert.equal(before.status, 200);
+  assert.equal(before.body.battingPosition, "", "an absent field is projected as 'not set'");
+
+  // This mirrors what the Admin edit form sends, including the stored privacy
+  // block that used to be rejected as unrecognized keys.
+  const edit = {
+    name,
+    playingRole: "Batsman",
+    battingPosition: "opener",
+    battingStyle: "Right-handed",
+    bowlingStyle: "Right-arm Fast",
+    team: "",
+    imageUrl: "",
+    phone: "",
+    isPartTimeBowler: false,
+    category: "Other",
+    subCategory: "",
+    ageGroup: "Open",
+    organization: "",
+    address: { town: "", district: "", city: "", province: "" },
+    gallery: [],
+    videos: [],
+    socialLinks: { facebook: "", instagram: "", twitter: "", youtube: "", whatsapp: "" },
+    privacy: {
+      contactInfo: "public",
+      socialLinks: "public",
+      location: "public",
+      gallery: "public",
+      videos: "public",
+    },
+  };
+
+  const updated = await req("PUT", `/api/players/${playerId}`, { token, body: edit });
+  assert.equal(updated.status, 200, JSON.stringify(updated.body));
+  assert.equal(updated.body.battingPosition, "opener", "the update response carries the new value");
+
+  const afterUpdate = await req("GET", `/api/players/${playerId}`);
+  assert.equal(afterUpdate.status, 200);
+  assert.equal(afterUpdate.body.battingPosition, "opener", "a fresh GET sees the saved value");
+
+  const cleared = await req("PUT", `/api/players/${playerId}`, {
+    token,
+    body: { ...edit, battingPosition: "" },
+  });
+  assert.equal(cleared.status, 200, JSON.stringify(cleared.body));
+  assert.equal(cleared.body.battingPosition, "", "'Not set' is a real stored value");
+
+  const afterClear = await req("GET", `/api/players/${playerId}`);
+  assert.equal(afterClear.status, 200);
+  assert.equal(afterClear.body.battingPosition, "", "clearing persists across a fresh GET");
+});
+
+test("a partial self-service edit does not drop a rostered player from the squad", async () => {
+  const token = await makeVerifiedUserToken("roster-editor");
+  const { id: userId } = jwt.verify(token, process.env.JWT_SECRET);
+  const team = await Team.create({ name: uniqueName("Roster Team") });
+  const player = await Player.create({
+    name: uniqueName("Rostered Player"),
+    createdBy: userId,
+    team: team._id,
+  });
+  await Team.findByIdAndUpdate(team._id, { $addToSet: { players: player._id } });
+
+  // The self-service form has no team field, so its PUT omits `team` entirely.
+  const updated = await req("PUT", `/api/players/${player._id}`, {
+    token,
+    body: { battingPosition: "opener" },
+  });
+  assert.equal(updated.status, 200, JSON.stringify(updated.body));
+  assert.equal(updated.body.battingPosition, "opener");
+
+  const storedTeam = await Team.findById(team._id).lean();
+  assert.ok(
+    storedTeam.players.some((id) => String(id) === String(player._id)),
+    "omitting team from an update must not pull the player out of its squad"
+  );
+  const storedPlayer = await Player.findById(player._id).lean();
+  assert.equal(String(storedPlayer.team), String(team._id), "the player still points at the team");
 });
 
 // --- fixtures -----------------------------------------------------------------

@@ -303,7 +303,12 @@ export const updatePlayer = async (req, res) => {
     }
 
     const oldTeamId = existing.team?.toString();
-    const newTeamId = payload.team?.toString();
+    // A partial update that does not mention `team` must leave the squad alone.
+    // The old comparison treated an omitted field as "no team" and pulled the
+    // player out of its team's roster on every self-service profile edit, even
+    // though player.team stayed set.
+    const teamWasSent = Object.prototype.hasOwnProperty.call(payload, "team");
+    const newTeamId = teamWasSent ? payload.team?.toString() : oldTeamId;
     const oldImageUrl = existing.imageUrl;
 
     const player = await Player.findByIdAndUpdate(
@@ -318,7 +323,7 @@ export const updatePlayer = async (req, res) => {
     }
 
     // If team changed, update the teams' players arrays
-    if (oldTeamId !== newTeamId) {
+    if (teamWasSent && oldTeamId !== newTeamId) {
       // Remove from old team
       if (oldTeamId) {
         await Team.findByIdAndUpdate(

@@ -458,6 +458,26 @@ test("the admin update schema accepts seed provenance and an empty team", () => 
   assert.strictEqual(updatePlayerSchema.safeParse({ isSeed: true }).success, false);
 });
 
+test("the admin update schema accepts the stored privacy block, including media flags", () => {
+  // Player.privacy has gallery/videos flags and the Admin edit form sends the
+  // whole stored block back. Rejecting those keys made every Admin edit a 400.
+  const privacy = {
+    contactInfo: "public",
+    socialLinks: "public",
+    location: "public",
+    gallery: "public",
+    videos: "hidden",
+  };
+  const result = adminUpdatePlayerSchema.safeParse({ battingPosition: "opener", privacy });
+  assert.strictEqual(result.success, true, JSON.stringify(result.error?.issues));
+  assert.deepStrictEqual(result.data.privacy, privacy);
+
+  const unknown = adminUpdatePlayerSchema.safeParse({
+    privacy: { ...privacy, somethingElse: "public" },
+  });
+  assert.strictEqual(unknown.success, false, "the privacy block stays strict");
+});
+
 test("a platform admin can write career stats; the field policy does not strip them", async () => {
   const admin = await makeUser({ role: "admin" });
   const target = await makeUser();

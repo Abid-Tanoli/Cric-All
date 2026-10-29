@@ -105,6 +105,12 @@ const privacySchema = z
     contactInfo: z.enum(['public', 'hidden']).optional(),
     socialLinks: z.enum(['public', 'hidden']).optional(),
     location: z.enum(['public', 'hidden']).optional(),
+    // These two flags exist on Player.privacy and gate the public gallery and
+    // videos. The Admin edit form round-trips the whole stored privacy block,
+    // so omitting them here rejected every edit of an existing player as an
+    // unrecognized key before the request reached the controller.
+    gallery: z.enum(['public', 'hidden']).optional(),
+    videos: z.enum(['public', 'hidden']).optional(),
   })
   .strict();
 
