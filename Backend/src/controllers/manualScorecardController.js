@@ -2,6 +2,8 @@ import mongoose from "mongoose";
 import Match from "../models/Match.js";
 import Team from "../models/Team.js";
 import Tournament from "../models/Tournament.js";
+import Ball from "../models/Ball.js";
+import Delivery from "../models/Delivery.js";
 import {
   validateManualScorecard,
   formatOversLabel,
@@ -164,7 +166,9 @@ const applyManualMatch = async (match, body, { req = null, requireComplete = tru
   if (body.startAt) match.startAt = new Date(body.startAt);
   match.stage = data.stage;
   match.stageLabel = data.stageLabel;
-  match.round = data.stage || match.round;
+  // A stage label ("SF1"/"QF2") is more specific than the stage key; keep it
+  // when the caller supplies it (the fixture conversion does).
+  match.round = body.round != null && body.round !== "" ? body.round : (data.stage || match.round);
   match.manualDraft = !requireComplete;
   match.status = requireComplete ? "completed" : "upcoming";
   match.manualMeta = { ...(match.manualMeta || {}), lastEditedAt: new Date() };
@@ -199,6 +203,129 @@ const applyManualMatch = async (match, body, { req = null, requireComplete = tru
   });
 
   return { ok: true, match };
+};
+
+const emptyInnings = (innings) => {
+  if (!innings) return true;
+  if (Number(innings.runs) !== 0 || Number(innings.wickets) !== 0) return false;
+  if (Number(innings.balls) !== 0 || Number(innings.overs) !== 0) return false;
+  for (const key of ["batting", "bowling", "fallOfWickets", "oversHistory", "partnerships"]) {
+    if (Array.isArray(innings[key]) && innings[key].length) return false;
+  }
+  if (
+    innings.currentBatsman1 ||
+    innings.currentBatsman2 ||
+    innings.onStrikeBatsman ||
+    innings.currentBowler
+  ) {
+    return false;
+  }
+  return !innings.status || innings.status === "upcoming";
+};
+
+/**
+ * True only for a scheduled fixture that has never been scored: upcoming, two
+ * empty innings, no result/winner. Conversion helpers refuse anything else so a
+ * live or completed match can never be overwritten by a paper scorecard.
+ */
+export const isEmptyUpcomingFixture = (match) => {
+  if (!match) return false;
+  if (String(match.status || "") !== "upcoming") return false;
+  if (match.manualDraft === true) return false;
+  if (match.result?.winner) return false;
+  const innings = Array.isArray(match.innings) ? match.innings : [];
+  if (innings.length !== 2) return false;
+  return innings.every(emptyInnings);
+};
+
+/**
+ * Convert an existing, empty scheduled live fixture into a DRAFT manual
+ * scorecard in place. This is the operator counterpart to the Admin manual
+ * save: after the guard it flips `source` to "manual" and delegates the actual
+ * validation/save to `applyManualMatch()` with `requireComplete:false`.
+ *
+ * It never creates or deletes a document, never touches `match.tournament`, and
+ * refuses a fixture whose `_id` is not linked from `Tournament.matches`, so the
+ * bracket slot and its tournament link survive unchanged.
+ */
+export const convertUpcomingFixtureToManualDraft = async (
+  matchId,
+  body = {},
+  { req = null } = {},
+) => {
+  try {
+    const match = await Match.findById(matchId);
+    if (!match) return { ok: false, status: 404, message: "Match not found." };
+    if (match.source === "manual") {
+      return { ok: false, status: 409, message: "Match is already a manual scorecard." };
+    }
+    if (match.source !== "live") {
+      return { ok: false, status: 409, message: "Only a live-scored fixture can be converted." };
+    }
+    if (!isEmptyUpcomingFixture(match)) {
+      return {
+        ok: false,
+        status: 409,
+        message: "Only an empty upcoming fixture (no innings or ball data) can be converted.",
+      };
+    }
+
+    const [ballCount, deliveryCount] = await Promise.all([
+      Ball.countDocuments({ matchId: match._id }),
+      Delivery.countDocuments({ matchId: match._id }),
+    ]);
+    if (ballCount || deliveryCount) {
+      return {
+        ok: false,
+        status: 409,
+        message: `Fixture already has ${ballCount} ball(s) and ${deliveryCount} delivery record(s); refusing to convert.`,
+      };
+    }
+
+    if (!match.tournament) {
+      return { ok: false, status: 409, message: "Fixture is not linked to a tournament." };
+    }
+    const tournament = await Tournament.findById(match.tournament).select("matches").lean();
+    if (!tournament) {
+      return { ok: false, status: 409, message: "Fixture tournament was not found." };
+    }
+    const linked = (tournament.matches || []).some((id) => idOf(id) === idOf(match._id));
+    if (!linked) {
+      return {
+        ok: false,
+        status: 409,
+        message: "Fixture is not linked from Tournament.matches; refusing to convert.",
+      };
+    }
+    if (!Array.isArray(match.teams) || match.teams.length !== 2) {
+      return { ok: false, status: 409, message: "Fixture must have exactly two teams." };
+    }
+
+    // Preserve the bracket slot metadata even if a caller sends something else.
+    const payload = {
+      ...body,
+      teamA: idOf(match.teams[0]),
+      teamB: idOf(match.teams[1]),
+      stage: match.stage || body.stage,
+      stageLabel: match.stageLabel || body.stageLabel,
+      startAt: match.startAt ? new Date(match.startAt).toISOString() : body.startAt,
+      venue: match.venue ?? body.venue,
+      title: body.title || match.title,
+    };
+
+    match.source = "manual";
+    match.manualMeta = { enteredAt: new Date(), lastEditedAt: null };
+    const result = await applyManualMatch(match, payload, { req, requireComplete: false });
+    if (!result.ok) {
+      // Nothing was saved; restore the in-memory document so a caller that
+      // inspects it after a validation failure does not see a phantom flip.
+      match.source = "live";
+      return result;
+    }
+    return result;
+  } catch (error) {
+    return { ok: false, status: 400, message: error.message || "Failed to convert the fixture." };
+  }
 };
 
 /** Rebuild the form payload from the scorecard already stored on a draft. */
@@ -434,4 +561,6 @@ export default {
   getManualMatches,
   publishManualMatch,
   manualMatchToPayload,
+  isEmptyUpcomingFixture,
+  convertUpcomingFixtureToManualDraft,
 };
