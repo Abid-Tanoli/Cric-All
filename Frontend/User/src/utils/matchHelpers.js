@@ -159,9 +159,16 @@ export const getMatchBanner = (match) => {
   return "Match has not started yet";
 };
 
+// Overs as a decimal number. The two fields are the SAME quantity in different
+// units (`balls` is the legal-ball count, `overs` its floor), so adding them
+// double-counted every innings: a 199/4 innings saved as overs:15, balls:90 was
+// treated as 30 overs and the scorecard printed RR 6.63 instead of 13.27.
+// Prefer `balls` (exact, no rounding) and fall back to `overs` when it is absent.
 export const overValue = (innings) => {
   if (!innings) return 0;
-  return number(innings.overs) + number(innings.balls) / 6;
+  const balls = number(innings.balls);
+  if (balls > 0) return balls / 6;
+  return number(innings.overs);
 };
 
 export const getCrr = (innings) => {
