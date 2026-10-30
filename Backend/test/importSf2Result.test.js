@@ -183,6 +183,16 @@ async function seedTournament() {
 const findPlayerOnTeam = async (teamId, name) =>
   Player.findOne({ team: teamId, name });
 
+async function moveZahidToKhan(youngStar, khan) {
+  const zahid = await findPlayerOnTeam(youngStar._id, "Zahid (TBC)");
+  assert.ok(zahid);
+  await Player.updateOne({ _id: zahid._id }, { team: khan._id });
+  await Team.updateOne({ _id: khan._id }, { $addToSet: { players: zahid._id } });
+  // Young Star's roster still contains the id on purpose: the importer must
+  // ignore it because Player.team now points at Khan Associates.
+  return zahid;
+}
+
 before(async () => {
   mongod = await startTestDb();
 });
@@ -408,6 +418,84 @@ test("placeholders are created on the right squads and never borrowed across tea
   assert.ok(zahid);
   assert.equal(await Player.countDocuments({ name: "Zahid (TBC)" }), 1);
   assert.equal(await findPlayerOnTeam(khan._id, "Zahid (TBC)"), null);
+});
+
+test("Young Star's Zahid (TBC) is not borrowed from another team", async () => {
+  const { youngStar, khan } = await seedTournament();
+  const khanZahid = await moveZahidToKhan(youngStar, khan);
+
+  const lines = [];
+  const report = await runImportSf2Result({
+    apply: true,
+    log: (line) => lines.push(String(line ?? "")),
+  });
+  assert.equal(report.outcome, "APPLIED");
+  assert.equal(report.blocked, false);
+
+  const youngZahid = await findPlayerOnTeam(youngStar._id, "Zahid (TBC)");
+  assert.ok(youngZahid, "Young Star must get its own Zahid (TBC)");
+  assert.notEqual(String(youngZahid._id), String(khanZahid._id));
+  assert.equal(String(youngZahid.team), String(youngStar._id));
+  assert.equal(await Player.countDocuments({ name: "Zahid (TBC)" }), 2);
+
+  const freshKhanZahid = await Player.findById(khanZahid._id).lean();
+  assert.equal(freshKhanZahid.name, "Zahid (TBC)");
+  assert.equal(String(freshKhanZahid.team), String(khan._id));
+  const freshKhan = await Team.findById(khan._id).lean();
+  assert.equal(freshKhan.players.map(String).includes(String(youngZahid._id)), false);
+
+  assert.match(
+    lines.join("\n"),
+    /\[batting\] "Zahid" \[Young Star\] -> Zahid \(TBC\)/,
+    "the name map must print the expected team next to the mapping",
+  );
+});
+
+test("a name map that points to another team's player is BLOCKED", async () => {
+  const { sf2, youngStar, khan } = await seedTournament();
+  const khanZahid = await moveZahidToKhan(youngStar, khan);
+  const { data, mapping } = loadImportFiles();
+  mapping["Young Star::Zahid"] = "Zahid (TBC)";
+
+  const report = await runImportSf2Result({
+    apply: true,
+    log: noLog,
+    data,
+    nameMap: mapping,
+  });
+
+  assert.equal(report.blocked, true);
+  assert.match(
+    report.plan.errors.join("\n"),
+    /points to player "Zahid \(TBC\)" of Khan Associates; expected a player in Young Star/,
+  );
+  const unchanged = await Match.findById(sf2._id).lean();
+  assert.equal(unchanged.source, "live");
+  assert.equal(unchanged.manualDraft, false);
+  assert.equal(await Player.countDocuments({ name: "Zahid (TBC)" }), 1);
+  assert.equal(String((await Player.findById(khanZahid._id).lean()).team), String(khan._id));
+});
+
+test("the plan prints the expected team on every name-map line", async () => {
+  await seedTournament();
+  const lines = [];
+  const report = await runImportSf2Result({
+    apply: false,
+    log: (line) => lines.push(String(line ?? "")),
+  });
+  assert.equal(report.blocked, false);
+
+  const nameMapIndex = lines.indexOf("Name map:");
+  assert.notEqual(nameMapIndex, -1);
+  const mapLines = lines
+    .slice(nameMapIndex + 1)
+    .filter((line) => /^  \[(batting|bowling)\]/.test(line));
+  assert.ok(mapLines.length > 0);
+  for (const line of mapLines) {
+    assert.match(line, /\[(Young Star|Khan Associates)\] -> /, `missing team on: ${line}`);
+  }
+  assert.match(lines.join("\n"), /\[batting\] "Zahid" \[Young Star\] -> Zahid \(TBC\)/);
+  assert.match(lines.join("\n"), /team safety : .*a mismatch BLOCKS/);
 });
 
 test("publishing the draft is the owner's step and reveals SF2 in the public bracket", async () => {
