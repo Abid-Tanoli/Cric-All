@@ -56,7 +56,10 @@ export const listOrganizations = async (req, res) => {
   try {
     const { category, type, search, page, limit } = req.query;
     const viewer = await resolveViewerContext(req);
-    const query = { isActive: true };
+    // The public directory lists active organizations only. The Admin app is
+    // supervisory and must also see deactivated ones, otherwise an operator
+    // cannot reactivate them — or hand one over — once it has been switched off.
+    const query = viewer.isPlatformAdmin ? {} : { isActive: true };
     // Fix B: the public directory does not list fixtures. The Admin app (which
     // is where an operator looks for them) authenticates and is exempt.
     if (!viewer.isPlatformAdmin) Object.assign(query, reservedNamesMongoClause("name"));

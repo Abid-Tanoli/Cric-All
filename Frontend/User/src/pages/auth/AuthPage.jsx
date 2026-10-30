@@ -15,7 +15,14 @@ export default function AuthPage({ initialMode = "login" }) {
     next.startsWith("/") && !next.startsWith("/admin") ? next : "/"
   ), [next]);
 
-  const handleSuccess = () => {
+  const handleSuccess = (user) => {
+    // An organization owner handed over by a platform admin signs in with a
+    // temporary password. Send them straight to the screen that replaces it,
+    // keeping the original destination so they continue there afterwards.
+    if (user?.mustChangePassword) {
+      navigate(`/change-password?next=${encodeURIComponent(safeNext)}`, { replace: true });
+      return;
+    }
     navigate(safeNext, { replace: true });
   };
 

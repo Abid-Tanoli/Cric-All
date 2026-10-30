@@ -45,6 +45,11 @@ function publicUser(user, extra = {}) {
     organizationName: user.organizationName,
     emailVerified: user.emailVerified === true,
     phoneVerified: user.phoneVerified === true,
+    // The client needs these two to show the right password screen: a
+    // Google-only account sets a password instead of changing one, and an
+    // account handed over by an admin is nudged to replace the temporary one.
+    passwordSet: user.passwordSet === true,
+    mustChangePassword: user.mustChangePassword === true,
     status: user.status || "active",
     ...extra,
   };
@@ -336,6 +341,9 @@ export const resetPassword = async (req, res) => {
     user.password = password;
     user.resetPasswordToken = undefined;
     user.resetPasswordExpires = undefined;
+    // Choosing a new password through the emailed link satisfies the same
+    // requirement as the signed-in change-password screen.
+    user.mustChangePassword = false;
     // Password changed → every previously issued token is now invalid.
     user.tokenVersion = (user.tokenVersion || 0) + 1;
     await user.save();
@@ -344,6 +352,74 @@ export const resetPassword = async (req, res) => {
   } catch (err) {
     log.error({ event: "reset-password.failed", err: err.message }, "reset password failed");
     res.status(500).json({ message: "Password reset failed" });
+  }
+};
+
+/**
+ * POST /api/auth/change-password { currentPassword, newPassword }
+ *
+ * The signed-in way to replace a password. `forgot-password` remains the
+ * signed-out way. A Google-only account has no password to compare against, so
+ * it may set one with `currentPassword` omitted; every account that already has
+ * a password must prove it knows the old one.
+ *
+ * Bumping `tokenVersion` invalidates every other session, and the response
+ * carries a fresh token so this session survives the bump.
+ */
+export const changePassword = async (req, res) => {
+  try {
+    if (req.principalType !== "user") {
+      return res.status(403).json({
+        message: "Use the admin password reset flow for an admin account.",
+        code: "WRONG_PRINCIPAL",
+      });
+    }
+
+    const { currentPassword = "", newPassword } = req.body;
+    const passwordError = validatePasswordStrength(newPassword);
+    if (passwordError) return res.status(400).json({ message: passwordError });
+
+    const user = await User.findById(req.user._id).select("+password");
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    if (user.passwordSet && user.password) {
+      if (!currentPassword) {
+        return res.status(400).json({
+          message: "Enter your current password.",
+          code: "CURRENT_PASSWORD_REQUIRED",
+        });
+      }
+      const matches = await user.comparePassword(currentPassword);
+      if (!matches) {
+        return res.status(400).json({
+          message: "Your current password is incorrect.",
+          code: "CURRENT_PASSWORD_INVALID",
+        });
+      }
+      if (currentPassword === newPassword) {
+        return res.status(400).json({
+          message: "Choose a password different from your current one.",
+          code: "PASSWORD_UNCHANGED",
+        });
+      }
+    }
+
+    user.password = newPassword;
+    user.mustChangePassword = false;
+    // A password change is a session-invalidating event; the fresh token below
+    // is the only one that keeps working.
+    user.tokenVersion = (user.tokenVersion || 0) + 1;
+    await user.save();
+
+    const token = generateToken(user);
+    res.status(200).json({
+      message: "Password changed successfully.",
+      token,
+      user: publicUser(user),
+    });
+  } catch (err) {
+    log.error({ event: "change-password.failed", err: err.message }, "change password failed");
+    res.status(500).json({ message: "Could not change the password" });
   }
 };
 

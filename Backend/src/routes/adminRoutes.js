@@ -12,6 +12,8 @@ import {
 } from "../controllers/adminController.js";
 import auth from "../middleware/authMiddleware.js";
 import rateLimiter from "../middleware/rateLimiter.js";
+import validate from "../middleware/validate.js";
+import validateObjectId from "../middleware/validateObjectId.js";
 import CricketShot from "../models/CricketShot.js";
 import FieldingPosition from "../models/FieldingPosition.js";
 import {
@@ -19,6 +21,8 @@ import {
   approveHandlerRequest,
   rejectHandlerRequest
 } from "../controllers/handlerController.js";
+import { handoverOrganization } from "../controllers/orgHandoverController.js";
+import { handoverOrganizationSchema } from "../validators/orgValidators.js";
 
 const router = express.Router();
 
@@ -31,6 +35,14 @@ const registerLimit = rateLimiter({ windowMs: 15 * 60 * 1000, max: 10 });
 const loginLimit = rateLimiter({ windowMs: 5 * 60 * 1000, max: 20 });
 const forgotLimit = rateLimiter({ windowMs: 15 * 60 * 1000, max: 5 });
 const resetLimit = rateLimiter({ windowMs: 15 * 60 * 1000, max: 10 });
+const handoverLimit = rateLimiter({ windowMs: 15 * 60 * 1000, max: 30 });
+
+// A handover response can contain a one-time temporary password. Never let a
+// browser, proxy or shared cache store it.
+const noStore = (req, res, next) => {
+  res.set("Cache-Control", "no-store");
+  next();
+};
 
 router.post("/register", registerLimit, registerAdmin);
 router.post("/login", loginLimit, loginAdmin);
@@ -82,6 +94,20 @@ router.put("/fielding-positions/:id", auth.protect, auth.requireAdmin, async (re
     res.status(400).json({ message: error.message });
   }
 });
+
+// Admin: hand an organization over to its owner. This is deliberately an
+// Admin-app endpoint: it can create a User account and issue a temporary
+// password, so it must not be reachable from the self-service org routes.
+router.post(
+  "/organizations/:id/handover",
+  handoverLimit,
+  noStore,
+  auth.protect,
+  auth.requireAdmin,
+  validateObjectId("id"),
+  validate(handoverOrganizationSchema),
+  handoverOrganization
+);
 
 // Admin: review handler/org-admin creation requests
 router.get("/handler-requests", auth.protect, auth.requireAdmin, listHandlerRequests);

@@ -2,6 +2,22 @@ import jwt from "jsonwebtoken";
 import Admin from "../models/Admin.js";
 import User from "../models/User.js";
 
+// A user who signed in with a temporary password may only do the things needed
+// to replace it (and to read/delete their own account). Everything else is
+// refused here, on the server, rather than relying on the User app's redirect.
+const PASSWORD_CHANGE_ALLOWED_PATHS = new Set([
+  "/api/auth/change-password",
+  "/api/auth/profile",
+  "/api/auth/logout",
+  "/api/auth/account",
+]);
+
+function passwordChangeAllowed(req) {
+  const raw = String(req.originalUrl || req.url || "").split("?")[0];
+  const path = raw.length > 1 ? raw.replace(/\/+$/, "") : raw;
+  return PASSWORD_CHANGE_ALLOWED_PATHS.has(path);
+}
+
 export const protect = async (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;
@@ -50,6 +66,16 @@ export const protect = async (req, res, next) => {
         return res.status(403).json({
           message: "This account has been suspended.",
           code: "ACCOUNT_SUSPENDED"
+        });
+      }
+
+      // Enforce the temporary-password flow server-side. The flag is cleared
+      // by change-password and by the emailed reset flow, so this is a
+      // one-time gate and not a permanent lockout.
+      if (user.mustChangePassword === true && !passwordChangeAllowed(req)) {
+        return res.status(403).json({
+          message: "Change your temporary password before continuing.",
+          code: "PASSWORD_CHANGE_REQUIRED"
         });
       }
     }

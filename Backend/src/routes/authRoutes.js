@@ -5,6 +5,7 @@ import {
   logoutUser,
   forgotPassword,
   resetPassword,
+  changePassword,
   verifyEmail,
   resendVerification,
   verifyPhone,
@@ -21,6 +22,7 @@ import {
   loginSchema,
   forgotPasswordSchema,
   resetPasswordSchema,
+  changePasswordSchema,
   googleAuthSchema,
   verifyEmailSchema,
   resendVerificationSchema,
@@ -37,6 +39,13 @@ const registerLimit = rateLimiter({ windowMs: 10 * 60 * 1000, max: 30 });
 const loginLimit = rateLimiter({ windowMs: 5 * 60 * 1000, max: 25 });
 const forgotLimit = rateLimiter({ windowMs: 15 * 60 * 1000, max: 5 });
 const resetLimit = rateLimiter({ windowMs: 15 * 60 * 1000, max: 10 });
+const changeLimit = rateLimiter({ windowMs: 15 * 60 * 1000, max: 20 });
+
+// The response carries a fresh session token; it must not be cached.
+const noStore = (req, res, next) => {
+  res.set("Cache-Control", "no-store");
+  next();
+};
 const verifyLimit = rateLimiter({ windowMs: 10 * 60 * 1000, max: 30 });
 const resendLimit = rateLimiter({ windowMs: 10 * 60 * 1000, max: 8 });
 const googleLimit = rateLimiter({ windowMs: 5 * 60 * 1000, max: 25 });
@@ -46,6 +55,7 @@ router.post("/login", loginLimit, validate(loginSchema), loginUser);
 router.post("/logout", logoutUser);
 router.post("/forgot-password", forgotLimit, validate(forgotPasswordSchema), forgotPassword);
 router.post("/reset-password/:token", resetLimit, validate(resetPasswordSchema), resetPassword);
+router.post("/change-password", changeLimit, noStore, protect, validate(changePasswordSchema), changePassword);
 
 router.post("/verify-email", verifyLimit, validate(verifyEmailSchema), verifyEmail);
 router.post("/resend-verification", resendLimit, validate(resendVerificationSchema), resendVerification);
