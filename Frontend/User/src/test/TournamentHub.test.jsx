@@ -153,6 +153,26 @@ describe("TournamentHub routing and deep links", () => {
     expect(screen.getByTestId("match-group-Results")).toBeInTheDocument();
   });
 
+  it("shows the derived ongoing status and the final date in the header", async () => {
+    mockApi({
+      content: {
+        ...content,
+        overview: {
+          ...content.overview,
+          status: "ongoing",
+          startDate: "2026-10-11T12:00:00.000Z",
+          endDate: "2026-11-01T12:00:00.000Z",
+        },
+      },
+    });
+    renderHub(`/series/${TOURNAMENT_ID}`);
+
+    expect(await screen.findByText("ongoing")).toBeInTheDocument();
+    expect(
+      screen.getByText(/October 11, 2026 - November 1, 2026/),
+    ).toBeInTheDocument();
+  });
+
   it("renders the Table deep link", async () => {
     renderHub(`/series/${TOURNAMENT_ID}/table`);
     expect(await screen.findByText("NRR")).toBeInTheDocument();

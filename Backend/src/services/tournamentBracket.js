@@ -49,9 +49,15 @@ function formatOvers(balls) {
   return `${Math.floor(safe / 6)}.${safe % 6}`;
 }
 
+const isCompletedMatch = (match) => String(match?.status || "") === "completed";
+
 function scoreForInnings(innings) {
   if (!innings) return null;
   const totals = inningsTotals(innings);
+  // A freshly-created fixture already carries two empty innings rows. Showing
+  // "0/0" for those reads like a result, so only expose a score once a ball or
+  // a run exists.
+  if (!totals.runs && !totals.wickets && !totals.balls) return null;
   return {
     runs: totals.runs,
     wickets: totals.wickets,
@@ -60,7 +66,7 @@ function scoreForInnings(innings) {
   };
 }
 
-function teamRef(team, innings, winnerId) {
+function teamRef(team, innings, winnerId, completed = false) {
   const id = idOf(team);
   if (!id) return null;
   return {
@@ -69,18 +75,20 @@ function teamRef(team, innings, winnerId) {
     shortName: typeof team === "object" ? team.shortName || "" : "",
     logo: typeof team === "object" ? team.logo || "" : "",
     score: scoreForInnings(innings),
-    isWinner: Boolean(winnerId) && winnerId === id,
+    // A winner badge is a result, so it may only come from a completed match.
+    isWinner: Boolean(completed) && Boolean(winnerId) && winnerId === id,
   };
 }
 
 function cardForMatch(match, stage) {
-  const winnerId = idOf(match?.result?.winner);
+  const completed = isCompletedMatch(match);
+  const winnerId = completed ? idOf(match?.result?.winner) : "";
   const innings = Array.isArray(match?.innings) ? match.innings : [];
   const inningsForTeam = (teamId) =>
     innings.find((inningsRow) => idOf(inningsRow?.team) === teamId);
 
   const teams = (match?.teams || [])
-    .map((team) => teamRef(team, inningsForTeam(idOf(team)), winnerId))
+    .map((team) => teamRef(team, inningsForTeam(idOf(team)), winnerId, completed))
     .filter(Boolean);
 
   return {
@@ -89,6 +97,7 @@ function cardForMatch(match, stage) {
     stage,
     stageLabel: match?.stageLabel || "",
     title: match?.title || "",
+    venue: match?.venue || "",
     status: String(match?.status || "upcoming"),
     startAt: match?.startAt || null,
     teams,
@@ -188,13 +197,19 @@ export function buildTournamentBracket(matches = [], opts = {}) {
         });
         const entrants = slots.map((slot, slotIndex) => {
           const semiFinal = semiFinals[slotIndex];
-          const winnerId = idOf(semiFinal?.result?.winner);
-          const winner = (semiFinal?.teams || []).find((team) => idOf(team) === winnerId);
+          const completed = isCompletedMatch(semiFinal);
+          const winnerId = completed ? idOf(semiFinal?.result?.winner) : "";
+          const winner = completed
+            ? (semiFinal?.teams || []).find((team) => idOf(team) === winnerId)
+            : null;
+          // The finalists are known once both semis are completed, but they are
+          // not winners of the final. Never mark them with a W here.
           return winner
-            ? teamRef(winner, null, winnerId)
+            ? teamRef(winner, null, "", false)
             : { _id: "", name: slot, shortName: "", logo: "", score: null, isWinner: false };
         });
-        placeholders.push(placeholderFor(stage, slots.join(" vs "), slots, entrants));
+        const label = entrants.some((team) => team._id) ? "Finalists" : slots.join(" vs ");
+        placeholders.push(placeholderFor(stage, label, slots, entrants));
         continue;
       }
       placeholders.push(placeholderFor(stage, sourceLabel));
@@ -203,7 +218,9 @@ export function buildTournamentBracket(matches = [], opts = {}) {
   });
 
   const finalStage = stages.find((row) => row.stage === "final");
-  const finalMatch = finalStage?.matches.find((row) => !row.placeholder && row.winner);
+  const finalMatch = finalStage?.matches.find(
+    (row) => !row.placeholder && row.status === "completed" && row.winner,
+  );
   const champion = finalMatch
     ? {
         _id: finalMatch.winner._id,

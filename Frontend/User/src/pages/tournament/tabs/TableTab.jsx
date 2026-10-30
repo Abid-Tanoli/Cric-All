@@ -22,11 +22,30 @@ function StatusLabel({ status }) {
   );
 }
 
-function BracketTeam({ team }) {
+const formatMatchDateTime = (value) =>
+  value
+    ? new Date(value).toLocaleString("en-US", {
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+        // The fixture times are published in Pakistan time; pin the display so
+        // a browser in another timezone still shows the advertised slot.
+        timeZone: "Asia/Karachi",
+      })
+    : "";
+
+function BracketTeam({ team, completed = false, showScore = true }) {
   if (!team) return null;
   const name = team.shortName || team.name || "TBD";
+  // Defence in depth: the service already clears isWinner on unplayed matches,
+  // but a stale cache or another client must never turn a finalist into a W.
+  const isWinner = completed === true && team.isWinner === true;
+  const score = team.score;
   return (
-    <div className={`flex items-center gap-2 px-3 py-2 ${team.isWinner ? "bg-green-50" : ""}`}>
+    <div className={`flex items-center gap-2 px-3 py-2 ${isWinner ? "bg-green-50" : ""}`}>
       <span className="w-6 h-6 rounded bg-white border border-cric-border flex items-center justify-center overflow-hidden shrink-0">
         {team.logo ? (
           <img src={team.logo} alt="" className="w-5 h-5 object-contain" />
@@ -34,39 +53,84 @@ function BracketTeam({ team }) {
           <span className="text-[9px] font-bold text-cric-muted">{name.charAt(0)}</span>
         )}
       </span>
-      <span className={`flex-1 truncate text-sm ${team.isWinner ? "font-black text-cric-text" : "font-semibold text-cric-text/80"}`}>
+      <span className={`flex-1 truncate text-sm ${isWinner ? "font-black text-cric-text" : "font-semibold text-cric-text/80"}`}>
         {name}
-        {team.isWinner && <span className="ml-1 text-[10px] font-black text-green-700">W</span>}
+        {isWinner && <span className="ml-1 text-[10px] font-black text-green-700">W</span>}
       </span>
-      <span className="text-xs font-bold text-cric-muted tabular-nums">
-        {team.score ? `${team.score.runs}/${team.score.wickets}` : "-"}
-      </span>
+      {showScore && score && (
+        <span className="text-xs font-bold text-cric-muted tabular-nums">
+          {score.runs}/{score.wickets}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function BracketPlaceholder({ match }) {
+  const teams = match.teams || [];
+  // Before the final is drawn its entrants are only qualifiers, so use a
+  // neutral heading rather than the old "final fixture not yet scheduled"
+  // message (or a result-looking dash).
+  const heading = match.stage === "final" && teams.length
+    ? "Finalists"
+    : match.label || (teams.length ? "Finalists" : "TBD");
+  return (
+    <div
+      data-testid={`bracket-placeholder-${match.stage || "unknown"}`}
+      className="border border-dashed border-cric-border rounded-xl overflow-hidden bg-cric-bg/40"
+    >
+      <p className="px-3 py-2 text-center text-[10px] font-black uppercase tracking-widest text-cric-muted">
+        {heading}
+      </p>
+      {teams.length ? (
+        <div className="divide-y divide-cric-border">
+          {teams.map((team, index) => (
+            <BracketTeam
+              key={team._id || team.name || index}
+              team={team}
+              completed={false}
+              showScore={false}
+            />
+          ))}
+        </div>
+      ) : (
+        <p className="pb-3 text-center text-[10px] text-cric-muted/60">Awaiting previous round</p>
+      )}
+    </div>
+  );
+}
+
+function BracketFooter({ match, completed }) {
+  const description = match.result?.description || "";
+  const startAt = formatMatchDateTime(match.startAt);
+  const venue = match.venue || "";
+
+  if (completed && description) {
+    return (
+      <div className="px-3 py-2 border-t border-cric-border bg-cric-bg/30">
+        <p className="text-[11px] font-bold text-cric-text/80 line-clamp-2">{description}</p>
+      </div>
+    );
+  }
+  if (!startAt && !venue) return null;
+  return (
+    <div className="px-3 py-2 border-t border-cric-border bg-cric-bg/30">
+      {startAt && <p className="text-[11px] font-bold text-cric-text/80">{startAt}</p>}
+      {venue && <p className="text-[10px] font-semibold text-cric-muted">{venue}</p>}
     </div>
   );
 }
 
 function BracketMatch({ match }) {
-  if (match.placeholder) {
-    return (
-      <div className="border border-dashed border-cric-border rounded-xl overflow-hidden bg-cric-bg/40">
-        <p className="px-3 py-2 text-center text-[10px] font-black uppercase tracking-widest text-cric-muted">
-          {match.teams?.length ? "Final fixture not yet scheduled" : match.label || "TBD"}
-        </p>
-        {match.teams?.length ? (
-          <div className="divide-y divide-cric-border">
-            {match.teams.map((team, index) => <BracketTeam key={team._id || team.name || index} team={team} />)}
-          </div>
-        ) : (
-          <p className="pb-3 text-center text-[10px] text-cric-muted/60">Awaiting previous round</p>
-        )}
-      </div>
-    );
-  }
+  if (match.placeholder) return <BracketPlaceholder match={match} />;
 
   const teams = match.teams || [];
+  const completed = match.status === "completed";
+  const showScore = match.status !== "upcoming";
   return (
     <Link
       to={`/match/${match.matchId}`}
+      data-testid={`bracket-match-${match.matchId}`}
       className="block border border-cric-border rounded-xl overflow-hidden bg-cric-card hover:shadow-md hover:border-cric-accent/40 transition-all"
     >
       <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-cric-border bg-cric-bg/60">
@@ -77,7 +141,14 @@ function BracketMatch({ match }) {
       </div>
       <div className="divide-y divide-cric-border">
         {teams.length ? (
-          teams.map((team, index) => <BracketTeam key={team._id || index} team={team} />)
+          teams.map((team, index) => (
+            <BracketTeam
+              key={team._id || index}
+              team={team}
+              completed={completed}
+              showScore={showScore}
+            />
+          ))
         ) : (
           <>
             <div className="px-3 py-2 text-sm font-semibold text-cric-muted">TBD</div>
@@ -85,13 +156,7 @@ function BracketMatch({ match }) {
           </>
         )}
       </div>
-      {(match.result?.description || match.startAt) && (
-        <div className="px-3 py-2 border-t border-cric-border bg-cric-bg/30">
-          <p className="text-[11px] font-bold text-cric-text/80 line-clamp-2">
-            {match.result?.description || new Date(match.startAt).toLocaleString()}
-          </p>
-        </div>
-      )}
+      <BracketFooter match={match} completed={completed} />
     </Link>
   );
 }
