@@ -52,7 +52,16 @@ function FallbackToSeries() {
 
 function formatRange(start, end) {
   const fmt = (value) =>
-    value ? new Date(value).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }) : "";
+    value
+      ? new Date(value).toLocaleDateString("en-US", {
+          month: "long",
+          day: "numeric",
+          year: "numeric",
+          // Fixture/tournament dates are published in Pakistan time, so a final
+          // at 10:30 AM PKT on 1 Nov must not read as 31 Oct in another zone.
+          timeZone: "Asia/Karachi",
+        })
+      : "";
   const from = fmt(start);
   const to = fmt(end);
   if (from && to) return `${from} - ${to}`;
@@ -76,6 +85,10 @@ export default function TournamentHub() {
 
   const overview = content?.overview || {};
   const banner = overview.bannerImage || tournament.logo || "";
+  // The content endpoint derives this from the fixtures. "live" means a match
+  // is actually in progress; "ongoing" means the tournament has started or its
+  // final is scheduled but no match is live right now.
+  const displayStatus = String(overview.status || tournament.status || "upcoming").toLowerCase();
   const activeKey = slug ? "articles" : tabParam || "home";
   const activeTab = tabs.find((t) => t.key === activeKey) || null;
 
@@ -138,12 +151,13 @@ export default function TournamentHub() {
                   )}
                   <span
                     className={`px-3 py-1 rounded-full text-xs font-bold uppercase ${
-                      (overview.status || tournament.status) === "live" ? "bg-red-600 text-white animate-pulse"
-                        : (overview.status || tournament.status) === "completed" ? "bg-green-600 text-white"
-                          : "bg-white/20 text-white"
+                      displayStatus === "live" ? "bg-red-600 text-white animate-pulse"
+                        : displayStatus === "ongoing" ? "bg-red-600 text-white"
+                          : displayStatus === "completed" ? "bg-green-600 text-white"
+                            : "bg-white/20 text-white"
                     }`}
                   >
-                    {overview.status || tournament.status}
+                    {displayStatus}
                   </span>
                   <span className="text-xs">{counts.matches} Matches</span>
                   <ShareButton title={tournament.name} />

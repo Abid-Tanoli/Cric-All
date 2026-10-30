@@ -12,6 +12,7 @@ import {
   invalidateTournamentStatsCache,
 } from "../services/tournamentStats.js";
 import { buildTournamentBracket } from "../services/tournamentBracket.js";
+import { deriveTournamentPublicState } from "../services/tournamentPublicState.js";
 import {
   HttpError,
   readString,
@@ -61,11 +62,15 @@ export const getTournamentContent = async (req, res) => {
     const tournament = await requireTournament(req);
     const settings = readContentSettings(tournament);
 
-    const [photoCount, videoCount, articleCount] = await Promise.all([
+    const [photoCount, videoCount, articleCount, matches] = await Promise.all([
       TournamentMedia.countDocuments({ tournament: tournament._id, kind: "photo", ...PUBLISHED }),
       TournamentMedia.countDocuments({ tournament: tournament._id, kind: "video", ...PUBLISHED }),
       TournamentArticle.countDocuments({ tournament: tournament._id, ...PUBLISHED }),
+      Match.find({ tournament: tournament._id, manualDraft: { $ne: true } })
+        .select("stage stageLabel round status startAt")
+        .lean(),
     ]);
+    const publicState = deriveTournamentPublicState(tournament, matches);
 
     res.status(200).json({
       tournamentId: String(tournament._id),
@@ -76,8 +81,10 @@ export const getTournamentContent = async (req, res) => {
         venue: tournament.venue || "",
         format: tournament.format || "",
         startDate: tournament.startDate || null,
-        endDate: tournament.endDate || null,
-        status: tournament.status || "upcoming",
+        // The stored dates are the owner's record; the public header uses the
+        // derived values so a scheduled final can extend the range.
+        endDate: publicState.endDate || tournament.endDate || null,
+        status: publicState.status,
       },
       visibility: settings.visibility,
       thresholds: settings.stats,
@@ -137,7 +144,7 @@ export const getTournamentStandings = async (req, res) => {
     const teamIds = (populated.teams || []).map((t) => String(t?._id || t));
     const matches = await Match.find({ tournament: tournament._id, manualDraft: { $ne: true } })
       .select(
-        "teams status result startAt round group stage stageLabel matchNumber " +
+        "title venue teams status result startAt round group stage stageLabel matchNumber " +
           "innings.team innings.runs innings.wickets innings.balls innings.overs innings.extras " +
           "innings.batting.runs innings.batting.balls innings.batting.fours innings.batting.sixes " +
           "innings.batting.isOut innings.batting.dismissalType innings.batting.didNotBat innings.batting.batted",
