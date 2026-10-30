@@ -117,6 +117,15 @@ export const forgotPasswordSchema = z.object({ email });
 
 export const resetPasswordSchema = z.object({ password });
 
+// A Google-only account has no current password to prove, so the field is
+// optional here and the controller decides whether it is required.
+export const changePasswordSchema = z
+  .object({
+    currentPassword: z.string().max(200).optional().default(""),
+    newPassword: password,
+  })
+  .strict();
+
 export const googleAuthSchema = z.object({
   credential: z.string().min(10, "Google credential is required").max(4096),
 });
@@ -146,6 +155,7 @@ export default {
   loginSchema,
   forgotPasswordSchema,
   resetPasswordSchema,
+  changePasswordSchema,
   googleAuthSchema,
   verifyEmailSchema,
   resendVerificationSchema,

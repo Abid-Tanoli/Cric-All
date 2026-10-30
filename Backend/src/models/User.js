@@ -45,6 +45,10 @@ const userSchema = new mongoose.Schema({
   },
   // False for Google-only accounts that never chose a password.
   passwordSet: { type: Boolean, default: false },
+  // Set when a platform admin hands an organization over with a temporary
+  // password. The user app sends the person to the change-password screen after
+  // login, and the flag clears as soon as they choose their own password.
+  mustChangePassword: { type: Boolean, default: false },
   status: { type: String, enum: ["active", "suspended"], default: "active" },
   lastLoginAt: { type: Date, default: undefined },
   // Bumped whenever sessions must be invalidated wholesale (password reset,

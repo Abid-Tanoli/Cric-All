@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { deleteAccount } from "../services/authApi";
 import { logout } from "./auth/auth";
 import {
@@ -57,6 +57,19 @@ export default function Account() {
           <Banner kind="error">{err}</Banner>
         </div>
       ) : null}
+
+      <div className={`${card} mt-6`}>
+        <h2 className="text-sm font-black uppercase tracking-widest">Password</h2>
+        <p className="mt-2 text-xs font-semibold text-cric-muted">
+          Change the password you use to sign in. If you signed in with a temporary password, change
+          it here so only you know it. Changing it signs out your other devices.
+        </p>
+        <div className="mt-5">
+          <Link to="/change-password?next=/account" className={secondaryButton}>
+            Change password
+          </Link>
+        </div>
+      </div>
 
       <div className={`${card} mt-6`}>
         <h2 className="text-sm font-black uppercase tracking-widest">Delete this account</h2>

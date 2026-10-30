@@ -66,6 +66,25 @@ export async function loginWithGoogle(credential) {
   return user;
 }
 
+/**
+ * Replace the signed-in account's password.
+ *
+ * The backend requires `currentPassword` for any account that already has a
+ * password. A Google-only account has none, so it sends an empty string and is
+ * allowed to set one. The response carries a fresh token because changing the
+ * password invalidates every other session, so the cached session must be
+ * replaced or this tab would be logged out immediately.
+ */
+export async function changePassword(currentPassword, newPassword) {
+  const res = await api.post('/auth/change-password', {
+    currentPassword: currentPassword || '',
+    newPassword,
+  });
+  const { token, user } = res.data || {};
+  persistAuth(token, user);
+  return user;
+}
+
 export async function verifyEmailToken(token) {
   const res = await api.post('/auth/verify-email', { token });
   const { user } = res.data || {};

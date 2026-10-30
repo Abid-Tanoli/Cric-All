@@ -175,6 +175,27 @@ export const createInvitationSchema = z
     }
   });
 
+// Platform-admin handover: find or create the owner's account and make them
+// the organization owner. At least one identifier is required; the controller
+// rejects conflicting identifiers that belong to two different accounts.
+export const handoverOrganizationSchema = z
+  .object({
+    name: z.string().trim().min(1, "The owner's name is required").max(120),
+    email: optionalEmail,
+    phone: optionalPhone,
+    resetExistingPassword: z.boolean().default(false),
+  })
+  .strict()
+  .superRefine((v, ctx) => {
+    if (!v.email && !v.phone) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["email"],
+        message: "An email address or a phone number is required",
+      });
+    }
+  });
+
 export const listQuerySchema = z.object({
   page: z.coerce.number().int().min(1).max(10000).default(1),
   limit: z.coerce.number().int().min(1).max(200).default(50),
@@ -203,6 +224,7 @@ export default {
   addMemberSchema,
   updateMemberSchema,
   createInvitationSchema,
+  handoverOrganizationSchema,
   listQuerySchema,
   acceptInvitationSchema,
   invitationIdSchema,

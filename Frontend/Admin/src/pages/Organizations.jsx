@@ -26,6 +26,13 @@ export default function Organizations() {
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(null); // org pending delete
 
+  // Handover: find-or-create the owner's account, assign ownership, and show
+  // the temporary password exactly once so the admin can pass it on.
+  const [handover, setHandover] = useState(null);
+  const [handoverForm, setHandoverForm] = useState(null);
+  const [handoverResult, setHandoverResult] = useState(null);
+  const [handingOver, setHandingOver] = useState(false);
+
   const load = async () => {
     setLoading(true);
     setErr(null);
@@ -114,6 +121,60 @@ export default function Organizations() {
     } catch (error) {
       setErr(errMsg(error, "Could not delete the organization"));
       setDeleting(null);
+    }
+  };
+
+  const openHandover = (org) => {
+    setHandover(org);
+    setHandoverForm({
+      // The person receiving the organization is usually not the current owner,
+      // so never pre-fill the name with the old owner's: an admin who only
+      // changes the email/phone would otherwise create the new account under
+      // the wrong name.
+      name: "",
+      email: "",
+      phone: "",
+      resetExistingPassword: false,
+    });
+    setHandoverResult(null);
+    setErr(null);
+    setNotice("");
+  };
+
+  const closeHandover = () => {
+    setHandover(null);
+    setHandoverForm(null);
+    setHandoverResult(null);
+  };
+
+  const submitHandover = async (e) => {
+    e.preventDefault();
+    if (!handover || !handoverForm) return;
+    setHandingOver(true);
+    setErr(null);
+    try {
+      const { data } = await api.post(`/admin/organizations/${handover._id}/handover`, {
+        name: handoverForm.name.trim(),
+        email: handoverForm.email.trim() || undefined,
+        phone: handoverForm.phone.trim() || undefined,
+        resetExistingPassword: handoverForm.resetExistingPassword,
+      });
+      setHandoverResult(data);
+      setNotice(`"${handover.name}" handed over to ${data.owner.name}.`);
+      await load();
+    } catch (error) {
+      setErr(errMsg(error, "Could not hand over the organization"));
+    } finally {
+      setHandingOver(false);
+    }
+  };
+
+  const copyValue = async (value, label) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setNotice(`${label} copied.`);
+    } catch {
+      setErr("Could not copy. Please select and copy the value manually.");
     }
   };
 
@@ -210,6 +271,12 @@ export default function Organizations() {
                   <td className="px-4 py-3 text-right">
                     <div className="inline-flex gap-2">
                       <button
+                        onClick={() => openHandover(org)}
+                        className="rounded-lg border border-cric-accent px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-cric-accent hover:bg-cric-accent/10"
+                      >
+                        {org.owner ? "Transfer" : "Hand over"}
+                      </button>
+                      <button
                         onClick={() => openEdit(org)}
                         className="rounded-lg border border-cric-border px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-cric-muted hover:text-cric-text"
                       >
@@ -258,6 +325,169 @@ export default function Organizations() {
             >
               Next
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Handover modal */}
+      {handover && handoverForm && (
+        <div className="fixed inset-0 z-[9998] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-cric-card rounded-2xl border border-cric-border shadow-2xl max-w-lg w-full mx-4 p-6 space-y-4 max-h-[90vh] overflow-y-auto">
+            {!handoverResult ? (
+              <form onSubmit={submitHandover} className="space-y-4">
+                <div>
+                  <h3 className="text-lg font-black text-cric-text">
+                    {handover.owner ? "Transfer" : "Hand over"} “{handover.name}”
+                  </h3>
+                  <p className="text-xs text-cric-muted mt-1">
+                    {handover.owner
+                      ? `Current owner: ${handover.owner.name}. They will stay on as an admin after the handover.`
+                      : "This organization is platform-managed. The person below becomes its owner."}
+                  </p>
+                </div>
+
+                {err && (
+                  <div className="rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm font-bold text-red-700">
+                    {err}
+                  </div>
+                )}
+
+                <div>
+                  <label className={labelCls}>Owner name</label>
+                  <input
+                    value={handoverForm.name}
+                    onChange={(e) => setHandoverForm((f) => ({ ...f, name: e.target.value }))}
+                    className={inputCls}
+                    placeholder="e.g. Ahmed Khan"
+                    required
+                  />
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <label className={labelCls}>Email</label>
+                    <input
+                      type="email"
+                      value={handoverForm.email}
+                      onChange={(e) => setHandoverForm((f) => ({ ...f, email: e.target.value }))}
+                      className={inputCls}
+                      placeholder="owner@example.com"
+                    />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Phone</label>
+                    <input
+                      type="tel"
+                      value={handoverForm.phone}
+                      onChange={(e) => setHandoverForm((f) => ({ ...f, phone: e.target.value }))}
+                      className={inputCls}
+                      placeholder="0300 1234567"
+                    />
+                  </div>
+                </div>
+                <p className="text-[11px] font-semibold text-cric-muted">
+                  Give at least one. The owner can sign in with either the email address or the phone number.
+                </p>
+
+                <label className="flex items-start gap-2 text-xs font-bold text-cric-muted">
+                  <input
+                    type="checkbox"
+                    checked={handoverForm.resetExistingPassword}
+                    onChange={(e) => setHandoverForm((f) => ({ ...f, resetExistingPassword: e.target.checked }))}
+                    className="mt-0.5 h-4 w-4 accent-[var(--color-cric-accent,#f97316)]"
+                  />
+                  <span>
+                    If this person already has an account, replace its password with a temporary one.
+                    Leave unchecked to keep their existing password.
+                  </span>
+                </label>
+
+                <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-xs font-semibold text-amber-800">
+                  The temporary password is shown once. Share it privately. The owner will be asked to
+                  choose a new password the first time they sign in.
+                </div>
+
+                <div className="flex justify-end gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={closeHandover}
+                    className="rounded-lg border border-cric-border px-5 py-2.5 text-xs font-black uppercase tracking-widest text-cric-muted"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={
+                      handingOver ||
+                      !handoverForm.name.trim() ||
+                      (!handoverForm.email.trim() && !handoverForm.phone.trim())
+                    }
+                    className={btnCls}
+                  >
+                    {handingOver ? "Handing over..." : "Hand over"}
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <div className="space-y-4">
+                <div>
+                  <h3 className="text-lg font-black text-cric-text">Handover complete</h3>
+                  <p className="text-xs text-cric-muted mt-1">
+                    “{handoverResult.organization.name}” now belongs to {handoverResult.owner.name}.
+                    {handoverResult.accountCreated
+                      ? " A new account was created."
+                      : " Their existing account was linked."}
+                  </p>
+                </div>
+
+                <div className="rounded-xl border border-cric-border bg-cric-bg p-4 space-y-3">
+                  <div>
+                    <p className={labelCls}>Login email</p>
+                    <p className="text-sm font-black text-cric-text break-all">
+                      {handoverResult.loginIdentifiers.email || "—"}
+                    </p>
+                  </div>
+                  <div>
+                    <p className={labelCls}>Login phone</p>
+                    <p className="text-sm font-black text-cric-text">
+                      {handoverResult.loginIdentifiers.phone || "—"}
+                    </p>
+                  </div>
+                  {handoverResult.temporaryPassword ? (
+                    <div>
+                      <p className={labelCls}>Temporary password</p>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <code className="rounded-lg border border-cric-border bg-cric-card px-3 py-2 text-sm font-black text-cric-text">
+                          {handoverResult.temporaryPassword}
+                        </code>
+                        <button
+                          type="button"
+                          onClick={() => copyValue(handoverResult.temporaryPassword, "Temporary password")}
+                          className="rounded-lg border border-cric-border px-3 py-2 text-[10px] font-black uppercase tracking-widest text-cric-muted hover:text-cric-text"
+                        >
+                          Copy
+                        </button>
+                      </div>
+                      <p className="mt-2 text-[11px] font-semibold text-amber-700">
+                        This value will not be shown again. The owner must change it after signing in.
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="text-xs font-semibold text-cric-muted">
+                      {handoverResult.mustChangePassword
+                        ? "Their existing password was left unchanged, but they will be asked to change it on their next sign-in."
+                        : "This person already had a password, so it was left unchanged. They can sign in with their existing password."}
+                    </p>
+                  )}
+                </div>
+
+                <div className="flex justify-end">
+                  <button type="button" onClick={closeHandover} className={btnCls}>
+                    Done
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

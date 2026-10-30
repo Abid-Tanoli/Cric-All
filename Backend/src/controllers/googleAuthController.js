@@ -13,9 +13,16 @@ function publicUser(user, picture) {
     _id: user._id,
     name: user.name,
     email: user.email,
+    phone: user.phone || "",
     role: user.role,
     accountType: user.accountType,
     emailVerified: user.emailVerified === true,
+    phoneVerified: user.phoneVerified === true,
+    // Keep Google sign-in's user shape aligned with authController.publicUser:
+    // the account screens need to know whether a password exists and whether a
+    // temporary one must be replaced.
+    passwordSet: user.passwordSet === true,
+    mustChangePassword: user.mustChangePassword === true,
     status: user.status || "active",
     ...(picture ? { picture } : {}),
   };
