@@ -29,8 +29,12 @@ router.get('/', getTournaments);
 router.get('/:id', optionalProtect, validateObjectId('id'), getTournament);
 router.get('/:id/points-table', validateObjectId('id'), getTournamentPointsTable);
 router.get('/:id/fixtures', optionalProtect, validateObjectId('id'), getTournamentFixtures);
-router.get('/:id/squad', validateObjectId('id'), getTournamentSquad);
-router.get('/:id/squad/:teamId', validateObjectId('id'), validateObjectId('teamId'), getTournamentSquad);
+// NOTE: these two routes must name the param `tournamentId`: getTournamentSquad
+// reads req.params.tournamentId. Declared as `/:id/squad` the param was always
+// undefined, so every public tournament page got 404 "Tournament not found" and
+// the Teams tab could never show squads. URL shape is unchanged.
+router.get('/:tournamentId/squad', validateObjectId('tournamentId'), getTournamentSquad);
+router.get('/:tournamentId/squad/:teamId', validateObjectId('tournamentId'), validateObjectId('teamId'), getTournamentSquad);
 
 router.post('/', ...adminOnly, createTournament);
 router.post('/update-points', ...ownerOrAdmin, updatePointsTable);
