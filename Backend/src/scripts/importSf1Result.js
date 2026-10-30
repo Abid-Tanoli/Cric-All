@@ -115,22 +115,55 @@ function squadKey(team) {
   return String(team?._id || team);
 }
 
+const playerTeamId = (player) => String(player?.team?._id || player?.team || "");
+
+/**
+ * Hard team-scope guard: a player may only be used by the team that owns them
+ * (Player.team). Anything else blocks the run instead of crediting figures to
+ * the wrong squad.
+ */
+export function playerTeamScopeError(player, expectedTeam, actualTeamName = "") {
+  const expectedId = squadKey(expectedTeam);
+  const actualId = playerTeamId(player);
+  if (actualId === expectedId) return "";
+  return `player "${player?.name || idOf(player)}" belongs to ${
+    actualTeamName || actualId || "(no team)"
+  } but is expected in ${expectedTeam?.name || expectedId}`;
+}
+
+function findSquadPlayerOnOtherTeam(squads, expectedTeamId, name) {
+  const wanted = normalizeName(name);
+  for (const squad of squads.values()) {
+    if (squadKey(squad.team) === expectedTeamId) continue;
+    const player = (squad.players || []).find((row) => normalizeName(row.name) === wanted);
+    if (player) return { player, team: squad.team };
+  }
+  return null;
+}
+
 export async function loadSquad(team) {
+  const teamId = squadKey(team);
   const rosterIds = (team.players || []).map(idOf).filter(Boolean);
-  let players = rosterIds.length
+  let rosterPlayers = rosterIds.length
     ? await Player.find({ _id: { $in: rosterIds } }).select("name team").lean()
     : [];
+  let players = rosterPlayers.filter((player) => playerTeamId(player) === teamId);
   let source = "Team.players";
   let warning = "";
+  if (rosterPlayers.length) {
+    const byId = new Map(rosterPlayers.map((player) => [String(player._id), player]));
+    const missing = rosterIds.filter((id) => !byId.has(id));
+    const foreign = rosterPlayers.length - players.length;
+    const messages = [];
+    if (foreign) messages.push(`${foreign} Team.players id(s) belong to another team and were ignored`);
+    if (missing.length) messages.push(`${missing.length} Team.players id(s) have no Player document and were ignored`);
+    warning = messages.join("; ");
+  }
   if (!players.length) {
     players = await Player.find({ team: team._id }).select("name team").lean();
     source = "Player.team fallback";
-    if (players.length) warning = "Team.players is empty; used Player.team roster instead";
-  } else {
-    const byId = new Map(players.map((player) => [String(player._id), player]));
-    const missing = rosterIds.filter((id) => !byId.has(id));
-    if (missing.length) {
-      warning = `${missing.length} Team.players id(s) have no Player document and were ignored`;
+    if (players.length) {
+      warning = `${warning ? `${warning}; ` : ""}used Player.team roster instead`;
     }
   }
   return {
@@ -138,8 +171,8 @@ export async function loadSquad(team) {
     source,
     warning,
     players: players
-      .filter((player) => player && player.name)
-      .map((player) => ({ _id: String(player._id), name: player.name }))
+      .filter((player) => player && player.name && playerTeamId(player) === teamId)
+      .map((player) => ({ _id: String(player._id), name: player.name, team: playerTeamId(player) }))
       .sort((a, b) => normalizeName(a.name).localeCompare(normalizeName(b.name))),
   };
 }
@@ -168,16 +201,13 @@ export async function ensurePlaceholderPlayers(specs, { dryRun = false } = {}) {
       continue;
     }
     const rosterIds = (team.players || []).map(idOf).filter(Boolean);
-    const candidates = await Player.find({
-      $or: [
-        { team: team._id },
-        ...(rosterIds.length ? [{ _id: { $in: rosterIds } }] : []),
-      ],
-    })
-      .select("name team")
-      .lean();
+    // Only players whose Player.team is this team may be reused. Roster ids are
+    // not enough: a contaminated Team.players entry can point at another squad.
+    const candidates = await Player.find({ team: team._id }).select("name team").lean();
     const existing = candidates.find(
-      (player) => normalizeName(player.name) === normalizeName(spec.name),
+      (player) =>
+        normalizeName(player.name) === normalizeName(spec.name) &&
+        playerTeamId(player) === String(team._id),
     );
     if (existing) {
       if (!dryRun && !rosterIds.includes(String(existing._id))) {
@@ -211,8 +241,9 @@ export function resolveTeamByName(teams, name) {
 
 function resolveSquadPlayer(squad, name) {
   const wanted = normalizeName(name);
+  const teamId = squadKey(squad.team);
   const matches = (squad.players || []).filter(
-    (player) => normalizeName(player.name) === wanted,
+    (player) => normalizeName(player.name) === wanted && playerTeamId(player) === teamId,
   );
   if (matches.length === 1) return { player: matches[0] };
   if (!matches.length) {
@@ -225,13 +256,17 @@ function resolveSquadPlayer(squad, name) {
   };
 }
 
-function mapSourceName({ sourceName, squad, mapping, createSpecs }) {
-  const value = mappingFor(mapping, squad.team.name, sourceName);
+function mapSourceName({ sourceName, squad, squads, mapping, createSpecs }) {
+  const expectedTeam = squad.team;
+  const expectedTeamId = squadKey(expectedTeam);
+  const value = mappingFor(mapping, expectedTeam.name, sourceName);
   const create = parseCreateMappingValue(value);
   if (create) {
     if (create.error) return { error: create.error };
     const existing = resolveSquadPlayer(squad, create.name);
     if (!existing.error) {
+      const scopeError = playerTeamScopeError(existing.player, expectedTeam);
+      if (scopeError) return { error: scopeError };
       return {
         player: existing.player,
         reason: "CREATE mapping (existing player)",
@@ -239,20 +274,41 @@ function mapSourceName({ sourceName, squad, mapping, createSpecs }) {
       };
     }
     const synthetic = {
-      _id: `${PLACEHOLDER_ID_PREFIX}${squadKey(squad.team)}:${normalizeName(create.name)}`,
+      _id: `${PLACEHOLDER_ID_PREFIX}${expectedTeamId}:${normalizeName(create.name)}`,
       name: create.name,
+      team: expectedTeamId,
       placeholder: true,
     };
     squad.players.push(synthetic);
-    createSpecs.push({ teamId: squadKey(squad.team), teamName: squad.team.name, name: create.name });
+    createSpecs.push({ teamId: expectedTeamId, teamName: expectedTeam.name, name: create.name });
     return { player: synthetic, reason: "CREATE mapping (placeholder)", create: true };
   }
 
   const targetName =
     typeof value === "string" && value.trim() ? value.trim() : sourceName;
   const resolved = resolveSquadPlayer(squad, targetName);
-  if (resolved.error) return { error: resolved.error };
-  return { player: resolved.player, reason: targetName === sourceName ? "exact squat name" : "name map", create: false };
+  if (!resolved.error) {
+    const scopeError = playerTeamScopeError(resolved.player, expectedTeam);
+    if (scopeError) return { error: scopeError };
+    return {
+      player: resolved.player,
+      reason: targetName === sourceName ? "exact squat name" : "name map",
+      create: false,
+    };
+  }
+  // A rename that only exists on another team is a data error: block instead
+  // of silently borrowing that player.
+  if (targetName !== sourceName) {
+    const other = findSquadPlayerOnOtherTeam(squads, expectedTeamId, targetName);
+    if (other) {
+      return {
+        error: `name map "${sourceName}" -> "${targetName}" points to player "${
+          other.player.name
+        }" of ${other.team.name}; expected a player in ${expectedTeam.name}`,
+      };
+    }
+  }
+  return { error: resolved.error };
 }
 
 function inningsChecks(raw, bowling, batting, extras, totalOvers) {
@@ -376,10 +432,18 @@ function buildInningsPlan(raw, context) {
     const mapped = mapSourceName({
       sourceName: row.name,
       squad: battingSquad,
+      squads,
       mapping,
       createSpecs,
     });
-    rowMappings.push({ role: "batting", row: index + 1, sourceName: row.name, ...mapped });
+    rowMappings.push({
+      role: "batting",
+      row: index + 1,
+      sourceName: row.name,
+      team: battingTeam.name,
+      teamId: squadKey(battingTeam),
+      ...mapped,
+    });
     if (mapped.error) {
       errors.push(`${where} batting row ${index + 1} "${row.name}": ${mapped.error}`);
       continue;
@@ -412,10 +476,18 @@ function buildInningsPlan(raw, context) {
     const mapped = mapSourceName({
       sourceName: row.name,
       squad: bowlingSquad,
+      squads,
       mapping,
       createSpecs,
     });
-    rowMappings.push({ role: "bowling", row: index + 1, sourceName: row.name, ...mapped });
+    rowMappings.push({
+      role: "bowling",
+      row: index + 1,
+      sourceName: row.name,
+      team: bowlingTeam.name,
+      teamId: squadKey(bowlingTeam),
+      ...mapped,
+    });
     if (mapped.error) {
       errors.push(`${where} bowling row ${index + 1} "${row.name}": ${mapped.error}`);
       continue;
@@ -632,10 +704,10 @@ function printNameMap(plan, log) {
   log("Name map:");
   for (const row of plan.mapping || []) {
     if (row.error) {
-      log(`  [${row.role}] "${row.sourceName}" -> UNRESOLVED: ${row.error}`);
+      log(`  [${row.role}] "${row.sourceName}" [${row.team || "?"}] -> UNRESOLVED: ${row.error}`);
     } else {
       log(
-        `  [${row.role}] "${row.sourceName}" -> ${row.player.name}${row.player.placeholder ? " (placeholder)" : ""} (${row.reason})`,
+        `  [${row.role}] "${row.sourceName}" [${row.team || "?"}] -> ${row.player.name}${row.player.placeholder ? " (placeholder)" : ""} (${row.reason})`,
       );
     }
   }
@@ -674,6 +746,7 @@ function printPlan(plan, { match, data }, log, placeholders = null) {
   log("Plan:");
   log(`  UPDATE match ${match._id} in place (same _id, same Tournament.matches link)`);
   log(`  source live -> manual, manualDraft true, status upcoming`);
+  log(`  team safety : every batter must belong to the batting team and every bowler to the bowling team; a mismatch BLOCKS`);
   log(`  stage=${data.match.stage} stageLabel=${data.match.stageLabel} teams=${data.match.teamA} vs ${data.match.teamB}`);
   log(`  toss=${data.match.tossWinner} elected to ${data.match.tossDecision}`);
   log(

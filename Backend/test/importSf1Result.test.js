@@ -361,6 +361,88 @@ test("placeholders are created on Sky Sports and Orangi United's Ali is untouche
   assert.equal(freshOrangi.players.map(String).includes(String((await findPlayerOnTeam(sky._id, "Ali (TBC)"))._id)), false);
 });
 
+test("Orangi United's Ali (TBC) is not reused even when Sky's roster is contaminated", async () => {
+  const { sky, orangi } = await seedTournament();
+  const orangiAli = await findPlayerOnTeam(orangi._id, "Ali (TBC)");
+  assert.ok(orangiAli);
+  // Reproduce the live QF contamination: Sky's roster contains Orangi's player id.
+  await Team.updateOne({ _id: sky._id }, { $addToSet: { players: orangiAli._id } });
+
+  const lines = [];
+  const report = await runImportSf1Result({
+    apply: true,
+    log: (line) => lines.push(String(line ?? "")),
+  });
+  assert.equal(report.outcome, "APPLIED");
+  assert.equal(report.blocked, false);
+
+  const skyAli = await findPlayerOnTeam(sky._id, "Ali (TBC)");
+  assert.ok(skyAli, "Sky Sports must get its own Ali (TBC)");
+  assert.notEqual(String(skyAli._id), String(orangiAli._id));
+  assert.equal(String(skyAli.team), String(sky._id));
+  assert.equal(await Player.countDocuments({ name: "Ali (TBC)" }), 2);
+
+  const freshOrangiAli = await Player.findById(orangiAli._id).lean();
+  assert.equal(freshOrangiAli.name, "Ali (TBC)");
+  assert.equal(String(freshOrangiAli.team), String(orangi._id));
+  const freshOrangi = await Team.findById(orangi._id).lean();
+  assert.equal(freshOrangi.players.map(String).includes(String(skyAli._id)), false);
+
+  assert.match(
+    lines.join("\n"),
+    /\[bowling\] "Ali" \[Sky Sports\] -> Ali \(TBC\)/,
+    "the name map must print the expected team next to the mapping",
+  );
+});
+
+test("a name map that points to another team's player is BLOCKED", async () => {
+  const { sf1, orangi } = await seedTournament();
+  const orangiAli = await findPlayerOnTeam(orangi._id, "Ali (TBC)");
+  const { data, mapping } = loadImportFiles();
+  mapping["Sky Sports::Ali"] = "Ali (TBC)";
+
+  const report = await runImportSf1Result({
+    apply: true,
+    log: noLog,
+    data,
+    nameMap: mapping,
+  });
+
+  assert.equal(report.blocked, true);
+  assert.match(
+    report.plan.errors.join("\n"),
+    /points to player "Ali \(TBC\)" of Orangi United; expected a player in Sky Sports/,
+  );
+  const unchanged = await Match.findById(sf1._id).lean();
+  assert.equal(unchanged.source, "live");
+  assert.equal(unchanged.manualDraft, false);
+  assert.equal(await Player.countDocuments({ name: "Ali (TBC)" }), 1);
+  assert.equal(String((await Player.findById(orangiAli._id).lean()).team), String(orangi._id));
+});
+
+test("the plan prints the expected team on every name-map line", async () => {
+  await seedTournament();
+  const lines = [];
+  const report = await runImportSf1Result({
+    apply: false,
+    log: (line) => lines.push(String(line ?? "")),
+  });
+  assert.equal(report.blocked, false);
+
+  const nameMapIndex = lines.indexOf("Name map:");
+  assert.notEqual(nameMapIndex, -1);
+  const mapLines = lines
+    .slice(nameMapIndex + 1)
+    .filter((line) => /^  \[(batting|bowling)\]/.test(line));
+  assert.ok(mapLines.length > 0);
+  for (const line of mapLines) {
+    assert.match(line, /\[(Baldia Zalmi|Sky Sports)\] -> /, `missing team on: ${line}`);
+  }
+  assert.match(lines.join("\n"), /\[batting\] "Nasir lefti" \[Baldia Zalmi\] -> /);
+  assert.match(lines.join("\n"), /\[batting\] "Rehman" \[Sky Sports\] -> /);
+  assert.match(lines.join("\n"), /team safety : .*a mismatch BLOCKS/);
+});
+
 test("publishing the draft is the owner's step and reveals SF1 in the public bracket", async () => {
   const { tournament, sf1 } = await seedTournament();
   const applied = await runImportSf1Result({ apply: true, log: noLog });
