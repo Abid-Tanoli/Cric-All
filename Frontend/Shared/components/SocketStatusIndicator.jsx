@@ -19,15 +19,26 @@ export default function SocketStatusIndicator({ getSocket }) {
     // "connecting" left an amber "Reconnecting..." bar pinned on top of the
     // login, rankings, teams, players and community pages. Only a socket that
     // actually reached `connect` once may report a connection problem.
-    if (!socket.connected) return undefined;
+    // Listen from the start (a live page may connect after this mounts), but
+    // stay silent until the socket has reached `connect` at least once.
+    let hasConnected = Boolean(socket.connected);
     setStatus("connected");
 
-    const onConnect = () => setStatus("connected");
+    const onConnect = () => {
+      hasConnected = true;
+      setStatus("connected");
+    };
     // Reconnection is enabled (reconnection:true), so a dropped connection is
     // a reconnect attempt, not a dead socket — keep the wording honest.
-    const onDisconnect = () => setStatus(socket.active ? "connecting" : "disconnected");
-    const onConnectError = () => setStatus("connecting");
-    const onReconnectAttempt = () => setStatus("connecting");
+    const onDisconnect = () => {
+      if (hasConnected) setStatus(socket.active ? "connecting" : "disconnected");
+    };
+    const onConnectError = () => {
+      if (hasConnected) setStatus("connecting");
+    };
+    const onReconnectAttempt = () => {
+      if (hasConnected) setStatus("connecting");
+    };
     const onReconnect = () => setStatus("connected");
 
     socket.on("connect", onConnect);
