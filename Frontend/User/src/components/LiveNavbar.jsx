@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { api } from '../services/api';
+import { useCricketProviderStatus, isProviderConfigured } from '../hooks/useCricketProviderStatus';
 
 const navItems = [
   { key: 'live', label: 'Live Scores', path: '/live', accent: 'bg-red-500' },
@@ -14,6 +15,10 @@ const navItems = [
 
 const LiveNavbar = () => {
   const location = useLocation();
+  const providerStatus = useCricketProviderStatus();
+  const items = isProviderConfigured(providerStatus)
+    ? navItems
+    : navItems.filter((item) => item.key !== 'international');
   const [trendingSeries, setTrendingSeries] = useState([]);
   const [runningSeries, setRunningSeries] = useState([]);
   const [showSeriesDropdown, setShowSeriesDropdown] = useState(false);
@@ -55,7 +60,7 @@ const LiveNavbar = () => {
 
       <div className="border-b border-cric-border">
         <div className="mx-auto flex max-w-7xl items-center gap-1 overflow-x-auto px-4">
-          {navItems.map((item) => (
+          {items.map((item) => (
             <Link
               key={item.key}
               to={item.path}

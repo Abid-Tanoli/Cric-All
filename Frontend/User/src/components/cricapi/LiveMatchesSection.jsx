@@ -2,26 +2,25 @@ import React, { useCallback, useEffect, useState } from "react";
 import LiveScoreCard from "./LiveScoreCard";
 import Loader from "./Loader";
 import ErrorState from "./ErrorState";
-import { getCurrentMatches, getCricketProviderStatus } from "../../services/cricApi";
+import { getCurrentMatches } from "../../services/cricApi";
+import { useCricketProviderStatus, isProviderConfigured } from "../../hooks/useCricketProviderStatus";
 
 export default function LiveMatchesSection() {
   const [matches, setMatches] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  // Without a configured provider there is nothing to show, so the whole
+  // section is hidden instead of advertising a broken feed.
+  const providerStatus = useCricketProviderStatus();
+  const providerConfigured = isProviderConfigured(providerStatus);
 
   const loadLiveMatches = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
 
-      // Whether a live provider exists is now a question for the backend, which
-      // owns the key. A status endpoint that is itself unreachable is not proof
-      // that no provider is configured, so only an explicit `configured: false`
-      // short-circuits - otherwise we try the real call and let it answer.
-      const status = await getCricketProviderStatus().catch(() => null);
-      if (status && status.configured === false) {
+      if (!providerConfigured) {
         setMatches([]);
-        setError("No live cricket provider is configured on the server.");
         setLoading(false);
         return;
       }
@@ -33,11 +32,13 @@ export default function LiveMatchesSection() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [providerConfigured]);
 
   useEffect(() => {
-    loadLiveMatches();
-  }, [loadLiveMatches]);
+    if (providerStatus !== null) loadLiveMatches();
+  }, [loadLiveMatches, providerStatus]);
+
+  if (providerStatus !== null && !providerConfigured) return null;
 
   return (
     <section className="mb-10">

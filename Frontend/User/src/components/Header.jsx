@@ -4,6 +4,7 @@ import ThemeToggle from "./ThemeToggle";
 import { resendVerification } from "../pages/auth/auth";
 import { featureFlags } from "../config/features";
 import { useCommunityConfig } from "../community/CommunityConfigContext";
+import { useCricketProviderStatus, isProviderConfigured } from "../hooks/useCricketProviderStatus";
 
 export default function Header({ user, hasOrg, onShowLogin, onShowRegister, onLogout }) {
   const location = useLocation();
@@ -13,6 +14,10 @@ export default function Header({ user, hasOrg, onShowLogin, onShowRegister, onLo
   // Community is a RUNTIME switch (backend setting), not a build flag: the link
   // only appears once GET /community/config confirms it is enabled.
   const { enabled: communityEnabled } = useCommunityConfig();
+  // International is also a RUNTIME switch: without a configured provider on the
+  // server the page only shows a "provider unavailable" banner, so the link is
+  // hidden until GET /international/status says one exists.
+  const providerStatus = useCricketProviderStatus();
 
   // Task 3: sections backed only by third-party feeds (International →
   // RapidAPI/Cricbuzz, Highlights → YouTube, News → RSS) are hidden by default
@@ -22,7 +27,7 @@ export default function Header({ user, hasOrg, onShowLogin, onShowRegister, onLo
   const navItems = [
     { name: "Matches", path: "/" },
     { name: "Series", path: "/series" },
-    ...(flags.international ? [{ name: "International", path: "/international" }] : []),
+    ...(flags.international && isProviderConfigured(providerStatus) ? [{ name: "International", path: "/international" }] : []),
     { name: "Teams", path: "/teams" },
     { name: "Players", path: "/players" },
     ...(communityEnabled ? [{ name: "Community", path: "/community" }] : []),

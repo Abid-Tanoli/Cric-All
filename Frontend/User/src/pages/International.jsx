@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../services/api';
 import { getSocket, initSocket } from '../services/socket';
+import { useCricketProviderStatus, isProviderConfigured } from '../hooks/useCricketProviderStatus';
 
 const asArray = (value) => Array.isArray(value) ? value : [];
 
@@ -45,6 +46,8 @@ export default function International() {
   const [news, setNews] = useState([]);
   const [apiStatus, setApiStatus] = useState(null);
   const [loading, setLoading] = useState(true);
+  const providerStatus = useCricketProviderStatus();
+  const providerConfigured = isProviderConfigured(providerStatus);
 
   const groupedMatches = useMemo(() => ({
     live: matches.filter(match => getMatchState(match) === 'live'),
@@ -292,6 +295,25 @@ export default function International() {
       )}
     </div>
   );
+
+  // A direct link/bookmark still has to be friendly: no provider means no
+  // scores at all, so show a short explanation instead of an empty, broken page.
+  if (providerStatus !== null && !providerConfigured) {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-cric-bg to-white dark:from-slate-900 dark:to-slate-950">
+        <main className="mx-auto max-w-3xl px-4 py-16 text-center">
+          <h1 className="text-3xl font-black text-cric-accent dark:text-white">International cricket is not available right now</h1>
+          <p className="mt-3 text-sm font-semibold text-cric-muted">
+            Live international scores come from an external data provider that is not configured on this site yet. CricAll's own tournaments, teams, players and scores keep working as usual.
+          </p>
+          <div className="mt-8 flex flex-wrap justify-center gap-3">
+            <Link to="/" className="rounded-xl bg-cric-accent px-5 py-2.5 text-[10px] font-black uppercase tracking-widest text-white hover:bg-orange-600">Home</Link>
+            <Link to="/live" className="rounded-xl border border-cric-border px-5 py-2.5 text-[10px] font-black uppercase tracking-widest text-cric-muted hover:text-cric-text">Live scores</Link>
+          </div>
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-cric-bg to-white dark:from-slate-900 dark:to-slate-950">
