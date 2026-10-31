@@ -1,6 +1,7 @@
 import React from "react";
 import { Link } from "react-router-dom";
 import BoundaryMeter from "../../../components/BoundaryMeter";
+import PlayerOfTournament from "./PlayerOfTournament";
 
 function PlayerCell({ row }) {
   const id = row.playerId || row._id;
@@ -83,6 +84,8 @@ export default function StatsTab({ stats = {} }) {
 
   return (
     <div className="space-y-8">
+      <PlayerOfTournament data={stats.playerOfTournament} />
+
       {!empty && <BoundaryMeter stats={boundaryMeter} />}
 
       {empty && (
@@ -95,11 +98,12 @@ export default function StatsTab({ stats = {} }) {
         title="Most Runs"
         icon="🏏"
         color="from-blue-600 to-blue-700"
-        columns={["Inn", "NO", "Runs", "HS", "Avg", "SR", "50s", "100s", "4s", "6s"]}
+        columns={["Mat", "Inn", "NO", "Runs", "HS", "Avg", "SR", "50s", "100s", "4s", "6s"]}
         rows={stats.topRunScorers}
         empty="No batting stats available yet"
         render={(s) => (
           <>
+            <td className="px-4 py-3 text-center" title="Matches played">{s.matches || 0}</td>
             <td className="px-4 py-3 text-center">{s.innings || 0}</td>
             <td className="px-4 py-3 text-center">{s.notOuts || 0}</td>
             <td className="px-4 py-3 text-center font-black text-blue-800 bg-cric-card/50">{s.runs || 0}</td>
@@ -118,11 +122,12 @@ export default function StatsTab({ stats = {} }) {
         title="Most Wickets"
         icon="⚾"
         color="from-green-600 to-green-700"
-        columns={["Ov", "Wkts", "BBI", "Avg", "Econ", "4W", "5W", ...(hasDiscipline ? ["Wd", "NB"] : [])]}
+        columns={["Mat", "Ov", "Wkts", "BBI", "Avg", "Econ", "4W", "5W", ...(hasDiscipline ? ["Wd", "NB"] : [])]}
         rows={stats.topWicketTakers}
         empty="No bowling stats available yet"
         render={(s) => (
           <>
+            <td className="px-4 py-3 text-center" title="Matches played">{s.matches || 0}</td>
             <td className="px-4 py-3 text-center">{s.oversText ?? "-"}</td>
             <td className="px-4 py-3 text-center font-black text-green-800 bg-green-50/50">{s.wickets || 0}</td>
             <td className="px-4 py-3 text-center font-bold">{s.bestFigures || "-"}</td>
@@ -159,11 +164,12 @@ export default function StatsTab({ stats = {} }) {
           title="Highest Scores"
           icon="🚀"
           color="from-purple-600 to-purple-700"
-          columns={["Runs", "Balls", "4s", "6s"]}
+          columns={["Mat", "Runs", "Balls", "4s", "6s"]}
           rows={(stats.highestScores || []).slice(0, 10)}
           empty="No innings recorded yet"
           render={(s) => (
             <>
+              <td className="px-4 py-3 text-center" title="Matches played">{s.matches || 0}</td>
               <td className="px-4 py-3 text-center font-black">{s.runs}{s.notOut ? "*" : ""}</td>
               <td className="px-4 py-3 text-center">{s.balls || 0}</td>
               <td className="px-4 py-3 text-center">{s.fours || 0}</td>
@@ -175,11 +181,12 @@ export default function StatsTab({ stats = {} }) {
           title="Best Bowling"
           icon="🎯"
           color="from-teal-600 to-teal-700"
-          columns={["Figures", "Runs", "Overs"]}
+          columns={["Mat", "Figures", "Runs", "Overs"]}
           rows={(stats.bestBowling || []).slice(0, 10)}
           empty="No spells recorded yet"
           render={(s) => (
             <>
+              <td className="px-4 py-3 text-center" title="Matches played">{s.matches || 0}</td>
               <td className="px-4 py-3 text-center font-black">{s.figures}</td>
               <td className="px-4 py-3 text-center">{s.runs || 0}</td>
               <td className="px-4 py-3 text-center">{Math.floor((s.balls || 0) / 6)}.{s.balls % 6}</td>
@@ -190,11 +197,12 @@ export default function StatsTab({ stats = {} }) {
           title="Best Strike Rate"
           icon="⚡"
           color="from-indigo-600 to-indigo-700"
-          columns={["SR", "Runs", "Balls"]}
+          columns={["Mat", "SR", "Runs", "Balls"]}
           rows={stats.bestStrikeRates}
           empty="No qualified batting yet"
           render={(s) => (
             <>
+              <td className="px-4 py-3 text-center" title="Matches played">{s.matches || 0}</td>
               <td className="px-4 py-3 text-center font-black">{s.strikeRate}</td>
               <td className="px-4 py-3 text-center">{s.runs || 0}</td>
               <td className="px-4 py-3 text-center">{s.balls || 0}</td>
@@ -205,11 +213,12 @@ export default function StatsTab({ stats = {} }) {
           title="Best Economy"
           icon="🧊"
           color="from-cyan-600 to-cyan-700"
-          columns={["Econ", "Overs", "Wkts"]}
+          columns={["Mat", "Econ", "Overs", "Wkts"]}
           rows={stats.bestEconomy}
           empty="No qualified bowling yet"
           render={(s) => (
             <>
+              <td className="px-4 py-3 text-center" title="Matches played">{s.matches || 0}</td>
               <td className="px-4 py-3 text-center font-black">{s.economy}</td>
               <td className="px-4 py-3 text-center">{s.oversText ?? "-"}</td>
               <td className="px-4 py-3 text-center">{s.wickets || 0}</td>

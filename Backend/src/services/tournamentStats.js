@@ -325,6 +325,48 @@ function sortAppearances(row) {
   return row;
 }
 
+/**
+ * How many matches each player actually took part in.
+ *
+ * "Played" = batted (a real row, never a DNB row), bowled, took a recorded
+ * fielding dismissal, or was named in the playing XI. Every completed,
+ * non-draft match counts ONCE, even when the player batted and bowled in it.
+ * This is THE rule behind every "Mat" column and the impact ranking, so the
+ * numbers cannot disagree between two leaderboards.
+ *
+ * @returns {Map<string, Set<string>>} playerId -> set of match ids
+ */
+export function collectPlayedMatches(matches = []) {
+  const played = new Map();
+  const add = (playerId, matchId) => {
+    if (!playerId) return;
+    if (!played.has(playerId)) played.set(playerId, new Set());
+    played.get(playerId).add(matchId || "anonymous");
+  };
+
+  for (const match of matches || []) {
+    if (isDraftMatch(match)) continue;
+    if (!COMPLETED_STATUSES.includes(String(match?.status || "").toLowerCase())) continue;
+    const matchId = idOf(match);
+
+    for (const innings of inningsForMatch(match)) {
+      for (const row of innings.batting || []) {
+        if (!isDidNotBat(row)) add(idOf(row.player), matchId);
+        const credit = FIELDING_DISMISSALS[String(row?.dismissalType || "").toLowerCase()];
+        if (credit) add(idOf(row?.fielder), matchId);
+      }
+      for (const row of innings.bowling || []) add(idOf(row.player), matchId);
+    }
+
+    // A selected player who neither batted nor bowled still played the match.
+    for (const group of match.playingXI || []) {
+      for (const player of group?.players || []) add(idOf(player), matchId);
+    }
+  }
+
+  return played;
+}
+
 export const FIELDING_DISMISSALS = Object.freeze({
   caught: "catches",
   stumped: "stumpings",
@@ -471,6 +513,9 @@ export function computeTournamentStats(input = {}) {
       (COMPLETED_STATUSES.includes(String(match?.status || "").toLowerCase()) ||
         COMPLETED_STATUSES.includes(String(match?.status || ""))),
   );
+
+  const playedMatches = collectPlayedMatches(completed);
+  const matchesPlayedOf = (playerId) => playedMatches.get(String(playerId || ""))?.size || 0;
 
   const ensureTeam = (teamId, name = "", logo = "") => {
     if (!teamId) return null;
@@ -742,6 +787,7 @@ export function computeTournamentStats(input = {}) {
     const outs = row.innings - row.notOuts;
     return sortAppearances({
       ...row,
+      matches: matchesPlayedOf(row.playerId),
       average: outs > 0 ? Number((row.runs / outs).toFixed(2)) : null,
       strikeRate: row.balls > 0 ? Number(((row.runs / row.balls) * 100).toFixed(2)) : null,
       highestText: row.highestNotOut ? `${row.highest}*` : String(row.highest),
@@ -752,6 +798,7 @@ export function computeTournamentStats(input = {}) {
     const oversValue = row.balls / 6;
     return sortAppearances({
       ...row,
+      matches: matchesPlayedOf(row.playerId),
       oversText: oversText(row.balls),
       average: row.wickets > 0 ? Number((row.runs / row.wickets).toFixed(2)) : null,
       economy: oversValue > 0 ? Number((row.runs / oversValue).toFixed(2)) : null,
@@ -763,7 +810,9 @@ export function computeTournamentStats(input = {}) {
     const { _matchIds, ...rest } = row;
     return sortAppearances({
       ...rest,
-      matches: _matchIds instanceof Set ? _matchIds.size : row.matches || 0,
+      // Same "played" rule as the batting and bowling tables; the set of matches
+      // in which the player actually took a dismissal is not the Mat column.
+      matches: matchesPlayedOf(row.playerId),
       total: row.catches + row.stumpings + row.runOuts,
     });
   });
@@ -799,12 +848,14 @@ export function computeTournamentStats(input = {}) {
     [...bowlingRows].sort((a, b) => b.wickets - a.wickets || a.runs - b.runs),
   );
   const highestScores = take(
-    [...inningsScores]
+    inningsScores
+      .map((row) => ({ ...row, matches: matchesPlayedOf(row.playerId) }))
       .filter((row) => row.balls > 0 || row.runs > 0)
       .sort((a, b) => b.runs - a.runs || a.balls - b.balls),
   );
   const bestBowling = take(
-    [...bowlingSpells]
+    bowlingSpells
+      .map((row) => ({ ...row, matches: matchesPlayedOf(row.playerId) }))
       .filter((row) => row.wickets > 0)
       .sort((a, b) => b.wickets - a.wickets || a.runs - b.runs),
   );
@@ -918,13 +969,14 @@ export async function gatherTournamentStats(tournament, opts = {}) {
         "innings.batting.balls innings.batting.fours innings.batting.sixes innings.batting.isOut " +
         "innings.batting.dismissalType innings.batting.fielder innings.bowling.player innings.bowling.balls " +
         "innings.bowling.overs innings.bowling.maidens innings.bowling.runs innings.bowling.wickets " +
-        "innings.bowling.wides innings.bowling.noBalls",
+        "innings.bowling.wides innings.bowling.noBalls playingXI.team playingXI.players",
     )
     .populate("teams", STATS_TEAM_SELECT)
     .populate("innings.team", STATS_TEAM_SELECT)
     .populate("innings.batting.player", STATS_PLAYER_SELECT)
     .populate("innings.batting.fielder", STATS_PLAYER_SELECT)
     .populate("innings.bowling.player", STATS_PLAYER_SELECT)
+    .populate("manOfMatch", STATS_PLAYER_SELECT)
     .lean();
 
   // Drop whole innings played by a hidden team so a private team's players
@@ -949,6 +1001,22 @@ export async function gatherTournamentStats(tournament, opts = {}) {
   // (e.g. a player typed into a fixture team).
   const strip = (list) => (list || []).filter((row) => !isReservedTestName(row.name) && !isReservedTestName(row.team));
   const topFielders = strip(stats.topFielders);
+
+  // Player of the Tournament. The scoring module imports this file's helpers,
+  // so it is loaded lazily here to keep the dependency one-way at module load.
+  const { computeTournamentImpact } = await import("./tournamentImpact.js");
+  const impact = computeTournamentImpact({ matches: cleanMatches });
+  const impactRows = strip(impact.rows);
+  impactRows.forEach((row, index) => {
+    row.rank = index + 1;
+  });
+  const playerOfTournament = {
+    ...impact,
+    rows: impactRows,
+    leader: impactRows[0] || null,
+    hasData: impactRows.length > 0,
+  };
+
   return {
     ...stats,
     topRunScorers: strip(stats.topRunScorers),
@@ -968,6 +1036,7 @@ export async function gatherTournamentStats(tournament, opts = {}) {
     },
     hasFielding: topFielders.length > 0,
     hasTeamStats: (stats.teamStats || []).length > 0,
+    playerOfTournament,
   };
 }
 
@@ -1064,6 +1133,7 @@ export default {
   oversToBalls,
   isDraftMatch,
   isDidNotBat,
+  collectPlayedMatches,
   COMPLETED_STATUSES,
   readTournamentStatsCache,
   writeTournamentStatsCache,
