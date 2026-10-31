@@ -1,6 +1,7 @@
 import React, { useMemo, useState, Fragment, useRef } from 'react';
 import WagonWheel from './WagonWheel';
 import ScorecardExport from './ScorecardExport';
+import { formatOverFigure } from '../utils/matchHelpers';
 
 // CricAll detailed scorecard
 // Full batting/bowling tables, extras, fall of wickets, yet to bat, match summary
@@ -347,7 +348,7 @@ const DetailedScorecard = ({ match }) => {
                 <div className="flex flex-wrap gap-2">
                   {innings.fallOfWickets.map((fow, idx) => {
                     const playerName = fow.player?.name || fow.playerName || '';
-                    const oversStr = fow.overs ? formatOvers(fow.overs * 6 || 0) : '';
+                    const oversStr = formatOverFigure(fow.overs);
                     return (
                       <div key={idx} className="bg-cric-card dark:bg-slate-600 px-3 py-2 rounded-lg text-xs shadow-sm border border-cric-border dark:border-slate-500">
                         <span className="font-bold text-cric-accent dark:text-white">{fow.wickets}/{fow.runs}</span>

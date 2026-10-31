@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { api } from "../services/api";
 import { Link } from "react-router-dom";
+import { formatOverFigure } from "../utils/matchHelpers";
 
 export default function Scoreboard({ matchId }) {
   const [match, setMatch] = useState(null);
@@ -236,7 +237,8 @@ export default function Scoreboard({ matchId }) {
             <div className="flex flex-wrap gap-2">
               {currentInnings.fallOfWickets.map((fow, idx) => (
                 <span key={idx} className="px-3 py-1.5 bg-white rounded-full text-xs font-bold text-red-600 border border-red-200">
-                  {fow.player?.name}: {fow.runs}-{fow.wickets} ({fow.overs} ov)
+                  {fow.player?.name}: {fow.runs}-{fow.wickets}
+                  {formatOverFigure(fow.overs) ? ` (${formatOverFigure(fow.overs)} ov)` : ""}
                 </span>
               ))}
             </div>

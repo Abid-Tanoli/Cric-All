@@ -47,6 +47,13 @@ export const number = (value, fallback = 0) => {
 
 export const formatOvers = (balls = 0) => `${Math.floor(number(balls) / 6)}.${number(balls) % 6}`;
 
+// Fall-of-wickets `overs` is already a printed over figure (2.1 = two overs and
+// one ball), not a ball count, so print it as-is. Nothing to show means "".
+export const formatOverFigure = (value) => {
+  const figure = number(value);
+  return figure > 0 ? figure.toFixed(1) : "";
+};
+
 export const isIllegalDelivery = (ball) => !!(ball?.isWide || ball?.isNoBall);
 
 export const withDisplayBallNumbers = (balls = []) => {

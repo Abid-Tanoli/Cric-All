@@ -78,6 +78,14 @@ export function parseOvers(value) {
 
 export const formatOversLabel = (balls = 0) => `${Math.floor(balls / 6)}.${balls % 6}`;
 
+/**
+ * Store a printed over figure as ONE number ("19.4" -> 19.4), the same unit the
+ * live scoring engine writes into `innings.fallOfWickets[].overs`. Storing a ball
+ * count here used to make the public scorecard print "13 ov" for 2.1 overs.
+ */
+export const toOverFigure = (parsed) =>
+  parsed?.valid ? Number(`${parsed.overs}.${parsed.ballsInOver}`) : 0;
+
 const pushError = (errors, path, message) => errors.push({ path, message });
 
 /**
@@ -310,12 +318,17 @@ export function validateManualScorecard(input = {}, ctx = {}) {
       if (fWickets <= lastFowWicket) pushError(errors, `${fwhere}.wickets`, "Fall-of-wicket wicket numbers must increase.");
       if (requireComplete && fWickets > computedWickets) pushError(errors, `${fwhere}.wickets`, "Fall-of-wicket wicket number exceeds the number of wickets lost.");
       if (requireComplete && fRuns > computedRuns) pushError(errors, `${fwhere}.runs`, "Fall-of-wicket runs exceed the innings total.");
+      const fOvers = parseOvers(row.overs);
+      if (!fOvers.valid) pushError(errors, `${fwhere}.overs`, fOvers.reason);
+      if (requireComplete && fOvers.valid && oversParsed.valid && oversParsed.balls > 0 && fOvers.balls > oversParsed.balls) {
+        pushError(errors, `${fwhere}.overs`, "Fall-of-wicket over is past the end of the innings.");
+      }
       lastFowWicket = fWickets;
       fallOfWickets.push({
         runs: fRuns,
         wickets: fWickets,
         player: idOf(row.player) || null,
-        overs: parseOvers(row.overs).valid ? parseOvers(row.overs).balls : 0,
+        overs: toOverFigure(fOvers),
       });
     }
 
