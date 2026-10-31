@@ -4,6 +4,8 @@ import BoundaryMeter from "../../../components/BoundaryMeter";
 
 function PlayerCell({ row }) {
   const id = row.playerId || row._id;
+  const teams = Array.isArray(row.teamsPlayedFor) ? row.teamsPlayedFor : [];
+  const others = teams.slice(1).map((team) => team.name).filter(Boolean);
   return (
     <td className="px-4 py-3">
       {id ? (
@@ -13,7 +15,17 @@ function PlayerCell({ row }) {
       ) : (
         <span className="font-bold text-cric-text">{row.name}</span>
       )}
-      <div className="text-[10px] text-cric-muted">{row.team}</div>
+      <div className="text-[10px] text-cric-muted">
+        {row.team}
+        {teams.length > 1 && (
+          <span className="ml-1 font-black uppercase text-cric-accent" title={`Most recent match team; also played for ${others.join(", ")}`}>
+            (latest)
+          </span>
+        )}
+      </div>
+      {others.length > 0 && (
+        <div className="text-[9px] text-cric-muted/80">Also: {others.join(", ")}</div>
+      )}
     </td>
   );
 }

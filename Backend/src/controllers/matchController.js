@@ -18,6 +18,7 @@ import { getPlatformSettings } from "../models/SystemSettings.js";
 import { recordAudit } from "../utils/audit.js";
 import { buildMatchInnings, ensureMatchInnings } from "../utils/matchInnings.js";
 import { updateTournamentPoints } from "../services/tournamentService.js";
+import { invalidateTournamentStatsCache } from "../services/tournamentStats.js";
 
 const normalStatus = (status = "upcoming") => (status === "innings-break" ? "innings_break" : status);
 
@@ -695,6 +696,7 @@ export const getMatchStats = async (req, res) => {
 export const getMatchLiveStats = async (req, res) => {
   try {
     const match = await Match.findById(req.params.id)
+      .populate("teams", "name shortName")
       .populate("innings.team", "name shortName")
       .populate("innings.batting.player", "name playingRole role battingPosition")
       .populate("innings.bowling.player", "name playingRole role battingPosition");
@@ -705,9 +707,17 @@ export const getMatchLiveStats = async (req, res) => {
 
     const battingRows = [];
     const bowlingRows = [];
+    const matchTeams = (match.teams || []).map((team) => ({
+      id: String(team?._id || team),
+      name: displayName(team, ""),
+    }));
 
     (match.innings || []).forEach((innings, index) => {
       const teamName = displayName(innings.team, `Innings ${index + 1}`);
+      // A bowler (and a fielder) belongs to the side that is NOT batting. The
+      // innings' team is the batting side, so it can never label a bowling row.
+      const fieldingName =
+        matchTeams.find((team) => team.id !== String(innings.team?._id || innings.team))?.name || teamName;
       (innings.batting || []).forEach((row) => {
         battingRows.push({
           playerId: row.player?._id || row.player,
@@ -724,7 +734,7 @@ export const getMatchLiveStats = async (req, res) => {
         bowlingRows.push({
           playerId: row.player?._id || row.player,
           name: displayName(row.player, "Unknown"),
-          team: teamName,
+          team: fieldingName,
           overs: formatBowlerOvers(row),
           balls: toNumber(row.balls),
           maidens: toNumber(row.maidens),
@@ -978,6 +988,14 @@ export const updateMatchStatus = async (req, res) => {
       match.innings[match.currentInnings].status = "upcoming";
     }
     await match.save({ validateModifiedOnly: true });
+
+    // A live match can be closed from this endpoint (the scoring UI does this
+    // on the last ball). Rebuild standings and drop the public stats cache so
+    // the profile/tournament pages do not serve a pre-completion aggregate.
+    if (normalizedStatus === "completed" && match.tournament) {
+      await updateTournamentPoints(match.tournament);
+      invalidateTournamentStatsCache(match.tournament);
+    }
 
     await match.populate("teams", "name shortName logo");
 
