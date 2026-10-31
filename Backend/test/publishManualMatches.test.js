@@ -90,7 +90,8 @@ async function makeDraft({ tournament = null } = {}) {
           runs: 50,
           wickets: 1,
         }],
-        fallOfWickets: [{ runs: 50, wickets: 1, player: playersA[0]._id, overs: 24 }],
+        // Fall-of-wicket overs are a printed over figure (4.0 = four overs).
+        fallOfWickets: [{ runs: 50, wickets: 1, player: playersA[0]._id, overs: 4 }],
         status: "completed",
       },
       {

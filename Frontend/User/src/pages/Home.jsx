@@ -10,6 +10,7 @@ import GlobalSearch from "../components/GlobalSearch";
 import { initSocket } from "../services/socket";
 import CreatePlayerProfile from "../components/CreatePlayerProfile";
 import { featureFlags } from "../config/features";
+import { useCricketProviderStatus, isProviderConfigured } from "../hooks/useCricketProviderStatus";
 
 const statusBadge = (match) => {
   const s = match.status;
@@ -39,6 +40,9 @@ export function Home() {
   const [showRegister, setShowRegister] = useState(false);
   const [showCreatePlayer, setShowCreatePlayer] = useState(false);
   const [collapseCompleted, setCollapseCompleted] = useState(false);
+  // Quick links only advertise the international pages when a live provider
+  // exists on the server; otherwise they lead to an empty page.
+  const showInternational = isProviderConfigured(useCricketProviderStatus());
 
   const matchesLoading = matchesStatus === "loading";
 
@@ -343,7 +347,7 @@ export function Home() {
                 {[
                   { label: "Live Scores", accent: "bg-red-500", path: "/live" },
                   { label: "Rankings", accent: "bg-amber-500", path: "/rankings" },
-                  { label: "International", accent: "bg-indigo-500", path: "/international" },
+                  ...(showInternational ? [{ label: "International", accent: "bg-indigo-500", path: "/international" }] : []),
                   { label: "Teams", accent: "bg-emerald-500", path: "/teams" },
                   { label: "Players", accent: "bg-orange-500", path: "/players" },
                   { label: "Series", accent: "bg-purple-500", path: "/series" },

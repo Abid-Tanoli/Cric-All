@@ -47,6 +47,13 @@ export const number = (value, fallback = 0) => {
 
 export const formatOvers = (balls = 0) => `${Math.floor(number(balls) / 6)}.${number(balls) % 6}`;
 
+// Fall-of-wickets `overs` is already a printed over figure (2.1 = two overs and
+// one ball), not a ball count, so print it as-is. Nothing to show means "".
+export const formatOverFigure = (value) => {
+  const figure = number(value);
+  return figure > 0 ? figure.toFixed(1) : "";
+};
+
 export const isIllegalDelivery = (ball) => !!(ball?.isWide || ball?.isNoBall);
 
 export const withDisplayBallNumbers = (balls = []) => {
@@ -159,9 +166,16 @@ export const getMatchBanner = (match) => {
   return "Match has not started yet";
 };
 
+// Overs as a decimal number. The two fields are the SAME quantity in different
+// units (`balls` is the legal-ball count, `overs` its floor), so adding them
+// double-counted every innings: a 199/4 innings saved as overs:15, balls:90 was
+// treated as 30 overs and the scorecard printed RR 6.63 instead of 13.27.
+// Prefer `balls` (exact, no rounding) and fall back to `overs` when it is absent.
 export const overValue = (innings) => {
   if (!innings) return 0;
-  return number(innings.overs) + number(innings.balls) / 6;
+  const balls = number(innings.balls);
+  if (balls > 0) return balls / 6;
+  return number(innings.overs);
 };
 
 export const getCrr = (innings) => {

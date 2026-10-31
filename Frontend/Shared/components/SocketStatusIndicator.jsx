@@ -13,10 +13,32 @@ export default function SocketStatusIndicator({ getSocket }) {
     const socket = getSocket?.();
     if (!socket) return;
 
-    const onConnect = () => setStatus("connected");
-    const onDisconnect = () => setStatus("disconnected");
-    const onConnectError = () => setStatus("connecting");
-    const onReconnectAttempt = () => setStatus("connecting");
+    // The `user` socket is created lazily with autoConnect:false (see
+    // Shared/services/socket.js), so on pages that never open a live
+    // connection `socket.connected` is simply false forever. Treating that as
+    // "connecting" left an amber "Reconnecting..." bar pinned on top of the
+    // login, rankings, teams, players and community pages. Only a socket that
+    // actually reached `connect` once may report a connection problem.
+    // Listen from the start (a live page may connect after this mounts), but
+    // stay silent until the socket has reached `connect` at least once.
+    let hasConnected = Boolean(socket.connected);
+    setStatus("connected");
+
+    const onConnect = () => {
+      hasConnected = true;
+      setStatus("connected");
+    };
+    // Reconnection is enabled (reconnection:true), so a dropped connection is
+    // a reconnect attempt, not a dead socket — keep the wording honest.
+    const onDisconnect = () => {
+      if (hasConnected) setStatus(socket.active ? "connecting" : "disconnected");
+    };
+    const onConnectError = () => {
+      if (hasConnected) setStatus("connecting");
+    };
+    const onReconnectAttempt = () => {
+      if (hasConnected) setStatus("connecting");
+    };
     const onReconnect = () => setStatus("connected");
 
     socket.on("connect", onConnect);
@@ -24,8 +46,6 @@ export default function SocketStatusIndicator({ getSocket }) {
     socket.on("connect_error", onConnectError);
     socket.io?.on("reconnect_attempt", onReconnectAttempt);
     socket.on("reconnect", onReconnect);
-
-    if (!socket.connected) setStatus("connecting");
 
     return () => {
       socket.off("connect", onConnect);

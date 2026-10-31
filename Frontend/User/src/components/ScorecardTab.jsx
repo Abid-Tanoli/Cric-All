@@ -105,7 +105,12 @@ export default function ScorecardTab({ match, innings, selectedInnings, setSelec
               <div key={i} className="flex items-center gap-2 sm:gap-3 text-xs sm:text-sm bg-cric-bg rounded-lg px-2 sm:px-3 py-1.5 sm:py-2">
                 <span className="font-black text-cric-text shrink-0 min-w-[2.5rem] sm:min-w-[3rem]">{number(w.wicket || w.wickets || i + 1)}-{number(w.runs)}</span>
                 <span className="text-cric-muted flex-1 truncate">{playerName(w.player, players)}</span>
-                <span className="text-[10px] sm:text-xs font-bold text-cric-muted shrink-0">{w.overs || "0.0"} ov</span>
+                {/* `overs` is stored as a decimal over notation ("8.3"); 0/null
+                    means the fall of wicket has no over recorded, so print no
+                    text instead of a misleading "0.0 ov". */}
+                {w.overs ? (
+                  <span className="text-[10px] sm:text-xs font-bold text-cric-muted shrink-0">{w.overs} ov</span>
+                ) : null}
               </div>
             ))}
           </div>

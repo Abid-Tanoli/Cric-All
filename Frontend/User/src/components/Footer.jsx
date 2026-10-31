@@ -1,8 +1,11 @@
 import React from "react";
 import { Link } from "react-router-dom";
+import { useCricketProviderStatus, isProviderConfigured } from "../hooks/useCricketProviderStatus";
 
 export default function Footer() {
   const year = new Date().getFullYear();
+  // The international pages have nothing to show without a configured provider.
+  const showInternational = isProviderConfigured(useCricketProviderStatus());
 
   return (
     <footer className="border-t border-cric-border bg-cric-card mt-12">
@@ -21,14 +24,18 @@ export default function Footer() {
             <ul className="space-y-2">
               <li><Link to="/live" className="text-xs sm:text-sm text-cric-text hover:text-cric-accent transition-colors">Live Scores</Link></li>
               <li><Link to="/series" className="text-xs sm:text-sm text-cric-text hover:text-cric-accent transition-colors">Series</Link></li>
-              <li><Link to="/international" className="text-xs sm:text-sm text-cric-text hover:text-cric-accent transition-colors">International</Link></li>
+              {showInternational && (
+                <li><Link to="/international" className="text-xs sm:text-sm text-cric-text hover:text-cric-accent transition-colors">International</Link></li>
+              )}
             </ul>
           </div>
           <div>
             <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-cric-muted mb-3">Teams</h4>
             <ul className="space-y-2">
               <li><Link to="/teams" className="text-xs sm:text-sm text-cric-text hover:text-cric-accent transition-colors">All Teams</Link></li>
-              <li><Link to="/teams/international" className="text-xs sm:text-sm text-cric-text hover:text-cric-accent transition-colors">International</Link></li>
+              {showInternational && (
+                <li><Link to="/teams/international" className="text-xs sm:text-sm text-cric-text hover:text-cric-accent transition-colors">International</Link></li>
+              )}
               <li><Link to="/teams/leagues" className="text-xs sm:text-sm text-cric-text hover:text-cric-accent transition-colors">Leagues</Link></li>
             </ul>
           </div>

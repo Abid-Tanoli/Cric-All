@@ -367,12 +367,13 @@ export const manualMatchToPayload = (match) => {
       wides: row.wides || 0,
       noBalls: row.noBalls || 0,
     })),
-    // The manual validator stores fall-of-wicket overs as balls.
+    // `overs` is a printed over figure (2.1 = two overs and one ball), the same
+    // unit the live scoring engine writes.
     fallOfWickets: (innings.fallOfWickets || []).map((row) => ({
       runs: row.runs,
       wickets: row.wickets ?? row.wicket,
       player: idOf(row.player) || undefined,
-      overs: Number.isFinite(Number(row.overs)) ? formatOversLabel(Number(row.overs)) : "",
+      overs: Number(row.overs) > 0 ? Number(row.overs).toFixed(1) : "",
     })),
   }));
 
