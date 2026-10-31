@@ -6,6 +6,7 @@ import { deleteStoredFile, deleteStoredFiles } from "../utils/photoStore.js";
 import { recordAudit } from "../utils/audit.js";
 import * as playerService from "../services/playerService.js";
 import { applyPlayerFieldPolicy, resolvePlayerWriteAccess } from "../middleware/playerAccess.js";
+import { getPlayerStatsBundle } from "../services/playerStats.js";
 import {
   PLAYER_ROSTER_SELECT,
   playerSelectFor,
@@ -124,7 +125,16 @@ export const getPlayer = async (req, res) => {
     // `sanitizePlayerPublic` is a whitelist that honours the privacy flags and
     // still shows the creator and the owning organization's managers the full
     // document.
-    res.json(sanitizePlayerPublic(player, { viewer }));
+    const payload = sanitizePlayerPublic(player, { viewer });
+
+    // Career figures are derived from completed, published matches on every
+    // read (manual and ball-by-ball alike). Replacing the stored seed value here
+    // — after sanitisation, so Mongoose cannot strip the extra fields — is what
+    // prevents stale or double-counted profile numbers.
+    const { stats } = await getPlayerStatsBundle(player._id);
+    payload.stats = stats;
+
+    res.json(payload);
   } catch (err) {
     res.status(500).json({ message: "Error fetching player" });
   }
@@ -164,29 +174,11 @@ export const getPlayerMatches = async (req, res) => {
       return res.status(404).json({ message: "Player not found" });
     }
 
-    const matches = await Match.find({
-      $or: [
-        { "playingXI.players": playerId },
-        { "squad15.players": playerId },
-        { "innings.batting.player": playerId },
-        { "innings.bowling.player": playerId },
-        { "innings.oversHistory.balls.batsmanOnStrike": playerId },
-        { "innings.oversHistory.balls.batsmanNonStrike": playerId },
-        { "innings.oversHistory.balls.bowler": playerId },
-        { "innings.oversHistory.balls.dismissedPlayer": playerId },
-        { "innings.oversHistory.balls.fielder": playerId },
-      ],
-    })
-      .select("title venue matchType tournament teams innings currentInnings status result startAt createdAt updatedAt")
-      .populate("teams", "name shortName logo")
-      .populate("tournament", "name shortName slug")
-      .populate("innings.team", "name shortName logo")
-      .populate("result.winner", "name shortName logo")
-      .sort({ startAt: -1, updatedAt: -1 })
-      .limit(limit)
-      .lean();
-
-    res.json({ matches });
+    // Only completed, published matches with a real contribution. Each row
+    // carries the same batting/bowling/fielding numbers the tournament tables
+    // use, flattened for the profile tabs and FormTracker.
+    const { matches, totalMatches } = await getPlayerStatsBundle(playerId, { limit });
+    res.json({ matches, totalMatches });
   } catch (err) {
     res.status(500).json({ message: "Error fetching player matches" });
   }

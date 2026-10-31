@@ -3,6 +3,7 @@ import Player from "../models/Player.js";
 import fetch from "node-fetch";
 import { getIO, emitBallRecorded, emitScoreUpdate, emitStrikeChanged, emitOverCompleted, emitBallWithCommentary, emitBallUpdate, emitWicketAlert, emitMilestoneAlert, emitInningsComplete, emitInningsEnd, emitMatchEnd, emitFieldClick, emitAICommentary } from "../socket/socket.js";
 import { updateTournamentPoints } from "../services/tournamentService.js";
+import { invalidateTournamentStatsCache } from "../services/tournamentStats.js";
 import fieldPositionMapper from "../services/fieldPositionMapper.js";
 import aiCommentary, { isAiCommentaryEnabled } from "../services/aiCommentary.js";
 import CricketShot from "../models/CricketShot.js";
@@ -867,6 +868,11 @@ export const resolveTie = async (req, res) => {
       match.tieResolution = "declared_tie";
       match.result.description = "Match ended in a tie";
       await match.save({ validateModifiedOnly: true });
+      // Completion changes the public stats payload and the points table.
+      if (match.tournament) {
+        await updateTournamentPoints(match.tournament);
+        invalidateTournamentStatsCache(match.tournament);
+      }
       await populateFullMatch(match);
     } else if (resolution === "super_over") {
       match.tieResolution = "super_over";

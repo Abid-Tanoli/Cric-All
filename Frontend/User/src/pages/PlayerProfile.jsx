@@ -177,6 +177,12 @@ export default function PlayerProfile() {
               <p className="text-[10px] font-black uppercase text-white/60 tracking-widest">Economy</p>
             </div>
           </div>
+          {Array.isArray(stats.teamsPlayedFor) && stats.teamsPlayedFor.length > 1 && (
+            <p className="mt-4 text-xs text-white/70">
+              Most recent match team: <span className="font-black text-white">{stats.team}</span>.
+              {' '}Also played for {stats.teamsPlayedFor.slice(1).map(t => t.name).filter(Boolean).join(', ')}.
+            </p>
+          )}
         </div>
       </div>
 
@@ -344,8 +350,15 @@ export default function PlayerProfile() {
                     </thead>
                     <tbody className="divide-y divide-cric-border/50">
                       {recentMatches.slice(0, 10).map(m => {
-                        const myBat = (m.batting || []).find(b => b.player?._id === playerId || b.player === playerId);
-                        const myBowl = (m.bowling || []).find(b => b.player?._id === playerId || b.player === playerId);
+                        const myBat = Array.isArray(m.batting)
+                          ? m.batting.find(b => b.player?._id === playerId || b.player === playerId)
+                          : m.batting;
+                        const myBowl = Array.isArray(m.bowling)
+                          ? m.bowling.find(b => b.player?._id === playerId || b.player === playerId)
+                          : m.bowling;
+                        const myField = m.fielding || null;
+                        const result = m.resultForPlayer
+                          || (m.result?.winner === player.team?._id || m.result?.winner === player.team ? 'W' : (m.status === 'completed' ? 'L' : '-'));
                         return (
                           <tr key={m._id} className="hover:bg-cric-bg">
                             <td className="py-3 px-4">
@@ -353,15 +366,15 @@ export default function PlayerProfile() {
                                 {m.teams?.map(t => t.shortName || t.name).join(' vs ') || m.title}
                               </Link>
                             </td>
-                            <td className="py-3 px-2 text-center font-black text-cric-text">{myBat?.runs || '-'}</td>
-                            <td className="py-3 px-2 text-center font-bold text-cric-muted">{myBat?.ballsFaced || '-'}</td>
+                            <td className="py-3 px-2 text-center font-black text-cric-text">{myBat?.runs ?? '-'}</td>
+                            <td className="py-3 px-2 text-center font-bold text-cric-muted">{myBat?.ballsFaced ?? '-'}</td>
                             <td className="py-3 px-2 text-center font-bold text-cric-muted">{myBat?.ballsFaced ? ((myBat.runs / myBat.ballsFaced) * 100).toFixed(1) : '-'}</td>
-                            <td className="py-3 px-2 text-center font-black text-cric-text">{myBowl?.wickets || '-'}</td>
+                            <td className="py-3 px-2 text-center font-black text-cric-text">{myBowl?.wickets ?? '-'}</td>
                             <td className="py-3 px-2 text-center font-bold text-cric-muted">{myBowl?.balls ? ((myBowl.runs || 0) / (myBowl.balls / 6)).toFixed(1) : '-'}</td>
-                            <td className="py-3 px-2 text-center font-bold text-cric-muted">{myBat?.catches || myBowl?.catches || '-'}</td>
+                            <td className="py-3 px-2 text-center font-bold text-cric-muted">{myField?.catches ?? '-'}</td>
                             <td className="py-3 px-2 text-center">
-                              <span className={`text-[10px] font-black px-2 py-0.5 rounded ${m.result?.winner === player.team?._id || m.result?.winner === player.team ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                                {m.result?.winner === player.team?._id || m.result?.winner === player.team ? 'W' : (m.status === 'completed' ? 'L' : '-')}
+                              <span className={`text-[10px] font-black px-2 py-0.5 rounded ${result === 'W' ? 'bg-green-100 text-green-700' : result === 'L' ? 'bg-red-100 text-red-700' : 'bg-cric-bg text-cric-muted'}`}>
+                                {result || '-'}
                               </span>
                             </td>
                           </tr>
@@ -608,10 +621,17 @@ export default function PlayerProfile() {
                   </thead>
                   <tbody className="divide-y divide-cric-border/50">
                     {recentMatches.map(m => {
-                      const myTeamIndex = (m.teams || []).findIndex(t => t._id === player.team?._id || t === player.team);
-                      const opposition = m.teams?.[myTeamIndex === 0 ? 1 : 0];
-                      const myBat = (m.batting || []).find(b => b.player?._id === playerId || b.player === playerId);
-                      const myBowl = (m.bowling || []).find(b => b.player?._id === playerId || b.player === playerId);
+                      const myBat = Array.isArray(m.batting)
+                        ? m.batting.find(b => b.player?._id === playerId || b.player === playerId)
+                        : m.batting;
+                      const myBowl = Array.isArray(m.bowling)
+                        ? m.bowling.find(b => b.player?._id === playerId || b.player === playerId)
+                        : m.bowling;
+                      const myField = m.fielding || null;
+                      const opposition = m.opposition
+                        || (m.teams || []).find(t => (t._id || t) !== (m.teamId || m.playerTeam?._id || player.team?._id));
+                      const result = m.resultForPlayer
+                        || (m.result?.winner === player.team?._id || m.result?.winner === player.team ? 'W' : (m.status === 'completed' ? 'L' : '-'));
                       return (
                         <tr key={m._id} className="hover:bg-cric-bg">
                           <td className="py-3 px-4 text-[11px] font-bold text-cric-muted whitespace-nowrap">
@@ -631,14 +651,14 @@ export default function PlayerProfile() {
                           <td className="py-3 px-2 text-center font-bold text-cric-muted">{myBowl?.balls ? formatBalls(myBowl.balls) : '-'}</td>
                           <td className="py-3 px-2 text-center font-black text-cric-text">{myBowl?.wickets ?? '-'}</td>
                           <td className="py-3 px-2 text-center font-bold text-cric-muted">{myBowl?.balls ? ((myBowl.runs || 0) / (myBowl.balls / 6)).toFixed(1) : '-'}</td>
-                          <td className="py-3 px-2 text-center font-bold text-cric-muted">{myBat?.catches || myBowl?.catches || '-'}</td>
+                          <td className="py-3 px-2 text-center font-bold text-cric-muted">{myField?.catches ?? '-'}</td>
                           <td className="py-3 px-3 text-center">
                             <span className={`text-[10px] font-black px-2 py-0.5 rounded ${
-                              m.result?.winner === player.team?._id || m.result?.winner === player.team
+                              result === 'W'
                                 ? 'bg-green-100 text-green-700'
-                                : m.status === 'completed' ? 'bg-red-100 text-red-700' : 'bg-cric-bg text-cric-muted'
+                                : result === 'L' ? 'bg-red-100 text-red-700' : 'bg-cric-bg text-cric-muted'
                             }`}>
-                              {m.result?.winner === player.team?._id || m.result?.winner === player.team ? 'W' : (m.status === 'completed' ? 'L' : '-')}
+                              {result || '-'}
                             </span>
                           </td>
                         </tr>

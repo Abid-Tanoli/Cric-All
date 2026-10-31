@@ -10,6 +10,16 @@ import Team from "../src/models/Team.js";
 import Match from "../src/models/Match.js";
 import Tournament from "../src/models/Tournament.js";
 import { runPublish, resolveTargetMatches } from "../src/scripts/publishManualMatches.js";
+import {
+  manualMatchToPayload,
+  updateManualMatch,
+} from "../src/controllers/manualScorecardController.js";
+import { getPlayerStatsBundle } from "../src/services/playerStats.js";
+import {
+  computeTournamentStats,
+  readTournamentStatsCache,
+  writeTournamentStatsCache,
+} from "../src/services/tournamentStats.js";
 
 let mongod;
 
@@ -159,6 +169,60 @@ test("--tournament selects drafts, and --apply publishes through the shared path
   const savedTournament = await Tournament.findById(tournament._id);
   const row = savedTournament.pointsTable.find((entry) => String(entry.team) === String(teamA._id));
   assert.equal(row?.points, 2, "the shared publish path recomputes standings");
+});
+
+test("PUT manual publishes a draft, invalidates tournament cache, and refreshes profile stats", async () => {
+  const { match, tournament } = await makeDraft();
+  const playerId = String(match.innings[0].batting[0].player);
+  const before = await getPlayerStatsBundle(playerId);
+  assert.equal(before.stats.runs, 0);
+
+  writeTournamentStatsCache(tournament._id, {}, { stale: true });
+  const req = {
+    params: { id: String(match._id) },
+    body: { ...manualMatchToPayload(match), draft: false },
+  };
+  const res = {
+    statusCode: 200,
+    body: null,
+    status(code) {
+      this.statusCode = code;
+      return this;
+    },
+    json(body) {
+      this.body = body;
+      return this;
+    },
+  };
+  await updateManualMatch(req, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.match.manualDraft, false);
+  assert.equal(res.body.match.status, "completed");
+  assert.equal(readTournamentStatsCache(tournament._id, {}), null);
+
+  const after = await getPlayerStatsBundle(playerId);
+  assert.equal(after.stats.runs, 50);
+  assert.equal(after.stats.wickets, 1);
+  const publishedMatches = await Match.find({
+    tournament: tournament._id,
+    status: "completed",
+  }).populate("teams", "name shortName logo")
+    .populate("innings.team", "name shortName logo")
+    .lean();
+  const tournamentStats = computeTournamentStats({
+    matches: publishedMatches,
+    minBallsFaced: 0,
+    minOvers: 0,
+  });
+  assert.equal(
+    after.stats.runs,
+    tournamentStats.topRunScorers.find((row) => row.playerId === playerId).runs,
+  );
+  assert.equal(
+    after.stats.wickets,
+    tournamentStats.topWicketTakers.find((row) => row.playerId === playerId).wickets,
+  );
 });
 
 test("a second --apply is idempotent (already published is skipped)", async () => {
