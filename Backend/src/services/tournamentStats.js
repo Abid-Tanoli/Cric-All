@@ -121,7 +121,7 @@ function oversText(balls) {
   return `${Math.floor(safe / 6)}.${safe % 6}`;
 }
 
-function isOutEntry(entry) {
+export function isOutEntry(entry) {
   if (entry.isOut === true) return true;
   if (entry.isOut === false) return false;
   // No explicit flag: a dismissalType string means dismissed.
@@ -141,6 +141,246 @@ export function isDidNotBat(entry) {
   if (isOutEntry(entry)) return false;
   if (entry.isRetiredHurt === true || entry.isRetired === true) return false;
   return !(Number(entry.balls) > 0 || Number(entry.runs) > 0);
+}
+
+/**
+ * Normalise one team reference to the tiny shape the stats layer needs.
+ *
+ * Match and innings team refs can be a bare ObjectId, a lean object or a
+ * populated Mongoose document. `nameOf` already prefers `name` over
+ * `shortName`, so the same helper works for every caller.
+ */
+export function teamRefOf(team) {
+  if (!team) return { id: null, name: "", logo: "" };
+  if (typeof team === "object") {
+    return {
+      id: idOf(team),
+      name: nameOf(team),
+      logo: team.logo || "",
+    };
+  }
+  return { id: idOf(team), name: "", logo: "" };
+}
+
+/**
+ * Every team attached to a fixture, normalised and de-duplicated.
+ *
+ * `match.teams` is the fixture order and must never be used to decide who was
+ * batting: manual scorecards are stored in that order even when the other side
+ * batted first. The innings' own `team` is the only batting-side hint; the
+ * fielding side is the match team that is not batting.
+ */
+export function matchTeamRefs(match) {
+  const refs = [];
+  const seen = new Set();
+  const add = (team) => {
+    const ref = teamRefOf(team);
+    if (!ref.id || seen.has(ref.id)) return;
+    seen.add(ref.id);
+    refs.push(ref);
+  };
+  for (const team of match?.teams || []) add(team);
+  // A hand-built fixture occasionally omits `match.teams`; the innings still
+  // names both sides, so use those as a fallback.
+  for (const innings of inningsForMatch(match)) add(innings?.team);
+  return refs;
+}
+
+/**
+ * Which side a player represented for a batting, bowling or fielding row.
+ *
+ * - batting: the innings' batting team;
+ * - bowling / fielding: the other team in the fixture.
+ *
+ * The fixture order (`match.teams[0]`, `[1]`) is deliberately irrelevant. A
+ * manual scorecard stores innings in fixture order, and a live match stores
+ * them in actual batting order; neither tells us who bowled without looking at
+ * the innings' batting team.
+ */
+export function teamForInnings(match, innings, role = "batting") {
+  const battingTeam = teamRefOf(innings?.team);
+  if (role === "batting") return battingTeam;
+
+  const matchTeams = matchTeamRefs(match);
+  const fieldingTeam = matchTeams.find((team) => team.id && team.id !== battingTeam.id);
+  if (fieldingTeam) return fieldingTeam;
+  if (matchTeams.length > 0) return matchTeams[0];
+  return { id: null, name: "", logo: "" };
+}
+
+/** Numeric match time with a stable id tie-break; used only for "latest team". */
+function matchStamp(match) {
+  const raw = match?.startAt || match?.updatedAt || match?.createdAt || 0;
+  const time = new Date(raw).getTime();
+  return {
+    time: Number.isFinite(time) ? time : 0,
+    tie: String(idOf(match) || ""),
+  };
+}
+
+function isNewerStamp(a, b) {
+  if (!b) return true;
+  if (a.time !== b.time) return a.time > b.time;
+  return a.tie >= b.tie;
+}
+
+function playedAtOf(match) {
+  const raw = match?.startAt || match?.updatedAt || match?.createdAt || null;
+  if (!raw) return null;
+  const date = new Date(raw);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+/**
+ * Record that a player appeared for `team` in `match` and keep the row's
+ * public team label on the most recent appearance. Career figures still span
+ * every match; only the displayed team changes, which is the only honest
+ * choice for a player who turned out for more than one side.
+ *
+ * Internal stamps are non-enumerable so a `{ ...row }` or `res.json(row)`
+ * cannot leak implementation details.
+ */
+export function recordTeamAppearance(row, team, match) {
+  if (!row || !team?.id) return row;
+  const stamp = matchStamp(match);
+  const playedAt = playedAtOf(match);
+
+  if (!Array.isArray(row.teamsPlayedFor)) row.teamsPlayedFor = [];
+  const existing = row.teamsPlayedFor.find((entry) => entry.teamId === team.id);
+  if (existing) {
+    const existingTime = existing.lastPlayedAt ? new Date(existing.lastPlayedAt).getTime() : 0;
+    const nextTime = playedAt ? new Date(playedAt).getTime() : 0;
+    if (nextTime >= existingTime) {
+      existing.name = team.name || existing.name;
+      existing.logo = team.logo || existing.logo;
+      existing.lastPlayedAt = playedAt;
+    }
+  } else {
+    row.teamsPlayedFor.push({
+      teamId: team.id,
+      name: team.name || "",
+      logo: team.logo || "",
+      lastPlayedAt: playedAt,
+    });
+  }
+
+  if (!isNewerStamp(stamp, row._teamStamp)) return row;
+  Object.defineProperty(row, "_teamStamp", {
+    value: stamp,
+    writable: true,
+    enumerable: false,
+    configurable: true,
+  });
+  row.teamId = team.id;
+  row.team = team.name || "";
+  row.teamLogo = team.logo || "";
+  return row;
+}
+
+/** Latest team a player represented in one match (batting/bowling/fielding/squad). */
+export function playerTeamInMatch(match, playerId) {
+  const wanted = String(playerId || "");
+  if (!wanted) return null;
+  let found = null;
+
+  for (const innings of inningsForMatch(match)) {
+    const battingTeam = teamForInnings(match, innings, "batting");
+    const fieldingTeam = teamForInnings(match, innings, "fielding");
+    if ((innings.batting || []).some((row) => idOf(row.player) === wanted && !isDidNotBat(row))) {
+      found = battingTeam;
+    }
+    if ((innings.bowling || []).some((row) => idOf(row.player) === wanted)) {
+      found = fieldingTeam;
+    }
+    for (const row of innings.batting || []) {
+      const credit = FIELDING_DISMISSALS[String(row?.dismissalType || "").toLowerCase()];
+      if (credit && idOf(row?.fielder) === wanted) found = fieldingTeam;
+    }
+  }
+  if (found) return found;
+
+  // A selected player who neither batted nor bowled still has a team; this is
+  // only a fallback for presentation (never for counting a match).
+  for (const group of [...(match?.playingXI || []), ...(match?.squad15 || [])]) {
+    if ((group.players || []).some((player) => idOf(player) === wanted)) {
+      return teamRefOf(group.team);
+    }
+  }
+  return null;
+}
+
+/**
+ * Newest appearance first, so a consumer can render "also played for" without
+ * re-implementing the date comparison. The row's `teamId`/`team` already point
+ * at the first entry.
+ */
+function sortAppearances(row) {
+  if (Array.isArray(row?.teamsPlayedFor) && row.teamsPlayedFor.length > 1) {
+    row.teamsPlayedFor.sort((a, b) => {
+      const aTime = a.lastPlayedAt ? new Date(a.lastPlayedAt).getTime() : 0;
+      const bTime = b.lastPlayedAt ? new Date(b.lastPlayedAt).getTime() : 0;
+      return bTime - aTime || String(a.teamId).localeCompare(String(b.teamId));
+    });
+  }
+  return row;
+}
+
+export const FIELDING_DISMISSALS = Object.freeze({
+  caught: "catches",
+  stumped: "stumpings",
+  "run out": "runOuts",
+  runout: "runOuts",
+  run_out: "runOuts",
+});
+
+/**
+ * Team represented by each player in their latest match in this result set.
+ * The team is independent of the player's role in the match, so every
+ * leaderboard row for a player who changed teams shows the same latest team.
+ */
+export function latestPlayerTeamAppearances(matches) {
+  const appearances = new Map();
+
+  for (const match of matches || []) {
+    const participants = new Set();
+    for (const innings of inningsForMatch(match)) {
+      for (const row of innings.batting || []) {
+        if (!isDidNotBat(row)) {
+          const playerId = idOf(row.player);
+          if (playerId) participants.add(playerId);
+        }
+        const credit = FIELDING_DISMISSALS[String(row?.dismissalType || "").toLowerCase()];
+        const fielderId = credit ? idOf(row?.fielder) : null;
+        if (fielderId) participants.add(fielderId);
+      }
+      for (const row of innings.bowling || []) {
+        const playerId = idOf(row.player);
+        if (playerId) participants.add(playerId);
+      }
+    }
+
+    for (const playerId of participants) {
+      const team = playerTeamInMatch(match, playerId);
+      if (!team?.id) continue;
+      if (!appearances.has(playerId)) appearances.set(playerId, { teamsPlayedFor: [] });
+      recordTeamAppearance(appearances.get(playerId), team, match);
+    }
+  }
+
+  return appearances;
+}
+
+/** Apply one player's latest match team to all their aggregated role rows. */
+export function applyLatestPlayerTeamAppearances(rows, matches) {
+  const appearances = latestPlayerTeamAppearances(matches);
+  for (const row of rows || []) {
+    const appearance = appearances.get(String(row?.playerId || ""));
+    if (!appearance) continue;
+    row.teamId = appearance.teamId;
+    row.team = appearance.team;
+    row.teamLogo = appearance.teamLogo;
+    row.teamsPlayedFor = [...appearance.teamsPlayedFor];
+  }
 }
 
 function extrasOf(innings) {
@@ -225,28 +465,12 @@ export function computeTournamentStats(input = {}) {
   let totalWides = 0;
   let totalNoBalls = 0;
 
-  // Counts a dismissal as a fielding credit for the non-batting team.
-  const FIELDING_DISMISSALS = {
-    caught: "catches",
-    stumped: "stumpings",
-    "run out": "runOuts",
-  };
-
   const completed = matches.filter(
     (match) =>
       !isDraftMatch(match) &&
       (COMPLETED_STATUSES.includes(String(match?.status || "").toLowerCase()) ||
         COMPLETED_STATUSES.includes(String(match?.status || ""))),
   );
-
-  const teamHintFor = (innings) => {
-    const team = innings?.team;
-    return {
-      teamId: idOf(team),
-      teamName: nameOf(team) || "",
-      teamLogo: (team && typeof team === "object" && team.logo) || "",
-    };
-  };
 
   const ensureTeam = (teamId, name = "", logo = "") => {
     if (!teamId) return null;
@@ -280,26 +504,23 @@ export function computeTournamentStats(input = {}) {
 
   for (const match of completed) {
     const matchId = idOf(match);
-    const matchTeams = (match.teams || [])
-      .filter((team) => team && typeof team === "object")
-      .map((team) => ({ id: idOf(team), name: nameOf(team), logo: team.logo || "" }));
     const winnerId = idOf(match.result?.winner);
     const resultType = String(match.result?.resultType || "").toLowerCase();
     const matchTeamIds = new Set();
 
     for (const innings of inningsForMatch(match)) {
-      const hint = teamHintFor(innings);
-      // The fielding side is the match team that is not batting this innings.
-      const fieldingTeam =
-        matchTeams.find((team) => team.id && team.id !== hint.teamId) ||
-        matchTeams[0] || { id: null, name: "", logo: "" };
+      // Batting side comes from the innings itself. The fixture order is NOT a
+      // reliable hint: a manual scorecard stores innings in fixture order, so
+      // the side that batted first can be `teams[1]`.
+      const battingTeam = teamForInnings(match, innings, "batting");
+      const fieldingTeam = teamForInnings(match, innings, "fielding");
       const totals = inningsTotals(innings);
 
-      if (hint.teamId) {
-        matchTeamIds.add(hint.teamId);
-        ensureTeam(hint.teamId, hint.teamName, hint.teamLogo);
+      if (battingTeam.id) {
+        matchTeamIds.add(battingTeam.id);
+        ensureTeam(battingTeam.id, battingTeam.name, battingTeam.logo);
       }
-      if (fieldingTeam.id) {
+      if (fieldingTeam.id && fieldingTeam.id !== battingTeam.id) {
         matchTeamIds.add(fieldingTeam.id);
         ensureTeam(fieldingTeam.id, fieldingTeam.name, fieldingTeam.logo);
       }
@@ -312,25 +533,26 @@ export function computeTournamentStats(input = {}) {
       totalWides += totals.wides;
       totalNoBalls += totals.noBalls;
 
-      const battingTeam = hint.teamId ? teams.get(hint.teamId) : null;
-      if (battingTeam) {
-        battingTeam.runsFor += totals.runs;
-        battingTeam.wicketsLost += totals.wickets;
-        battingTeam.fours += totals.fours;
-        battingTeam.sixes += totals.sixes;
-        battingTeam.ballsFaced += totals.balls;
-        if (battingTeam.highestTotal == null || totals.runs > battingTeam.highestTotal) {
-          battingTeam.highestTotal = totals.runs;
+      const battingTeamRow = battingTeam.id ? teams.get(battingTeam.id) : null;
+      if (battingTeamRow) {
+        battingTeamRow.runsFor += totals.runs;
+        battingTeamRow.wicketsLost += totals.wickets;
+        battingTeamRow.fours += totals.fours;
+        battingTeamRow.sixes += totals.sixes;
+        battingTeamRow.ballsFaced += totals.balls;
+        if (battingTeamRow.highestTotal == null || totals.runs > battingTeamRow.highestTotal) {
+          battingTeamRow.highestTotal = totals.runs;
         }
-        if (battingTeam.lowestTotal == null || totals.runs < battingTeam.lowestTotal) {
-          battingTeam.lowestTotal = totals.runs;
+        if (battingTeamRow.lowestTotal == null || totals.runs < battingTeamRow.lowestTotal) {
+          battingTeamRow.lowestTotal = totals.runs;
         }
       }
-      const bowlingTeam = fieldingTeam.id ? teams.get(fieldingTeam.id) : null;
-      if (bowlingTeam && bowlingTeam.teamId !== hint.teamId) {
-        bowlingTeam.runsAgainst += totals.runs;
-        bowlingTeam.wickets += totals.wickets;
-        bowlingTeam.ballsBowled += totals.balls;
+      const bowlingTeamRow =
+        fieldingTeam.id && fieldingTeam.id !== battingTeam.id ? teams.get(fieldingTeam.id) : null;
+      if (bowlingTeamRow) {
+        bowlingTeamRow.runsAgainst += totals.runs;
+        bowlingTeamRow.wickets += totals.wickets;
+        bowlingTeamRow.ballsBowled += totals.balls;
       }
 
       for (const entry of innings.batting || []) {
@@ -344,9 +566,10 @@ export function computeTournamentStats(input = {}) {
             playerId: key,
             name: player.name || "",
             imageUrl: player.imageUrl || "",
-            teamId: hint.teamId,
-            team: hint.teamName,
-            teamLogo: hint.teamLogo,
+            teamId: battingTeam.id,
+            team: battingTeam.name,
+            teamLogo: battingTeam.logo,
+            teamsPlayedFor: [],
             innings: 0,
             runs: 0,
             balls: 0,
@@ -360,6 +583,7 @@ export function computeTournamentStats(input = {}) {
           });
         }
         const row = batting.get(key);
+        recordTeamAppearance(row, battingTeam, match);
         const runs = Number(entry.runs) || 0;
         row.innings += 1;
         row.runs += runs;
@@ -380,9 +604,9 @@ export function computeTournamentStats(input = {}) {
           playerId: key,
           name: row.name,
           imageUrl: row.imageUrl,
-          teamId: hint.teamId,
-          team: hint.teamName,
-          teamLogo: hint.teamLogo,
+          teamId: battingTeam.id,
+          team: battingTeam.name,
+          teamLogo: battingTeam.logo,
           matchId,
           runs,
           balls: Number(entry.balls) || 0,
@@ -404,6 +628,7 @@ export function computeTournamentStats(input = {}) {
               teamId: fieldingTeam.id,
               team: fieldingTeam.name,
               teamLogo: fieldingTeam.logo,
+              teamsPlayedFor: [],
               matches: 0,
               catches: 0,
               stumpings: 0,
@@ -412,6 +637,7 @@ export function computeTournamentStats(input = {}) {
             });
           }
           const fRow = fielding.get(fielderId);
+          recordTeamAppearance(fRow, fieldingTeam, match);
           fRow[credit] += 1;
           fRow._matchIds.add(matchId || `anon-${fieldingTeam.id}`);
         }
@@ -426,14 +652,16 @@ export function computeTournamentStats(input = {}) {
             playerId: key,
             name: player.name || "",
             imageUrl: player.imageUrl || "",
-            teamId: hint.teamId,
-            team: hint.teamName,
-            teamLogo: hint.teamLogo,
+            teamId: fieldingTeam.id,
+            team: fieldingTeam.name,
+            teamLogo: fieldingTeam.logo,
+            teamsPlayedFor: [],
             innings: 0,
             balls: 0,
             maidens: 0,
             runs: 0,
             wickets: 0,
+            dotBalls: 0,
             wides: 0,
             noBalls: 0,
             bestWickets: 0,
@@ -444,6 +672,7 @@ export function computeTournamentStats(input = {}) {
           });
         }
         const row = bowling.get(key);
+        recordTeamAppearance(row, fieldingTeam, match);
         const balls =
           Number.isFinite(Number(entry.balls)) && Number(entry.balls) > 0
             ? Number(entry.balls)
@@ -457,6 +686,7 @@ export function computeTournamentStats(input = {}) {
         row.maidens += Number(entry.maidens) || 0;
         row.runs += runs;
         row.wickets += wickets;
+        row.dotBalls += Number(entry.dotBalls ?? entry.dots) || 0;
         row.wides += entryWides;
         row.noBalls += entryNoBalls;
         if (wickets >= 5) row.fiveWickets += 1;
@@ -474,9 +704,9 @@ export function computeTournamentStats(input = {}) {
           playerId: key,
           name: row.name,
           imageUrl: row.imageUrl,
-          teamId: hint.teamId,
-          team: hint.teamName,
-          teamLogo: hint.teamLogo,
+          teamId: fieldingTeam.id,
+          team: fieldingTeam.name,
+          teamLogo: fieldingTeam.logo,
           matchId,
           wickets,
           runs,
@@ -503,34 +733,39 @@ export function computeTournamentStats(input = {}) {
     }
   }
 
+  applyLatestPlayerTeamAppearances(
+    [...batting.values(), ...bowling.values(), ...fielding.values()],
+    completed,
+  );
+
   const battingRows = [...batting.values()].map((row) => {
     const outs = row.innings - row.notOuts;
-    return {
+    return sortAppearances({
       ...row,
       average: outs > 0 ? Number((row.runs / outs).toFixed(2)) : null,
       strikeRate: row.balls > 0 ? Number(((row.runs / row.balls) * 100).toFixed(2)) : null,
       highestText: row.highestNotOut ? `${row.highest}*` : String(row.highest),
-    };
+    });
   });
 
   const bowlingRows = [...bowling.values()].map((row) => {
     const oversValue = row.balls / 6;
-    return {
+    return sortAppearances({
       ...row,
       oversText: oversText(row.balls),
       average: row.wickets > 0 ? Number((row.runs / row.wickets).toFixed(2)) : null,
       economy: oversValue > 0 ? Number((row.runs / oversValue).toFixed(2)) : null,
       strikeRate: row.wickets > 0 ? Number(((row.balls / row.wickets) * 6).toFixed(1)) : null,
-    };
+    });
   });
 
   const fieldingRows = [...fielding.values()].map((row) => {
     const { _matchIds, ...rest } = row;
-    return {
+    return sortAppearances({
       ...rest,
       matches: _matchIds instanceof Set ? _matchIds.size : row.matches || 0,
       total: row.catches + row.stumpings + row.runOuts,
-    };
+    });
   });
 
   // One row per team that appears in a completed match. `runs`/`wickets` are the
@@ -678,7 +913,7 @@ export async function gatherTournamentStats(tournament, opts = {}) {
     manualDraft: { $ne: true },
   })
     .select(
-      "status result manOfMatch teams innings.team innings.runs innings.wickets innings.balls innings.overs " +
+      "status startAt updatedAt createdAt result manOfMatch teams innings.team innings.runs innings.wickets innings.balls innings.overs " +
         "innings.extras innings.batting.player innings.batting.runs " +
         "innings.batting.balls innings.batting.fours innings.batting.sixes innings.batting.isOut " +
         "innings.batting.dismissalType innings.batting.fielder innings.bowling.player innings.bowling.balls " +

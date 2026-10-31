@@ -8,6 +8,14 @@ import {
   hiddenTeamIds,
   reservedNamesMongoClause,
 } from '../utils/publicProjection.js';
+import {
+  FIELDING_DISMISSALS,
+  applyLatestPlayerTeamAppearances,
+  isDidNotBat,
+  isDraftMatch,
+  recordTeamAppearance,
+  teamForInnings,
+} from '../services/tournamentStats.js';
 
 const idOf = (value) => String(value?._id || value || "");
 const sameId = (a, b) => idOf(a) && idOf(a) === idOf(b);
@@ -100,17 +108,31 @@ export const aggregateSeriesStats = (matches) => {
   const batting = new Map();
   const bowling = new Map();
   const fielding = new Map();
+  const eligibleMatches = matches.filter((match) =>
+    !isDraftMatch(match) &&
+    ["completed", "live", "innings_break"].includes(normalStatus(match.status)),
+  );
 
-  matches.filter((match) => normalStatus(match.status) === 'completed' || normalStatus(match.status) === 'live' || normalStatus(match.status) === 'innings_break').forEach((match) => {
+  eligibleMatches.forEach((match) => {
     (match.innings || []).forEach((innings) => {
-      const battingTeam = teamName(innings.team);
+      // Batting side is the innings' team. Bowling/fielding side is the OTHER
+      // team in the fixture: the innings' team is the side that was batting,
+      // never the side that bowled. Fixture order is deliberately not used.
+      const battingRef = teamForInnings(match, innings, 'batting');
+      const fieldingRef = teamForInnings(match, innings, 'fielding');
+      const battingTeam = battingRef.name || teamName(innings.team);
+      const fieldingTeam = fieldingRef.name || battingTeam;
       (innings.batting || []).forEach((row) => {
+        if (isDidNotBat(row)) return;
         const key = idOf(row.player);
         if (!key) return;
         const current = batting.get(key) || {
           playerId: key,
           name: playerName(row.player),
           team: battingTeam,
+          teamId: battingRef.id,
+          teamLogo: battingRef.logo,
+          teamsPlayedFor: [],
           matches: 0,
           innings: 0,
           notOuts: 0,
@@ -122,6 +144,7 @@ export const aggregateSeriesStats = (matches) => {
           fifties: 0,
           hundreds: 0
         };
+        recordTeamAppearance(current, battingRef, match);
         current.matches += 1;
         current.innings += 1;
         current.notOuts += row.isOut ? 0 : 1;
@@ -136,24 +159,26 @@ export const aggregateSeriesStats = (matches) => {
       });
 
       (innings.batting || []).forEach((row) => {
-        if (row.dismissalType && row.fielder) {
+        const credit = FIELDING_DISMISSALS[String(row.dismissalType || '').toLowerCase()];
+        if (credit && row.fielder) {
           const fielderKey = idOf(row.fielder);
           if (!fielderKey) return;
           const fielderName = row.fielder?.name || playerName(row.fielder) || "Unknown";
-          const fielderTeam = teamName(innings.team);
           const current = fielding.get(fielderKey) || {
             playerId: fielderKey,
             name: fielderName,
-            team: fielderTeam,
+            team: fieldingTeam,
+            teamId: fieldingRef.id,
+            teamLogo: fieldingRef.logo,
+            teamsPlayedFor: [],
             matches: 0,
             catches: 0,
             stumpings: 0,
             runOuts: 0
           };
+          recordTeamAppearance(current, fieldingRef, match);
           current.matches += 1;
-          if (row.dismissalType === "caught") current.catches += 1;
-          else if (row.dismissalType === "stumped") current.stumpings += 1;
-          else if (row.dismissalType === "run out") current.runOuts += 1;
+          current[credit] += 1;
           fielding.set(fielderKey, current);
         }
       });
@@ -164,7 +189,10 @@ export const aggregateSeriesStats = (matches) => {
         const current = bowling.get(key) || {
           playerId: key,
           name: playerName(row.player),
-          team: battingTeam,
+          team: fieldingTeam,
+          teamId: fieldingRef.id,
+          teamLogo: fieldingRef.logo,
+          teamsPlayedFor: [],
           matches: 0,
           balls: 0,
           overs: "0.0",
@@ -178,6 +206,7 @@ export const aggregateSeriesStats = (matches) => {
           fourWickets: 0,
           fiveWickets: 0
         };
+        recordTeamAppearance(current, fieldingRef, match);
         current.matches += 1;
         current.balls += number(row.balls);
         current.maidens += number(row.maidens);
@@ -196,6 +225,11 @@ export const aggregateSeriesStats = (matches) => {
       });
     });
   });
+
+  applyLatestPlayerTeamAppearances(
+    [...batting.values(), ...bowling.values(), ...fielding.values()],
+    eligibleMatches,
+  );
 
   const topRunScorers = Array.from(batting.values()).map((row) => ({
     ...row,

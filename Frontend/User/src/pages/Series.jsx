@@ -160,15 +160,28 @@ export default function Series() {
 
     matches.forEach(match => {
       if (!match.innings) return;
+      // Batting belongs to the innings' team; bowling and fielding belong to the
+      // OTHER side of the fixture. Fixture order cannot be used: a manual
+      // scorecard stores innings in fixture order, so the batting side can be
+      // teams[1]. This mirrors the backend tournament/series aggregators.
+      const matchTeams = (match.teams || []).map(team => ({
+        id: team?._id || team || null,
+        name: team?.name || team?.shortName || "Unknown",
+      }));
       match.innings.forEach(innings => {
+        const battingTeam = {
+          id: innings.team?._id || innings.team || null,
+          name: innings.team?.name || innings.team?.shortName || "Unknown",
+        };
+        const fieldingTeam = matchTeams.find(team => team.id && team.id !== battingTeam.id) || battingTeam;
         (innings.batting || []).forEach(b => {
           const key = b.player?._id || b.player;
           if (!battingStats[key]) {
             battingStats[key] = {
               playerId: key,
               name: b.player?.name || "Unknown",
-              team: innings.team?.name || "Unknown",
-              teamId: innings.team?._id,
+              team: battingTeam.name,
+              teamId: battingTeam.id,
               matches: 0, innings: 0, runs: 0, balls: 0, fours: 0, sixes: 0,
               highest: 0, notOuts: 0, average: 0, strikeRate: 0, fifties: 0, hundreds: 0
             };
@@ -191,7 +204,8 @@ export default function Series() {
               fieldingStats[fk] = {
                 playerId: fk,
                 name: b.fielder?.name || "Unknown",
-                team: innings.team?.name || "Unknown",
+                team: fieldingTeam.name,
+                teamId: fieldingTeam.id,
                 matches: 0, catches: 0, stumpings: 0, runOuts: 0
               };
             }
@@ -209,8 +223,8 @@ export default function Series() {
             bowlingStats[key] = {
               playerId: key,
               name: b.player?.name || "Unknown",
-              team: innings.team?.name || "Unknown",
-              teamId: innings.team?._id,
+              team: fieldingTeam.name,
+              teamId: fieldingTeam.id,
               matches: 0, overs: 0, balls: 0, maidens: 0, runs: 0, wickets: 0,
               average: 0, economy: 0, best: "0/0", fourWickets: 0, fiveWickets: 0
             };

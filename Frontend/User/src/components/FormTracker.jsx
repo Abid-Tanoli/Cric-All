@@ -10,26 +10,30 @@ const FormTracker = ({ recentMatches, playerId }) => {
   const lastInnings = recentMatches
     .slice(0, 10)
     .map((m) => {
-      const myBat = (m.batting || []).find(
-        (b) => b.player?._id === playerId || b.player === playerId
-      );
-      const myBowl = (m.bowling || []).find(
-        (b) => b.player?._id === playerId || b.player === playerId
-      );
-      const opposition = m.teams?.find(
-        (t) => t._id !== (m.teamId || m.teams?.[0]?._id)
-      );
+      const myBat = Array.isArray(m.batting)
+        ? m.batting.find(
+            (b) => b.player?._id === playerId || b.player === playerId
+          )
+        : m.batting;
+      const myBowl = Array.isArray(m.bowling)
+        ? m.bowling.find(
+            (b) => b.player?._id === playerId || b.player === playerId
+          )
+        : m.bowling;
+      const opposition =
+        m.opposition ||
+        m.teams?.find((t) => (t._id || t) !== (m.teamId || m.playerTeam?._id || m.teams?.[0]?._id));
       return {
         matchId: m._id,
         runs: myBat?.runs || 0,
-        balls: myBat?.ballsFaced || 0,
+        balls: myBat?.ballsFaced ?? myBat?.balls ?? 0,
         wickets: myBowl?.wickets || 0,
         economy: myBowl?.balls
           ? ((myBowl.runs || 0) / (myBowl.balls / 6)).toFixed(1)
           : null,
         opposition: opposition?.shortName || opposition?.name || "?",
-        result: m.result,
-        playerTeam: m.teamId || m.teams?.[0]?._id,
+        result: m.resultForPlayer || m.result,
+        playerTeam: m.teamId || m.playerTeam?._id || m.teams?.[0]?._id,
       };
     })
     .reverse();
