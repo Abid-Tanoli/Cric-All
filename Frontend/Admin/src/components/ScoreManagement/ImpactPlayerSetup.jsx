@@ -13,6 +13,7 @@ const idOf = (value) => String(value?._id || value || '');
 
 const ImpactPlayerSetup = ({ match, matchId }) => {
     const [matchData, setMatchData] = useState(null);
+    const [squadsData, setSquadsData] = useState(null);
     const [loading, setLoading] = useState(true);
     const [nominee, setNominee] = useState({}); // teamId -> playerId (12th man)
     const [toReplace, setToReplace] = useState({}); // teamId -> playerId (XI out)
@@ -22,11 +23,16 @@ const ImpactPlayerSetup = ({ match, matchId }) => {
 
     const loadMatch = useCallback(async () => {
         setLoading(true);
+        setError('');
         try {
-            const res = await api.get(`/matches/${matchId}`);
-            setMatchData(res.data);
+            const [matchRes, squadsRes] = await Promise.all([
+                api.get(`/matches/${matchId}`),
+                api.get(`/matches/${matchId}/squads`),
+            ]);
+            setMatchData(matchRes.data);
+            setSquadsData(squadsRes.data);
         } catch (err) {
-            setError('Failed to load match data.');
+            setError(err.response?.data?.message || err.message || 'Failed to load full squad data.');
         } finally {
             setLoading(false);
         }
@@ -87,7 +93,8 @@ const ImpactPlayerSetup = ({ match, matchId }) => {
 
         const xi = matchData?.playingXI?.find((x) => idOf(x.team) === teamId)?.players || [];
         const xiIds = xi.map(idOf);
-        const squad = team.players || [];
+        const squadEntry = (squadsData?.teams || []).find((row) => idOf(row.team) === teamId);
+        const squad = squadEntry?.squad || [];
         const twelfthEntry = matchData?.twelfthMan?.find((t) => idOf(t.team) === teamId);
         const impactEntry = matchData?.impactPlayers?.find((i) => idOf(i.team) === teamId);
 
