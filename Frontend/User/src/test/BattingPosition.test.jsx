@@ -71,13 +71,22 @@ describe("Public squad and XI rendering", () => {
   });
 
   it("shows positions beside the public Playing XI names", () => {
+    const playingXI = [
+      withPosition,
+      withoutPosition,
+      ...Array.from({ length: 9 }, (_, index) => ({
+        _id: `p${index + 3}`,
+        name: `Player ${index + 3}`,
+        playingRole: "Batsman",
+      })),
+    ];
     const match = {
       _id: "m1",
       teams: [{ _id: "t1", name: "Alpha XI" }],
       playingXI: [
         {
           team: { _id: "t1", name: "Alpha XI" },
-          players: [withPosition, withoutPosition],
+          players: playingXI,
         },
       ],
     };
