@@ -3,6 +3,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { fetchMatches } from '../store/slices/matchesSlice';
 import { initSocket } from '../store/socket';
 import { Link, useNavigate } from 'react-router-dom';
+import { formatMatchDate, formatMatchTime, teamShortName } from '../utils/teamDisplay';
 
 export default function LiveScores() {
     const dispatch = useDispatch();
@@ -34,6 +35,14 @@ export default function LiveScores() {
         return matchDate >= tomorrow && matchDate < new Date(tomorrow.getTime() + 86400000);
     });
 
+    // Anything still upcoming that is not covered by "today" or "tomorrow" stays
+    // reachable here. This includes an overdue fixture whose date has passed but
+    // which has not been started yet.
+    const otherUpcomingMatches = matches.filter(m => {
+        const isUpcoming = m.status === 'upcoming' || m.status === 'scheduled';
+        return isUpcoming && !todayMatches.includes(m) && !tomorrowMatches.includes(m);
+    });
+
     useEffect(() => {
         dispatch(fetchMatches());
         const socket = initSocket();
@@ -50,15 +59,9 @@ export default function LiveScores() {
         navigate('/admin/score/' + match._id);
     };
 
-    const formatDate = (date) => {
-        const d = new Date(date);
-        return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-    };
+    const formatDate = (date) => formatMatchDate(date);
 
-    const formatTime = (date) => {
-        const d = new Date(date);
-        return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-    };
+    const formatTime = (date) => formatMatchTime(date);
 
     // MAIN LIVE SCORES DASHBOARD (professional match-center layout)
     return (
@@ -129,7 +132,7 @@ export default function LiveScores() {
                                                             <div key={idx} className="flex items-center justify-between">
                                                                 <div className="flex items-center gap-3">
                                                                     {team.logo && <img src={team.logo} alt={team.name} className="w-6 h-6 rounded-full object-cover" />}
-                                                                    <span className="font-bold text-sm text-slate-800 uppercase">{team.shortName || team.name}</span>
+                                                                    <span className="font-bold text-sm text-slate-800 uppercase">{teamShortName(team)}</span>
                                                                 </div>
                                                                 <span className="font-black text-sm text-slate-800">
                                                                     {inn.runs || 0}/{inn.wickets || 0} <span className="text-xs text-slate-500 font-bold">({inn.overs || 0}.{(inn.balls || 0) % 6})</span>
@@ -180,7 +183,7 @@ export default function LiveScores() {
                                                             <div key={idx} className="flex items-center justify-between">
                                                                 <div className="flex items-center gap-3">
                                                                     {team.logo && <img src={team.logo} alt={team.name} className="w-6 h-6 rounded-full object-cover" />}
-                                                                    <span className="font-bold text-sm text-slate-800 uppercase">{team.shortName || team.name}</span>
+                                                                    <span className="font-bold text-sm text-slate-800 uppercase">{teamShortName(team)}</span>
                                                                     {match.innings?.[idx]?.batting?.filter(b => !b.isOut).length > 0 && (
                                                                         <span className="text-[10px] text-blue-600 font-bold">*</span>
                                                                     )}
@@ -194,7 +197,7 @@ export default function LiveScores() {
                                                 </div>
                                                 {match.tossWinner && (
                                                     <p className="mt-2 text-xs text-slate-500 font-bold">
-                                                        Toss: {match.teams?.find(t => t._id === match.tossWinner)?.shortName || match.tossWinner} elected to {match.tossDecision}
+                                                        Toss: {teamShortName(match.teams?.find(t => String(t._id) === String(match.tossWinner?._id || match.tossWinner)))} elected to {match.tossDecision}
                                                     </p>
                                                 )}
                                                 <div className="mt-3 flex gap-2">
@@ -250,7 +253,7 @@ export default function LiveScores() {
                                                     {match.teams?.map((team, idx) => (
                                                         <div key={idx} className="flex flex-col items-center flex-1">
                                                             {team.logo && <img src={team.logo} alt={team.name} className="w-12 h-12 rounded-full object-cover mb-2" />}
-                                                            <span className="font-bold text-sm text-slate-800 uppercase text-center">{team.shortName || team.name}</span>
+                                                            <span className="font-bold text-sm text-slate-800 uppercase text-center">{teamShortName(team)}</span>
                                                         </div>
                                                     ))}
                                                     <span className="text-2xl font-black text-slate-300">VS</span>
@@ -260,13 +263,13 @@ export default function LiveScores() {
                                                 </p>
                                                 <div className="mt-3 flex gap-2">
                                                     <button
-                                                        onClick={() => navigate('/admin/score')}
+                                                        onClick={() => navigate(`/admin/score/${match._id}`)}
                                                         className="flex-1 bg-[#031d44] hover:bg-slate-800 text-white py-2 rounded-lg font-black text-xs uppercase tracking-widest"
                                                     >
                                                         Manage Match
                                                     </button>
                                                     <button
-                                                        onClick={() => navigate('/admin/events')}
+                                                        onClick={() => navigate(`/admin/score/${match._id}`)}
                                                         className="px-4 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg font-black text-xs uppercase tracking-widest"
                                                     >
                                                         Setup
@@ -295,7 +298,7 @@ export default function LiveScores() {
                                             <div className="flex items-center justify-between mb-3">
                                                 <div>
                                                     <p className="font-bold text-sm text-slate-800">
-                                                        {match.teams?.[0]?.shortName || 'Team A'} vs {match.teams?.[1]?.shortName || 'Team B'}
+                                                        {teamShortName(match.teams?.[0])} vs {teamShortName(match.teams?.[1])}
                                                     </p>
                                                     <p className="text-xs text-slate-500">{match.matchSubcategory || match.series}</p>
                                                 </div>
@@ -303,13 +306,57 @@ export default function LiveScores() {
                                             </div>
                                             <div className="flex gap-2">
                                                 <button
-                                                    onClick={() => navigate('/admin/score')}
+                                                    onClick={() => navigate(`/admin/score/${match._id}`)}
                                                     className="flex-1 bg-[#031d44] hover:bg-slate-800 text-white py-2 rounded-lg font-black text-xs uppercase tracking-widest"
                                                 >
                                                     Manage Match
                                                 </button>
                                                 <button
-                                                    onClick={() => navigate('/admin/events')}
+                                                    onClick={() => navigate(`/admin/score/${match._id}`)}
+                                                    className="px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 py-2 rounded-lg font-black text-xs uppercase tracking-widest"
+                                                >
+                                                    Setup
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* OTHER UPCOMING (past-date or further out) */}
+                        {(view === 'all' || view === 'upcoming') && otherUpcomingMatches.length > 0 && (
+                            <div className="mb-10">
+                                <h2 className="text-xl font-black text-[#031d44] uppercase tracking-tight mb-4 flex items-center gap-2">
+                                    <span className="w-2 h-6 bg-amber-500 rounded-full"></span>
+                                    Other Upcoming
+                                </h2>
+                                <div className="space-y-3">
+                                    {otherUpcomingMatches.map(match => (
+                                        <div
+                                            key={match._id}
+                                            className="bg-white rounded-xl shadow-md border border-amber-200 p-4"
+                                        >
+                                            <div className="flex items-center justify-between mb-3 gap-3">
+                                                <div className="min-w-0">
+                                                    <p className="font-bold text-sm text-slate-800">
+                                                        {teamShortName(match.teams?.[0])} vs {teamShortName(match.teams?.[1])}
+                                                    </p>
+                                                    <p className="text-xs text-slate-500">{formatDate(match.startAt)} &bull; {formatTime(match.startAt)}</p>
+                                                </div>
+                                                <span className="shrink-0 px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full text-[9px] font-bold uppercase">
+                                                    Awaiting start
+                                                </span>
+                                            </div>
+                                            <div className="flex gap-2">
+                                                <button
+                                                    onClick={() => navigate(`/admin/score/${match._id}`)}
+                                                    className="flex-1 bg-[#031d44] hover:bg-slate-800 text-white py-2 rounded-lg font-black text-xs uppercase tracking-widest"
+                                                >
+                                                    Manage Match
+                                                </button>
+                                                <button
+                                                    onClick={() => navigate(`/admin/score/${match._id}`)}
                                                     className="px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 py-2 rounded-lg font-black text-xs uppercase tracking-widest"
                                                 >
                                                     Setup

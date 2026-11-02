@@ -288,6 +288,12 @@ test("apply creates exactly one normal final fixture with the pinned time, venue
   assert.equal(final.innings.length, 2);
   assert.equal(final.result?.winner, undefined);
   assert.equal(final.tossWinner, undefined);
+  // Creating a fixture must never invent a team sheet. The scorer's explicit
+  // save is the only thing that fills these arrays.
+  assert.deepEqual(final.playingXI || [], []);
+  assert.deepEqual(final.squad15 || [], []);
+  assert.deepEqual(final.twelfthMan || [], []);
+  assert.deepEqual(final.impactPlayers || [], []);
 
   const fresh = await Tournament.findById(tournament._id).lean();
   assert.equal(fresh.matches.length, 3, "the final is linked to the tournament");

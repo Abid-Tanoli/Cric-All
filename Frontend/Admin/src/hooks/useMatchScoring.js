@@ -15,6 +15,9 @@ export default function useMatchScoring() {
     const navigate = useNavigate();
     const [matches, setMatches] = useState([]);
     const [selectedMatch, setSelectedMatch] = useState(null);
+    const [matchSquads, setMatchSquads] = useState(null);
+    const [matchSquadsLoading, setMatchSquadsLoading] = useState(false);
+    const [matchSquadsError, setMatchSquadsError] = useState('');
     const [loading, setLoading] = useState(false);
     const [showSettings, setShowSettings] = useState(false);
 
@@ -101,6 +104,8 @@ export default function useMatchScoring() {
     const [setupState, setSetupState] = useState({
         team1XI: [],
         team2XI: [],
+        team1TwelfthMan: '',
+        team2TwelfthMan: '',
         matchFormat: 'T20',
         totalOvers: 20,
         powerplayEnabled: true,
@@ -183,6 +188,8 @@ export default function useMatchScoring() {
         return selectedMatch.squad15?.find(s => String(s.team?._id || s.team) === String(teamId)) || null;
     }
 
+    const twelfthManRule = matchSquads?.rules?.twelfthMan || null;
+
     const battingXI = useMemo(() => getSquad(battingTeamId), [selectedMatch, battingTeamId]);
     const bowlingXI = useMemo(() => getSquad(bowlingTeamTeam?._id), [selectedMatch, bowlingTeamTeam]);
     const battingPlayingXI = useMemo(() => getPlayingXI(battingTeamId), [selectedMatch, battingTeamId]);
@@ -257,15 +264,40 @@ export default function useMatchScoring() {
         }
     };
 
+    const loadMatchSquads = async (id) => {
+        setMatchSquads(null);
+        setMatchSquadsLoading(true);
+        setMatchSquadsError('');
+        try {
+            const headers = token ? { Authorization: `Bearer ${token}` } : {};
+            const squadsRes = await axios.get(`${API_BASE_URL}/matches/${id}/squads`, { headers });
+            setMatchSquads(squadsRes.data);
+            return squadsRes.data;
+        } catch (err) {
+            console.error('Failed to load full squads:', err);
+            setMatchSquadsError(err.response?.data?.message || err.message || 'Request failed');
+            return null;
+        } finally {
+            setMatchSquadsLoading(false);
+        }
+    };
+
     const handleSelectMatch = async (id) => {
         try {
             setLoading(true);
+            setMatchSquads(null);
+            setMatchSquadsError('');
             const headers = token ? { Authorization: `Bearer ${token}` } : {};
             const res = await axios.get(`${API_BASE_URL}/matches/${id}`, { headers });
             setSelectedMatch(res.data);
+            loadMatchSquads(id);
 
             const t1XI = res.data.playingXI?.find(p => (p.team?._id || p.team) === res.data.teams[0]?._id)?.players?.map(p => p._id || p) || [];
             const t2XI = res.data.playingXI?.find(p => (p.team?._id || p.team) === res.data.teams[1]?._id)?.players?.map(p => p._id || p) || [];
+            const twelfthFor = (teamId) => {
+                const entry = (res.data.twelfthMan || []).find(t => String(t.team?._id || t.team) === String(teamId));
+                return String(entry?.player?._id || entry?.player || '');
+            };
             const curInn = res.data.innings[res.data.currentInnings];
             const strikeId = curInn?.onStrikeBatsman?._id || curInn?.onStrikeBatsman || '';
             const bat1Id = curInn?.currentBatsman1?._id || curInn?.currentBatsman1 || '';
@@ -276,6 +308,8 @@ export default function useMatchScoring() {
                 ...prev,
                 team1XI: t1XI,
                 team2XI: t2XI,
+                team1TwelfthMan: twelfthFor(res.data.teams[0]?._id),
+                team2TwelfthMan: twelfthFor(res.data.teams[1]?._id),
                 matchFormat: res.data.matchType || prev.matchFormat,
                 totalOvers: res.data.totalOvers || prev.totalOvers,
                 powerplayEnabled: res.data.powerplayConfig?.enabled ?? prev.powerplayEnabled,
@@ -626,17 +660,64 @@ export default function useMatchScoring() {
             showToast("Please select exactly 11 players for both teams.", 'warning');
             return;
         }
+
+        const teams = [
+            { id: selectedMatch.teams[0]._id, xi: setupState.team1XI, twelfth: setupState.team1TwelfthMan },
+            { id: selectedMatch.teams[1]._id, xi: setupState.team2XI, twelfth: setupState.team2TwelfthMan },
+        ];
+
+        const twelfthInXI = teams.find((team) =>
+            team.twelfth && team.xi.some((id) => String(id?._id || id) === String(team.twelfth))
+        );
+        if (twelfthInXI) {
+            showToast("The 12th Man must be outside the Playing XI.", 'warning');
+            return;
+        }
+
         try {
-            await axios.put(`${API_BASE_URL}/matches/${selectedMatch._id}/playing-xi`, { teamId: selectedMatch.teams[0]._id, players: setupState.team1XI }, { headers: { Authorization: `Bearer ${token}` } });
-            await axios.put(`${API_BASE_URL}/matches/${selectedMatch._id}/playing-xi`, { teamId: selectedMatch.teams[1]._id, players: setupState.team2XI }, { headers: { Authorization: `Bearer ${token}` } });
-            const res = await axios.get(`${API_BASE_URL}/matches/${selectedMatch._id}`);
+            const headers = { Authorization: `Bearer ${token}` };
+            for (const team of teams) {
+                await axios.put(`${API_BASE_URL}/matches/${selectedMatch._id}/playing-xi`, { teamId: team.id, players: team.xi }, { headers });
+            }
+            for (const team of teams) {
+                const existing = (selectedMatch.twelfthMan || []).find(
+                    (entry) => String(entry.team?._id || entry.team) === String(team.id)
+                );
+                const existingId = String(existing?.player?._id || existing?.player || '');
+                // Save a new nomination, clear an old one, or leave it untouched.
+                if (team.twelfth || existingId) {
+                    await axios.put(`${API_BASE_URL}/matches/${selectedMatch._id}/twelfth-man`, {
+                        teamId: team.id,
+                        playerId: team.twelfth || null,
+                    }, { headers });
+                }
+            }
+            const [res] = await Promise.all([
+                axios.get(`${API_BASE_URL}/matches/${selectedMatch._id}`),
+                loadMatchSquads(selectedMatch._id),
+            ]);
             setSelectedMatch(res.data);
             checkRoles(res.data);
-            setWizardStep(2);
-            setToast("Playing XI Saved!");
+            setWizardStep(3);
+            setToast("Playing XI and 12th Man saved!");
         } catch (err) {
             showToast(err.response?.data?.message || err.message, 'error');
         }
+    };
+
+    const handleContinueToToss = () => {
+        const bothSaved = [0, 1].every((index) => {
+            const teamId = selectedMatch?.teams?.[index]?._id;
+            const entry = (selectedMatch?.playingXI || []).find(
+                (row) => String(row.team?._id || row.team) === String(teamId)
+            );
+            return entry?.players?.length === 11;
+        });
+        if (!bothSaved) {
+            showToast("Save exactly 11 players for both teams first.", 'warning');
+            return;
+        }
+        setWizardStep(3);
     };
 
     const handleSaveToss = async () => {
@@ -652,7 +733,7 @@ export default function useMatchScoring() {
             const res = await axios.get(`${API_BASE_URL}/matches/${selectedMatch._id}`);
             setSelectedMatch(res.data);
             checkRoles(res.data);
-            setWizardStep(3);
+            setWizardStep(4);
             setToast("Toss Saved!");
         } catch (err) {
             showToast(err.response?.data?.message || err.message, 'error');
@@ -783,6 +864,9 @@ export default function useMatchScoring() {
         matches,
         selectedMatch,
         setSelectedMatch,
+        matchSquads,
+        matchSquadsLoading,
+        matchSquadsError,
         loading,
         showSettings,
         setShowSettings,
@@ -874,6 +958,7 @@ export default function useMatchScoring() {
         setRole,
         handleSaveFormat,
         handleSavePlayingXI,
+        handleContinueToToss,
         handleSaveToss,
         handleSaveOpeners,
         handleTimeout,
@@ -884,6 +969,8 @@ export default function useMatchScoring() {
         getPlayingXI,
         getSquad,
         getSquadMeta,
+        loadMatchSquads,
+        twelfthManRule,
         showToast,
         reloadMatch,
         reverting
