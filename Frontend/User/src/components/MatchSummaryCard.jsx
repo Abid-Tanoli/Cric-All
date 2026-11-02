@@ -1,5 +1,6 @@
 import { useRef } from "react";
 import { toPng } from "html-to-image";
+import { teamShortName } from "../utils/teamDisplay";
 
 const MatchSummaryCard = ({ match }) => {
   const cardRef = useRef(null);
@@ -24,7 +25,9 @@ const MatchSummaryCard = ({ match }) => {
       link.download = `match-summary-${match._id || "card"}.png`;
       link.href = dataUrl;
       link.click();
-    } catch {}
+    } catch {
+      // Ignore a failed download; the UI simply does not save a file.
+    }
   };
 
   const handleShare = async () => {
@@ -35,13 +38,15 @@ const MatchSummaryCard = ({ match }) => {
           text: result?.description || "Match summary",
           url: window.location.href,
         });
-      } catch {}
+      } catch {
+        // The native share sheet was dismissed or is unavailable.
+      }
     } else {
       handleDownload();
     }
   };
 
-  const getShortName = (team) => team?.shortName || team?.name || "?";
+  const getShortName = (team) => teamShortName(team);
   const getLogo = (team) => team?.logo || "";
 
   return (

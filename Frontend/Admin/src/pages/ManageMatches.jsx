@@ -14,6 +14,7 @@ import { useToast } from '../components/Toast';
 import ConfirmModal from '../components/ConfirmModal';
 import api from '../services/api';
 import BattingPositionBadge from '@shared/components/BattingPositionBadge';
+import { formatMatchDate, formatMatchTime } from '../utils/teamDisplay';
 
 const matchTypes = ['T6', 'T8', 'T10', 'T20', 'ODI', 'Test', 'Tape Ball'];
 
@@ -241,7 +242,7 @@ const ManageMatches = () => {
                                     {match.team1?.name || 'TBD'} vs {match.team2?.name || 'TBD'}
                                 </h3>
                                 <p className="text-slate-500 text-sm">
-                                    {new Date(match.startTime).toLocaleString()}
+                                    {formatMatchDate(match.startTime, { year: 'numeric' })} · {formatMatchTime(match.startTime)}
                                 </p>
                             </div>
                             <div className="flex flex-wrap gap-2">

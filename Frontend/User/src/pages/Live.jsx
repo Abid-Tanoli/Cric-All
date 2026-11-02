@@ -1,9 +1,10 @@
-import React, { useEffect, useState, useMemo, useCallback } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { api } from "../services/api";
 import { Link } from "react-router-dom";
 import LiveNavbar from "../components/LiveNavbar";
 import { initSocket } from "../services/socket";
 import LiveMatchesSection from "../components/cricapi/LiveMatchesSection";
+import { teamShortName } from "../utils/teamDisplay";
 
 export default function Live() {
   const [matches, setMatches] = useState([]);
@@ -44,19 +45,6 @@ export default function Live() {
       socket.off("match:scoreUpdate");
     };
   }, [loadMatches]);
-
-  // Group matches by series/event
-  const groupedMatches = useMemo(() => {
-    const groups = {};
-    matches.forEach(match => {
-      const key = match.matchSubcategory || match.series || match.matchCategory || 'Other';
-      if (!groups[key]) {
-        groups[key] = { matches: [], type: match.eventType || 'match' };
-      }
-      groups[key].matches.push(match);
-    });
-    return groups;
-  }, [matches]);
 
   // Filter matches by date
   const today = new Date();
@@ -161,7 +149,7 @@ export default function Live() {
                           <div key={idx} className="flex items-center justify-between">
                             <div className="flex items-center gap-3">
                               {team.logo && <img src={team.logo} alt={team.name} className="w-8 h-8 rounded-full object-cover" />}
-                              <span className="font-bold text-base text-cric-text">{team.shortName || team.name}</span>
+                              <span className="font-bold text-base text-cric-text">{teamShortName(team)}</span>
                             </div>
                             <span className="font-black text-base text-cric-text">
                               {inn.runs || 0}/{inn.wickets || 0} <span className="text-xs text-cric-muted font-bold">({inn.overs || 0}.{(inn.balls || 0) % 6} ov)</span>
@@ -220,7 +208,7 @@ export default function Live() {
                           <div key={idx} className="flex items-center justify-between">
                             <div className="flex items-center gap-3">
                               {team.logo && <img src={team.logo} alt={team.name} className="w-8 h-8 rounded-full object-cover" />}
-                              <span className="font-bold text-base text-cric-text">{team.shortName || team.name}</span>
+                              <span className="font-bold text-base text-cric-text">{teamShortName(team)}</span>
                               {isBatting && <span className="text-green-600 text-sm">*</span>}
                             </div>
                             <span className="font-black text-base text-cric-text">
@@ -232,7 +220,7 @@ export default function Live() {
                     </div>
                     {match.tossWinner && (
                       <p className="mt-3 text-xs text-cric-muted font-bold">
-                        Toss: {match.teams?.find(t => t._id === match.tossWinner)?.shortName || 'Team'} elected to {match.tossDecision}
+                        Toss: {teamShortName(match.teams?.find(t => String(t._id) === String(match.tossWinner?._id || match.tossWinner)))} elected to {match.tossDecision}
                       </p>
                     )}
                     <div className="mt-3 flex gap-2 text-xs text-cric-accent font-bold">
@@ -276,7 +264,7 @@ export default function Live() {
                       {match.teams?.map((team, idx) => (
                         <div key={idx} className="flex flex-col items-center flex-1">
                           {team.logo && <img src={team.logo} alt={team.name} className="w-14 h-14 rounded-full object-cover mb-2" />}
-                          <span className="font-bold text-sm text-cric-text text-center">{team.shortName || team.name}</span>
+                          <span className="font-bold text-sm text-cric-text text-center">{teamShortName(team)}</span>
                         </div>
                       ))}
                       <span className="text-3xl font-black text-cric-muted">VS</span>
@@ -309,7 +297,7 @@ export default function Live() {
                       {match.teams?.map((team, idx) => (
                         <div key={idx} className="flex items-center gap-2">
                           {team.logo && <img src={team.logo} alt={team.name} className="w-10 h-10 rounded-full object-cover" />}
-                          <span className="font-bold text-sm text-cric-text">{team.shortName || team.name}</span>
+                          <span className="font-bold text-sm text-cric-text">{teamShortName(team)}</span>
                         </div>
                       ))}
                     </div>

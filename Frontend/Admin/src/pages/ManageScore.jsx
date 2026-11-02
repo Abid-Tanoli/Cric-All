@@ -15,6 +15,7 @@ import StatsTab from '../components/ScoreManagement/StatsTab';
 import { TABS, getScoreTabPath, formatOvers, FIELD_POSITIONS, WICKET_TYPES } from '../components/ScoreManagement/constants';
 import ScoringMobileBar from '../components/ScoringMobileBar';
 import PlayerOfMatchCard from '../components/ScoreManagement/PlayerOfMatchCard';
+import { formatMatchDate, formatMatchTime, teamShortName } from '../utils/teamDisplay';
 
 export default function ManageScore() {
     const navigate = useNavigate();
@@ -23,6 +24,9 @@ export default function ManageScore() {
         matches,
         selectedMatch,
         setSelectedMatch,
+        matchSquads,
+        matchSquadsLoading,
+        matchSquadsError,
         loading,
         showSettings,
         setShowSettings,
@@ -100,6 +104,7 @@ export default function ManageScore() {
         setRole,
         handleSaveFormat,
         handleSavePlayingXI,
+        handleContinueToToss,
         handleSaveToss,
         handleSaveOpeners,
         reverting,
@@ -108,6 +113,7 @@ export default function ManageScore() {
         handleDeleteMatch,
         getPlayingXI,
         getSquad,
+        twelfthManRule,
         showToast,
         reloadMatch,
         fieldedById,
@@ -233,12 +239,19 @@ export default function ManageScore() {
                 setSelectedMatch={setSelectedMatch}
                 setupState={setupState}
                 setSetupState={setSetupState}
+                setWizardStep={setWizardStep}
                 handleSaveFormat={handleSaveFormat}
                 handleSavePlayingXI={handleSavePlayingXI}
+                handleContinueToToss={handleContinueToToss}
                 handleSaveToss={handleSaveToss}
                 handleSaveOpeners={handleSaveOpeners}
-                battingXI={battingXI}
-                bowlingXI={bowlingXI}
+                matchSquads={matchSquads}
+                matchSquadsLoading={matchSquadsLoading}
+                matchSquadsError={matchSquadsError}
+                onRetryLoadSquads={() => loadMatchSquads(selectedMatch._id)}
+                twelfthManRule={twelfthManRule}
+                battingXI={battingPlayingXI}
+                bowlingXI={bowlingPlayingXI}
             />
         );
     }
@@ -267,11 +280,11 @@ export default function ManageScore() {
                         </div>
                         <div>
                             <p className="text-[9px] font-black text-cric-muted uppercase tracking-widest">Date</p>
-                            <p className="text-sm font-bold text-cric-text">{selectedMatch.startAt ? new Date(selectedMatch.startAt).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) : 'TBD'}</p>
+                            <p className="text-sm font-bold text-cric-text">{formatMatchDate(selectedMatch.startAt, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
                         </div>
                         <div>
                             <p className="text-[9px] font-black text-cric-muted uppercase tracking-widest">Time</p>
-                            <p className="text-sm font-bold text-cric-text">{selectedMatch.startAt ? new Date(selectedMatch.startAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : 'TBD'}</p>
+                            <p className="text-sm font-bold text-cric-text">{formatMatchTime(selectedMatch.startAt)}</p>
                         </div>
                     </div>
                     <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 justify-center">
@@ -360,12 +373,19 @@ export default function ManageScore() {
                 setSelectedMatch={setSelectedMatch}
                 setupState={setupState}
                 setSetupState={setSetupState}
+                setWizardStep={setWizardStep}
                 handleSaveFormat={handleSaveFormat}
                 handleSavePlayingXI={handleSavePlayingXI}
+                handleContinueToToss={handleContinueToToss}
                 handleSaveToss={handleSaveToss}
                 handleSaveOpeners={handleSaveOpeners}
-                battingXI={battingXI}
-                bowlingXI={bowlingXI}
+                matchSquads={matchSquads}
+                matchSquadsLoading={matchSquadsLoading}
+                matchSquadsError={matchSquadsError}
+                onRetryLoadSquads={() => loadMatchSquads(selectedMatch._id)}
+                twelfthManRule={twelfthManRule}
+                battingXI={battingPlayingXI}
+                bowlingXI={bowlingPlayingXI}
             />
         );
     }
@@ -386,7 +406,7 @@ export default function ManageScore() {
                         <div className="mb-5">
                             <p className="text-[10px] font-black uppercase tracking-[0.3em] text-cric-accent">Match Control</p>
                             <h2 className="mt-2 text-2xl font-black font-raj italic uppercase leading-none text-cric-text">
-                                {battingTeamTeam?.shortName || battingTeamTeam?.name || 'Batting'} vs {bowlingTeamTeam?.shortName || bowlingTeamTeam?.name || 'Bowling'}
+                                {teamShortName(battingTeamTeam) || 'Batting'} vs {teamShortName(bowlingTeamTeam) || 'Bowling'}
                             </h2>
                             <p className="mt-2 text-xs font-semibold text-cric-muted break-words">{selectedMatch.venue || 'Venue TBC'}</p>
                         </div>
@@ -445,7 +465,7 @@ export default function ManageScore() {
                     <div className="flex flex-col sm:flex-row sm:justify-between sm:items-end gap-2 sm:gap-4">
                         <div className="space-y-1 sm:space-y-2 min-w-0 flex-1">
                             <h1 className="text-base sm:text-xl md:text-3xl lg:text-4xl font-black font-raj italic tracking-tighter uppercase leading-tight break-words">
-                                {battingTeamTeam?.shortName || battingTeamTeam?.name} <span className="text-cric-accent">VS</span> {bowlingTeamTeam?.shortName || bowlingTeamTeam?.name}
+                                {teamShortName(battingTeamTeam)} <span className="text-cric-accent">VS</span> {teamShortName(bowlingTeamTeam)}
                             </h1>
                             <div className="text-cric-muted font-medium flex flex-wrap items-center gap-1.5 sm:gap-2 text-[10px] sm:text-xs lg:text-sm">
                                 <span className="break-words max-w-[160px] sm:max-w-none truncate">{selectedMatch.venue}</span>
@@ -474,7 +494,7 @@ export default function ManageScore() {
                                     <div className="bg-slate-100 dark:bg-slate-800 rounded-lg px-3 py-1.5">
                                         <span className="text-xs font-bold text-slate-500">1st Innings:</span>
                                         <span className="text-sm font-black text-[#031d44] dark:text-white ml-2">
-                                            {selectedMatch.teams?.find(t => String(t._id) === String(firstInn.team?._id || firstInn.team))?.shortName || 'Team A'} {firstInn.runs}/{firstInn.wickets} ({formatOvers(firstInn.balls)})
+                                            {teamShortName(selectedMatch.teams?.find(t => String(t._id) === String(firstInn.team?._id || firstInn.team)))} {firstInn.runs}/{firstInn.wickets} ({formatOvers(firstInn.balls)})
                                         </span>
                                     </div>
                                     <div className="bg-[#ff6b35]/10 rounded-lg px-3 py-1.5">

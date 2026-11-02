@@ -11,6 +11,7 @@ import { initSocket } from '../store/socket';
 import api from '../services/api';
 import TeamForm from '../components/admin/teams/TeamForm';
 import ConfirmModal from '../components/ConfirmModal';
+import { teamInitials } from '../utils/teamDisplay';
 
 const CATEGORIES = [
   { key: 'all', label: 'All', icon: '📋' },
@@ -325,7 +326,7 @@ const Teams = () => {
                         {team.logo ? (
                           <img src={team.logo} alt={team.name} className="h-16 w-16 object-contain rounded-full bg-white/20 p-1" />
                         ) : (
-                          <span className="text-3xl font-black text-white/80">{team.shortName || team.name.substring(0, 3).toUpperCase()}</span>
+                          <span className="text-3xl font-black text-white/80">{team.shortName || teamInitials(team.name)}</span>
                         )}
                         {team.branchName && (
                           <span className="absolute top-2 right-2 bg-white/20 text-white text-[10px] font-bold px-2 py-1 rounded-full">

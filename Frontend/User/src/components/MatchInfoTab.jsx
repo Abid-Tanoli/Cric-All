@@ -1,5 +1,4 @@
-import { number, idOf, sameId, longTeamName, playerName, formatDate, getTossLine, getPlayingXI, statusLabel } from "../utils/matchHelpers";
-import InfoCard from "./InfoCard";
+import { idOf, longTeamName, playerName, formatDate, getTossLine, getPlayingXI, statusLabel } from "../utils/matchHelpers";import InfoCard from "./InfoCard";
 import InfoRow from "./InfoRow";
 import BattingPositionBadge from "@shared/components/BattingPositionBadge";
 
@@ -28,22 +27,26 @@ export default function MatchInfoTab({ match }) {
         <InfoRow label="Weather" value={weather} />
         <InfoRow label="Status" value={statusLabel(match.status)} />
       </InfoCard>
-      {(match.teams || []).map((team) => (
-        <InfoCard key={idOf(team)} title={`${longTeamName(team)} Playing XI`}>
-          {getPlayingXI(match, team).length ? (
-            <div className="flex flex-wrap gap-x-2 gap-y-1 text-xs sm:text-sm leading-6 sm:leading-7 text-cric-text">
-              {getPlayingXI(match, team).map((player, index) => (
-                <span key={idOf(player) || index} className="inline-flex items-center gap-1">
-                  <span>{playerName(player)}{index < getPlayingXI(match, team).length - 1 ? "," : ""}</span>
-                  <BattingPositionBadge value={player?.battingPosition} />
-                </span>
-              ))}
-            </div>
-          ) : (
-            <p className="text-xs sm:text-sm leading-6 sm:leading-7 text-cric-text">Playing XI not announced</p>
-          )}
-        </InfoCard>
-      ))}
+      {(match.teams || []).map((team) => {
+        const playingXI = getPlayingXI(match, team);
+        const hasCompleteXI = playingXI.length === 11;
+        return (
+          <InfoCard key={idOf(team)} title={`${longTeamName(team)} ${hasCompleteXI ? "Playing XI" : "Squad"}`}>
+            {hasCompleteXI ? (
+              <div className="flex flex-wrap gap-x-2 gap-y-1 text-xs sm:text-sm leading-6 sm:leading-7 text-cric-text">
+                {playingXI.map((player, index) => (
+                  <span key={idOf(player) || index} className="inline-flex items-center gap-1">
+                    <span>{playerName(player)}{index < playingXI.length - 1 ? "," : ""}</span>
+                    <BattingPositionBadge value={player?.battingPosition} />
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs sm:text-sm leading-6 sm:leading-7 text-cric-text">Playing XI not announced</p>
+            )}
+          </InfoCard>
+        );
+      })}
     </section>
   );
 }

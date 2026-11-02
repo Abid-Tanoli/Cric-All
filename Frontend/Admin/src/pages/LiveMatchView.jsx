@@ -6,6 +6,7 @@ import WagonWheel from '../components/ScoreManagement/WagonWheel';
 import PartnershipBuilder from '../components/ScoreManagement/PartnershipBuilder';
 import { API_BASE_URL } from '../services/api';
 import BattingPositionBadge from '@shared/components/BattingPositionBadge';
+import { formatMatchDate, formatMatchTime } from '../utils/teamDisplay';
 
 const TABS = ['Live', 'Scorecard', 'Commentary', 'Stats', 'Overs', 'Playing XI', 'Wagon Wheel', 'Partnerships', 'Photos', 'Videos', 'Blogs'];
 
@@ -191,7 +192,7 @@ export default function LiveMatchView() {
                 </div>
                 
                 <div className="text-right text-xs text-[#94a3b8]">
-                  {matchData.venue} • {new Date(matchData.startAt).toLocaleDateString()}
+                  {matchData.venue} • {formatMatchDate(matchData.startAt, { year: 'numeric' })} • {formatMatchTime(matchData.startAt)}
                 </div>
               </div>
             </div>

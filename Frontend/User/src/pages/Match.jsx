@@ -11,6 +11,7 @@ import { initSocket, joinMatchRoom, leaveMatchRoom } from "../services/socket";
 const Match = () => {
   const { matchId } = useParams();
   const [match, setMatch] = useState(null);
+  const [squads, setSquads] = useState(null);
   const [loading, setLoading] = useState(true);
   const [events, setEvents] = useState([]);
 
@@ -30,6 +31,18 @@ const Match = () => {
     }
   }, [matchId]);
 
+  // The squads endpoint is the source of truth for the full competition squad.
+  // It is separate from the match payload so public pages never infer an XI from
+  // the short team roster.
+  const loadSquads = useCallback(async () => {
+    try {
+      const res = await api.get(`/matches/${matchId}/squads`);
+      setSquads(res.data);
+    } catch (err) {
+      console.error("Failed to load match squads:", err.response?.status || err.code, err.message);
+    }
+  }, [matchId]);
+
   const addEvent = (event) => {
     setEvents(prev => [...prev, event]);
   };
@@ -39,6 +52,7 @@ const Match = () => {
     const socket = initSocket();
 
     loadMatch();
+    loadSquads();
 
     const applyIncomingMatch = (payload) => {
       if (!mounted) return;
@@ -201,6 +215,15 @@ const Match = () => {
       applyStrikeUpdate(payload);
     };
 
+    const handleSquadsChanged = (payload) => {
+      if (!mounted) return;
+      const changedId = payload?.matchId || payload?.match?._id || payload?._id;
+      if (!changedId || changedId === matchId) {
+        loadMatch();
+        loadSquads();
+      }
+    };
+
     const joinRoom = () => joinMatchRoom(matchId);
 
     // ─── NEW SPECIFIC EVENTS ──────────────────────────────────
@@ -218,6 +241,9 @@ const Match = () => {
     };
     socket.on("innings:end", handleInningsEnd);
     socket.on("match:end", handleMatchEnd);
+    socket.on("match:playingXIUpdated", handleSquadsChanged);
+    socket.on("match:squadUpdated", handleSquadsChanged);
+    socket.on("match:twelfthManUpdated", handleSquadsChanged);
 
     // ─── LEGACY EVENTS (backward compat) ──────────────────────
     socket.on("connect", joinRoom);
@@ -251,6 +277,9 @@ const Match = () => {
       socket.off("over:completed", handleOverCompleted);
       socket.off("innings:end", handleInningsEnd);
       socket.off("match:end", handleMatchEnd);
+      socket.off("match:playingXIUpdated", handleSquadsChanged);
+      socket.off("match:squadUpdated", handleSquadsChanged);
+      socket.off("match:twelfthManUpdated", handleSquadsChanged);
       socket.off("connect", joinRoom);
       socket.off("match:updated", applyIncomingMatch);
       socket.off("match:update", applyIncomingMatch);
@@ -271,7 +300,7 @@ const Match = () => {
       socket.off("INNINGS_COMPLETE", handleInningsComplete);
       socket.off("MATCH_RESULT", handleMatchResult);
     };
-  }, [loadMatch, matchId]);
+  }, [loadMatch, loadSquads, matchId]);
 
   if (loading) {
     return (
@@ -308,7 +337,7 @@ const Match = () => {
         </div>
       </div>
       <ToastNotifications events={events} />
-      <EnhancedMatchTabs matchId={matchId} match={match} />
+      <EnhancedMatchTabs matchId={matchId} match={match} squads={squads} />
     </div>
   );
 };

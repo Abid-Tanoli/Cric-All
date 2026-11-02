@@ -1,8 +1,8 @@
 ﻿import React, { useMemo, useState } from "react";
 import {
-  PRIMARY_TABS, MORE_TABS, idOf, sameId, teamName, longTeamName, playerName,
+  PRIMARY_TABS, MORE_TABS, idOf, sameId, longTeamName,
   number, formatOvers, getMatchBanner, collectPlayers, currentInningsOf, getTeamById,
-  getTarget, getRrr, getCrr, getResultLine, getTossLine, flattenCommentary
+  getTarget, getRrr, getCrr, getResultLine, flattenCommentary
 } from "../utils/matchHelpers";
 
 import SummaryTab from "./SummaryTab";
@@ -23,7 +23,14 @@ import MatchInfoTab from "./MatchInfoTab";
 import StatsTab from "./StatsTab";
 import WagonWheelTab from "./WagonWheelTab";
 
-const EnhancedMatchTabs = ({ match, matchId }) => {
+const EnhancedMatchTabs = ({ match, matchId, squads }) => {
+  // A match only has a "Playing XI" after the scorer explicitly saved one. Until
+  // then the public tab is the squad list, never a guessed XI.
+  const playingXIAnnounced = (match?.playingXI || []).some(
+    (entry) => (entry.players || []).length === 11
+  );
+  const tabLabel = (tab) =>
+    tab.id === "playing-xi" && !playingXIAnnounced ? "Squad" : tab.label;
   // A manually entered (paper) match has no ball-by-ball timeline, so the
   // live/commentary/overs tabs are hidden and the page opens on the scorecard.
   const isManual = match?.source === "manual";
@@ -46,7 +53,6 @@ const EnhancedMatchTabs = ({ match, matchId }) => {
 
   const players = useMemo(() => collectPlayers(match), [match]);
   const currentInnings = currentInningsOf(match);
-  const currentIndex = Math.min(number(match?.currentInnings), Math.max((match?.innings || []).length - 1, 0));
   const battingTeam = getTeamById(match, currentInnings?.team);
   const bowlingTeam = (match?.teams || []).find((team) => !sameId(team, currentInnings?.team));
   const target = getTarget(match);
@@ -123,7 +129,7 @@ const EnhancedMatchTabs = ({ match, matchId }) => {
                   effectiveTab === tab.id ? "border-cric-accent text-cric-accent" : "border-transparent text-cric-muted hover:text-cric-text"
                 }`}
               >
-                {tab.label}
+                {tabLabel(tab)}
               </button>
             ))}
             <div className="relative shrink-0">
@@ -134,7 +140,7 @@ const EnhancedMatchTabs = ({ match, matchId }) => {
                   isMoreTab || moreOpen ? "border-cric-accent text-cric-accent" : "border-transparent text-cric-muted"
                 }`}
               >
-                More {isMoreTab ? ` \u00b7 ${visibleMoreTabs.find((t) => t.id === effectiveTab)?.label}` : ""}
+                More {isMoreTab ? ` \u00b7 ${tabLabel(visibleMoreTabs.find((t) => t.id === effectiveTab))}` : ""}
               </button>
               {moreOpen && (
                 <div className="absolute right-0 top-full z-40 mt-0 min-w-[160px] rounded-xl border border-cric-border bg-cric-card py-1 shadow-lg lg:hidden">
@@ -145,7 +151,7 @@ const EnhancedMatchTabs = ({ match, matchId }) => {
                       onClick={() => { setActiveTab(tab.id); setMoreOpen(false); }}
                       className={`block w-full px-4 py-2.5 text-left text-xs font-bold ${effectiveTab === tab.id ? "bg-cric-accent/10 text-cric-accent" : "text-cric-text hover:bg-cric-bg"}`}
                     >
-                      {tab.label}
+                      {tabLabel(tab)}
                     </button>
                   ))}
                 </div>
@@ -160,7 +166,7 @@ const EnhancedMatchTabs = ({ match, matchId }) => {
                   effectiveTab === tab.id ? "border-cric-accent text-cric-accent" : "border-transparent text-cric-muted hover:text-cric-text"
                 }`}
               >
-                {tab.label}
+                {tabLabel(tab)}
               </button>
             ))}
           </div>
@@ -232,7 +238,7 @@ const EnhancedMatchTabs = ({ match, matchId }) => {
           />
         )}
 
-        {effectiveTab === "playing-xi" && <PlayingXITab match={match} players={players} />}
+        {effectiveTab === "playing-xi" && <PlayingXITab match={match} players={players} squads={squads} />}
 
         {effectiveTab === "overs" && <OversTab matchId={matchId || match?._id} />}
 

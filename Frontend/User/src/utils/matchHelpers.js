@@ -1,3 +1,5 @@
+import { teamInitials } from "./teamDisplay";
+
 export const PRIMARY_TABS = [
   { id: "live", label: "Live" },
   { id: "scorecard", label: "Scorecard" },
@@ -27,7 +29,7 @@ export const idOf = (value) => {
 
 export const sameId = (a, b) => idOf(a) && idOf(a) === idOf(b);
 
-export const teamName = (team) => team?.shortName || team?.name || "Team";
+export const teamName = (team) => team?.shortName || teamInitials(team?.name);
 
 export const longTeamName = (team) => team?.name || team?.shortName || "Team";
 

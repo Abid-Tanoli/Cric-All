@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import api from '../services/api';
+import { formatMatchDate, formatMatchTime, teamShortName } from '../utils/teamDisplay';
 
 export default function EventDetail() {
     const { eventId } = useParams();
@@ -167,8 +168,8 @@ export default function EventDetail() {
     const upcomingMatches = matches.filter(m => m.status === 'upcoming' || m.status === 'scheduled');
     const liveMatches = matches.filter(m => m.status === 'live');
 
-    const formatDate = (date) => new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-    const formatTime = (date) => new Date(date).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+    const formatDate = (date) => formatMatchDate(date, { year: 'numeric' });
+    const formatTime = (date) => formatMatchTime(date);
 
     return (
         <div className="min-h-screen bg-slate-50">
@@ -269,7 +270,7 @@ export default function EventDetail() {
                                                                 <div key={idx} className="flex items-center justify-between">
                                                                     <div className="flex items-center gap-3">
                                                                         {team.logo && <img src={team.logo} alt={team.name} className="w-6 h-6 rounded-full object-cover" />}
-                                                                        <span className="font-bold text-sm text-slate-800">{team.shortName || team.name || 'Team'}</span>
+                                                                        <span className="font-bold text-sm text-slate-800">{teamShortName(team)}</span>
                                                                     </div>
                                                                     <span className="font-black text-sm">{inn.runs || 0}/{inn.wickets || 0} <span className="text-xs text-slate-500 font-bold">({inn.overs || 0}.{(inn.balls || 0) % 6} ov)</span></span>
                                                                 </div>
@@ -305,7 +306,7 @@ export default function EventDetail() {
                                                                 <div key={idx} className="flex items-center justify-between">
                                                                     <div className="flex items-center gap-3">
                                                                         {team.logo && <img src={team.logo} alt={team.name} className="w-6 h-6 rounded-full object-cover" />}
-                                                                        <span className="font-bold text-sm text-slate-800">{team.shortName || team.name || 'Team'}</span>
+                                                                        <span className="font-bold text-sm text-slate-800">{teamShortName(team)}</span>
                                                                     </div>
                                                                     <span className="font-black text-sm">{inn.runs || 0}/{inn.wickets || 0} <span className="text-xs text-slate-500 font-bold">({inn.overs || 0}.{(inn.balls || 0) % 6} ov)</span></span>
                                                                 </div>
@@ -340,7 +341,7 @@ export default function EventDetail() {
                                                         {match.teams?.map((team, idx) => (
                                                             <div key={idx} className="flex flex-col items-center flex-1">
                                                                 {team.logo && <img src={team.logo} alt={team.name} className="w-14 h-14 rounded-full object-cover mb-2" />}
-                                                                <span className="font-bold text-sm text-slate-800 text-center">{team.shortName || team.name || 'Team'}</span>
+                                                                <span className="font-bold text-sm text-slate-800 text-center">{teamShortName(team)}</span>
                                                             </div>
                                                         ))}
                                                         <span className="text-3xl font-black text-slate-300">VS</span>
@@ -382,7 +383,7 @@ export default function EventDetail() {
                                                         <td className="px-4 py-4 font-bold text-slate-400">{idx + 1}</td>
                                                         <td className="px-4 py-4">
                                                             <div className="flex items-center gap-3">
-                                                                <div className="w-8 h-8 rounded bg-slate-100 flex items-center justify-center font-bold text-xs">{row.team?.shortName || row.team?.name?.charAt(0) || 'T'}</div>
+                                                                <div className="w-8 h-8 rounded bg-slate-100 flex items-center justify-center font-bold text-xs">{teamShortName(row.team)}</div>
                                                                 <span className="font-bold text-slate-800">{row.team?.name || row.team}</span>
                                                             </div>
                                                         </td>

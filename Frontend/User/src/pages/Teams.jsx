@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../services/api";
+import { teamInitials } from "../utils/teamDisplay";
 
 // Task 3: browse teams by the type of the organization that owns them
 // (club, school, college, academy, league, …). The type lives on
@@ -212,7 +213,7 @@ export default function Teams() {
                       {team.logo ? (
                         <img src={team.logo} alt="" className="h-14 w-14 object-contain rounded-full bg-white/20 p-1" />
                       ) : (
-                        <span className="text-2xl font-black text-white/80">{team.shortName || team.name.substring(0, 3).toUpperCase()}</span>
+                        <span className="text-2xl font-black text-white/80">{team.shortName || teamInitials(team.name)}</span>
                       )}
                     </div>
                     <div className="p-4">
