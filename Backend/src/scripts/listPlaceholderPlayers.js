@@ -1,0 +1,173 @@
+// Read-only review report:
+//   node src/scripts/listPlaceholderPlayers.js
+//   node src/scripts/listPlaceholderPlayers.js --squads-file /path/to/original-squads.csv
+//   node src/scripts/listPlaceholderPlayers.js --output /tmp/player-review.csv
+//
+// Reads MONGO_URL from Backend/.env, never prints it, and writes only the
+// owner-editable CSV file. Tournament squads are preferred as original-squad
+// evidence; pass --squads-file when the canonical source CSV is available.
+
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import dotenv from "dotenv";
+import mongoose from "mongoose";
+import Event from "../models/Event.js";
+import Match from "../models/Match.js";
+import Player from "../models/Player.js";
+import Team from "../models/Team.js";
+import Tournament from "../models/Tournament.js";
+import { getMongoTarget } from "../utils/mongoTarget.js";
+import {
+  buildPlayerReview,
+  CSV_HEADERS,
+  loadNameMapEntries,
+  normalizeName,
+  parseCsv,
+  toCsv,
+} from "./playerNameCleanup.js";
+
+const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
+const BACKEND_ROOT = path.resolve(SCRIPT_DIR, "../..");
+dotenv.config({ path: path.join(BACKEND_ROOT, ".env"), quiet: true });
+
+export const TOURNAMENT_NAME = "All Baldia T20 Hard Ball Cricket Tournament";
+
+function optionValue(args, option) {
+  const index = args.findIndex((arg) => arg === option || arg.startsWith(`${option}=`));
+  if (index < 0) return "";
+  if (args[index].includes("=")) return args[index].slice(args[index].indexOf("=") + 1);
+  const value = args[index + 1] || "";
+  return value.startsWith("--") ? "" : value;
+}
+
+function originalSquadNamesFromCsv(filePath) {
+  if (!filePath) return new Map();
+  const rows = parseCsv(fs.readFileSync(filePath, "utf8"));
+  if (!rows.length) throw new Error("The supplied original-squads CSV has no player rows.");
+  const headers = Object.keys(rows[0]);
+  const teamColumn = ["team", "team_name"].find((header) => headers.includes(header));
+  const playerColumn = ["player_name", "name"].find((header) => headers.includes(header));
+  if (!teamColumn || !playerColumn) {
+    throw new Error("Original-squads CSV must contain team and player_name (or team_name and name) columns.");
+  }
+  const names = new Map();
+  for (const row of rows) {
+    const team = normalizeName(row[teamColumn]);
+    const player = normalizeName(row[playerColumn]);
+    if (!team || !player) continue;
+    if (!names.has(team)) names.set(team, new Set());
+    names.get(team).add(player);
+  }
+  return names;
+}
+
+export function reportDuplicatePlayers(players, teams) {
+  const teamNames = new Map(teams.map((team) => [String(team._id), team.name]));
+  const byName = new Map();
+  for (const player of players) {
+    const key = normalizeName(player.name);
+    const group = byName.get(key) || [];
+    group.push({
+      player_id: String(player._id),
+      name: player.name,
+      team: teamNames.get(String(player.team)) || "Unknown team",
+    });
+    byName.set(key, group);
+  }
+  return [...byName.values()]
+    .filter((group) => group.length > 1)
+    .flatMap((group) => {
+      const teamsForName = new Set(group.map((player) => player.team));
+      const sameTeamCount = new Map();
+      for (const player of group) {
+        sameTeamCount.set(player.team, (sameTeamCount.get(player.team) || 0) + 1);
+      }
+      return group.map((player) => ({
+        ...player,
+        duplicate_same_team: sameTeamCount.get(player.team) > 1 ? "YES" : "",
+        duplicate_across_teams: teamsForName.size > 1 ? "YES" : "",
+      }));
+    });
+}
+
+export async function collectPlayerReport({ tournamentName = TOURNAMENT_NAME, squadsFile = "" } = {}) {
+  const tournament = await Tournament.findOne({ name: tournamentName }).lean();
+  if (!tournament) throw new Error(`Tournament "${tournamentName}" was not found.`);
+  const teamIds = (tournament.teams || []).map((team) => team?._id || team);
+  const teams = await Team.find({ _id: { $in: teamIds } }).lean();
+  const players = await Player.find({ team: { $in: teamIds } }).lean();
+  const eventIds = await Event.find({ name: tournamentName }).distinct("_id");
+  const matches = await Match.find({
+    $or: [
+      { tournament: tournament._id },
+      { _id: { $in: tournament.matches || [] } },
+      { event: { $in: eventIds } },
+    ],
+  }).lean();
+  const mapEntries = loadNameMapEntries();
+  const reviewRows = buildPlayerReview({
+    tournament,
+    teams,
+    players,
+    matches,
+    mapEntries,
+    originalSquadNames: originalSquadNamesFromCsv(squadsFile),
+  });
+  return {
+    tournament,
+    teams,
+    players,
+    matches,
+    mapEntries,
+    reviewRows,
+    duplicateRows: reportDuplicatePlayers(players, teams),
+  };
+}
+
+export async function main(args = process.argv.slice(2)) {
+  const uri = process.env.MONGO_URL;
+  if (!uri) {
+    throw new Error("MONGO_URL is not set. The report never prints or accepts the URI on the command line.");
+  }
+  const { databaseName } = getMongoTarget(uri);
+  if (!databaseName) throw new Error("MONGO_URL must include an explicit database name.");
+  const squadsFile = optionValue(args, "--squads-file");
+  const output = optionValue(args, "--output") ||
+    path.join(os.tmpdir(), `player-name-cleanup-${new Date().toISOString().replace(/[:.]/g, "-")}.csv`);
+
+  await mongoose.connect(uri, { serverSelectionTimeoutMS: 10000, connectTimeoutMS: 10000 });
+  try {
+    const report = await collectPlayerReport({ squadsFile });
+    const mappingRows = report.mapEntries.map((entry) => ({
+      import: entry.matchLabel,
+      team: entry.teamName,
+      scorer_source_name: entry.sourceName,
+      mapped_squad_player: entry.mappedValue,
+    }));
+    console.log(`Tournament: ${report.tournament.name}`);
+    console.log(`Players reviewed: ${report.reviewRows.length}`);
+    if (!report.tournament.tournamentSquads?.length && !squadsFile) {
+      console.warn("No tournamentSquads data or --squads-file supplied; non-(TBC) imports are identified only by CREATE name maps.");
+    }
+    console.log("\nPlaceholder / imported players:");
+    console.table(report.reviewRows);
+    console.log("\nNickname -> squad-player mappings (review every proposed match):");
+    console.table(mappingRows);
+    console.log("\nDuplicate player-name warnings:");
+    console.table(report.duplicateRows);
+    fs.writeFileSync(output, toCsv(CSV_HEADERS, report.reviewRows), { encoding: "utf8", flag: "wx" });
+    console.log(`Owner-editable CSV written to: ${output}`);
+    return report;
+  } finally {
+    await mongoose.disconnect();
+  }
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
+  main().catch((error) => {
+    console.error(`Player review failed: ${error.message}`);
+    process.exitCode = 1;
+  });
+}
