@@ -131,6 +131,276 @@ test("review report is read-only and writes all identified placeholders to an an
   assert.equal(report.reviewRows[0].real_name_or_existing_player_id, "");
   assert.equal(report.tournament.tournamentSquads[0].players.length, 19);
   assert.ok(loadNameMapEntries().some((entry) => entry.matchLabel === "QF" && entry.sourceName === "S Haroo"));
+  // The original answer columns stay first so an older CSV remains valid.
+  assert.deepEqual(CSV_HEADERS.slice(0, 15), [
+    "player_id",
+    "placeholder_name",
+    "team_name",
+    "source_name",
+    "match_count",
+    "match_labels",
+    "runs_batted",
+    "balls_batted",
+    "overs_bowled",
+    "runs_bowled",
+    "wickets_bowled",
+    "real_name_or_existing_player_id",
+    "duplicate_same_team",
+    "duplicate_across_teams",
+    "allow_cross_team",
+  ]);
+  assert.deepEqual(CSV_HEADERS.slice(15), [
+    "candidate_real_players",
+    "candidates_by_match",
+    "similar_names",
+    "similar_names_other_teams",
+    "match_context",
+    "bowler_reconciliation",
+  ]);
+  // The placeholder itself is not a candidate; all 19 unused squad members are.
+  assert.equal(report.reviewRows[0].candidate_real_players.split("; ").length, 19);
+  assert.match(report.reviewRows[0].candidates_by_match, /^QF1: /);
+});
+
+test("report finds the SF1 CREATE placeholders even when Player.team is missing", async () => {
+  sequence += 1;
+  const team = await Team.create({ name: "Sky Sports" });
+  const originalNames = [
+    "Abrar (TBC)",
+    "Afridi (TBC)",
+    "Attaulla (TBC)",
+    "MD (TBC)",
+    "Unknown Bowler (TBC)",
+    "Zahid (TBC)",
+    "Rashid (TBC)",
+    "Naveed (TBC)",
+  ];
+  const missingNames = ["Attack (TBC)", "Attack 1 (TBC)", "Ali (TBC)"];
+  const originals = await Player.create(
+    originalNames.map((name) => ({ name, team: team._id })),
+  );
+  // Reproduce the live SF1 rows: the public squad still lists them through
+  // Team.players and the match scorecard, but Player.team is unset, so the old
+  // Player.team-only query never made them report candidates.
+  const missing = await Player.create(missingNames.map((name) => ({ name })));
+  team.players = [...originals, ...missing].map((player) => player._id);
+  await team.save();
+  const tournament = await Tournament.create({
+    name: TOURNAMENT_NAME,
+    slug: `placeholder-coverage-${sequence}`,
+    type: "knockout",
+    startDate: new Date("2026-10-01T00:00:00.000Z"),
+    endDate: new Date("2026-11-01T00:00:00.000Z"),
+    teams: [team._id],
+    tournamentSquads: [{
+      team: team._id,
+      players: originals.map((player) => player._id),
+    }],
+  });
+  const match = await Match.create({
+    title: "SF1: Sky Sports vs Baldia Zalmi",
+    stage: "semi_final",
+    stageLabel: "SF1",
+    tournament: tournament._id,
+    teams: [team._id],
+    status: "completed",
+    innings: [{
+      team: team._id,
+      batting: [
+        { player: originals[0]._id, runs: 11, balls: 7 },
+        { player: missing[0]._id, runs: 4, balls: 3 },
+        { player: missing[1]._id, runs: 1, balls: 2 },
+        { player: missing[2]._id, runs: 6, balls: 4 },
+      ],
+      bowling: [],
+    }],
+  });
+  tournament.matches = [match._id];
+  await tournament.save();
+
+  const report = await collectPlayerReport();
+
+  assert.equal(report.reviewRows.length, 11);
+  assert.deepEqual(
+    report.reviewRows.map((row) => row.placeholder_name).sort(),
+    [...originalNames, ...missingNames].sort(),
+  );
+  for (const name of missingNames) {
+    const row = report.reviewRows.find((entry) => entry.placeholder_name === name);
+    assert.ok(row, `${name} must be reported`);
+    assert.equal(row.team_name, "Sky Sports");
+    assert.equal(row.match_labels, "SF1");
+  }
+  const attack = report.reviewRows.find((row) => row.placeholder_name === "Attack (TBC)");
+  assert.match(attack.source_name, /SF1: Attack/);
+  const ali = report.reviewRows.find((row) => row.placeholder_name === "Ali (TBC)");
+  assert.match(ali.source_name, /SF1: Ali/);
+});
+
+test("decision-support columns list per-match candidates, similar names and bowling reconciliation", async () => {
+  sequence += 1;
+  const [sky, orangi] = await Team.create([
+    { name: "Sky Sports" },
+    { name: "Orangi United" },
+  ]);
+  const players = await Player.create([
+    { name: "Abrar (TBC)", team: sky._id },
+    { name: "Akbar Sadozai", team: sky._id },
+    { name: "Batter One", team: sky._id },
+    { name: "Bowler One", team: sky._id },
+    { name: "XI Player", team: sky._id },
+    { name: "Twelfth Player", team: sky._id },
+    { name: "DNB Player", team: sky._id },
+    { name: "Candidate A", team: sky._id },
+    { name: "Candidate B", team: sky._id },
+    { name: "Abrar", team: orangi._id },
+    { name: "Orangi Batter", team: orangi._id },
+  ]);
+  const [
+    placeholder,
+    akbar,
+    batterOne,
+    bowlerOne,
+    xiPlayer,
+    twelfthPlayer,
+    dnbPlayer,
+    candidateA,
+    candidateB,
+    otherAbrar,
+    orangiBatter,
+  ] = players;
+  sky.players = players.slice(0, 9).map((player) => player._id);
+  orangi.players = [otherAbrar, orangiBatter].map((player) => player._id);
+  await Promise.all([sky.save(), orangi.save()]);
+  const tournament = await Tournament.create({
+    name: TOURNAMENT_NAME,
+    slug: `decision-support-${sequence}`,
+    type: "knockout",
+    startDate: new Date("2026-10-01T00:00:00.000Z"),
+    endDate: new Date("2026-11-01T00:00:00.000Z"),
+    teams: [sky._id, orangi._id],
+    tournamentSquads: [
+      { team: sky._id, players: sky.players },
+      { team: orangi._id, players: orangi.players },
+    ],
+  });
+
+  // QF1: only the placeholder has a Sky row, so nearly the whole squad is a
+  // candidate there.
+  const qf1 = await Match.create({
+    title: "QF1: Sky Sports vs Orangi United",
+    stage: "quarter_final",
+    stageLabel: "QF1",
+    tournament: tournament._id,
+    teams: [sky._id, orangi._id],
+    status: "completed",
+    innings: [{
+      team: sky._id,
+      batting: [{ player: placeholder._id, runs: 10, balls: 8 }],
+      bowling: [],
+    }],
+  });
+
+  // QF2: the placeholder bowled 0.2 overs / 4 runs / 1 wicket. Every other
+  // Sky row (batting, bowling, DNB, XI, twelfth man) must be excluded from the
+  // QF2 candidate list.
+  const qf2 = await Match.create({
+    title: "QF2: Sky Sports vs Orangi United",
+    stage: "quarter_final",
+    stageLabel: "QF2",
+    tournament: tournament._id,
+    teams: [sky._id, orangi._id],
+    status: "completed",
+    playingXI: [{ team: sky._id, players: [xiPlayer._id] }],
+    twelfthMan: [{ team: sky._id, player: twelfthPlayer._id }],
+    innings: [
+      {
+        team: sky._id,
+        batting: [
+          { player: placeholder._id, runs: 5, balls: 4 },
+          { player: batterOne._id, runs: 7, balls: 5 },
+          // An all-zero, not-out batting row is the DNB list representation.
+          { player: dnbPlayer._id },
+        ],
+        bowling: [],
+      },
+      {
+        team: orangi._id,
+        runs: 60,
+        wickets: 5,
+        balls: 62,
+        overs: 10.2,
+        extras: { wides: 2, noBalls: 2, byes: 0, legByes: 0, penalties: 0, total: 4 },
+        batting: [
+          { player: orangiBatter._id, runs: 30, balls: 25, isOut: true, dismissalType: "bowled" },
+          { player: otherAbrar._id, runs: 20, balls: 20, isOut: true, dismissalType: "caught" },
+        ],
+        bowling: [
+          { player: placeholder._id, overs: 0.2, balls: 2, runs: 4, wickets: 1 },
+          { player: bowlerOne._id, overs: 4, balls: 24, runs: 24, wickets: 2 },
+          { player: candidateA._id, overs: 6, balls: 36, runs: 32, wickets: 2 },
+        ],
+      },
+    ],
+  });
+  tournament.matches = [qf1._id, qf2._id];
+  await tournament.save();
+
+  const report = await collectPlayerReport();
+
+  assert.equal(report.reviewRows.length, 1);
+  const [row] = report.reviewRows;
+  assert.equal(row.placeholder_name, "Abrar (TBC)");
+  assert.equal(row.real_name_or_existing_player_id, "");
+
+  // QF1 has no row for Candidate A; QF2 does. The intersection must therefore
+  // drop Candidate A while still listing them in the per-match column.
+  assert.ok(row.candidate_real_players.includes("Akbar Sadozai"));
+  assert.ok(row.candidate_real_players.includes("Candidate B"));
+  assert.ok(!row.candidate_real_players.includes("Candidate A"));
+  for (const excluded of [
+    "Batter One",
+    "Bowler One",
+    "XI Player",
+    "Twelfth Player",
+    "DNB Player",
+    "Abrar (TBC)",
+  ]) {
+    assert.ok(
+      !row.candidate_real_players.includes(excluded),
+      `${excluded} has a row in a match and must not be an intersection candidate`,
+    );
+  }
+  const [qf1Candidates, qf2Candidates] = row.candidates_by_match.split(" | ");
+  assert.match(qf1Candidates, /^QF1: /);
+  assert.match(qf2Candidates, /^QF2: /);
+  assert.ok(qf1Candidates.includes("Candidate A"));
+  assert.ok(!qf2Candidates.includes("Candidate A"));
+  assert.ok(qf2Candidates.includes("Candidate B"));
+  assert.ok(qf2Candidates.includes("Akbar Sadozai"));
+  assert.ok(!qf2Candidates.includes("Batter One"));
+
+  assert.ok(row.similar_names.includes("Akbar Sadozai"));
+  assert.ok(row.similar_names.includes("edit distance 2"));
+  assert.ok(row.similar_names_other_teams.includes("Orangi United: Abrar ["));
+  assert.ok(!row.similar_names_other_teams.includes("Abrar (TBC)"));
+
+  assert.match(row.match_context, /QF1: Sky Sports vs Orangi United; innings: Sky Sports \(batting card\)/);
+  assert.match(
+    row.match_context,
+    /QF2: Sky Sports vs Orangi United; innings: Sky Sports \(batting card\); Orangi United \(bowling card\)/,
+  );
+
+  assert.match(row.bowler_reconciliation, /^QF2: /);
+  assert.ok(row.bowler_reconciliation.includes(
+    "Orangi United batting 60/5 (10.2 ov; extras 4: w2 nb2 b0 lb0 p0)",
+  ));
+  assert.ok(row.bowler_reconciliation.includes("Sky Sports bowling 10.2 ov / 60 r / 5 w"));
+  assert.ok(row.bowler_reconciliation.includes("team reconciled"));
+  assert.ok(row.bowler_reconciliation.includes("placeholder 0.2 ov / 4 r / 1 w"));
+  assert.ok(row.bowler_reconciliation.includes(
+    "without placeholder unreconciled 0.2 ov / +4 r / +1 w",
+  ));
 });
 
 test("rename keeps the same id and all existing player stats", async () => {
@@ -433,7 +703,9 @@ test("both CLI workflows run end-to-end on local cric-all-e2e with rename, merge
     console.log("\nDisposable database CLI run: cric-all-e2e");
     await listPlaceholderPlayersMain(["--output", csvPath]);
     const originalRows = parseCsv(fs.readFileSync(csvPath, "utf8"));
-    assert.equal(originalRows.length, 2);
+    // Two CREATE placeholders plus the completed match's existing player, who
+    // is not in the DB tournament squad (criterion (c) of the report).
+    assert.equal(originalRows.length, 3);
     const filledRows = originalRows.map((row) => ({
       ...row,
       real_name_or_existing_player_id: row.placeholder_name === "Abrar (TBC)"

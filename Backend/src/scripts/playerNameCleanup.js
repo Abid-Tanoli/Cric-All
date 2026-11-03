@@ -25,6 +25,14 @@ export const CSV_HEADERS = [
   "duplicate_same_team",
   "duplicate_across_teams",
   "allow_cross_team",
+  // Decision-support columns. They are appended so an older CSV (with only the
+  // answer column above) remains valid input for applyPlayerNames.js.
+  "candidate_real_players",
+  "candidates_by_match",
+  "similar_names",
+  "similar_names_other_teams",
+  "match_context",
+  "bowler_reconciliation",
 ];
 
 export const idOf = (value) => String(value?._id || value || "");
@@ -178,10 +186,495 @@ const matchAppearance = (match, playerId) => {
   return { appeared, runs, balls, bowlingBalls, bowlingRuns, wickets };
 };
 
+const TBC_SUFFIX = /\s*\(TBC\)\s*$/i;
+const isTbcName = (name) => TBC_SUFFIX.test(String(name || "").trim());
+const stripTbcSuffix = (name) => String(name || "").replace(TBC_SUFFIX, "").trim();
+
+export function levenshteinDistance(left, right) {
+  const a = [...String(left || "")];
+  const b = [...String(right || "")];
+  if (!a.length) return b.length;
+  if (!b.length) return a.length;
+  let previous = Array.from({ length: b.length + 1 }, (_, index) => index);
+  for (let row = 1; row <= a.length; row += 1) {
+    const current = [row];
+    for (let column = 1; column <= b.length; column += 1) {
+      const substitution = previous[column - 1] + (a[row - 1] === b[column - 1] ? 0 : 1);
+      current[column] = Math.min(
+        previous[column] + 1,
+        current[column - 1] + 1,
+        substitution,
+      );
+    }
+    previous = current;
+  }
+  return previous[b.length];
+}
+
+// A small Soundex-style key. It is only a hint for the report, never a merge
+// decision, so an approximate phonetic match is sufficient.
+const phoneticKey = (value) => {
+  const text = String(value || "").toLowerCase().replace(/[^a-z]/g, "");
+  if (!text) return "";
+  const codes = {
+    b: "1", f: "1", p: "1", v: "1",
+    c: "2", g: "2", j: "2", k: "2", q: "2", s: "2", x: "2", z: "2",
+    d: "3", t: "3",
+    l: "4",
+    m: "5", n: "5",
+    r: "6",
+  };
+  let result = text[0];
+  let previous = codes[text[0]] || "";
+  for (const char of text.slice(1)) {
+    const code = codes[char] || "";
+    if (!code) continue;
+    if (code !== previous) result += code;
+    previous = code;
+  }
+  return result.padEnd(4, "0").slice(0, 4);
+};
+
+/**
+ * Why a same-team squad name might be the person behind a placeholder. The
+ * result is display text only: it is never applied automatically.
+ */
+export function similarNameReason(placeholderName, candidateName) {
+  const left = normalizeName(stripTbcSuffix(placeholderName));
+  const right = normalizeName(stripTbcSuffix(candidateName));
+  if (!left || !right) return "";
+  if (left === right) return "same normalized name";
+
+  const leftTokens = left.split(" ").filter(Boolean);
+  const rightTokens = right.split(" ").filter(Boolean);
+  const rightCandidates = [right, ...rightTokens];
+  let best = null;
+
+  const compare = (a, b) => {
+    const distance = levenshteinDistance(a, b);
+    const minLength = Math.min(a.length, b.length);
+    const maxLength = Math.max(a.length, b.length);
+    const threshold = minLength <= 3 ? 1 : minLength <= 6 ? 2 : 3;
+    if (
+      distance > 0 &&
+      distance <= threshold &&
+      distance / maxLength <= 0.45 &&
+      a[0] === b[0] &&
+      (!best || distance < best.distance)
+    ) {
+      best = { distance, reason: `edit distance ${distance}` };
+    }
+  };
+
+  for (const leftToken of leftTokens) {
+    for (const rightCandidate of rightCandidates) compare(leftToken, rightCandidate);
+  }
+  if (best) return best.reason;
+
+  // Shared prefixes catch a trailing spelling difference (Attaulla/Attaullah)
+  // that is too long for the edit-distance threshold to be the only signal.
+  for (const leftToken of leftTokens) {
+    for (const rightCandidate of rightCandidates) {
+      let prefix = 0;
+      while (
+        prefix < leftToken.length &&
+        prefix < rightCandidate.length &&
+        leftToken[prefix] === rightCandidate[prefix]
+      ) prefix += 1;
+      if (prefix >= 3 && prefix >= Math.ceil(Math.min(leftToken.length, rightCandidate.length) * 0.6)) {
+        return `shared prefix "${leftToken.slice(0, prefix)}"`;
+      }
+    }
+  }
+
+  // Phonetic hints are deliberately conservative: they only apply when both
+  // names are long enough to make a false positive unlikely.
+  for (const leftToken of leftTokens) {
+    if (leftToken.length < 4) continue;
+    for (const rightCandidate of rightCandidates) {
+      if (rightCandidate.length < 4) continue;
+      if (phoneticKey(leftToken) === phoneticKey(rightCandidate)) {
+        return "phonetic match";
+      }
+    }
+  }
+  return "";
+}
+
+const playerReferenceText = (player) =>
+  player ? `${player.name} [${idOf(player)}]` : "";
+
+const teamLabelOf = (teamById, value) => {
+  const teamId = idOf(value);
+  if (!teamId) return "";
+  return teamById.get(teamId)?.name || "Unknown team";
+};
+
+/**
+ * Players who already have a row for `teamId` in this match. Candidate
+ * discovery uses the inverse: a squad member with no batting, bowling, DNB,
+ * XI or twelfth-man reference cannot be the person behind a placeholder who
+ * also appears in that match.
+ */
+function playersWithRowsForTeam(match, teamId) {
+  const ids = new Set();
+  const add = (value) => {
+    const id = idOf(value);
+    if (id) ids.add(id);
+  };
+  const addWhenTeam = (ownerTeam, value) => {
+    const owner = idOf(ownerTeam);
+    if (!owner || owner === teamId) add(value);
+  };
+
+  const inningsList = [
+    ...(match.innings || []),
+    ...(match.superOvers || []).flatMap((over) => over.innings || []),
+  ];
+  for (const innings of inningsList) {
+    const battingTeam = idOf(innings.team);
+    // An innings without a team cannot be assigned safely, so count every
+    // reference as a row for the team. Over-reporting here can only remove a
+    // candidate; it can never invent one.
+    const addBatting = (value) => {
+      if (!battingTeam || battingTeam === teamId) add(value);
+    };
+    const addFielding = (value) => {
+      if (!battingTeam || battingTeam !== teamId) add(value);
+    };
+
+    for (const player of [
+      innings.currentBatsman1,
+      innings.currentBatsman2,
+      innings.onStrikeBatsman,
+      ...(innings.battingOrder || []),
+    ]) addBatting(player);
+    for (const row of innings.batting || []) {
+      addBatting(row.player);
+      addFielding(row.dismissedBy);
+      addFielding(row.fielder);
+      for (const shot of row.shots || []) addFielding(shot.bowler);
+    }
+    for (const row of innings.bowling || []) addFielding(row.player);
+    for (const row of innings.fallOfWickets || []) {
+      addBatting(row.player);
+      addFielding(row.fielder);
+    }
+    for (const row of innings.partnerships || []) {
+      addBatting(row.batsman1);
+      addBatting(row.batsman2);
+    }
+    addFielding(innings.currentBowler);
+    addFielding(innings.twelfthManBowlBlock?.player);
+    for (const over of innings.oversHistory || []) {
+      addFielding(over.bowler);
+      for (const ball of over.balls || []) {
+        addBatting(ball.batsmanOnStrike);
+        addBatting(ball.batsmanNonStrike);
+        addBatting(ball.dismissedPlayer);
+        addFielding(ball.bowler);
+        addFielding(ball.fielder);
+      }
+    }
+  }
+
+  for (const over of match.superOvers || []) {
+    for (const entry of over.bowlers || []) addWhenTeam(entry.team || over.team, entry.bowler);
+    for (const entry of over.batsmen || []) {
+      for (const player of entry.players || []) {
+        addWhenTeam(entry.team || over.team, player);
+      }
+    }
+  }
+
+  for (const group of [...(match.playingXI || []), ...(match.bowlingXI || [])]) {
+    for (const player of group.players || []) addWhenTeam(group.team, player);
+    addWhenTeam(group.team, group.captain);
+    addWhenTeam(group.team, group.viceCaptain);
+    for (const player of group.wicketKeepers || []) addWhenTeam(group.team, player);
+  }
+  for (const entry of match.twelfthMan || []) addWhenTeam(entry.team, entry.player);
+  for (const entry of match.impactPlayers || []) {
+    addWhenTeam(entry.team, entry.player);
+    addWhenTeam(entry.team, entry.replaces);
+  }
+  for (const entry of match.teamRoles || []) {
+    addWhenTeam(entry.team, entry.captain);
+    addWhenTeam(entry.team, entry.viceCaptain);
+    for (const player of entry.wicketKeepers || []) addWhenTeam(entry.team, player);
+  }
+  for (const entry of match.drsReviews || []) addWhenTeam(entry.team, entry.requestedBy);
+  add(match.manOfMatch);
+  add(match.result?.playerOfMatch);
+  return ids;
+}
+
+function matchContextFor(match, playerId, teamId, teamById) {
+  const fixtureIds = [];
+  for (const team of match.teams || []) {
+    const id = idOf(team);
+    if (id && !fixtureIds.includes(id)) fixtureIds.push(id);
+  }
+  for (const innings of match.innings || []) {
+    const id = idOf(innings.team);
+    if (id && !fixtureIds.includes(id)) fixtureIds.push(id);
+  }
+  const fixture = fixtureIds
+    .map((id) => teamLabelOf(teamById, id) || "Unknown team")
+    .join(" vs ") || "unknown fixture";
+
+  const appearances = [];
+  for (const [index, innings] of (match.innings || []).entries()) {
+    const roles = [];
+    if ((innings.battingOrder || []).some((player) => idOf(player) === playerId)) roles.push("batting order");
+    if ((innings.batting || []).some((row) => idOf(row.player) === playerId)) roles.push("batting card");
+    if ((innings.fallOfWickets || []).some((row) => idOf(row.player) === playerId)) roles.push("fall of wicket");
+    if ((innings.partnerships || []).some((row) =>
+      idOf(row.batsman1) === playerId || idOf(row.batsman2) === playerId)) roles.push("partnership");
+    if ((innings.bowling || []).some((row) => idOf(row.player) === playerId)) roles.push("bowling card");
+    if (idOf(innings.currentBowler) === playerId) roles.push("current bowler");
+    if (idOf(innings.twelfthManBowlBlock?.player) === playerId) roles.push("twelfth-man bowl block");
+    if ((innings.oversHistory || []).some((over) =>
+      idOf(over?.bowler) === playerId ||
+      (over?.balls || []).some((ball) =>
+        [ball?.batsmanOnStrike, ball?.batsmanNonStrike, ball?.bowler, ball?.dismissedPlayer, ball?.fielder]
+          .some((player) => idOf(player) === playerId)))) {
+      roles.push("over history");
+    }
+    if (!roles.length) continue;
+    const battingTeam = idOf(innings.team);
+    appearances.push(
+      `${battingTeam ? teamLabelOf(teamById, battingTeam) : `innings ${index + 1}`} (${[...new Set(roles)].join(", ")})`,
+    );
+  }
+
+  for (const group of match.playingXI || []) {
+    if ((group.players || []).some((player) => idOf(player) === playerId)) {
+      appearances.push(`${teamLabelOf(teamById, group.team) || "match"} (playing XI)`);
+    }
+  }
+  for (const entry of match.twelfthMan || []) {
+    if (idOf(entry.player) === playerId) {
+      appearances.push(`${teamLabelOf(teamById, entry.team) || "match"} (twelfth man)`);
+    }
+  }
+  for (const entry of match.impactPlayers || []) {
+    if (idOf(entry.player) === playerId) {
+      appearances.push(`${teamLabelOf(teamById, entry.team) || "match"} (impact player)`);
+    }
+    if (idOf(entry.replaces) === playerId) {
+      appearances.push(`${teamLabelOf(teamById, entry.team) || "match"} (replaced by impact player)`);
+    }
+  }
+  if (idOf(match.manOfMatch) === playerId) appearances.push("man of the match");
+
+  const unique = [...new Set(appearances)];
+  return `${matchLabel(match)}: ${fixture}; innings: ${unique.length ? unique.join("; ") : "no scored appearance"}`;
+}
+
+function bowlerReconciliationFor(match, playerId, teamId, teamById) {
+  const lines = [];
+  for (const innings of match.innings || []) {
+    const battingTeamId = idOf(innings.team);
+    // The placeholder's side bowls in the opponent's batting innings.
+    if (!battingTeamId || battingTeamId === teamId) continue;
+
+    const bowlingRows = innings.bowling || [];
+    const battingRows = innings.batting || [];
+    if (
+      !bowlingRows.length &&
+      !battingRows.length &&
+      !Number(innings.runs) &&
+      !Number(innings.wickets) &&
+      !Number(innings.balls)
+    ) continue;
+
+    let bowlingBalls = 0;
+    let bowlingRuns = 0;
+    let bowlingWickets = 0;
+    let own = null;
+    for (const row of bowlingRows) {
+      const balls = Number(row.balls) > 0 ? Number(row.balls) : oversAsBalls(row.overs);
+      const runs = Number(row.runs) || 0;
+      const wickets = Number(row.wickets) || 0;
+      bowlingBalls += balls;
+      bowlingRuns += runs;
+      bowlingWickets += wickets;
+      if (idOf(row.player) === playerId) own = { balls, runs, wickets };
+    }
+
+    const extras = innings.extras || {};
+    const wides = Number(extras.wides) || 0;
+    const noBalls = Number(extras.noBalls) || 0;
+    const byes = Number(extras.byes) || 0;
+    const legByes = Number(extras.legByes) || 0;
+    const penalties = Number(extras.penalties) || 0;
+    const extraTotal = Number(extras.total) > 0
+      ? Number(extras.total)
+      : wides + noBalls + byes + legByes + penalties;
+
+    const battingRuns = battingRows.reduce((sum, row) => sum + (Number(row.runs) || 0), 0);
+    const declaredRuns = Number(innings.runs);
+    const totalRuns = declaredRuns > 0 ? declaredRuns : battingRuns + extraTotal;
+
+    const outWickets = battingRows.filter((row) => {
+      if (row.isOut === true) return true;
+      if (row.isOut === false) return false;
+      return Boolean(row.dismissalType);
+    }).length;
+    const declaredWickets = Number(innings.wickets);
+    const totalWickets = declaredWickets > 0 ? declaredWickets : outWickets;
+
+    const declaredBalls = Number(innings.balls);
+    const battingBalls = battingRows.reduce((sum, row) => sum + (Number(row.balls) || 0), 0);
+    const totalBalls = declaredBalls > 0
+      ? declaredBalls
+      : oversAsBalls(innings.overs) || battingBalls;
+
+    const nonBowlerWickets = battingRows.filter((row) => {
+      const type = String(row.dismissalType || "").trim().toLowerCase();
+      return row.isRetired === true ||
+        row.isRetiredHurt === true ||
+        type.includes("run out") ||
+        type === "retired" ||
+        type === "retired hurt" ||
+        type === "obstructing the field" ||
+        type === "obstruction" ||
+        type === "timed out" ||
+        type === "handled the ball";
+    }).length;
+
+    const expectedBowlerRuns = totalRuns - byes - legByes - penalties;
+    const expectedBowlerWickets = totalWickets - nonBowlerWickets;
+    const deltaText = (delta) => {
+      if (!delta.balls && !delta.runs && !delta.wickets) return "reconciled";
+      const overs = `${delta.balls < 0 ? "-" : ""}${formatOvers(Math.abs(delta.balls))}`;
+      return `unreconciled ${overs} ov / ${delta.runs > 0 ? "+" : ""}${delta.runs} r / ${delta.wickets > 0 ? "+" : ""}${delta.wickets} w`;
+    };
+    const teamDelta = {
+      balls: totalBalls - bowlingBalls,
+      runs: expectedBowlerRuns - bowlingRuns,
+      wickets: expectedBowlerWickets - bowlingWickets,
+    };
+
+    let line = `${matchLabel(match)}: ${teamLabelOf(teamById, battingTeamId)} batting ${totalRuns}/${totalWickets} (${formatOvers(totalBalls)} ov; extras ${extraTotal}: w${wides} nb${noBalls} b${byes} lb${legByes} p${penalties}) vs ${teamLabelOf(teamById, teamId)} bowling ${formatOvers(bowlingBalls)} ov / ${bowlingRuns} r / ${bowlingWickets} w -> team ${deltaText(teamDelta)}`;
+    if (own) {
+      const withoutPlaceholder = {
+        balls: totalBalls - (bowlingBalls - own.balls),
+        runs: expectedBowlerRuns - (bowlingRuns - own.runs),
+        wickets: expectedBowlerWickets - (bowlingWickets - own.wickets),
+      };
+      line += `; placeholder ${formatOvers(own.balls)} ov / ${own.runs} r / ${own.wickets} w; without placeholder ${deltaText(withoutPlaceholder)}`;
+    }
+    lines.push(line);
+  }
+  return lines.join(" | ");
+}
+
 const publishedOrDraft = (match) =>
   match?.manualDraft === true ||
   ["live", "completed", "innings-break", "innings_break", "toss_done", "super_over", "pending_tie_resolution", "abandoned"]
     .includes(String(match?.status || "").toLowerCase());
+
+const addPlayerTeam = (assignments, playerRef, teamRef) => {
+  const playerId = idOf(playerRef);
+  if (!playerId) return;
+  const teamId = idOf(teamRef);
+  if (!assignments.has(playerId)) {
+    // A scorecard row can lack side information (older fixtures omit
+    // innings.team). The reference still counts; the player's DB team or roster
+    // fills the assignment in later.
+    assignments.set(playerId, teamId || "");
+    return;
+  }
+  if (teamId && !assignments.get(playerId)) assignments.set(playerId, teamId);
+};
+
+/**
+ * Map every player referenced by a played (or draft) scorecard to the side they
+ * appeared for. Player.team is not required: an imported placeholder can be
+ * missing that link while still being present in Team.players and in the
+ * innings/XI data the public squad view reads.
+ */
+export function collectMatchPlayerReferences(matches = []) {
+  const assignments = new Map();
+  const add = addPlayerTeam;
+
+  for (const match of matches) {
+    if (!publishedOrDraft(match)) continue;
+
+    for (const group of [...(match.playingXI || []), ...(match.squad15 || []), ...(match.bowlingXI || [])]) {
+      const team = group?.team;
+      for (const player of group?.players || []) add(assignments, player, team);
+      add(assignments, group?.captain, team);
+      add(assignments, group?.viceCaptain, team);
+      for (const player of group?.wicketKeepers || []) add(assignments, player, team);
+    }
+    for (const entry of match.twelfthMan || []) add(assignments, entry?.player, entry?.team);
+    for (const entry of match.impactPlayers || []) {
+      add(assignments, entry?.player, entry?.team);
+      add(assignments, entry?.replaces, entry?.team);
+    }
+    for (const entry of match.teamRoles || []) {
+      const team = entry?.team;
+      add(assignments, entry?.captain, team);
+      add(assignments, entry?.viceCaptain, team);
+      for (const player of entry?.wicketKeepers || []) add(assignments, player, team);
+    }
+    for (const entry of match.drsReviews || []) add(assignments, entry?.requestedBy, entry?.team);
+    add(assignments, match.manOfMatch);
+    add(assignments, match.result?.playerOfMatch);
+
+    const inningsList = [...(match.innings || [])];
+    for (const over of match.superOvers || []) {
+      inningsList.push(...(over.innings || []));
+      for (const entry of over.bowlers || []) add(assignments, entry?.bowler, entry?.team || over?.team);
+      for (const entry of over.batsmen || []) {
+        for (const player of entry?.players || []) add(assignments, player, entry?.team || over?.team);
+      }
+    }
+
+    for (const innings of inningsList) {
+      const team = innings?.team;
+      for (const player of [
+        innings?.currentBatsman1,
+        innings?.currentBatsman2,
+        innings?.onStrikeBatsman,
+        innings?.currentBowler,
+        innings?.twelfthManBowlBlock?.player,
+        ...(innings?.battingOrder || []),
+      ]) add(assignments, player, team);
+      for (const row of innings?.batting || []) {
+        add(assignments, row?.player, team);
+        add(assignments, row?.dismissedBy, team);
+        add(assignments, row?.fielder, team);
+        for (const shot of row?.shots || []) add(assignments, shot?.bowler, team);
+      }
+      for (const row of innings?.bowling || []) add(assignments, row?.player, team);
+      for (const row of innings?.fallOfWickets || []) {
+        add(assignments, row?.player, team);
+        add(assignments, row?.fielder, team);
+      }
+      for (const row of innings?.partnerships || []) {
+        add(assignments, row?.batsman1, team);
+        add(assignments, row?.batsman2, team);
+      }
+      for (const over of innings?.oversHistory || []) {
+        add(assignments, over?.bowler, team);
+        for (const ball of over?.balls || []) {
+          for (const key of [
+            "batsmanOnStrike",
+            "batsmanNonStrike",
+            "bowler",
+            "dismissedPlayer",
+            "fielder",
+          ]) add(assignments, ball?.[key], team);
+        }
+      }
+    }
+  }
+  return assignments;
+}
 
 export function buildPlayerReview({
   tournament,
@@ -190,10 +683,17 @@ export function buildPlayerReview({
   matches,
   mapEntries,
   originalSquadNames = new Map(),
+  playerTeams = new Map(),
 }) {
   const teamById = new Map(teams.map((team) => [idOf(team), team]));
-  const originalSquadIds = new Set(
-    (tournament.tournamentSquads || []).flatMap((entry) => (entry.players || []).map(idOf)),
+  const squadByTeam = new Map();
+  for (const entry of tournament.tournamentSquads || []) {
+    const teamId = idOf(entry.team);
+    if (!squadByTeam.has(teamId)) squadByTeam.set(teamId, new Set());
+    for (const player of entry.players || []) squadByTeam.get(teamId).add(idOf(player));
+  }
+  const rosterByTeam = new Map(
+    teams.map((team) => [idOf(team), new Set((team.players || []).map(idOf))]),
   );
   const mapTargets = mapEntries.flatMap((entry) => {
     const value = entry.mappedValue.trim();
@@ -204,10 +704,54 @@ export function buildPlayerReview({
     }];
   });
   const relevantMatches = matches.filter(publishedOrDraft);
+  const matchPlayerTeams = collectMatchPlayerReferences(relevantMatches);
+  const referencedPlayerIds = new Set(matchPlayerTeams.keys());
+
+  // Roster membership is the DB fallback for a team with no tournament squad,
+  // and is more specific than a stale Player.team link. Explicit assignments
+  // (roster/match/CREATE discovery) win over Player.team.
+  const assignments = new Map(matchPlayerTeams);
+  for (const team of teams) {
+    for (const player of team.players || []) assignments.set(idOf(player), idOf(team));
+  }
+  for (const [playerId, teamId] of playerTeams) assignments.set(playerId, teamId);
+
+  const playerById = new Map(players.map((player) => [idOf(player), player]));
+  // The tournament squad is the authority. Team.players is the DB fallback for
+  // a team with no squad, and the assigned players are the last resort for
+  // older data where neither list was maintained.
+  const squadPlayersByTeam = new Map();
+  for (const team of teams) {
+    const teamId = idOf(team);
+    const dbSquad = squadByTeam.get(teamId);
+    const roster = rosterByTeam.get(teamId) || new Set();
+    const assigned = players
+      .filter((player) => assignments.get(idOf(player)) === teamId)
+      .map((player) => idOf(player));
+    const ids = dbSquad && dbSquad.size > 0
+      ? [...dbSquad]
+      : roster.size > 0
+        ? [...roster]
+        : assigned;
+    squadPlayersByTeam.set(
+      teamId,
+      [...new Set(ids)].map((id) => playerById.get(id)).filter(Boolean),
+    );
+  }
+
+  // Candidate membership depends on the match, so cache the "players with a
+  // row for this side" set instead of recalculating it for every placeholder.
+  const matchRowsCache = new Map();
+  const rowsInMatchFor = (match, teamId) => {
+    const key = `${idOf(match)}::${teamId}`;
+    if (!matchRowsCache.has(key)) matchRowsCache.set(key, playersWithRowsForTeam(match, teamId));
+    return matchRowsCache.get(key);
+  };
+
   const duplicateNames = new Map();
   for (const player of players) {
     const key = normalizeName(player.name);
-    const teamId = idOf(player.team);
+    const teamId = assignments.get(idOf(player)) || idOf(player.team);
     const existing = duplicateNames.get(key) || [];
     existing.push({ id: idOf(player), teamId });
     duplicateNames.set(key, existing);
@@ -216,7 +760,9 @@ export function buildPlayerReview({
   const rows = [];
   for (const player of players) {
     const playerId = idOf(player);
-    const teamId = idOf(player.team);
+    const playerTeamId = idOf(player.team);
+    const teamId = assignments.get(playerId) ||
+      (teamById.has(playerTeamId) ? playerTeamId : "");
     const team = teamById.get(teamId);
     if (!team) continue;
     const targetMappings = mapTargets.filter((entry) =>
@@ -224,19 +770,37 @@ export function buildPlayerReview({
       normalizeName(entry.targetName) === normalizeName(player.name),
     );
     const isTbc = /\(TBC\)$/i.test(String(player.name || "").trim());
-    const hasOriginalSquadEvidence = originalSquadIds.size > 0 || originalSquadNames.size > 0;
-    const isOriginalPlayer = originalSquadIds.has(playerId) ||
-      originalSquadNames.get(normalizeName(team.name))?.has(normalizeName(player.name));
-    const isOutsideOriginalSquad = hasOriginalSquadEvidence
-      ? !isOriginalPlayer
-      : targetMappings.some((entry) => entry.mappedValue.toUpperCase().startsWith("CREATE:"));
-    if (!isTbc && !(isOutsideOriginalSquad && targetMappings.length)) continue;
+    const isCreateTarget = targetMappings.some(
+      (entry) => entry.mappedValue.toUpperCase().startsWith("CREATE:"),
+    );
+    const csvNames = originalSquadNames.get(normalizeName(team.name));
+    const teamSquad = squadByTeam.get(teamId);
+    const roster = rosterByTeam.get(teamId) || new Set();
+    // When a tournament squad exists in the DB it is the authority. Otherwise
+    // fall back to Team.players so an empty tournamentSquads array does not
+    // turn every match participant into a "missing" player.
+    const isOriginalByDb = teamSquad
+      ? teamSquad.has(playerId)
+      : roster.has(playerId);
+    const isOriginalByCsv = Boolean(csvNames?.has(normalizeName(player.name)));
+    const hasSquadEvidence = Boolean(teamSquad) || roster.size > 0 || Boolean(csvNames?.size);
+    const isOutsideOriginalSquad = hasSquadEvidence
+      ? !(isOriginalByDb || isOriginalByCsv)
+      : true;
+    const isReferencedInMatches = referencedPlayerIds.has(playerId);
+    if (
+      !isTbc &&
+      !isCreateTarget &&
+      !(isReferencedInMatches && isOutsideOriginalSquad)
+    ) continue;
 
     const stats = { runs: 0, balls: 0, bowlingBalls: 0, bowlingRuns: 0, wickets: 0 };
     const labels = [];
+    const appearedMatches = [];
     for (const match of relevantMatches) {
       const appearance = matchAppearance(match, playerId);
       if (!appearance.appeared) continue;
+      appearedMatches.push(match);
       labels.push(matchLabel(match));
       stats.runs += appearance.runs;
       stats.balls += appearance.balls;
@@ -258,6 +822,79 @@ export function buildPlayerReview({
     const duplicateMatches = duplicateNames.get(normalizeName(player.name)) || [];
     const sameTeamDuplicates = duplicateMatches.filter((entry) => entry.teamId === teamId).length > 1;
     const crossTeamDuplicates = new Set(duplicateMatches.map((entry) => entry.teamId)).size > 1;
+
+    const teamSquadPlayers = squadPlayersByTeam.get(teamId) || [];
+    const perMatchCandidates = appearedMatches.map((match) => {
+      const rowsInMatch = rowsInMatchFor(match, teamId);
+      const candidates = teamSquadPlayers.filter((candidate) => {
+        const candidateId = idOf(candidate);
+        return candidateId !== playerId &&
+          !isTbcName(candidate.name) &&
+          !rowsInMatch.has(candidateId);
+      });
+      return { match, candidates };
+    });
+    const candidateSets = perMatchCandidates.map((entry) => new Set(entry.candidates.map(idOf)));
+    const intersection = candidateSets.length
+      ? [...candidateSets[0]].filter((id) => candidateSets.every((set) => set.has(id)))
+      : [];
+    const candidateById = new Map(teamSquadPlayers.map((candidate) => [idOf(candidate), candidate]));
+    const candidateRealPlayers = intersection
+      .map((id) => playerReferenceText(candidateById.get(id)))
+      .filter(Boolean)
+      .join("; ");
+    const candidatesByMatch = perMatchCandidates
+      .map((entry) => {
+        const names = entry.candidates
+          .map((candidate) => playerReferenceText(candidate))
+          .filter(Boolean);
+        return `${matchLabel(entry.match)}: ${names.length ? names.join("; ") : "(none)"}`;
+      })
+      .join(" | ");
+
+    const placeholderKey = normalizeName(stripTbcSuffix(player.name));
+    const similarNames = [];
+    const seenSimilar = new Set();
+    for (const candidate of teamSquadPlayers) {
+      const candidateId = idOf(candidate);
+      if (candidateId === playerId || seenSimilar.has(candidateId) || isTbcName(candidate.name)) continue;
+      const reason = similarNameReason(player.name, candidate.name);
+      if (!reason) continue;
+      seenSimilar.add(candidateId);
+      similarNames.push(`${playerReferenceText(candidate)} (${reason})`);
+    }
+    similarNames.sort((left, right) => left.localeCompare(right));
+
+    // Same name on another team is informational only. It is deliberately kept
+    // out of candidate_real_players and is never a merge suggestion: an
+    // applyPlayerNames cross-team merge still needs the explicit row opt-in.
+    const otherTeamNames = [];
+    const seenOtherTeams = new Set();
+    for (const otherTeam of teams) {
+      const otherTeamId = idOf(otherTeam);
+      if (otherTeamId === teamId) continue;
+      for (const candidate of squadPlayersByTeam.get(otherTeamId) || []) {
+        const candidateId = idOf(candidate);
+        if (seenOtherTeams.has(candidateId) || isTbcName(candidate.name)) continue;
+        if (normalizeName(stripTbcSuffix(candidate.name)) !== placeholderKey) continue;
+        seenOtherTeams.add(candidateId);
+        otherTeamNames.push(`${otherTeam.name}: ${playerReferenceText(candidate)}`);
+      }
+    }
+    otherTeamNames.sort((left, right) => left.localeCompare(right));
+
+    const matchContext = appearedMatches
+      .map((match) => matchContextFor(match, playerId, teamId, teamById))
+      .join(" | ");
+    // Reconciliation is for placeholder bowlers. It is blank for a batter so
+    // the column does not imply a bowling question that does not exist.
+    const bowlerReconciliation = appearedMatches
+      .filter((match) => (match.innings || []).some((innings) =>
+        (innings.bowling || []).some((row) => idOf(row.player) === playerId)))
+      .map((match) => bowlerReconciliationFor(match, playerId, teamId, teamById))
+      .filter(Boolean)
+      .join(" | ");
+
     rows.push({
       player_id: playerId,
       placeholder_name: player.name,
@@ -273,6 +910,13 @@ export function buildPlayerReview({
       real_name_or_existing_player_id: "",
       duplicate_same_team: sameTeamDuplicates ? "YES" : "",
       duplicate_across_teams: crossTeamDuplicates ? "YES" : "",
+      allow_cross_team: "",
+      candidate_real_players: candidateRealPlayers,
+      candidates_by_match: candidatesByMatch,
+      similar_names: similarNames.join("; "),
+      similar_names_other_teams: otherTeamNames.join("; "),
+      match_context: matchContext,
+      bowler_reconciliation: bowlerReconciliation,
     });
   }
   return rows;
