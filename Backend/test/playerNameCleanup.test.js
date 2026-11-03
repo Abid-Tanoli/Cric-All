@@ -133,6 +133,81 @@ test("review report is read-only and writes all identified placeholders to an an
   assert.ok(loadNameMapEntries().some((entry) => entry.matchLabel === "QF" && entry.sourceName === "S Haroo"));
 });
 
+test("report finds the SF1 CREATE placeholders even when Player.team is missing", async () => {
+  sequence += 1;
+  const team = await Team.create({ name: "Sky Sports" });
+  const originalNames = [
+    "Abrar (TBC)",
+    "Afridi (TBC)",
+    "Attaulla (TBC)",
+    "MD (TBC)",
+    "Unknown Bowler (TBC)",
+    "Zahid (TBC)",
+    "Rashid (TBC)",
+    "Naveed (TBC)",
+  ];
+  const missingNames = ["Attack (TBC)", "Attack 1 (TBC)", "Ali (TBC)"];
+  const originals = await Player.create(
+    originalNames.map((name) => ({ name, team: team._id })),
+  );
+  // Reproduce the live SF1 rows: the public squad still lists them through
+  // Team.players and the match scorecard, but Player.team is unset, so the old
+  // Player.team-only query never made them report candidates.
+  const missing = await Player.create(missingNames.map((name) => ({ name })));
+  team.players = [...originals, ...missing].map((player) => player._id);
+  await team.save();
+  const tournament = await Tournament.create({
+    name: TOURNAMENT_NAME,
+    slug: `placeholder-coverage-${sequence}`,
+    type: "knockout",
+    startDate: new Date("2026-10-01T00:00:00.000Z"),
+    endDate: new Date("2026-11-01T00:00:00.000Z"),
+    teams: [team._id],
+    tournamentSquads: [{
+      team: team._id,
+      players: originals.map((player) => player._id),
+    }],
+  });
+  const match = await Match.create({
+    title: "SF1: Sky Sports vs Baldia Zalmi",
+    stage: "semi_final",
+    stageLabel: "SF1",
+    tournament: tournament._id,
+    teams: [team._id],
+    status: "completed",
+    innings: [{
+      team: team._id,
+      batting: [
+        { player: originals[0]._id, runs: 11, balls: 7 },
+        { player: missing[0]._id, runs: 4, balls: 3 },
+        { player: missing[1]._id, runs: 1, balls: 2 },
+        { player: missing[2]._id, runs: 6, balls: 4 },
+      ],
+      bowling: [],
+    }],
+  });
+  tournament.matches = [match._id];
+  await tournament.save();
+
+  const report = await collectPlayerReport();
+
+  assert.equal(report.reviewRows.length, 11);
+  assert.deepEqual(
+    report.reviewRows.map((row) => row.placeholder_name).sort(),
+    [...originalNames, ...missingNames].sort(),
+  );
+  for (const name of missingNames) {
+    const row = report.reviewRows.find((entry) => entry.placeholder_name === name);
+    assert.ok(row, `${name} must be reported`);
+    assert.equal(row.team_name, "Sky Sports");
+    assert.equal(row.match_labels, "SF1");
+  }
+  const attack = report.reviewRows.find((row) => row.placeholder_name === "Attack (TBC)");
+  assert.match(attack.source_name, /SF1: Attack/);
+  const ali = report.reviewRows.find((row) => row.placeholder_name === "Ali (TBC)");
+  assert.match(ali.source_name, /SF1: Ali/);
+});
+
 test("rename keeps the same id and all existing player stats", async () => {
   const { team } = await seedBase();
   const [source] = await Player.create([{
@@ -433,7 +508,9 @@ test("both CLI workflows run end-to-end on local cric-all-e2e with rename, merge
     console.log("\nDisposable database CLI run: cric-all-e2e");
     await listPlaceholderPlayersMain(["--output", csvPath]);
     const originalRows = parseCsv(fs.readFileSync(csvPath, "utf8"));
-    assert.equal(originalRows.length, 2);
+    // Two CREATE placeholders plus the completed match's existing player, who
+    // is not in the DB tournament squad (criterion (c) of the report).
+    assert.equal(originalRows.length, 3);
     const filledRows = originalRows.map((row) => ({
       ...row,
       real_name_or_existing_player_id: row.placeholder_name === "Abrar (TBC)"

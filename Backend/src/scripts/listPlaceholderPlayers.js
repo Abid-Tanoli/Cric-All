@@ -4,8 +4,12 @@
 //   node src/scripts/listPlaceholderPlayers.js --output /tmp/player-review.csv
 //
 // Reads MONGO_URL from Backend/.env, never prints it, and writes only the
-// owner-editable CSV file. Tournament squads are preferred as original-squad
-// evidence; pass --squads-file when the canonical source CSV is available.
+// owner-editable CSV file. The report is self-sufficient on the live DB:
+// tournament squads come from Tournament.tournamentSquads, with Team.players
+// and the match scorecards as the fallback when squads are empty. It reports
+// every (TBC) player, every CREATE name-map target, and any scorecard player
+// outside their side's squad. Pass --squads-file only to add the canonical
+// source CSV as extra original-squad evidence.
 
 import fs from "node:fs";
 import os from "node:os";
@@ -21,7 +25,9 @@ import Tournament from "../models/Tournament.js";
 import { getMongoTarget } from "../utils/mongoTarget.js";
 import {
   buildPlayerReview,
+  collectMatchPlayerReferences,
   CSV_HEADERS,
+  idOf,
   loadNameMapEntries,
   normalizeName,
   parseCsv,
@@ -63,16 +69,17 @@ function originalSquadNamesFromCsv(filePath) {
   return names;
 }
 
-export function reportDuplicatePlayers(players, teams) {
+export function reportDuplicatePlayers(players, teams, playerTeams = new Map()) {
   const teamNames = new Map(teams.map((team) => [String(team._id), team.name]));
   const byName = new Map();
   for (const player of players) {
     const key = normalizeName(player.name);
     const group = byName.get(key) || [];
+    const teamId = String(playerTeams.get(String(player._id)) || player.team || "");
     group.push({
       player_id: String(player._id),
       name: player.name,
-      team: teamNames.get(String(player.team)) || "Unknown team",
+      team: teamNames.get(teamId) || "Unknown team",
     });
     byName.set(key, group);
   }
@@ -95,9 +102,6 @@ export function reportDuplicatePlayers(players, teams) {
 export async function collectPlayerReport({ tournamentName = TOURNAMENT_NAME, squadsFile = "" } = {}) {
   const tournament = await Tournament.findOne({ name: tournamentName }).lean();
   if (!tournament) throw new Error(`Tournament "${tournamentName}" was not found.`);
-  const teamIds = (tournament.teams || []).map((team) => team?._id || team);
-  const teams = await Team.find({ _id: { $in: teamIds } }).lean();
-  const players = await Player.find({ team: { $in: teamIds } }).lean();
   const eventIds = await Event.find({ name: tournamentName }).distinct("_id");
   const matches = await Match.find({
     $or: [
@@ -107,6 +111,67 @@ export async function collectPlayerReport({ tournamentName = TOURNAMENT_NAME, sq
     ],
   }).lean();
   const mapEntries = loadNameMapEntries();
+
+  // Team scope comes from the tournament itself, its DB squads, and the teams
+  // that actually appear in its fixtures. The last two matter on live data where
+  // tournamentSquads is empty and the public squad view falls back to the match
+  // and Team.players links.
+  const teamIds = new Set();
+  for (const team of tournament.teams || []) teamIds.add(idOf(team));
+  for (const entry of tournament.tournamentSquads || []) teamIds.add(idOf(entry.team));
+  for (const match of matches) {
+    for (const team of match.teams || []) teamIds.add(idOf(team));
+    for (const innings of match.innings || []) teamIds.add(idOf(innings.team));
+    for (const over of match.superOvers || []) {
+      for (const innings of over.innings || []) teamIds.add(idOf(innings.team));
+    }
+  }
+  const scopedTeamIds = [...teamIds].filter(Boolean);
+  const teams = await Team.find({ _id: { $in: scopedTeamIds } }).lean();
+
+  const matchPlayerTeams = collectMatchPlayerReferences(matches);
+  const rosterPlayerIds = teams.flatMap((team) => (team.players || []).map(idOf));
+  const referencedPlayerIds = [...matchPlayerTeams.keys()];
+  const createTargets = mapEntries
+    .filter((entry) => entry.mappedValue.trim().toUpperCase().startsWith("CREATE:"))
+    .map((entry) => ({
+      teamName: entry.teamName,
+      name: entry.mappedValue.trim().slice("CREATE:".length).trim(),
+    }))
+    .filter((entry) => entry.name);
+  const createNames = [...new Set(createTargets.map((entry) => entry.name))];
+
+  // Candidates are everything the old Player.team-only query would have found,
+  // plus roster ids, scorecard references, and CREATE targets matched by name.
+  const playerQuery = {
+    $or: [
+      { team: { $in: scopedTeamIds } },
+      { _id: { $in: [...new Set([...rosterPlayerIds, ...referencedPlayerIds])] } },
+      ...(createNames.length ? [{ name: { $in: createNames } }] : []),
+    ],
+  };
+  const players = await Player.find(playerQuery).lean();
+
+  // Roster assignments win over match references, and an explicit CREATE team
+  // assignment fills the remaining gap when Player.team is missing/stale.
+  const playerTeams = new Map(matchPlayerTeams);
+  for (const team of teams) {
+    for (const player of team.players || []) playerTeams.set(idOf(player), idOf(team));
+  }
+  const teamByName = new Map(teams.map((team) => [normalizeName(team.name), team]));
+  for (const target of createTargets) {
+    const team = teamByName.get(normalizeName(target.teamName));
+    if (!team) continue;
+    for (const player of players) {
+      if (normalizeName(player.name) !== normalizeName(target.name)) continue;
+      const existingTeamId = playerTeams.get(idOf(player));
+      const ownTeamId = idOf(player.team);
+      if (!existingTeamId && (!ownTeamId || ownTeamId === idOf(team))) {
+        playerTeams.set(idOf(player), idOf(team));
+      }
+    }
+  }
+
   const reviewRows = buildPlayerReview({
     tournament,
     teams,
@@ -114,6 +179,7 @@ export async function collectPlayerReport({ tournamentName = TOURNAMENT_NAME, sq
     matches,
     mapEntries,
     originalSquadNames: originalSquadNamesFromCsv(squadsFile),
+    playerTeams,
   });
   return {
     tournament,
@@ -122,7 +188,7 @@ export async function collectPlayerReport({ tournamentName = TOURNAMENT_NAME, sq
     matches,
     mapEntries,
     reviewRows,
-    duplicateRows: reportDuplicatePlayers(players, teams),
+    duplicateRows: reportDuplicatePlayers(players, teams, playerTeams),
   };
 }
 
@@ -149,7 +215,9 @@ export async function main(args = process.argv.slice(2)) {
     console.log(`Tournament: ${report.tournament.name}`);
     console.log(`Players reviewed: ${report.reviewRows.length}`);
     if (!report.tournament.tournamentSquads?.length && !squadsFile) {
-      console.warn("No tournamentSquads data or --squads-file supplied; non-(TBC) imports are identified only by CREATE name maps.");
+      console.warn(
+        "No tournamentSquads data or --squads-file supplied; using Team.players and the match scorecards as the DB squad fallback.",
+      );
     }
     console.log("\nPlaceholder / imported players:");
     console.table(report.reviewRows);

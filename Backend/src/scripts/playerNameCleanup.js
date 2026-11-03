@@ -183,6 +183,106 @@ const publishedOrDraft = (match) =>
   ["live", "completed", "innings-break", "innings_break", "toss_done", "super_over", "pending_tie_resolution", "abandoned"]
     .includes(String(match?.status || "").toLowerCase());
 
+const addPlayerTeam = (assignments, playerRef, teamRef) => {
+  const playerId = idOf(playerRef);
+  if (!playerId) return;
+  const teamId = idOf(teamRef);
+  if (!assignments.has(playerId)) {
+    // A scorecard row can lack side information (older fixtures omit
+    // innings.team). The reference still counts; the player's DB team or roster
+    // fills the assignment in later.
+    assignments.set(playerId, teamId || "");
+    return;
+  }
+  if (teamId && !assignments.get(playerId)) assignments.set(playerId, teamId);
+};
+
+/**
+ * Map every player referenced by a played (or draft) scorecard to the side they
+ * appeared for. Player.team is not required: an imported placeholder can be
+ * missing that link while still being present in Team.players and in the
+ * innings/XI data the public squad view reads.
+ */
+export function collectMatchPlayerReferences(matches = []) {
+  const assignments = new Map();
+  const add = addPlayerTeam;
+
+  for (const match of matches) {
+    if (!publishedOrDraft(match)) continue;
+
+    for (const group of [...(match.playingXI || []), ...(match.squad15 || []), ...(match.bowlingXI || [])]) {
+      const team = group?.team;
+      for (const player of group?.players || []) add(assignments, player, team);
+      add(assignments, group?.captain, team);
+      add(assignments, group?.viceCaptain, team);
+      for (const player of group?.wicketKeepers || []) add(assignments, player, team);
+    }
+    for (const entry of match.twelfthMan || []) add(assignments, entry?.player, entry?.team);
+    for (const entry of match.impactPlayers || []) {
+      add(assignments, entry?.player, entry?.team);
+      add(assignments, entry?.replaces, entry?.team);
+    }
+    for (const entry of match.teamRoles || []) {
+      const team = entry?.team;
+      add(assignments, entry?.captain, team);
+      add(assignments, entry?.viceCaptain, team);
+      for (const player of entry?.wicketKeepers || []) add(assignments, player, team);
+    }
+    for (const entry of match.drsReviews || []) add(assignments, entry?.requestedBy, entry?.team);
+    add(assignments, match.manOfMatch);
+    add(assignments, match.result?.playerOfMatch);
+
+    const inningsList = [...(match.innings || [])];
+    for (const over of match.superOvers || []) {
+      inningsList.push(...(over.innings || []));
+      for (const entry of over.bowlers || []) add(assignments, entry?.bowler, entry?.team || over?.team);
+      for (const entry of over.batsmen || []) {
+        for (const player of entry?.players || []) add(assignments, player, entry?.team || over?.team);
+      }
+    }
+
+    for (const innings of inningsList) {
+      const team = innings?.team;
+      for (const player of [
+        innings?.currentBatsman1,
+        innings?.currentBatsman2,
+        innings?.onStrikeBatsman,
+        innings?.currentBowler,
+        innings?.twelfthManBowlBlock?.player,
+        ...(innings?.battingOrder || []),
+      ]) add(assignments, player, team);
+      for (const row of innings?.batting || []) {
+        add(assignments, row?.player, team);
+        add(assignments, row?.dismissedBy, team);
+        add(assignments, row?.fielder, team);
+        for (const shot of row?.shots || []) add(assignments, shot?.bowler, team);
+      }
+      for (const row of innings?.bowling || []) add(assignments, row?.player, team);
+      for (const row of innings?.fallOfWickets || []) {
+        add(assignments, row?.player, team);
+        add(assignments, row?.fielder, team);
+      }
+      for (const row of innings?.partnerships || []) {
+        add(assignments, row?.batsman1, team);
+        add(assignments, row?.batsman2, team);
+      }
+      for (const over of innings?.oversHistory || []) {
+        add(assignments, over?.bowler, team);
+        for (const ball of over?.balls || []) {
+          for (const key of [
+            "batsmanOnStrike",
+            "batsmanNonStrike",
+            "bowler",
+            "dismissedPlayer",
+            "fielder",
+          ]) add(assignments, ball?.[key], team);
+        }
+      }
+    }
+  }
+  return assignments;
+}
+
 export function buildPlayerReview({
   tournament,
   teams,
@@ -190,10 +290,17 @@ export function buildPlayerReview({
   matches,
   mapEntries,
   originalSquadNames = new Map(),
+  playerTeams = new Map(),
 }) {
   const teamById = new Map(teams.map((team) => [idOf(team), team]));
-  const originalSquadIds = new Set(
-    (tournament.tournamentSquads || []).flatMap((entry) => (entry.players || []).map(idOf)),
+  const squadByTeam = new Map();
+  for (const entry of tournament.tournamentSquads || []) {
+    const teamId = idOf(entry.team);
+    if (!squadByTeam.has(teamId)) squadByTeam.set(teamId, new Set());
+    for (const player of entry.players || []) squadByTeam.get(teamId).add(idOf(player));
+  }
+  const rosterByTeam = new Map(
+    teams.map((team) => [idOf(team), new Set((team.players || []).map(idOf))]),
   );
   const mapTargets = mapEntries.flatMap((entry) => {
     const value = entry.mappedValue.trim();
@@ -204,10 +311,22 @@ export function buildPlayerReview({
     }];
   });
   const relevantMatches = matches.filter(publishedOrDraft);
+  const matchPlayerTeams = collectMatchPlayerReferences(relevantMatches);
+  const referencedPlayerIds = new Set(matchPlayerTeams.keys());
+
+  // Roster membership is the DB fallback for a team with no tournament squad,
+  // and is more specific than a stale Player.team link. Explicit assignments
+  // (roster/match/CREATE discovery) win over Player.team.
+  const assignments = new Map(matchPlayerTeams);
+  for (const team of teams) {
+    for (const player of team.players || []) assignments.set(idOf(player), idOf(team));
+  }
+  for (const [playerId, teamId] of playerTeams) assignments.set(playerId, teamId);
+
   const duplicateNames = new Map();
   for (const player of players) {
     const key = normalizeName(player.name);
-    const teamId = idOf(player.team);
+    const teamId = assignments.get(idOf(player)) || idOf(player.team);
     const existing = duplicateNames.get(key) || [];
     existing.push({ id: idOf(player), teamId });
     duplicateNames.set(key, existing);
@@ -216,7 +335,9 @@ export function buildPlayerReview({
   const rows = [];
   for (const player of players) {
     const playerId = idOf(player);
-    const teamId = idOf(player.team);
+    const playerTeamId = idOf(player.team);
+    const teamId = assignments.get(playerId) ||
+      (teamById.has(playerTeamId) ? playerTeamId : "");
     const team = teamById.get(teamId);
     if (!team) continue;
     const targetMappings = mapTargets.filter((entry) =>
@@ -224,13 +345,29 @@ export function buildPlayerReview({
       normalizeName(entry.targetName) === normalizeName(player.name),
     );
     const isTbc = /\(TBC\)$/i.test(String(player.name || "").trim());
-    const hasOriginalSquadEvidence = originalSquadIds.size > 0 || originalSquadNames.size > 0;
-    const isOriginalPlayer = originalSquadIds.has(playerId) ||
-      originalSquadNames.get(normalizeName(team.name))?.has(normalizeName(player.name));
-    const isOutsideOriginalSquad = hasOriginalSquadEvidence
-      ? !isOriginalPlayer
-      : targetMappings.some((entry) => entry.mappedValue.toUpperCase().startsWith("CREATE:"));
-    if (!isTbc && !(isOutsideOriginalSquad && targetMappings.length)) continue;
+    const isCreateTarget = targetMappings.some(
+      (entry) => entry.mappedValue.toUpperCase().startsWith("CREATE:"),
+    );
+    const csvNames = originalSquadNames.get(normalizeName(team.name));
+    const teamSquad = squadByTeam.get(teamId);
+    const roster = rosterByTeam.get(teamId) || new Set();
+    // When a tournament squad exists in the DB it is the authority. Otherwise
+    // fall back to Team.players so an empty tournamentSquads array does not
+    // turn every match participant into a "missing" player.
+    const isOriginalByDb = teamSquad
+      ? teamSquad.has(playerId)
+      : roster.has(playerId);
+    const isOriginalByCsv = Boolean(csvNames?.has(normalizeName(player.name)));
+    const hasSquadEvidence = Boolean(teamSquad) || roster.size > 0 || Boolean(csvNames?.size);
+    const isOutsideOriginalSquad = hasSquadEvidence
+      ? !(isOriginalByDb || isOriginalByCsv)
+      : true;
+    const isReferencedInMatches = referencedPlayerIds.has(playerId);
+    if (
+      !isTbc &&
+      !isCreateTarget &&
+      !(isReferencedInMatches && isOutsideOriginalSquad)
+    ) continue;
 
     const stats = { runs: 0, balls: 0, bowlingBalls: 0, bowlingRuns: 0, wickets: 0 };
     const labels = [];
