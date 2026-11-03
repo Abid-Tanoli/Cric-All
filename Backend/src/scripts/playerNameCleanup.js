@@ -33,6 +33,11 @@ export const CSV_HEADERS = [
   "similar_names_other_teams",
   "match_context",
   "bowler_reconciliation",
+  // Team-resolution and looser candidate evidence. Appended again so a CSV
+  // produced before these columns existed remains valid input.
+  "team_conflict",
+  "candidates_without_bowling_row",
+  "candidates_without_batting_row",
 ];
 
 export const idOf = (value) => String(value?._id || value || "");
@@ -310,6 +315,79 @@ const teamLabelOf = (teamById, value) => {
   return teamById.get(teamId)?.name || "Unknown team";
 };
 
+const uniqueIds = (values) => [...new Set(values.map(idOf).filter(Boolean))];
+
+/** Every side attached to a fixture, from `teams` and the innings fallback. */
+function fixtureTeamIds(match) {
+  const ids = [];
+  for (const team of match?.teams || []) ids.push(idOf(team));
+  for (const innings of match?.innings || []) ids.push(idOf(innings?.team));
+  for (const over of match?.superOvers || []) {
+    for (const innings of over?.innings || []) ids.push(idOf(innings?.team));
+  }
+  return uniqueIds(ids);
+}
+
+/**
+ * The side bowling in an innings is the fixture side that is not batting.
+ * `innings.team` is the batting side; it must never be used as the bowler's
+ * team by itself.
+ */
+function opposingTeamIdFor(match, innings) {
+  const battingTeamId = idOf(innings?.team);
+  if (!battingTeamId) return "";
+  return fixtureTeamIds(match).find((teamId) => teamId !== battingTeamId) || "";
+}
+
+/**
+ * Players with a bowling row for `teamId` in this match. A bowling row belongs
+ * to the fielding side, so it is only counted when `teamId` is the side that is
+ * not batting in that innings.
+ */
+function playersWithBowlingRowForTeam(match, teamId) {
+  const ids = new Set();
+  const inningsList = [
+    ...(match.innings || []),
+    ...(match.superOvers || []).flatMap((over) => over.innings || []),
+  ];
+  for (const innings of inningsList) {
+    const battingTeamId = idOf(innings.team);
+    // No batting side means the row cannot be assigned safely. Counting it for
+    // every team can only remove a candidate; it can never invent one.
+    if (battingTeamId && battingTeamId === teamId) continue;
+    for (const row of innings.bowling || []) ids.add(idOf(row.player));
+  }
+  ids.delete("");
+  return ids;
+}
+
+/** Players with a batting row (including an all-zero DNB row) for `teamId`. */
+function playersWithBattingRowForTeam(match, teamId) {
+  const ids = new Set();
+  const inningsList = [
+    ...(match.innings || []),
+    ...(match.superOvers || []).flatMap((over) => over.innings || []),
+  ];
+  for (const innings of inningsList) {
+    const battingTeamId = idOf(innings.team);
+    if (battingTeamId && battingTeamId !== teamId) continue;
+    for (const row of innings.batting || []) ids.add(idOf(row.player));
+  }
+  ids.delete("");
+  return ids;
+}
+
+const hasBowlingRow = (match, playerId) =>
+  (match.innings || []).some((innings) =>
+    (innings.bowling || []).some((row) => idOf(row.player) === playerId));
+
+const hasBattingRow = (match, playerId) =>
+  (match.innings || []).some((innings) =>
+    (innings.batting || []).some((row) => idOf(row.player) === playerId));
+
+const candidateNames = (candidates) =>
+  candidates.map((candidate) => playerReferenceText(candidate)).filter(Boolean).join("; ") || "(none)";
+
 /**
  * Players who already have a row for `teamId` in this match. Candidate
  * discovery uses the inverse: a squad member with no batting, bowling, DNB,
@@ -410,42 +488,49 @@ function playersWithRowsForTeam(match, teamId) {
 }
 
 function matchContextFor(match, playerId, teamId, teamById) {
-  const fixtureIds = [];
-  for (const team of match.teams || []) {
-    const id = idOf(team);
-    if (id && !fixtureIds.includes(id)) fixtureIds.push(id);
-  }
-  for (const innings of match.innings || []) {
-    const id = idOf(innings.team);
-    if (id && !fixtureIds.includes(id)) fixtureIds.push(id);
-  }
-  const fixture = fixtureIds
+  const fixture = fixtureTeamIds(match)
     .map((id) => teamLabelOf(teamById, id) || "Unknown team")
     .join(" vs ") || "unknown fixture";
 
   const appearances = [];
   for (const [index, innings] of (match.innings || []).entries()) {
-    const roles = [];
-    if ((innings.battingOrder || []).some((player) => idOf(player) === playerId)) roles.push("batting order");
-    if ((innings.batting || []).some((row) => idOf(row.player) === playerId)) roles.push("batting card");
-    if ((innings.fallOfWickets || []).some((row) => idOf(row.player) === playerId)) roles.push("fall of wicket");
+    const battingRoles = [];
+    const fieldingRoles = [];
+    if ((innings.battingOrder || []).some((player) => idOf(player) === playerId)) battingRoles.push("batting order");
+    if ((innings.batting || []).some((row) => idOf(row.player) === playerId)) battingRoles.push("batting card");
+    if ((innings.fallOfWickets || []).some((row) => idOf(row.player) === playerId)) battingRoles.push("fall of wicket");
     if ((innings.partnerships || []).some((row) =>
-      idOf(row.batsman1) === playerId || idOf(row.batsman2) === playerId)) roles.push("partnership");
-    if ((innings.bowling || []).some((row) => idOf(row.player) === playerId)) roles.push("bowling card");
-    if (idOf(innings.currentBowler) === playerId) roles.push("current bowler");
-    if (idOf(innings.twelfthManBowlBlock?.player) === playerId) roles.push("twelfth-man bowl block");
+      idOf(row.batsman1) === playerId || idOf(row.batsman2) === playerId)) battingRoles.push("partnership");
+    if ((innings.bowling || []).some((row) => idOf(row.player) === playerId)) fieldingRoles.push("bowling card");
+    if (idOf(innings.currentBowler) === playerId) fieldingRoles.push("current bowler");
+    if (idOf(innings.twelfthManBowlBlock?.player) === playerId) fieldingRoles.push("twelfth-man bowl block");
+    // A player can be credited on either side of an over-history ball, so the
+    // batting and fielding roles are collected separately.
+    if ((innings.oversHistory || []).some((over) =>
+      (over?.balls || []).some((ball) =>
+        [ball?.batsmanOnStrike, ball?.batsmanNonStrike, ball?.dismissedPlayer]
+          .some((player) => idOf(player) === playerId)))) {
+      battingRoles.push("over history");
+    }
     if ((innings.oversHistory || []).some((over) =>
       idOf(over?.bowler) === playerId ||
       (over?.balls || []).some((ball) =>
-        [ball?.batsmanOnStrike, ball?.batsmanNonStrike, ball?.bowler, ball?.dismissedPlayer, ball?.fielder]
-          .some((player) => idOf(player) === playerId)))) {
-      roles.push("over history");
+        [ball?.bowler, ball?.fielder].some((player) => idOf(player) === playerId)))) {
+      fieldingRoles.push("over history");
     }
-    if (!roles.length) continue;
-    const battingTeam = idOf(innings.team);
-    appearances.push(
-      `${battingTeam ? teamLabelOf(teamById, battingTeam) : `innings ${index + 1}`} (${[...new Set(roles)].join(", ")})`,
-    );
+
+    const battingTeamId = idOf(innings.team);
+    const fieldingTeamId = battingTeamId ? opposingTeamIdFor(match, innings) : "";
+    if (battingRoles.length) {
+      appearances.push(
+        `${teamLabelOf(teamById, battingTeamId) || `innings ${index + 1}`} (${[...new Set(battingRoles)].join(", ")})`,
+      );
+    }
+    if (fieldingRoles.length) {
+      appearances.push(
+        `${teamLabelOf(teamById, fieldingTeamId) || `innings ${index + 1} fielding`} (${[...new Set(fieldingRoles)].join(", ")})`,
+      );
+    }
   }
 
   for (const group of match.playingXI || []) {
@@ -476,10 +561,13 @@ function bowlerReconciliationFor(match, playerId, teamId, teamById) {
   const lines = [];
   for (const innings of match.innings || []) {
     const battingTeamId = idOf(innings.team);
-    // The placeholder's side bowls in the opponent's batting innings.
-    if (!battingTeamId || battingTeamId === teamId) continue;
-
     const bowlingRows = innings.bowling || [];
+    // The scorecard decides where the placeholder bowled. Do not use the
+    // resolved Player.team to choose the innings: a placeholder whose
+    // Player.team is stale would otherwise reconcile the wrong side.
+    if (!bowlingRows.some((row) => idOf(row.player) === playerId)) continue;
+    const fieldingTeamId = battingTeamId ? opposingTeamIdFor(match, innings) : teamId;
+
     const battingRows = innings.batting || [];
     if (
       !bowlingRows.length &&
@@ -557,7 +645,7 @@ function bowlerReconciliationFor(match, playerId, teamId, teamById) {
       wickets: expectedBowlerWickets - bowlingWickets,
     };
 
-    let line = `${matchLabel(match)}: ${teamLabelOf(teamById, battingTeamId)} batting ${totalRuns}/${totalWickets} (${formatOvers(totalBalls)} ov; extras ${extraTotal}: w${wides} nb${noBalls} b${byes} lb${legByes} p${penalties}) vs ${teamLabelOf(teamById, teamId)} bowling ${formatOvers(bowlingBalls)} ov / ${bowlingRuns} r / ${bowlingWickets} w -> team ${deltaText(teamDelta)}`;
+    let line = `${matchLabel(match)}: ${teamLabelOf(teamById, battingTeamId) || "Unknown team"} batting ${totalRuns}/${totalWickets} (${formatOvers(totalBalls)} ov; extras ${extraTotal}: w${wides} nb${noBalls} b${byes} lb${legByes} p${penalties}) vs ${teamLabelOf(teamById, fieldingTeamId) || "Unknown team"} bowling ${formatOvers(bowlingBalls)} ov / ${bowlingRuns} r / ${bowlingWickets} w -> team ${deltaText(teamDelta)}`;
     if (own) {
       const withoutPlaceholder = {
         balls: totalBalls - (bowlingBalls - own.balls),
@@ -635,45 +723,140 @@ export function collectMatchPlayerReferences(matches = []) {
     }
 
     for (const innings of inningsList) {
-      const team = innings?.team;
+      const battingTeam = innings?.team;
+      // A batting row belongs to the innings' own side. A bowling or fielding
+      // reference belongs to the other side in the fixture. Never assign a
+      // bowler to the innings' batting team.
+      const fieldingTeam = battingTeam ? opposingTeamIdFor(match, innings) : "";
+      const addBatting = (player) => add(assignments, player, battingTeam);
+      const addFielding = (player) => add(assignments, player, fieldingTeam);
       for (const player of [
         innings?.currentBatsman1,
         innings?.currentBatsman2,
         innings?.onStrikeBatsman,
-        innings?.currentBowler,
-        innings?.twelfthManBowlBlock?.player,
         ...(innings?.battingOrder || []),
-      ]) add(assignments, player, team);
+      ]) addBatting(player);
+      addFielding(innings?.currentBowler);
+      addFielding(innings?.twelfthManBowlBlock?.player);
       for (const row of innings?.batting || []) {
-        add(assignments, row?.player, team);
-        add(assignments, row?.dismissedBy, team);
-        add(assignments, row?.fielder, team);
-        for (const shot of row?.shots || []) add(assignments, shot?.bowler, team);
+        addBatting(row?.player);
+        addFielding(row?.dismissedBy);
+        addFielding(row?.fielder);
+        for (const shot of row?.shots || []) addFielding(shot?.bowler);
       }
-      for (const row of innings?.bowling || []) add(assignments, row?.player, team);
+      for (const row of innings?.bowling || []) addFielding(row?.player);
       for (const row of innings?.fallOfWickets || []) {
-        add(assignments, row?.player, team);
-        add(assignments, row?.fielder, team);
+        addBatting(row?.player);
+        addFielding(row?.fielder);
       }
       for (const row of innings?.partnerships || []) {
-        add(assignments, row?.batsman1, team);
-        add(assignments, row?.batsman2, team);
+        addBatting(row?.batsman1);
+        addBatting(row?.batsman2);
       }
       for (const over of innings?.oversHistory || []) {
-        add(assignments, over?.bowler, team);
+        addFielding(over?.bowler);
         for (const ball of over?.balls || []) {
-          for (const key of [
-            "batsmanOnStrike",
-            "batsmanNonStrike",
-            "bowler",
-            "dismissedPlayer",
-            "fielder",
-          ]) add(assignments, ball?.[key], team);
+          addBatting(ball?.batsmanOnStrike);
+          addBatting(ball?.batsmanNonStrike);
+          addBatting(ball?.dismissedPlayer);
+          addFielding(ball?.bowler);
+          addFielding(ball?.fielder);
         }
       }
     }
   }
   return assignments;
+}
+
+/**
+ * Resolve each player's side from every source, in the required priority:
+ *   1. membership in the tournament squad or Team.players roster,
+ *   2. the CREATE entry in the QF/SF name map,
+ *   3. Player.team.
+ * The scorecard (with bowling rows assigned to the fielding side) is the last
+ * resort for a player none of the above knows. A disagreement is reported in
+ * `conflicts` instead of being silently discarded.
+ */
+export function resolvePlayerTeams({
+  tournament,
+  teams = [],
+  players = [],
+  matches = [],
+  mapEntries = [],
+}) {
+  const teamById = new Map(teams.map((team) => [idOf(team), team]));
+  const teamByName = new Map(teams.map((team) => [normalizeName(team.name), team]));
+  const squadByPlayer = new Map();
+  const rosterByPlayer = new Map();
+  const createByPlayer = new Map();
+  const add = (map, playerId, teamId) => {
+    if (!playerId || !teamId) return;
+    if (!map.has(playerId)) map.set(playerId, new Set());
+    map.get(playerId).add(teamId);
+  };
+
+  for (const entry of tournament?.tournamentSquads || []) {
+    const teamId = idOf(entry.team);
+    for (const player of entry.players || []) add(squadByPlayer, idOf(player), teamId);
+  }
+  for (const team of teams) {
+    const teamId = idOf(team);
+    for (const player of team.players || []) add(rosterByPlayer, idOf(player), teamId);
+  }
+  for (const entry of mapEntries) {
+    const value = String(entry?.mappedValue || "").trim();
+    if (!value.toUpperCase().startsWith("CREATE:")) continue;
+    const targetName = value.slice("CREATE:".length).trim();
+    if (!targetName) continue;
+    const team = teamByName.get(normalizeName(entry.teamName));
+    if (!team) continue;
+    for (const player of players) {
+      if (normalizeName(player.name) !== normalizeName(targetName)) continue;
+      add(createByPlayer, idOf(player), idOf(team));
+    }
+  }
+
+  const scorecardTeams = collectMatchPlayerReferences(matches);
+  const assignments = new Map();
+  const conflicts = new Map();
+  const sourceList = (map, playerId) => [...(map.get(playerId) || [])];
+  const label = (teamId) => teamById.get(teamId)?.name || "Unknown team";
+
+  for (const player of players) {
+    const playerId = idOf(player);
+    const squad = sourceList(squadByPlayer, playerId);
+    const roster = sourceList(rosterByPlayer, playerId);
+    const create = sourceList(createByPlayer, playerId);
+    const scorecard = [scorecardTeams.get(playerId)].filter(Boolean);
+    const ownTeamId = idOf(player.team);
+
+    const chosen = squad[0] ||
+      roster[0] ||
+      create[0] ||
+      (teamById.has(ownTeamId) ? ownTeamId : "") ||
+      scorecard[0] ||
+      "";
+    if (chosen) assignments.set(playerId, chosen);
+
+    const distinct = uniqueIds([
+      ...squad,
+      ...roster,
+      ...create,
+      ...(ownTeamId ? [ownTeamId] : []),
+      ...scorecard,
+    ]).filter((teamId) => teamById.has(teamId));
+    if (distinct.length <= 1) continue;
+
+    const parts = [];
+    if (squad.length) parts.push(`tournament squad=${squad.map(label).join("+")}`);
+    if (roster.length) parts.push(`Team.players=${roster.map(label).join("+")}`);
+    if (create.length) parts.push(`CREATE map=${create.map(label).join("+")}`);
+    if (ownTeamId) parts.push(`Player.team=${label(ownTeamId)}`);
+    if (scorecard.length) parts.push(`scorecard=${scorecard.map(label).join("+")}`);
+    conflicts.set(playerId, parts.join("; "));
+  }
+
+  return { assignments, conflicts, scorecardTeams };
 }
 
 export function buildPlayerReview({
@@ -684,6 +867,7 @@ export function buildPlayerReview({
   mapEntries,
   originalSquadNames = new Map(),
   playerTeams = new Map(),
+  teamConflicts = new Map(),
 }) {
   const teamById = new Map(teams.map((team) => [idOf(team), team]));
   const squadByTeam = new Map();
@@ -852,6 +1036,36 @@ export function buildPlayerReview({
       })
       .join(" | ");
 
+    // Looser evidence for a bowler or batter placeholder: same-team squad
+    // members who lack the relevant row in that match, even if they have a row
+    // on the other side of the scorecard. The strict columns above are kept.
+    const candidatesWithoutBowlingRow = appearedMatches
+      .filter((match) => hasBowlingRow(match, playerId))
+      .map((match) => {
+        const bowlers = playersWithBowlingRowForTeam(match, teamId);
+        const candidates = teamSquadPlayers.filter((candidate) => {
+          const candidateId = idOf(candidate);
+          return candidateId !== playerId &&
+            !isTbcName(candidate.name) &&
+            !bowlers.has(candidateId);
+        });
+        return `${matchLabel(match)}: ${candidateNames(candidates)}`;
+      })
+      .join(" | ");
+    const candidatesWithoutBattingRow = appearedMatches
+      .filter((match) => hasBattingRow(match, playerId))
+      .map((match) => {
+        const batters = playersWithBattingRowForTeam(match, teamId);
+        const candidates = teamSquadPlayers.filter((candidate) => {
+          const candidateId = idOf(candidate);
+          return candidateId !== playerId &&
+            !isTbcName(candidate.name) &&
+            !batters.has(candidateId);
+        });
+        return `${matchLabel(match)}: ${candidateNames(candidates)}`;
+      })
+      .join(" | ");
+
     const placeholderKey = normalizeName(stripTbcSuffix(player.name));
     const similarNames = [];
     const seenSimilar = new Set();
@@ -917,6 +1131,9 @@ export function buildPlayerReview({
       similar_names_other_teams: otherTeamNames.join("; "),
       match_context: matchContext,
       bowler_reconciliation: bowlerReconciliation,
+      team_conflict: teamConflicts.get(playerId) || "",
+      candidates_without_bowling_row: candidatesWithoutBowlingRow,
+      candidates_without_batting_row: candidatesWithoutBattingRow,
     });
   }
   return rows;
