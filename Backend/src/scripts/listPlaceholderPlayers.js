@@ -10,6 +10,26 @@
 // every (TBC) player, every CREATE name-map target, and any scorecard player
 // outside their side's squad. Pass --squads-file only to add the canonical
 // source CSV as extra original-squad evidence.
+//
+// Decision-support columns (appended, so older CSVs stay valid):
+//   candidate_real_players  same-team squad members with no batting, bowling,
+//                           DNB, XI or twelfth-man row in EVERY match the
+//                           placeholder appears in (the intersection).
+//   candidates_by_match     the same candidate list per match, so a player who
+//                           is only free in one match is still visible.
+//   similar_names           same-team squad names close to the placeholder
+//                           (edit distance, shared prefix, phonetic hint).
+//   similar_names_other_teams
+//                           the same normalized name on another team. This is
+//                           information only, never a merge suggestion.
+//   match_context           match label, fixture teams, and the innings/roles
+//                           in which the placeholder appears.
+//   bowler_reconciliation   the side's bowling totals vs the opposing batting
+//                           card, plus the placeholder's own spell and the
+//                           unreconciled figures without that spell.
+//
+// The report never fills real_name_or_existing_player_id. The owner remains the
+// only person who chooses a rename or merge.
 
 import fs from "node:fs";
 import os from "node:os";
@@ -131,6 +151,8 @@ export async function collectPlayerReport({ tournamentName = TOURNAMENT_NAME, sq
 
   const matchPlayerTeams = collectMatchPlayerReferences(matches);
   const rosterPlayerIds = teams.flatMap((team) => (team.players || []).map(idOf));
+  const squadPlayerIds = (tournament.tournamentSquads || [])
+    .flatMap((entry) => (entry.players || []).map(idOf));
   const referencedPlayerIds = [...matchPlayerTeams.keys()];
   const createTargets = mapEntries
     .filter((entry) => entry.mappedValue.trim().toUpperCase().startsWith("CREATE:"))
@@ -146,7 +168,7 @@ export async function collectPlayerReport({ tournamentName = TOURNAMENT_NAME, sq
   const playerQuery = {
     $or: [
       { team: { $in: scopedTeamIds } },
-      { _id: { $in: [...new Set([...rosterPlayerIds, ...referencedPlayerIds])] } },
+      { _id: { $in: [...new Set([...rosterPlayerIds, ...squadPlayerIds, ...referencedPlayerIds])] } },
       ...(createNames.length ? [{ name: { $in: createNames } }] : []),
     ],
   };
@@ -155,6 +177,14 @@ export async function collectPlayerReport({ tournamentName = TOURNAMENT_NAME, sq
   // Roster assignments win over match references, and an explicit CREATE team
   // assignment fills the remaining gap when Player.team is missing/stale.
   const playerTeams = new Map(matchPlayerTeams);
+  for (const entry of tournament.tournamentSquads || []) {
+    const teamId = idOf(entry.team);
+    if (!teamId) continue;
+    for (const player of entry.players || []) {
+      const playerId = idOf(player);
+      if (playerId && !playerTeams.has(playerId)) playerTeams.set(playerId, teamId);
+    }
+  }
   for (const team of teams) {
     for (const player of team.players || []) playerTeams.set(idOf(player), idOf(team));
   }
