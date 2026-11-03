@@ -27,6 +27,20 @@
 //   bowler_reconciliation   the side's bowling totals vs the opposing batting
 //                           card, plus the placeholder's own spell and the
 //                           unreconciled figures without that spell.
+//   team_conflict           every disagreeing team source (squad, roster,
+//                           CREATE map, Player.team, scorecard) when a player
+//                           cannot be assigned one side without contradiction.
+//   candidates_without_bowling_row
+//                           same-team squad members with no bowling row in each
+//                           match the placeholder bowled (they may have batted).
+//   candidates_without_batting_row
+//                           same-team squad members with no batting row in each
+//                           match the placeholder batted (they may have bowled).
+//
+// Team resolution is squad/roster membership first, then the CREATE map, then
+// Player.team. Scorecards only fill a remaining gap. A batting card belongs to
+// the innings' own team; a bowling/fielding row belongs to the other team in
+// the fixture, never to the innings' batting team.
 //
 // The report never fills real_name_or_existing_player_id. The owner remains the
 // only person who chooses a rename or merge.
@@ -51,6 +65,7 @@ import {
   loadNameMapEntries,
   normalizeName,
   parseCsv,
+  resolvePlayerTeams,
   toCsv,
 } from "./playerNameCleanup.js";
 
@@ -174,33 +189,16 @@ export async function collectPlayerReport({ tournamentName = TOURNAMENT_NAME, sq
   };
   const players = await Player.find(playerQuery).lean();
 
-  // Roster assignments win over match references, and an explicit CREATE team
-  // assignment fills the remaining gap when Player.team is missing/stale.
-  const playerTeams = new Map(matchPlayerTeams);
-  for (const entry of tournament.tournamentSquads || []) {
-    const teamId = idOf(entry.team);
-    if (!teamId) continue;
-    for (const player of entry.players || []) {
-      const playerId = idOf(player);
-      if (playerId && !playerTeams.has(playerId)) playerTeams.set(playerId, teamId);
-    }
-  }
-  for (const team of teams) {
-    for (const player of team.players || []) playerTeams.set(idOf(player), idOf(team));
-  }
-  const teamByName = new Map(teams.map((team) => [normalizeName(team.name), team]));
-  for (const target of createTargets) {
-    const team = teamByName.get(normalizeName(target.teamName));
-    if (!team) continue;
-    for (const player of players) {
-      if (normalizeName(player.name) !== normalizeName(target.name)) continue;
-      const existingTeamId = playerTeams.get(idOf(player));
-      const ownTeamId = idOf(player.team);
-      if (!existingTeamId && (!ownTeamId || ownTeamId === idOf(team))) {
-        playerTeams.set(idOf(player), idOf(team));
-      }
-    }
-  }
+  // Resolve the side from squad/roster membership first, then the CREATE map,
+  // then Player.team. A stale Player.team or an innings' batting side can no
+  // longer move a bowler to the team they bowled against.
+  const { assignments: playerTeams, conflicts: teamConflicts } = resolvePlayerTeams({
+    tournament,
+    teams,
+    players,
+    matches,
+    mapEntries,
+  });
 
   const reviewRows = buildPlayerReview({
     tournament,
@@ -210,6 +208,7 @@ export async function collectPlayerReport({ tournamentName = TOURNAMENT_NAME, sq
     mapEntries,
     originalSquadNames: originalSquadNamesFromCsv(squadsFile),
     playerTeams,
+    teamConflicts,
   });
   return {
     tournament,

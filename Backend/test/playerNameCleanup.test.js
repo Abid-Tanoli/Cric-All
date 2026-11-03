@@ -156,6 +156,9 @@ test("review report is read-only and writes all identified placeholders to an an
     "similar_names_other_teams",
     "match_context",
     "bowler_reconciliation",
+    "team_conflict",
+    "candidates_without_bowling_row",
+    "candidates_without_batting_row",
   ]);
   // The placeholder itself is not a candidate; all 19 unused squad members are.
   assert.equal(report.reviewRows[0].candidate_real_players.split("; ").length, 19);
@@ -388,7 +391,7 @@ test("decision-support columns list per-match candidates, similar names and bowl
   assert.match(row.match_context, /QF1: Sky Sports vs Orangi United; innings: Sky Sports \(batting card\)/);
   assert.match(
     row.match_context,
-    /QF2: Sky Sports vs Orangi United; innings: Sky Sports \(batting card\); Orangi United \(bowling card\)/,
+    /QF2: Sky Sports vs Orangi United; innings: Sky Sports \(batting card\); Sky Sports \(bowling card\)/,
   );
 
   assert.match(row.bowler_reconciliation, /^QF2: /);
@@ -401,6 +404,220 @@ test("decision-support columns list per-match candidates, similar names and bowl
   assert.ok(row.bowler_reconciliation.includes(
     "without placeholder unreconciled 0.2 ov / +4 r / +1 w",
   ));
+});
+
+test("bowlers resolve to their squad even when Player.team is wrong or unset", async () => {
+  sequence += 1;
+  const [sky, orangi, baldia] = await Team.create([
+    { name: "Sky Sports" },
+    { name: "Orangi United" },
+    { name: "Baldia Zalmi" },
+  ]);
+  const players = await Player.create([
+    // Correctly linked Sky players.
+    { name: "Abrar (TBC)", team: sky._id },
+    { name: "Akbar Sadozai", team: sky._id },
+    { name: "Sky Free Candidate", team: sky._id },
+    { name: "Sky Batter", team: sky._id },
+    { name: "Sky Bowler", team: sky._id },
+    { name: "Sky Completer", team: sky._id },
+    // The three live SF1/QF2 placeholders: present in Sky's roster, but their
+    // Player.team link is stale or missing.
+    { name: "Ali (TBC)", team: orangi._id },
+    { name: "Attack (TBC)" },
+    { name: "Attack 1 (TBC)", team: baldia._id },
+    // Only the scorecard knows this one: no roster, squad or Player.team link.
+    { name: "Shadow Bowler (TBC)" },
+    { name: "Orangi Batter", team: orangi._id },
+    { name: "Orangi Bowler", team: orangi._id },
+    { name: "Baldia Batter", team: baldia._id },
+    { name: "Baldia Bowler", team: baldia._id },
+  ]);
+  const [
+    abrar,
+    akbar,
+    skyFree,
+    skyBatter,
+    skyBowler,
+    skyCompleter,
+    ali,
+    attack,
+    attack1,
+    shadowBowler,
+    orangiBatter,
+    orangiBowler,
+    baldiaBatter,
+    baldiaBowler,
+  ] = players;
+
+  sky.players = [abrar, akbar, skyFree, skyBatter, skyBowler, skyCompleter, ali, attack, attack1]
+    .map((player) => player._id);
+  orangi.players = [orangiBatter, orangiBowler].map((player) => player._id);
+  baldia.players = [baldiaBatter, baldiaBowler].map((player) => player._id);
+  await Promise.all([sky.save(), orangi.save(), baldia.save()]);
+
+  const tournament = await Tournament.create({
+    name: TOURNAMENT_NAME,
+    slug: `team-resolution-${sequence}`,
+    type: "knockout",
+    startDate: new Date("2026-10-01T00:00:00.000Z"),
+    endDate: new Date("2026-11-01T00:00:00.000Z"),
+    teams: [sky._id, orangi._id, baldia._id],
+    // Ali/Attack/Attack 1 are deliberately not in the tournament squad: their
+    // Sky membership comes from Team.players (the DB squad fallback).
+    tournamentSquads: [
+      { team: sky._id, players: [abrar, akbar, skyFree, skyBatter, skyBowler, skyCompleter].map((player) => player._id) },
+      { team: orangi._id, players: orangi.players },
+      { team: baldia._id, players: baldia.players },
+    ],
+  });
+
+  const qf2 = await Match.create({
+    title: "QF2: Sky Sports vs Orangi United",
+    stage: "quarter_final",
+    stageLabel: "QF2",
+    tournament: tournament._id,
+    teams: [sky._id, orangi._id],
+    status: "completed",
+    innings: [
+      {
+        team: sky._id,
+        runs: 120,
+        wickets: 6,
+        balls: 120,
+        overs: 20,
+        extras: { wides: 4, noBalls: 2, byes: 0, legByes: 0, penalties: 0, total: 6 },
+        batting: [
+          { player: abrar._id, runs: 30, balls: 20, isOut: true, dismissalType: "caught" },
+          { player: akbar._id, runs: 20, balls: 20, isOut: true, dismissalType: "bowled" },
+          { player: ali._id, runs: 15, balls: 10 },
+          { player: skyBatter._id, runs: 5, balls: 5 },
+        ],
+        bowling: [
+          { player: orangiBowler._id, overs: 10, balls: 60, runs: 60, wickets: 3 },
+        ],
+      },
+      {
+        team: orangi._id,
+        runs: 60,
+        wickets: 5,
+        balls: 62,
+        overs: 10.2,
+        extras: { wides: 2, noBalls: 2, byes: 0, legByes: 0, penalties: 0, total: 4 },
+        batting: [
+          { player: orangiBatter._id, runs: 30, balls: 25, isOut: true, dismissalType: "bowled" },
+        ],
+        bowling: [
+          { player: ali._id, overs: 0.2, balls: 2, runs: 4, wickets: 1 },
+          { player: abrar._id, overs: 2, balls: 12, runs: 10, wickets: 1 },
+          { player: skyBowler._id, overs: 4, balls: 24, runs: 24, wickets: 2 },
+          { player: shadowBowler._id, overs: 1, balls: 6, runs: 5, wickets: 0 },
+          { player: skyCompleter._id, overs: 3, balls: 18, runs: 17, wickets: 1 },
+        ],
+      },
+    ],
+  });
+
+  const sf1 = await Match.create({
+    title: "SF1: Sky Sports vs Baldia Zalmi",
+    stage: "semi_final",
+    stageLabel: "SF1",
+    tournament: tournament._id,
+    teams: [sky._id, baldia._id],
+    status: "completed",
+    innings: [
+      {
+        team: sky._id,
+        runs: 80,
+        wickets: 4,
+        balls: 60,
+        overs: 10,
+        extras: { wides: 0, noBalls: 0, byes: 0, legByes: 0, penalties: 0, total: 0 },
+        batting: [
+          { player: skyBatter._id, runs: 40, balls: 30, isOut: true, dismissalType: "caught" },
+        ],
+        bowling: [
+          { player: baldiaBowler._id, overs: 10, balls: 60, runs: 80, wickets: 4 },
+        ],
+      },
+      {
+        team: baldia._id,
+        runs: 50,
+        wickets: 6,
+        balls: 60,
+        overs: 10,
+        extras: { wides: 0, noBalls: 0, byes: 0, legByes: 0, penalties: 0, total: 0 },
+        batting: [
+          { player: baldiaBatter._id, runs: 30, balls: 25, isOut: true, dismissalType: "bowled" },
+        ],
+        bowling: [
+          { player: attack._id, overs: 4, balls: 24, runs: 22, wickets: 2 },
+          { player: attack1._id, overs: 4, balls: 24, runs: 18, wickets: 3 },
+          { player: skyBowler._id, overs: 2, balls: 12, runs: 10, wickets: 1 },
+        ],
+      },
+    ],
+  });
+  tournament.matches = [qf2._id, sf1._id];
+  await tournament.save();
+
+  const report = await collectPlayerReport();
+  const byName = new Map(report.reviewRows.map((row) => [row.placeholder_name, row]));
+
+  for (const name of ["Ali (TBC)", "Attack (TBC)", "Attack 1 (TBC)", "Shadow Bowler (TBC)"]) {
+    const row = byName.get(name);
+    assert.ok(row, `${name} must be reported`);
+    assert.equal(row.team_name, "Sky Sports", `${name} must resolve to Sky Sports`);
+  }
+
+  const aliRow = byName.get("Ali (TBC)");
+  assert.ok(aliRow.candidate_real_players.includes("Sky Free Candidate"));
+  assert.ok(!aliRow.candidate_real_players.includes("Orangi Batter"));
+  assert.ok(!aliRow.candidate_real_players.includes("Baldia Batter"));
+  // The stale Player.team is visible instead of silently ignored.
+  assert.ok(aliRow.team_conflict.includes("Player.team=Orangi United"));
+  assert.ok(aliRow.team_conflict.includes("Team.players=Sky Sports"));
+  assert.ok(aliRow.team_conflict.includes("CREATE map=Sky Sports"));
+
+  const attackRow = byName.get("Attack (TBC)");
+  assert.ok(attackRow.candidate_real_players.includes("Akbar Sadozai"));
+  assert.ok(attackRow.candidate_real_players.includes("Sky Free Candidate"));
+  assert.ok(!attackRow.candidate_real_players.includes("Baldia Batter"));
+  assert.equal(attackRow.team_conflict, "");
+
+  const attack1Row = byName.get("Attack 1 (TBC)");
+  assert.ok(attack1Row.candidate_real_players.includes("Sky Free Candidate"));
+  assert.ok(!attack1Row.candidate_real_players.includes("Baldia Batter"));
+  assert.ok(attack1Row.team_conflict.includes("Player.team=Baldia Zalmi"));
+
+  // The scorecard-only placeholder is a bowler in Baldia's innings, so the
+  // fielding side is Sky Sports, not Baldia Zalmi.
+  const shadowRow = byName.get("Shadow Bowler (TBC)");
+  assert.equal(shadowRow.team_conflict, "");
+  assert.match(shadowRow.match_context, /Sky Sports \(bowling card\)/);
+
+  // Abrar batted and bowled in QF2. Akbar batted but did not bowl, so the
+  // strict candidates exclude him while the looser bowling column lists him.
+  const abrarRow = byName.get("Abrar (TBC)");
+  assert.ok(!abrarRow.candidate_real_players.includes("Akbar Sadozai"));
+  assert.ok(abrarRow.candidates_without_bowling_row.includes("Akbar Sadozai"));
+  assert.ok(abrarRow.candidates_without_bowling_row.includes("Sky Free Candidate"));
+  assert.ok(!abrarRow.candidates_without_bowling_row.includes("Sky Bowler"));
+  assert.ok(abrarRow.candidates_without_batting_row.includes("Sky Bowler"));
+
+  // Reconciliation labels the bowling side from the scorecard, not the stale
+  // Player.team on Ali.
+  assert.match(aliRow.bowler_reconciliation, /^QF2: /);
+  assert.ok(aliRow.bowler_reconciliation.includes(
+    "Orangi United batting 60/5 (10.2 ov; extras 4: w2 nb2 b0 lb0 p0)",
+  ));
+  assert.ok(aliRow.bowler_reconciliation.includes("Sky Sports bowling 10.2 ov / 60 r / 5 w"));
+  assert.ok(!aliRow.bowler_reconciliation.includes("Orangi United bowling"));
+  assert.ok(aliRow.bowler_reconciliation.includes(
+    "without placeholder unreconciled 0.2 ov / +4 r / +1 w",
+  ));
+  assert.match(attackRow.bowler_reconciliation, /^SF1: Baldia Zalmi batting 50\/6 /);
+  assert.ok(attackRow.bowler_reconciliation.includes("Sky Sports bowling 10.0 ov / 50 r / 6 w"));
 });
 
 test("rename keeps the same id and all existing player stats", async () => {
