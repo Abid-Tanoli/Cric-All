@@ -88,6 +88,43 @@ const playerPayload = (player) => ({
   battingPosition: player?.battingPosition || ""
 });
 
+// The match setup screen must offer the whole competition squad, not just the
+// handful of Player documents that happen to be linked from Team.players. The
+// source order is explicit: tournament squad -> event squad -> team roster.
+const squadEntryPlayers = (entries, team) => {
+  const entry = (entries || []).find((row) => sameId(row.team, team));
+  return (entry?.players || []).filter(Boolean);
+};
+
+const resolveTeamSquad = ({ team, tournament, event }) => {
+  const candidates = [
+    { source: "tournament", players: squadEntryPlayers(tournament?.tournamentSquads, team) },
+    { source: "event", players: squadEntryPlayers(event?.eventSquads, team) },
+    { source: "roster", players: team?.players || [] },
+  ];
+  const chosen = candidates.find((candidate) => candidate.players.length > 0);
+  return chosen || { source: "roster", players: [] };
+};
+
+const loadTeamSquad = async (match, teamId) => {
+  const [team, tournament, event] = await Promise.all([
+    Team.findById(teamId).select("players").lean(),
+    match.tournament
+      ? Tournament.findById(match.tournament).select("tournamentSquads").lean()
+      : null,
+    match.event
+      ? Event.findById(match.event).select("eventSquads").lean()
+      : null,
+  ]);
+  const squad = resolveTeamSquad({ team, tournament, event });
+  if (squad.players.length > 0) return squad;
+
+  const teamPlayers = await Player.find({ team: teamId })
+    .select("name role playingRole battingPosition")
+    .lean();
+  return { source: "roster", players: teamPlayers };
+};
+
 const populateMatch = (query) => {
   return query.lean()
     .populate({
@@ -917,6 +954,39 @@ export const getMatchSquads = async (req, res) => {
       return res.status(404).json({ message: "Match not found" });
     }
 
+    const [tournament, event, platformSettings] = await Promise.all([
+      match.tournament
+        ? Tournament.findById(idOf(match.tournament))
+            .select("rules tournamentSquads")
+            .populate("tournamentSquads.players", "name role playingRole battingPosition")
+            .lean()
+        : null,
+      match.event
+        ? Event.findById(idOf(match.event))
+            .select("eventSquads")
+            .populate("eventSquads.players", "name role playingRole battingPosition")
+            .lean()
+        : null,
+      getPlatformSettings(),
+    ]);
+
+    const matchRule = match.rules?.twelfthManEnabled;
+    const tournamentRule = tournament?.rules?.twelfthManEnabled;
+    const scopedEnabled = matchRule === null || matchRule === undefined
+      ? tournamentRule === true
+      : matchRule === true;
+    const platformEnabled = platformSettings?.enableSuperSub === true;
+    const twelfthManRule = {
+      enabled: platformEnabled && scopedEnabled,
+      platformEnabled,
+      scopedEnabled,
+      matchValue: matchRule ?? null,
+      tournamentValue: tournamentRule ?? null,
+      source: matchRule === null || matchRule === undefined
+        ? (tournamentRule === null || tournamentRule === undefined ? "default" : "tournament")
+        : "match",
+    };
+
     const teams = (match.teams || []).map((team) => {
       const playingXI = (match.playingXI || []).find((entry) => sameId(entry.team, team))?.players || [];
       const squad15 = (match.squad15 || []).find((entry) => sameId(entry.team, team))?.players || [];
@@ -927,7 +997,12 @@ export const getMatchSquads = async (req, res) => {
         if (!playingIds.has(idOf(player))) benchMap.set(idOf(player), player);
       });
       const benchIds = new Set(benchMap.keys());
-      const seriesSquad = (team.players || []).filter((player) => !playingIds.has(idOf(player)) && !benchIds.has(idOf(player)));
+      // The squad shown to the scorer/public comes from the competition squad;
+      // `seriesSquad` remains the remainder of that same full list. Falling back
+      // to Team.players keeps single matches (no tournament/event) working.
+      const resolved = resolveTeamSquad({ team, tournament, event });
+      const squad = resolved.players;
+      const seriesSquad = squad.filter((player) => !playingIds.has(idOf(player)) && !benchIds.has(idOf(player)));
 
       return {
         team: {
@@ -936,13 +1011,20 @@ export const getMatchSquads = async (req, res) => {
           shortName: team.shortName,
           logo: team.logo
         },
+        squad: squad.map(playerPayload),
+        squadSource: resolved.source,
+        squadSize: squad.length,
         playingXI: playingXI.map(playerPayload),
         benchPlayers: Array.from(benchMap.values()).map(playerPayload),
         seriesSquad: seriesSquad.map(playerPayload)
       };
     });
 
-    res.status(200).json({ matchId: match._id, teams });
+    res.status(200).json({
+      matchId: match._id,
+      teams,
+      rules: { twelfthMan: twelfthManRule },
+    });
   } catch (error) {
     console.error("Error fetching match squads:", error);
     res.status(500).json({
@@ -1157,9 +1239,15 @@ export const setPlayingXI = async (req, res) => {
     const { matchId } = req.params;
     const { teamId, players } = req.body;
 
-    if (!players || players.length !== 11) {
+    if (!Array.isArray(players) || players.length !== 11) {
       return res.status(400).json({
         message: "Exactly 11 players required for Playing XI"
+      });
+    }
+
+    if (new Set(players.map(idOf)).size !== 11) {
+      return res.status(400).json({
+        message: "Each player may appear only once in the Playing XI"
       });
     }
 
@@ -1176,6 +1264,14 @@ export const setPlayingXI = async (req, res) => {
     if (!isTeamInMatch) {
       return res.status(400).json({
         message: "Team is not part of this match"
+      });
+    }
+
+    const squad = await loadTeamSquad(match, teamId);
+    if (squad.players.length > 0 && players.some((playerId) => !squad.players.some((player) => sameId(player, playerId)))) {
+      return res.status(400).json({
+        message: "Every Playing XI player must belong to this team's squad.",
+        code: "PLAYING_XI_NOT_IN_SQUAD",
       });
     }
 
@@ -1420,6 +1516,10 @@ export const setTwelfthMan = async (req, res) => {
     const { matchId } = req.params;
     const { teamId, playerId } = req.body;
 
+    if (!teamId) {
+      return res.status(400).json({ message: "Team is required" });
+    }
+
     const match = await Match.findById(matchId);
     if (!match) {
       return res.status(404).json({ message: "Match not found" });
@@ -1432,6 +1532,34 @@ export const setTwelfthMan = async (req, res) => {
     if (!isTeamInMatch) {
       return res.status(400).json({
         message: "Team is not part of this match"
+      });
+    }
+
+    // An empty playerId clears the nomination so the scorer can change their
+    // mind (or take a nominated player back into the XI) before the toss.
+    if (!playerId) {
+      match.twelfthMan = (match.twelfthMan || []).filter(
+        (entry) => !sameId(entry.team, teamId)
+      );
+      await match.save({ validateModifiedOnly: true });
+      await match.populate("twelfthMan.team", "name shortName logo");
+      await match.populate("twelfthMan.player", "name role playingRole battingPosition");
+      return res.status(200).json({ match, message: "12th man cleared" });
+    }
+
+    const xi = (match.playingXI || []).find((entry) => sameId(entry.team, teamId));
+    if ((xi?.players || []).some((player) => sameId(player, playerId))) {
+      return res.status(400).json({
+        message: "The 12th Man must be outside the Playing XI.",
+        code: "TWELFTH_MAN_IN_XI",
+      });
+    }
+
+    const squad = await loadTeamSquad(match, teamId);
+    if (squad.players.length > 0 && !squad.players.some((player) => sameId(player, playerId))) {
+      return res.status(400).json({
+        message: "The 12th Man must be a member of this team's squad.",
+        code: "TWELFTH_MAN_NOT_IN_SQUAD",
       });
     }
 
