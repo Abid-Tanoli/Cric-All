@@ -156,7 +156,7 @@ const SCORING_PATHS = [
 const squadRequests = (teamId, playerIds) => [
   ["PUT", "/playing-xi", { teamId, players: playerIds.slice(0, 11) }],
   ["PUT", "/openers", { inningsIndex: 0, batsman1Id: playerIds[0], batsman2Id: playerIds[1] }],
-  ["PUT", "/squad15", { teamId, players: playerIds.slice(0, 11), captain: playerIds[0], viceCaptain: playerIds[1], wicketKeepers: [playerIds[2]] }],
+  ["PUT", "/squad15", { teamId, players: playerIds.slice(0, 12), captain: playerIds[0], viceCaptain: playerIds[1], wicketKeepers: [playerIds[2]] }],
   ["PUT", "/twelfth-man", { teamId, playerId: playerIds[11] }],
   ["PUT", "/bowling-xi", { teamId, players: playerIds.slice(0, 11) }],
   ["PUT", "/team-roles", { teamId, captain: playerIds[0], viceCaptain: playerIds[1], wicketKeepers: [playerIds[2]] }],
@@ -230,7 +230,7 @@ test("a role without score_match is still refused", async () => {
 // Scoring the innings and picking the squad are different jobs
 // ---------------------------------------------------------------------------
 
-// 12 players, so squad15 (11) and twelfth-man (the 12th) are both satisfiable.
+// 12 players, so the selected match squad and 12th-man nomination are both valid.
 const makeSquadClub = async (name) => {
   const owner = await makeUser();
   const org = await makeOrg(owner, name);
@@ -238,9 +238,14 @@ const makeSquadClub = async (name) => {
     await Team.create({ name: "XI A", organizationRef: org._id }),
     await Team.create({ name: "XI B", organizationRef: org._id }),
   ];
-  const players = await Promise.all(
-    Array.from({ length: 12 }, () => makeUser())
+  const players = await Player.create(
+    Array.from({ length: 12 }, (_, index) => ({
+      name: `${name} Player ${index + 1}`,
+      team: teams[0]._id,
+    })),
   );
+  teams[0].players = players.map((player) => player._id);
+  await teams[0].save();
   const match = await makeOrgMatch(org, teams);
   return { owner, org, teams, match, playerIds: players.map((p) => p._id.toString()) };
 };

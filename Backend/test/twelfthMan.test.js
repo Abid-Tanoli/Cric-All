@@ -38,10 +38,15 @@ beforeEach(async () => {
 
 async function seedMatch(extra = {}) {
   const batters = await Player.insertMany([
-    { name: "XI Player One" },
-    { name: "XI Player Two" },
+    { name: "XI Player One", team: teamA._id },
+    { name: "XI Player Two", team: teamA._id },
   ]);
-  const sub = await Player.create({ name: "Twelfth Man" });
+  const sub = await Player.create({ name: "Twelfth Man", team: teamA._id });
+  teamA.players = [...new Map(
+    [...teamA.players, ...batters.map((player) => player._id), sub._id]
+      .map((playerId) => [String(playerId), playerId])
+  ).values()];
+  await teamA.save();
 
   const match = await Match.create({
     title: "12th Man Fixture",

@@ -1187,6 +1187,12 @@ export function rewriteInningsPlayerReferences(innings, fromId, toId) {
 export function rewriteMatchPlayerReferences(match, fromId, toId) {
   swap(match, "manOfMatch", fromId, toId);
   swap(match?.result, "playerOfMatch", fromId, toId);
+  // Older scorecard imports wrote these player ids at the top level of the
+  // Match document instead of inside an over/innings. They are kept in the
+  // schema so a merge can still rewrite and save them.
+  swap(match, "batsmanOnStrike", fromId, toId);
+  swap(match, "batsmanNonStrike", fromId, toId);
+  swap(match, "bowler", fromId, toId);
   eachArray(match?.innings, (innings) => rewriteInningsPlayerReferences(innings, fromId, toId));
   eachArray(match?.playingXI, (entry) => swapArray(entry, "players", fromId, toId));
   eachArray(match?.squad15, (entry) => {

@@ -96,6 +96,18 @@ const squadEntryPlayers = (entries, team) => {
   return (entry?.players || []).filter(Boolean);
 };
 
+const hasDuplicateIds = (ids) =>
+  new Set((ids || []).map((id) => idOf(id).toLowerCase())).size !== (ids || []).length;
+
+const isInSquad = (squad, playerId) =>
+  squad.players.some((player) => sameId(player, playerId));
+
+const isInMatchSquad = (match, teamId, squad, playerId) => {
+  const selectedSquad = (match.squad15 || []).find((entry) => sameId(entry.team, teamId));
+  return isInSquad(squad, playerId) &&
+    (!selectedSquad || selectedSquad.players.some((player) => sameId(player, playerId)));
+};
+
 const resolveTeamSquad = ({ team, tournament, event }) => {
   const candidates = [
     { source: "tournament", players: squadEntryPlayers(tournament?.tournamentSquads, team) },
@@ -1268,10 +1280,40 @@ export const setPlayingXI = async (req, res) => {
     }
 
     const squad = await loadTeamSquad(match, teamId);
-    if (squad.players.length > 0 && players.some((playerId) => !squad.players.some((player) => sameId(player, playerId)))) {
+    if (players.some((playerId) => !isInMatchSquad(match, teamId, squad, playerId))) {
       return res.status(400).json({
-        message: "Every Playing XI player must belong to this team's squad.",
+        message: "Every Playing XI player must belong to this team's match squad.",
         code: "PLAYING_XI_NOT_IN_SQUAD",
+      });
+    }
+    const configuredSquad = (match.squad15 || []).find((entry) => sameId(entry.team, teamId));
+    const configuredRoles = [
+      configuredSquad?.captain,
+      configuredSquad?.viceCaptain,
+      ...(configuredSquad?.wicketKeepers || []),
+      (match.teamRoles || []).find((entry) => sameId(entry.team, teamId))?.captain,
+      (match.teamRoles || []).find((entry) => sameId(entry.team, teamId))?.viceCaptain,
+      ...((match.teamRoles || []).find((entry) => sameId(entry.team, teamId))?.wicketKeepers || []),
+    ].filter(Boolean);
+    if (configuredRoles.some((roleId) => !players.some((player) => sameId(player, roleId)))) {
+      return res.status(400).json({
+        message: "Captain and wicket-keeper roles must be members of the Playing XI.",
+        code: "PLAYING_XI_ROLE_NOT_IN_XI",
+      });
+    }
+    const nominatedTwelfthMan = (match.twelfthMan || []).find((entry) => sameId(entry.team, teamId));
+    if (nominatedTwelfthMan && players.some((player) => sameId(player, nominatedTwelfthMan.player))) {
+      return res.status(400).json({
+        message: "The nominated 12th Man must be outside the Playing XI.",
+        code: "TWELFTH_MAN_IN_XI",
+      });
+    }
+    const configuredBowlers = (match.bowlingXI || []).find((entry) => sameId(entry.team, teamId));
+    if (configuredBowlers && configuredBowlers.players.some((player) =>
+      !players.some((xiPlayer) => sameId(xiPlayer, player)))) {
+      return res.status(400).json({
+        message: "Update the Bowling XI before removing one of its players from the Playing XI.",
+        code: "BOWLING_XI_NOT_IN_PLAYING_XI",
       });
     }
 
@@ -1435,9 +1477,16 @@ export const setSquad15 = async (req, res) => {
     const { matchId } = req.params;
     const { teamId, players, captain, viceCaptain, wicketKeepers } = req.body;
 
-    if (!players || players.length < 11 || players.length > 20) {
+    if (!Array.isArray(players) || players.length < 11 || players.length > 20) {
       return res.status(400).json({
         message: "Squad size must be between 11 and 20 players"
+      });
+    }
+
+    if (hasDuplicateIds(players)) {
+      return res.status(400).json({
+        message: "Each player may appear only once in the squad",
+        code: "SQUAD_DUPLICATE_PLAYER",
       });
     }
 
@@ -1453,9 +1502,22 @@ export const setSquad15 = async (req, res) => {
       });
     }
 
-    if (!wicketKeepers || wicketKeepers.length === 0) {
+    if (!Array.isArray(wicketKeepers) || wicketKeepers.length === 0) {
       return res.status(400).json({
         message: "At least one wicket-keeper is required"
+      });
+    }
+
+    if (hasDuplicateIds(wicketKeepers)) {
+      return res.status(400).json({
+        message: "Each wicket-keeper may appear only once",
+        code: "SQUAD_DUPLICATE_WICKET_KEEPER",
+      });
+    }
+    if (sameId(captain, viceCaptain)) {
+      return res.status(400).json({
+        message: "Captain and vice-captain must be different players",
+        code: "SQUAD_DUPLICATE_TEAM_ROLE",
       });
     }
 
@@ -1471,6 +1533,33 @@ export const setSquad15 = async (req, res) => {
     if (!isTeamInMatch) {
       return res.status(400).json({
         message: "Team is not part of this match"
+      });
+    }
+
+    const squad = await loadTeamSquad(match, teamId);
+    if (players.some((playerId) => !isInSquad(squad, playerId))) {
+      return res.status(400).json({
+        message: "Every squad player must belong to this team's registered squad.",
+        code: "SQUAD_PLAYER_NOT_IN_SQUAD",
+      });
+    }
+    if (![captain, viceCaptain, ...wicketKeepers].every((playerId) =>
+      players.some((player) => sameId(player, playerId)))) {
+      return res.status(400).json({
+        message: "Captain, vice-captain and wicket-keepers must be members of the selected squad.",
+        code: "SQUAD_ROLE_NOT_IN_SQUAD",
+      });
+    }
+
+    const playingXI = (match.playingXI || []).find((entry) => sameId(entry.team, teamId));
+    if (playingXI && (
+      playingXI.players.some((player) => !players.some((squadPlayer) => sameId(squadPlayer, player))) ||
+      ![captain, viceCaptain, ...wicketKeepers].every((playerId) =>
+        playingXI.players.some((player) => sameId(player, playerId)))
+    )) {
+      return res.status(400).json({
+        message: "Playing XI members and squad roles must remain within the selected squad and XI.",
+        code: "SQUAD_ROLE_NOT_IN_XI",
       });
     }
 
@@ -1547,8 +1636,8 @@ export const setTwelfthMan = async (req, res) => {
       return res.status(200).json({ match, message: "12th man cleared" });
     }
 
-    const xi = (match.playingXI || []).find((entry) => sameId(entry.team, teamId));
-    if ((xi?.players || []).some((player) => sameId(player, playerId))) {
+    if ((match.playingXI || []).some((entry) =>
+      (entry.players || []).some((player) => sameId(player, playerId)))) {
       return res.status(400).json({
         message: "The 12th Man must be outside the Playing XI.",
         code: "TWELFTH_MAN_IN_XI",
@@ -1556,10 +1645,17 @@ export const setTwelfthMan = async (req, res) => {
     }
 
     const squad = await loadTeamSquad(match, teamId);
-    if (squad.players.length > 0 && !squad.players.some((player) => sameId(player, playerId))) {
+    if (!isInMatchSquad(match, teamId, squad, playerId)) {
       return res.status(400).json({
         message: "The 12th Man must be a member of this team's squad.",
         code: "TWELFTH_MAN_NOT_IN_SQUAD",
+      });
+    }
+    if ((match.twelfthMan || []).some((entry) =>
+      !sameId(entry.team, teamId) && sameId(entry.player, playerId))) {
+      return res.status(400).json({
+        message: "A player may not be nominated as 12th Man for both teams.",
+        code: "TWELFTH_MAN_DUPLICATE_PLAYER",
       });
     }
 
@@ -1681,6 +1777,20 @@ export const setImpactPlayer = async (req, res) => {
     }
 
     const xi = (match.playingXI || []).find((entry) => sameId(entry.team, teamId));
+    if ((match.playingXI || []).some((entry) =>
+      (entry.players || []).some((player) => sameId(player, playerId)))) {
+      return res.status(400).json({
+        message: "The 12th Man must be outside both Playing XIs before the swap.",
+        code: "TWELFTH_MAN_IN_XI",
+      });
+    }
+    const squad = await loadTeamSquad(match, teamId);
+    if (!isInMatchSquad(match, teamId, squad, playerId)) {
+      return res.status(400).json({
+        message: "The nominated 12th Man must belong to this team's squad.",
+        code: "TWELFTH_MAN_NOT_IN_SQUAD",
+      });
+    }
     if (!xi || !xi.players.some((player) => sameId(player, replacesPlayerId))) {
       return res.status(400).json({
         message: "The replaced player must be in the team's playing XI.",
@@ -1759,9 +1869,16 @@ export const setBowlingXI = async (req, res) => {
     const { matchId } = req.params;
     const { teamId, players } = req.body;
 
-    if (!players || players.length < 1 || players.length > 11) {
+    if (!Array.isArray(players) || players.length < 1 || players.length > 11) {
       return res.status(400).json({
         message: "Select 1-11 bowlers from Playing XI"
+      });
+    }
+
+    if (hasDuplicateIds(players)) {
+      return res.status(400).json({
+        message: "Each bowler may appear only once in the Bowling XI",
+        code: "BOWLING_XI_DUPLICATE_PLAYER",
       });
     }
 
@@ -1777,6 +1894,22 @@ export const setBowlingXI = async (req, res) => {
     if (!isTeamInMatch) {
       return res.status(400).json({
         message: "Team is not part of this match"
+      });
+    }
+
+    const squad = await loadTeamSquad(match, teamId);
+    if (players.some((playerId) => !isInMatchSquad(match, teamId, squad, playerId))) {
+      return res.status(400).json({
+        message: "Every bowler must belong to this team's match squad.",
+        code: "BOWLING_XI_NOT_IN_SQUAD",
+      });
+    }
+    const playingXI = (match.playingXI || []).find((entry) => sameId(entry.team, teamId));
+    if (!playingXI || players.some((playerId) =>
+      !(playingXI.players || []).some((player) => sameId(player, playerId)))) {
+      return res.status(400).json({
+        message: "Every bowler must be a member of this team's Playing XI.",
+        code: "BOWLING_XI_NOT_IN_PLAYING_XI",
       });
     }
 
@@ -1831,9 +1964,22 @@ export const setTeamRoles = async (req, res) => {
       });
     }
 
-    if (!wicketKeepers || wicketKeepers.length === 0) {
+    if (!Array.isArray(wicketKeepers) || wicketKeepers.length === 0) {
       return res.status(400).json({
         message: "At least one wicket-keeper is required"
+      });
+    }
+
+    if (hasDuplicateIds(wicketKeepers)) {
+      return res.status(400).json({
+        message: "Each wicket-keeper may appear only once",
+        code: "TEAM_ROLES_DUPLICATE_WICKET_KEEPER",
+      });
+    }
+    if (sameId(captain, viceCaptain)) {
+      return res.status(400).json({
+        message: "Captain and vice-captain must be different players",
+        code: "TEAM_ROLES_DUPLICATE_TEAM_ROLE",
       });
     }
 
@@ -1849,6 +1995,23 @@ export const setTeamRoles = async (req, res) => {
     if (!isTeamInMatch) {
       return res.status(400).json({
         message: "Team is not part of this match"
+      });
+    }
+
+    const playingXI = (match.playingXI || []).find((entry) => sameId(entry.team, teamId));
+    if (!playingXI) {
+      return res.status(400).json({
+        message: "Set this team's Playing XI before assigning team roles.",
+        code: "TEAM_ROLES_PLAYING_XI_REQUIRED",
+      });
+    }
+    const squad = await loadTeamSquad(match, teamId);
+    if (![captain, viceCaptain, ...wicketKeepers].every((playerId) =>
+      isInMatchSquad(match, teamId, squad, playerId) &&
+      (playingXI.players || []).some((player) => sameId(player, playerId)))) {
+      return res.status(400).json({
+        message: "Captain, vice-captain and wicket-keepers must be members of this team's Playing XI.",
+        code: "TEAM_ROLES_NOT_IN_PLAYING_XI",
       });
     }
 

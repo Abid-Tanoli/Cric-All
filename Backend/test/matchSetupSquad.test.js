@@ -12,7 +12,10 @@ import Event from "../src/models/Event.js";
 import SystemSettings, { setPlatformSettings } from "../src/models/SystemSettings.js";
 import {
   getMatchSquads,
+  setBowlingXI,
   setPlayingXI,
+  setSquad15,
+  setTeamRoles,
   setTwelfthMan,
   updateToss,
   setOpeners,
@@ -91,6 +94,18 @@ const call = async (handler, { params = {}, body = {} } = {}) => {
 
 const ids = (list) => list.map((player) => String(player._id || player));
 const idOf = (value) => String(value?._id || value || "");
+
+const addOtherTeamSquad = async () => {
+  const otherPlayers = await Player.create([
+    { name: "Other Team Player 1", team: teamB._id, isPublic: true },
+    { name: "Other Team Player 2", team: teamB._id, isPublic: true },
+  ]);
+  await Tournament.updateOne(
+    { _id: tournament._id },
+    { $push: { tournamentSquads: { team: teamB._id, players: otherPlayers.map((player) => player._id) } } },
+  );
+  return otherPlayers;
+};
 
 test("GET /matches/:id/squads returns the full tournament squad, not the 7-player roster", async () => {
   const match = await makeMatch();
@@ -175,11 +190,133 @@ test("setPlayingXI accepts exactly 11 unique players and rejects 10, 12 and dupl
   assert.equal(outsideSquad.statusCode, 400);
   assert.equal(outsideSquad.body.code, "PLAYING_XI_NOT_IN_SQUAD");
 
+  const [otherTeamPlayer] = await addOtherTeamSquad();
+  const otherTeamMember = await call(setPlayingXI, {
+    params: { matchId: String(match._id) },
+    body: { teamId, players: ids([...players.slice(0, 10), otherTeamPlayer]) },
+  });
+  assert.equal(otherTeamMember.statusCode, 400);
+  assert.equal(otherTeamMember.body.code, "PLAYING_XI_NOT_IN_SQUAD");
+
   const eleven = await call(setPlayingXI, {
     params: { matchId: String(match._id) },
     body: { teamId, players: ids(players.slice(0, 11)) },
   });
   assert.equal(eleven.statusCode, 200);
+});
+
+test("setSquad15 rejects duplicate and other-team players and requires selected roles in the squad", async () => {
+  const match = await makeMatch();
+  const otherPlayers = await addOtherTeamSquad();
+  const params = { matchId: String(match._id) };
+  const roles = {
+    captain: String(players[0]._id),
+    viceCaptain: String(players[1]._id),
+    wicketKeepers: [String(players[2]._id)],
+  };
+
+  const duplicate = await call(setSquad15, {
+    params,
+    body: { teamId: String(teamA._id), players: ids([...players.slice(0, 10), players[0]]), ...roles },
+  });
+  assert.equal(duplicate.statusCode, 400);
+  assert.equal(duplicate.body.code, "SQUAD_DUPLICATE_PLAYER");
+
+  const otherTeamPlayer = await call(setSquad15, {
+    params,
+    body: { teamId: String(teamA._id), players: ids([...players.slice(0, 10), otherPlayers[0]]), ...roles },
+  });
+  assert.equal(otherTeamPlayer.statusCode, 400);
+  assert.equal(otherTeamPlayer.body.code, "SQUAD_PLAYER_NOT_IN_SQUAD");
+
+  const roleOutsideSquad = await call(setSquad15, {
+    params,
+    body: {
+      teamId: String(teamA._id),
+      players: ids(players.slice(0, 11)),
+      ...roles,
+      wicketKeepers: [String(players[11]._id)],
+    },
+  });
+  assert.equal(roleOutsideSquad.statusCode, 400);
+  assert.equal(roleOutsideSquad.body.code, "SQUAD_ROLE_NOT_IN_SQUAD");
+
+  const valid = await call(setSquad15, {
+    params,
+    body: { teamId: String(teamA._id), players: ids(players.slice(0, 15)), ...roles },
+  });
+  assert.equal(valid.statusCode, 200);
+});
+
+test("setBowlingXI requires unique bowlers from both the team's squad and Playing XI", async () => {
+  const match = await makeMatch({
+    playingXI: [{ team: teamA._id, players: players.slice(0, 11).map((player) => player._id) }],
+  });
+  const [otherPlayer] = await addOtherTeamSquad();
+  const params = { matchId: String(match._id) };
+
+  const duplicate = await call(setBowlingXI, {
+    params,
+    body: { teamId: String(teamA._id), players: [String(players[0]._id), String(players[0]._id)] },
+  });
+  assert.equal(duplicate.statusCode, 400);
+  assert.equal(duplicate.body.code, "BOWLING_XI_DUPLICATE_PLAYER");
+
+  const otherTeamPlayer = await call(setBowlingXI, {
+    params,
+    body: { teamId: String(teamA._id), players: [String(otherPlayer._id)] },
+  });
+  assert.equal(otherTeamPlayer.statusCode, 400);
+  assert.equal(otherTeamPlayer.body.code, "BOWLING_XI_NOT_IN_SQUAD");
+
+  const valid = await call(setBowlingXI, {
+    params,
+    body: { teamId: String(teamA._id), players: [String(players[0]._id), String(players[1]._id)] },
+  });
+  assert.equal(valid.statusCode, 200);
+});
+
+test("setTeamRoles only accepts unique wicket-keepers and roles from the team's Playing XI", async () => {
+  const match = await makeMatch({
+    playingXI: [{ team: teamA._id, players: players.slice(0, 11).map((player) => player._id) }],
+  });
+  const [otherPlayer] = await addOtherTeamSquad();
+  const params = { matchId: String(match._id) };
+
+  const duplicate = await call(setTeamRoles, {
+    params,
+    body: {
+      teamId: String(teamA._id),
+      captain: String(players[0]._id),
+      viceCaptain: String(players[1]._id),
+      wicketKeepers: [String(players[2]._id), String(players[2]._id)],
+    },
+  });
+  assert.equal(duplicate.statusCode, 400);
+  assert.equal(duplicate.body.code, "TEAM_ROLES_DUPLICATE_WICKET_KEEPER");
+
+  const otherTeamPlayer = await call(setTeamRoles, {
+    params,
+    body: {
+      teamId: String(teamA._id),
+      captain: String(otherPlayer._id),
+      viceCaptain: String(players[1]._id),
+      wicketKeepers: [String(players[2]._id)],
+    },
+  });
+  assert.equal(otherTeamPlayer.statusCode, 400);
+  assert.equal(otherTeamPlayer.body.code, "TEAM_ROLES_NOT_IN_PLAYING_XI");
+
+  const valid = await call(setTeamRoles, {
+    params,
+    body: {
+      teamId: String(teamA._id),
+      captain: String(players[0]._id),
+      viceCaptain: String(players[1]._id),
+      wicketKeepers: [String(players[2]._id)],
+    },
+  });
+  assert.equal(valid.statusCode, 200);
 });
 
 test("the full local setup flow saves squads, XI, 12th Men, toss, openers and bowler", async () => {
@@ -284,6 +421,7 @@ test("setTwelfthMan only accepts a squad member who is outside the Playing XI", 
   const match = await makeMatch({
     playingXI: [{ team: teamA._id, players: players.slice(0, 11).map((player) => player._id) }],
   });
+  const [otherTeamPlayer] = await addOtherTeamSquad();
   const teamId = String(teamA._id);
 
   const inXi = await call(setTwelfthMan, {
@@ -301,15 +439,55 @@ test("setTwelfthMan only accepts a squad member who is outside the Playing XI", 
   assert.equal(notInSquad.statusCode, 400);
   assert.equal(notInSquad.body.code, "TWELFTH_MAN_NOT_IN_SQUAD");
 
-  const remaining = await call(setTwelfthMan, {
+  const fromOtherTeam = await call(setTwelfthMan, {
+    params: { matchId: String(match._id) },
+    body: { teamId, playerId: String(otherTeamPlayer._id) },
+  });
+  assert.equal(fromOtherTeam.statusCode, 400);
+  assert.equal(fromOtherTeam.body.code, "TWELFTH_MAN_NOT_IN_SQUAD");
+
+  await Match.updateOne(
+    { _id: match._id },
+    { $push: { twelfthMan: { team: teamB._id, player: players[11]._id } } },
+  );
+  const duplicate = await call(setTwelfthMan, {
     params: { matchId: String(match._id) },
     body: { teamId, playerId: String(players[11]._id) },
   });
+  assert.equal(duplicate.statusCode, 400);
+  assert.equal(duplicate.body.code, "TWELFTH_MAN_DUPLICATE_PLAYER");
+
+  const remaining = await call(setTwelfthMan, {
+    params: { matchId: String(match._id) },
+    body: { teamId, playerId: String(players[12]._id) },
+  });
   assert.equal(remaining.statusCode, 200);
+  const nominated = remaining.body.match.twelfthMan.find((entry) => idOf(entry.team) === teamId);
   assert.equal(
-    String(remaining.body.match.twelfthMan[0].player?._id || remaining.body.match.twelfthMan[0].player),
-    String(players[11]._id),
+    String(nominated.player?._id || nominated.player),
+    String(players[12]._id),
   );
+});
+
+test("setImpactPlayer revalidates the nominated 12th Man's squad membership", async () => {
+  const [otherTeamPlayer] = await addOtherTeamSquad();
+  await setPlatformSettings({ enableSuperSub: true });
+  const match = await makeMatch({
+    playingXI: [{ team: teamA._id, players: players.slice(0, 11).map((player) => player._id) }],
+    twelfthMan: [{ team: teamA._id, player: otherTeamPlayer._id }],
+  });
+
+  const result = await call(setImpactPlayer, {
+    params: { matchId: String(match._id) },
+    body: {
+      teamId: String(teamA._id),
+      playerId: String(otherTeamPlayer._id),
+      replacesPlayerId: String(players[0]._id),
+    },
+  });
+
+  assert.equal(result.statusCode, 400);
+  assert.equal(result.body.code, "TWELFTH_MAN_NOT_IN_SQUAD");
 });
 
 test("setTwelfthMan can clear a nomination before the toss", async () => {
