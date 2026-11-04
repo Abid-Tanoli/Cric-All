@@ -19,6 +19,7 @@ import {
   PUBLIC_MATCH_FILTER,
   isDraftMatchDoc,
 } from "../utils/publicProjection.js";
+import { deriveTournamentPublicState } from "../services/tournamentPublicState.js";
 import { deleteTournamentContent } from "../services/tournamentContent.js";
 import {
   CONTROLLER_MATCH_CATEGORY,
@@ -118,16 +119,31 @@ const isTransientDbError = (error) => (
   /timed out|buffering|not connected/i.test(error?.message || "")
 );
 
+const PUBLIC_STATUS_ALIASES = Object.freeze({
+  "in-progress": "ongoing",
+  in_progress: "ongoing",
+  inprogress: "ongoing",
+});
+const PUBLIC_STATUSES = new Set(["live", "ongoing", "upcoming", "completed"]);
+
+const normalizePublicStatus = (value) => {
+  const status = String(value || "").trim().toLowerCase();
+  return PUBLIC_STATUS_ALIASES[status] || status;
+};
+
 export const getTournaments = async (req, res) => {
   try {
     const limit = Math.min(Math.max(Number(req.query.limit) || 100, 1), 500);
     const page = Math.max(Number(req.query.page) || 1, 1);
+    const requestedStatus = normalizePublicStatus(req.query.status);
+    const statusFilter = PUBLIC_STATUSES.has(requestedStatus) ? requestedStatus : null;
 
     // Fix B: the public tournament board omits fixtures and tournaments that
-    // only involve hidden teams.
-    const excluded = await hiddenTeamIds();
+    // ONLY involve hidden teams. A tournament that also has public teams stays
+    // listed with the hidden teams stripped, rather than disappearing because
+    // one participant was made private.
+    const hidden = new Set(await hiddenTeamIds());
     const query = { $and: [reservedNamesMongoClause("name")] };
-    if (excluded.length) query.$and.push({ teams: { $nin: excluded } });
 
     const tournaments = await Tournament.find(query)
       .populate("teams", "name shortName logo")
@@ -135,12 +151,67 @@ export const getTournaments = async (req, res) => {
       .populate("runnerUp", "name shortName logo")
       .populate("awards.playerOfTournament awards.bestBatsman awards.bestBowler", "name playingRole role battingPosition")
       .sort({ startDate: -1 })
-      .skip((page - 1) * limit)
-      .limit(limit)
       .maxTimeMS(5000)
       .lean();
 
-    res.status(200).json(tournaments);
+    const visible = [];
+    for (const tournament of tournaments) {
+      const hadTeams = Array.isArray(tournament.teams) && tournament.teams.length > 0;
+      stripHiddenTeamRefs(tournament, hidden);
+      if (hadTeams && (!Array.isArray(tournament.teams) || tournament.teams.length === 0)) {
+        continue;
+      }
+      visible.push(tournament);
+    }
+
+    // The list endpoint is the public board, so it must use the same derived
+    // status as the tournament hub. A past-dated final that is still UPCOMING
+    // therefore reads "ongoing", not "upcoming", and is never filtered by date.
+    const ids = visible.map((tournament) => tournament._id);
+    const matchOwner = new Map();
+    for (const tournament of visible) {
+      for (const matchId of tournament.matches || []) {
+        matchOwner.set(String(matchId?._id || matchId), String(tournament._id));
+      }
+    }
+    const linkedMatchIds = [...matchOwner.keys()];
+    const matchQuery = linkedMatchIds.length
+      ? { $or: [{ tournament: { $in: ids } }, { _id: { $in: linkedMatchIds } }] }
+      : { tournament: { $in: ids } };
+    const matches = ids.length
+      ? await Match.find(matchQuery)
+        .select("_id tournament stage stageLabel round status startAt manualDraft isDraft")
+        .lean()
+      : [];
+    const matchesByTournament = new Map();
+    for (const match of matches) {
+      const tournamentId = String(match.tournament || matchOwner.get(String(match._id)) || "");
+      if (!tournamentId) continue;
+      if (!matchesByTournament.has(tournamentId)) matchesByTournament.set(tournamentId, []);
+      matchesByTournament.get(tournamentId).push(match);
+    }
+
+    const enriched = visible.map((tournament) => {
+      const state = deriveTournamentPublicState(
+        tournament,
+        matchesByTournament.get(String(tournament._id)) || [],
+      );
+      return {
+        ...tournament,
+        publicStatus: state.status,
+        publicEndDate: state.endDate,
+      };
+    });
+
+    // Status filtering happens after derivation so "ongoing" can include a
+    // tournament whose stored status is still "upcoming". An unknown status is
+    // ignored rather than silently emptying the public board.
+    const filtered = statusFilter
+      ? enriched.filter((tournament) => tournament.publicStatus === statusFilter)
+      : enriched;
+
+    const start = (page - 1) * limit;
+    res.status(200).json(filtered.slice(start, start + limit));
   } catch (error) {
     console.error("Error fetching tournaments:", error);
     if (isTransientDbError(error)) {

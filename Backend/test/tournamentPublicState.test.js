@@ -45,6 +45,23 @@ test("completed quarter/semi-finals with a scheduled final read ongoing and exte
   assert.equal(state.endDate.toISOString(), FINAL_START.toISOString());
 });
 
+test("a past-dated final that is still upcoming keeps the knockout ongoing", () => {
+  // The final has a date in the past, but nobody has entered a result. Deriving
+  // from the calendar would call this "upcoming" (or completed); deriving from
+  // the fixtures keeps it in progress until the final itself is completed.
+  const pastFinal = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
+  const state = deriveTournamentPublicState(
+    { type: "knockout", status: "upcoming", endDate: STORED_END },
+    [
+      match("quarter_final", "completed", new Date("2026-10-11T04:00:00.000Z")),
+      match("semi_final", "completed", new Date("2026-10-25T04:30:00.000Z")),
+      match("final", "upcoming", pastFinal),
+    ],
+  );
+  assert.equal(state.status, "ongoing");
+  assert.equal(state.endDate.toISOString(), pastFinal.toISOString());
+});
+
 test("a completed final is the only thing that marks a knockout completed", () => {
   const semisOnly = deriveTournamentPublicState(
     { type: "knockout", status: "upcoming", endDate: STORED_END },
