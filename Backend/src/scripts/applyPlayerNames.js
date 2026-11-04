@@ -14,6 +14,8 @@ import dotenv from "dotenv";
 import mongoose from "mongoose";
 import AuditLog from "../models/AuditLog.js";
 import Ball from "../models/Ball.js";
+import Blog from "../models/Blog.js";
+import CommunityPost from "../models/CommunityPost.js";
 import Delivery from "../models/Delivery.js";
 import Event from "../models/Event.js";
 import Match from "../models/Match.js";
@@ -147,9 +149,16 @@ function resolveTarget(players, answer, teamId) {
 
 export async function planNameChanges({ rows, players, teams, matches, auditLogs = [], allowCrossTeam = false }) {
   const teamById = new Map(teams.map((team) => [idOf(team), team]));
-  const auditKeys = new Set(auditLogs.map((entry) =>
-    `${entry.metadata?.sourcePlayerId || ""}::${entry.metadata?.answer || ""}`,
-  ));
+  const auditsByKey = new Map();
+  for (const entry of auditLogs) {
+    const key = `${entry.metadata?.sourcePlayerId || ""}::${entry.metadata?.answer || ""}`;
+    const previous = auditsByKey.get(key);
+    if (
+      !previous ||
+      ["in_progress", "partial"].includes(entry.metadata?.status) ||
+      !["in_progress", "partial"].includes(previous.metadata?.status)
+    ) auditsByKey.set(key, entry);
+  }
   const plan = [];
   const errors = [];
   const seenSources = new Set();
@@ -167,7 +176,15 @@ export async function planNameChanges({ rows, players, teams, matches, auditLogs
       continue;
     }
     seenSources.add(sourceId);
-    if (auditKeys.has(`${sourceId}::${answer}`)) {
+    const previousAudit = auditsByKey.get(`${sourceId}::${answer}`);
+    if (previousAudit) {
+      const auditStatus = previousAudit.metadata?.status;
+      if (auditStatus === "in_progress" || auditStatus === "partial") {
+        errors.push(
+          `CSV row ${rowNumber}: a prior ${auditStatus} merge for ${sourceId} -> ${answer} must be reconciled before retrying.`,
+        );
+        continue;
+      }
       plan.push({ rowNumber, sourceId, answer, action: "already-applied", before: "(previously applied)", after: answer });
       continue;
     }
@@ -298,11 +315,32 @@ function containsPlayerId(value, playerId) {
   return false;
 }
 
+function collectPlayerReferencePaths(value, playerId, basePath = "", paths = []) {
+  if (value == null) return paths;
+  if (Array.isArray(value)) {
+    value.forEach((entry, index) =>
+      collectPlayerReferencePaths(entry, playerId, `${basePath}[${index}]`, paths));
+  } else if (value instanceof mongoose.Types.ObjectId || value?._bsontype === "ObjectId") {
+    if (value.toString().toLowerCase() === playerId && basePath) paths.push(basePath);
+  } else if (typeof value === "string") {
+    if (value.toLowerCase() === playerId && basePath) paths.push(basePath);
+  } else if (typeof value === "object" && !(value instanceof Date)) {
+    for (const [key, entry] of Object.entries(value)) {
+      if (key !== "__v") {
+        collectPlayerReferencePaths(entry, playerId, basePath ? `${basePath}.${key}` : key, paths);
+      }
+    }
+  }
+  return paths;
+}
+
 async function hasUnresolvedReferences(playerId) {
   const collections = await mongoose.connection.db.listCollections({}, { nameOnly: true }).toArray();
   for (const { name } of collections) {
-    if (name === Player.collection.collectionName || name === AuditLog.collection.collectionName) continue;
-    const cursor = mongoose.connection.db.collection(name).find({});
+    if (name === AuditLog.collection.collectionName) continue;
+    const cursor = mongoose.connection.db.collection(name).find({
+      _id: { $ne: new mongoose.Types.ObjectId(playerId) },
+    });
     for await (const document of cursor) {
       if (containsPlayerId(document, playerId)) return true;
     }
@@ -310,28 +348,100 @@ async function hasUnresolvedReferences(playerId) {
   return false;
 }
 
-async function rewriteDocumentReferences(model, playerId, targetId, fields) {
-  const filter = { $or: fields.map((field) => ({ [field]: playerId })) };
-  const update = { $set: Object.fromEntries(fields.map((field) => [field, targetId])) };
-  await model.updateMany(filter, update);
-}
-
-async function updatePlayerRelations(sourceId, targetId) {
-  const players = await Player.find({});
-  for (const player of players) {
-    if (idOf(player) === sourceId) continue;
-    let changed = false;
-    for (const relation of player.relations || []) {
-      if (idOf(relation.player) !== sourceId) continue;
-      relation.player = targetId;
-      changed = true;
+async function rewriteDocumentReferences(model, playerId, targetId, fields, counts) {
+  // Each reference is rewritten independently. A document that matches on one
+  // field must never have its other player fields overwritten.
+  for (const field of fields) {
+    const path = typeof field === "string" ? field : field.path;
+    const filter = { ...(typeof field === "string" ? {} : field.filter || {}), [path]: playerId };
+    try {
+      const result = await model.updateMany(filter, { $set: { [path]: targetId } });
+      const modified = Number(result.modifiedCount ?? result.nModified ?? 0);
+      addCount(counts, model.collection.collectionName, modified);
+    } catch (error) {
+      throw new Error(
+        `Failed to rewrite ${model.collection.collectionName}.${path} from ${playerId} to ${targetId}; completed counts: ${JSON.stringify(counts)}; ${error.message}`,
+        { cause: error },
+      );
     }
-    if (changed) await player.save();
   }
 }
 
-async function updateTeams(sourceId, targetId, targetTeamId) {
+/**
+ * Rewrite every occurrence of `playerId` inside an ObjectId array. arrayFilters
+ * updates only the matching elements and leaves every other element untouched.
+ */
+export async function rewriteArrayReference(model, path, playerId, targetId, extraFilter = {}) {
+  try {
+    const result = await model.updateMany(
+      { ...extraFilter, [path]: playerId },
+      { $set: { [`${path}.$[player]`]: targetId } },
+      { arrayFilters: [{ player: playerId }] },
+    );
+    return Number(result.modifiedCount ?? result.nModified ?? 0);
+  } catch (error) {
+    throw new Error(
+      `Failed to rewrite ${model.collection.collectionName}.${path} from ${playerId} to ${targetId}: ${error.message}`,
+      { cause: error },
+    );
+  }
+}
+
+// Every model field that can point at a Player. Match, Event, Tournament, Team
+// and Player.relations are handled by the dedicated helpers below because they
+// need team-aware or nested-array logic.
+const DIRECT_PLAYER_REFERENCE_FIELDS = [
+  {
+    model: Delivery,
+    fields: ["batsmanId", "bowlerId", "nonStrikerId", "fielderId"],
+  },
+  {
+    model: Ball,
+    fields: ["batsman", "bowler", "fieldedBy"],
+  },
+  {
+    model: Partnership,
+    fields: ["batsman1Id", "batsman2Id"],
+  },
+  {
+    model: Review,
+    fields: ["playerReviewed"],
+  },
+  {
+    model: Blog,
+    fields: [{ path: "relatedId", filter: { relatedType: "Player" } }],
+  },
+  {
+    model: CommunityPost,
+    fields: [{ path: "subject.ref", filter: { "subject.type": "player" } }],
+  },
+];
+
+function addCount(counts, collection, value) {
+  const count = Number(value || 0);
+  if (!count) return;
+  counts[collection] = (counts[collection] || 0) + count;
+}
+
+async function updatePlayerRelations(sourceId, targetId) {
+  try {
+    const result = await Player.updateMany(
+      { "relations.player": sourceId },
+      { $set: { "relations.$[relation].player": targetId } },
+      { arrayFilters: [{ "relation.player": sourceId }] },
+    );
+    return Number(result.modifiedCount ?? result.nModified ?? 0);
+  } catch (error) {
+    throw new Error(
+      `Failed to rewrite ${Player.collection.collectionName}.relations.player from ${sourceId} to ${targetId}: ${error.message}`,
+      { cause: error },
+    );
+  }
+}
+
+async function updateTeams(sourceId, targetId, targetTeamId, counts) {
   const teams = await Team.find({});
+  let changedCount = 0;
   for (const team of teams) {
     let changed = false;
     if ((team.players || []).some((player) => idOf(player) === sourceId)) {
@@ -345,11 +455,23 @@ async function updateTeams(sourceId, targetId, targetTeamId) {
         changed = true;
       }
     }
-    if (changed) await team.save();
+    if (changed) {
+      try {
+        await team.save();
+      } catch (error) {
+        throw new Error(
+          `Failed to save Team ${idOf(team)} while rewriting ${sourceId} to ${targetId}: ${error.message}`,
+          { cause: error },
+        );
+      }
+      changedCount += 1;
+      addCount(counts, Team.collection.collectionName, 1);
+    }
   }
+  return changedCount;
 }
 
-async function updateEventsAndTournaments(sourceId, targetId) {
+async function updateEventsAndTournaments(sourceId, targetId, counts) {
   for (const [model, nestedFields] of [
     [Event, ["eventSquads"]],
     [Tournament, ["tournamentSquads"]],
@@ -392,62 +514,216 @@ async function updateEventsAndTournaments(sourceId, targetId) {
           }
         }
       }
-      if (changed) await document.save();
+      if (changed) {
+        try {
+          await document.save();
+        } catch (error) {
+          throw new Error(
+            `Failed to save ${model.collection.collectionName} document ${idOf(document)} while rewriting ${sourceId} to ${targetId}: ${error.message}`,
+            { cause: error },
+          );
+        }
+        addCount(counts, model.collection.collectionName, 1);
+      }
     }
   }
+  return undefined;
 }
 
-async function updateMatchReferences(sourceId, targetId) {
+async function updateMatchReferences(sourceId, targetId, counts) {
   const matches = await Match.find({});
+  let changedCount = 0;
   for (const match of matches) {
     if (!JSON.stringify(match).includes(sourceId)) continue;
     rewriteMatchPlayerReferences(match, sourceId, targetId);
-    await match.save();
+    try {
+      await match.save();
+    } catch (error) {
+      throw new Error(
+        `Failed to save Match ${idOf(match)} while rewriting ${sourceId} to ${targetId}: ${error.message}`,
+        { cause: error },
+      );
+    }
+    changedCount += 1;
+    addCount(counts, Match.collection.collectionName, 1);
   }
+  return changedCount;
 }
 
-async function updateRankings(sourceId, targetId) {
+async function updateRankings(sourceId, targetId, counts) {
   const sourceRows = await TeamPlayerRanking.find({ player: sourceId });
+  let changedCount = 0;
   for (const source of sourceRows) {
     const target = await TeamPlayerRanking.findOne({ team: source.team, player: targetId });
     if (target) {
       mergeRanking(target, source);
-      await target.save();
-      await source.deleteOne();
+      try {
+        await target.save();
+        addCount(counts, TeamPlayerRanking.collection.collectionName, 1);
+        await source.deleteOne();
+        addCount(counts, TeamPlayerRanking.collection.collectionName, 1);
+      } catch (error) {
+        throw new Error(
+          `Failed to merge TeamPlayerRanking ${idOf(source)} into ${idOf(target)}: ${error.message}`,
+          { cause: error },
+        );
+      }
     } else {
       source.player = targetId;
-      await source.save();
+      try {
+        await source.save();
+      } catch (error) {
+        throw new Error(
+          `Failed to rewrite TeamPlayerRanking ${idOf(source)} from ${sourceId} to ${targetId}: ${error.message}`,
+          { cause: error },
+        );
+      }
+      addCount(counts, TeamPlayerRanking.collection.collectionName, 1);
     }
+    changedCount += 1;
   }
+  return changedCount;
 }
 
 async function applyMerge(source, target) {
   const sourceId = idOf(source);
   const targetId = idOf(target);
-  mergePlayerStats(target, source);
-  await updatePlayerRelations(sourceId, targetId);
-  await updateTeams(sourceId, targetId, idOf(target.team));
-  await updateEventsAndTournaments(sourceId, targetId);
-  await updateMatchReferences(sourceId, targetId);
-  await rewriteDocumentReferences(Delivery, sourceId, targetId, [
-    "batsmanId", "bowlerId", "nonStrikerId", "fielderId",
-  ]);
-  await rewriteDocumentReferences(Ball, sourceId, targetId, ["batsman", "bowler", "fieldedBy"]);
-  await rewriteDocumentReferences(Partnership, sourceId, targetId, ["batsman1Id", "batsman2Id"]);
-  await rewriteDocumentReferences(Review, sourceId, targetId, ["playerReviewed"]);
-  await updateRankings(sourceId, targetId);
-  await target.save();
+  const counts = {};
+  try {
+    mergePlayerStats(target, source);
+    addCount(counts, Player.collection.collectionName, await updatePlayerRelations(sourceId, targetId));
+    await updateTeams(sourceId, targetId, idOf(target.team), counts);
+    await updateEventsAndTournaments(sourceId, targetId, counts);
+    await updateMatchReferences(sourceId, targetId, counts);
+    for (const targetSpec of DIRECT_PLAYER_REFERENCE_FIELDS) {
+      for (const field of targetSpec.fields) {
+        await rewriteDocumentReferences(targetSpec.model, sourceId, targetId, [field], counts);
+      }
+    }
+    await updateRankings(sourceId, targetId, counts);
+    try {
+      await target.save();
+    } catch (error) {
+      throw new Error(
+        `Failed to save merged Player ${targetId}: ${error.message}`,
+        { cause: error },
+      );
+    }
+    addCount(counts, Player.collection.collectionName, 1);
 
-  const team = await Team.findById(source.team);
-  if (team) {
-    team.players = (team.players || []).filter((player) => idOf(player) !== sourceId);
-    if (idOf(team.captain) === sourceId) team.captain = targetId;
-    if (idOf(team.viceCaptain) === sourceId) team.viceCaptain = targetId;
-    await team.save();
+    const team = await Team.findById(source.team);
+    if (team) {
+      let changed = false;
+      const players = (team.players || []).filter((player) => idOf(player) !== sourceId);
+      if (players.length !== (team.players || []).length) {
+        team.players = players;
+        changed = true;
+      }
+      if (idOf(team.captain) === sourceId) {
+        team.captain = targetId;
+        changed = true;
+      }
+      if (idOf(team.viceCaptain) === sourceId) {
+        team.viceCaptain = targetId;
+        changed = true;
+      }
+      if (changed) {
+        try {
+          await team.save();
+        } catch (error) {
+          throw new Error(
+            `Failed to save Team ${idOf(team)} while rewriting ${sourceId} to ${targetId}: ${error.message}`,
+            { cause: error },
+          );
+        }
+        addCount(counts, Team.collection.collectionName, 1);
+      }
+    }
+    const unresolved = await hasUnresolvedReferences(sourceId);
+    if (!unresolved) {
+      try {
+        await source.deleteOne();
+      } catch (error) {
+        throw new Error(
+          `Failed to delete merged placeholder Player ${sourceId}: ${error.message}`,
+          { cause: error },
+        );
+      }
+      addCount(counts, Player.collection.collectionName, 1);
+    }
+    return { deleted: !unresolved, counts };
+  } catch (error) {
+    const failure = error instanceof Error ? error : new Error(String(error));
+    failure.partialCounts = { ...counts };
+    throw failure;
   }
-  const unresolved = await hasUnresolvedReferences(sourceId);
-  if (!unresolved) await source.deleteOne();
-  return { deleted: !unresolved };
+}
+
+/**
+ * Read-only preview of every reference collection/field a merge of
+ * `sourcePlayerIds` would touch. Used by the dry run so the operator can see
+ * the write surface before adding --apply.
+ */
+export async function previewMergeReferences(sourcePlayerIds) {
+  const rows = [];
+  const matches = await Match.find({}).lean();
+  const countFields = async (model, playerId, fields) => {
+    for (const field of fields) {
+      const matched = await model.countDocuments({ [field]: playerId });
+      if (matched) rows.push({
+        playerId,
+        collection: model.collection.collectionName,
+        field,
+        matched,
+      });
+    }
+  };
+  for (const playerId of sourcePlayerIds) {
+    for (const targetSpec of DIRECT_PLAYER_REFERENCE_FIELDS) {
+      const collection = targetSpec.model.collection.collectionName;
+      for (const field of targetSpec.fields) {
+        const path = typeof field === "string" ? field : field.path;
+        const filter = { ...(typeof field === "string" ? {} : field.filter || {}), [path]: playerId };
+        const matched = await targetSpec.model.countDocuments(filter);
+        if (matched) rows.push({ playerId, collection, field: path, matched });
+      }
+    }
+
+    const matchCounts = new Map();
+    for (const match of matches) {
+      for (const field of collectPlayerReferencePaths(match, playerId)) {
+        const normalized = field.replace(/\[\d+\]/g, "[]");
+        matchCounts.set(normalized, (matchCounts.get(normalized) || 0) + 1);
+      }
+    }
+    for (const [field, matched] of matchCounts) {
+      rows.push({ playerId, collection: Match.collection.collectionName, field, matched });
+    }
+
+    await countFields(Player, playerId, ["relations.player"]);
+    await countFields(Team, playerId, ["players", "captain", "viceCaptain"]);
+    await countFields(Event, playerId, [
+      "eventSquads.players",
+      "eventSquads.captain",
+      "eventSquads.viceCaptain",
+      "eventSquads.wicketKeepers",
+      "eventSquads.playerChanges.outPlayer",
+      "eventSquads.playerChanges.inPlayer",
+    ]);
+    await countFields(Tournament, playerId, [
+      "tournamentSquads.players",
+      "tournamentSquads.captain",
+      "tournamentSquads.viceCaptain",
+      "tournamentSquads.wicketKeepers",
+      "tournamentSquads.playerChanges.outPlayer",
+      "tournamentSquads.playerChanges.inPlayer",
+      "awards.playerOfTournament",
+      "awards.bestBatsman",
+      "awards.bestBowler",
+    ]);
+    await countFields(TeamPlayerRanking, playerId, ["player"]);
+  }
+  return rows;
 }
 
 async function applyRename(source, name) {
@@ -463,34 +739,71 @@ export async function applyPlan(plan) {
       results.push({ ...item, result: "already applied" });
       continue;
     }
-    const source = playerCache.get(item.sourceId) || await Player.findById(item.sourceId);
-    if (!source) throw new Error(`Validated source player ${item.sourceId} disappeared before writing.`);
-    if (item.action === "rename") {
-      await applyRename(source, item.after);
-      playerCache.set(item.sourceId, source);
-      results.push({ ...item, result: "renamed in place" });
-    } else {
-      const target = playerCache.get(item.targetId) || await Player.findById(item.targetId);
-      if (!target) throw new Error(`Validated target player ${item.targetId} disappeared before writing.`);
-      const outcome = await applyMerge(source, target);
-      playerCache.set(item.targetId, target);
-      results.push({ ...item, result: outcome.deleted ? "merged and deleted placeholder" : "merged; placeholder retained due to remaining reference" });
+    let auditEntry;
+    let partialCounts = {};
+    try {
+      auditEntry = await AuditLog.create({
+        actorType: "system",
+        actorLabel: "player-name-cleanup-script",
+        action: AUDIT_ACTION,
+        targetType: "Player",
+        targetId: item.targetId,
+        targetLabel: item.after,
+        metadata: {
+          sourcePlayerId: item.sourceId,
+          targetPlayerId: item.targetId,
+          originalName: item.before,
+          answer: item.answer,
+          operation: item.action,
+          status: "in_progress",
+          counts: {},
+        },
+      });
+      const source = playerCache.get(item.sourceId) || await Player.findById(item.sourceId);
+      if (!source) throw new Error(`Validated source player ${item.sourceId} disappeared before writing.`);
+      if (item.action === "rename") {
+        await applyRename(source, item.after);
+        playerCache.set(item.sourceId, source);
+        results.push({ ...item, result: "renamed in place" });
+      } else {
+        const target = playerCache.get(item.targetId) || await Player.findById(item.targetId);
+        if (!target) throw new Error(`Validated target player ${item.targetId} disappeared before writing.`);
+        const outcome = await applyMerge(source, target);
+        partialCounts = outcome.counts;
+        playerCache.set(item.targetId, target);
+        results.push({
+          ...item,
+          result: outcome.deleted ? "merged and deleted placeholder" : "merged; placeholder retained due to remaining reference",
+          counts: outcome.counts,
+        });
+      }
+      auditEntry.metadata = {
+        ...(auditEntry.metadata?.toObject?.() || auditEntry.metadata || {}),
+        status: "completed",
+        counts: partialCounts,
+      };
+      await auditEntry.save();
+    } catch (error) {
+      const failure = error instanceof Error ? error : new Error(String(error));
+      partialCounts = failure.partialCounts || partialCounts;
+      if (auditEntry) {
+        auditEntry.metadata = {
+          ...(auditEntry.metadata?.toObject?.() || auditEntry.metadata || {}),
+          status: "partial",
+          counts: partialCounts,
+          error: failure.message,
+        };
+        try {
+          await auditEntry.save();
+        } catch (auditError) {
+          failure.message += `; also failed to record partial status in audit entry ${idOf(auditEntry)}: ${auditError.message}`;
+        }
+      }
+      throw new Error(
+        `Merge aborted at CSV row ${item.rowNumber} (${item.action} ${item.sourceId} -> ${item.targetId}). No later rows were processed. Partial collection counts: ${JSON.stringify(partialCounts)}. ${failure.message}`,
+        { cause: failure },
+      );
     }
-    await AuditLog.create({
-      actorType: "system",
-      actorLabel: "player-name-cleanup-script",
-      action: AUDIT_ACTION,
-      targetType: "Player",
-      targetId: item.targetId,
-      targetLabel: item.after,
-      metadata: {
-        sourcePlayerId: item.sourceId,
-        targetPlayerId: item.targetId,
-        originalName: item.before,
-        answer: item.answer,
-        operation: item.action,
-      },
-    });
   }
   if (results.some((result) => result.action !== "already-applied")) invalidateTournamentStatsCache();
   return results;
@@ -555,17 +868,30 @@ export async function main(args = process.argv.slice(2)) {
       return;
     }
     if (!apply) {
+      const mergeSources = plan
+        .filter((item) => item.action === "merge")
+        .map((item) => item.sourceId);
+      if (mergeSources.length) {
+        const preview = await previewMergeReferences(mergeSources);
+        console.log("\nReference collections/fields a merge would rewrite (read-only counts):");
+        console.table(preview);
+      } else {
+        console.log("\nNo merge rows in this plan; only in-place renames would be written.");
+      }
       console.log("Dry run only. No database writes were made. Add --apply to execute this validated plan.");
       return;
     }
     const results = await applyPlan(plan);
     console.log("\nApplied results:");
-    console.table(results.map(({ sourceId, action, before, after, result }) => ({
+    console.table(results.map(({ sourceId, action, before, after, result, counts }) => ({
       player_id: sourceId,
       action,
       before,
       after,
       result,
+      references: counts
+        ? Object.entries(counts).map(([collection, count]) => `${collection}:${count}`).join(", ")
+        : "",
     })));
     console.log("Merge stats cache invalidated where required; audit entries were written.");
   } finally {

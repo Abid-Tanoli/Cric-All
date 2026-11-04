@@ -334,6 +334,7 @@ const matchSchema = new mongoose.Schema(
     },
     result: {
       winner: { type: mongoose.Schema.Types.ObjectId, ref: "Team" },
+      playerOfMatch: { type: mongoose.Schema.Types.ObjectId, ref: "Player" },
       margin: { type: String },
       description: { type: String },
       resultType: {
@@ -349,6 +350,13 @@ const matchSchema = new mongoose.Schema(
     tossWinner: { type: mongoose.Schema.Types.ObjectId, ref: "Team" },
     tossDecision: { type: String, enum: ["bat", "bowl"] },
     manOfMatch: { type: mongoose.Schema.Types.ObjectId, ref: "Player" },
+    // Older scorecard imports wrote the current batter/bowler ids at the top
+    // level of the Match document instead of inside an over or innings. They are
+    // kept here so a player merge can rewrite and save them instead of leaving a
+    // stale placeholder reference behind.
+    batsmanOnStrike: { type: mongoose.Schema.Types.ObjectId, ref: "Player" },
+    batsmanNonStrike: { type: mongoose.Schema.Types.ObjectId, ref: "Player" },
+    bowler: { type: mongoose.Schema.Types.ObjectId, ref: "Player" },
     // Where the innings data came from. `live` is the ball-by-ball scorer;
     // `manual` is a completed paper scorecard entered by an admin. Readers use
     // this to hide the live badge / ball-by-ball timeline, and writers use it to

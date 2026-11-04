@@ -7,6 +7,8 @@ import mongoose from "mongoose";
 import { startTestDb, stopTestDb } from "./helpers/testDb.js";
 import AuditLog from "../src/models/AuditLog.js";
 import Ball from "../src/models/Ball.js";
+import Blog from "../src/models/Blog.js";
+import CommunityPost from "../src/models/CommunityPost.js";
 import Delivery from "../src/models/Delivery.js";
 import Event from "../src/models/Event.js";
 import Match from "../src/models/Match.js";
@@ -21,8 +23,10 @@ import {
   applyPlan,
   main as applyPlayerNamesMain,
   planNameChanges,
+  previewMergeReferences,
   validateDatabaseTarget,
 } from "../src/scripts/applyPlayerNames.js";
+import { checkPlayerMergeIntegrity } from "../src/scripts/checkPlayerMergeIntegrity.js";
 import {
   collectPlayerReport,
   main as listPlaceholderPlayersMain,
@@ -647,12 +651,16 @@ test("rename keeps the same id and all existing player stats", async () => {
 
 test("merge repoints match and model references and public stats stay summed under the target", async () => {
   const { team } = await seedBase();
-  const [target, source, relationOwner] = await Player.create([
+  const [target, source, relationOwner, otherRelation] = await Player.create([
     { name: "Existing Squad Player", team: team._id, stats: { runs: 10, matches: 1 } },
     { name: "Guessed (TBC)", team: team._id, stats: { runs: 5, matches: 1 } },
     { name: "Relation Owner", team: team._id, relations: [] },
+    { name: "Other Relation", team: team._id },
   ]);
-  relationOwner.relations = [{ player: source._id, relationType: "Brother" }];
+  relationOwner.relations = [
+    { player: source._id, relationType: "Brother" },
+    { player: otherRelation._id, relationType: "Friend" },
+  ];
   await relationOwner.save();
   team.players = [target._id, source._id];
   team.captain = source._id;
@@ -680,6 +688,10 @@ test("merge repoints match and model references and public stats stay summed und
     teams: [team._id],
     status: "completed",
     manOfMatch: source._id,
+    result: { playerOfMatch: source._id },
+    batsmanOnStrike: source._id,
+    batsmanNonStrike: source._id,
+    bowler: source._id,
     playingXI: [{ team: team._id, players: [source._id] }],
     innings: [{
       batting: [{ player: source._id, runs: 5, balls: 4, dismissedBy: source._id, fielder: source._id }],
@@ -756,6 +768,10 @@ test("merge repoints match and model references and public stats stay summed und
 
   assert.equal(await Player.findById(source._id), null);
   assert.equal(String(updatedMatch.manOfMatch), String(target._id));
+  assert.equal(String(updatedMatch.result.playerOfMatch), String(target._id));
+  assert.equal(String(updatedMatch.batsmanOnStrike), String(target._id));
+  assert.equal(String(updatedMatch.batsmanNonStrike), String(target._id));
+  assert.equal(String(updatedMatch.bowler), String(target._id));
   assert.equal(String(updatedMatch.innings[0].batting[0].player), String(target._id));
   assert.equal(String(updatedMatch.innings[0].bowling[0].player), String(target._id));
   assert.equal(String(updatedMatch.innings[0].fallOfWickets[0].fielder), String(target._id));
@@ -763,6 +779,7 @@ test("merge repoints match and model references and public stats stay summed und
   assert.deepEqual(updatedTournament.tournamentSquads[0].players.map(String), [String(target._id)]);
   assert.equal(String(updatedTeam.captain), String(target._id));
   assert.equal(String(updatedRelationOwner.relations[0].player), String(target._id));
+  assert.equal(String(updatedRelationOwner.relations[1].player), String(otherRelation._id));
   assert.equal(String((await Delivery.findById(delivery._id)).fielderId), String(target._id));
   assert.equal(String((await Ball.findById(ball._id)).batsman), String(target._id));
   assert.equal(String((await Partnership.findById(partnership._id)).batsman1Id), String(target._id));
@@ -773,6 +790,8 @@ test("merge repoints match and model references and public stats stay summed und
   assert.ok(statsAfter.topRunScorers.some((row) => row.playerId === String(target._id) && row.runs === 15));
 
   const auditLogs = await AuditLog.find({ action: "player.name_cleanup" });
+  assert.equal(auditLogs[0].metadata.status, "completed");
+  assert.ok(auditLogs[0].metadata.counts.deliveries >= 1);
   const repeated = await planNameChanges({
     rows: [answerRow(source, team, "Existing Squad Player")],
     players: await Player.find({}),
@@ -782,6 +801,288 @@ test("merge repoints match and model references and public stats stay summed und
   });
   assert.deepEqual(repeated.errors, []);
   assert.equal(repeated.plan[0].action, "already-applied");
+});
+
+test("merge changes only the matching player field in every direct-reference collection", async () => {
+  const { team } = await seedBase();
+  const [target, source, otherBatter, otherBowler, otherFielder] = await Player.create([
+    { name: "Existing Player", team: team._id },
+    { name: "Placeholder (TBC)", team: team._id },
+    { name: "Other Batter", team: team._id },
+    { name: "Other Bowler", team: team._id },
+    { name: "Other Fielder", team: team._id },
+  ]);
+  const match = await Match.create({ title: "Reference isolation", teams: [team._id] });
+  const playerIds = {
+    batsmanId: otherBatter._id,
+    bowlerId: otherBowler._id,
+    nonStrikerId: target._id,
+    fielderId: otherFielder._id,
+  };
+  const deliveryFields = Object.keys(playerIds);
+  const deliveries = [];
+  for (const field of deliveryFields) {
+    deliveries.push(await Delivery.create({
+      matchId: match._id,
+      inning: 1,
+      overNumber: 1,
+      ballNumber: deliveries.length + 1,
+      ...playerIds,
+      [field]: source._id,
+    }));
+  }
+
+  const ballFields = {
+    batsman: otherBatter._id,
+    bowler: otherBowler._id,
+    fieldedBy: otherFielder._id,
+  };
+  const balls = [];
+  for (const field of Object.keys(ballFields)) {
+    balls.push(await Ball.create({
+      matchId: match._id,
+      over: 1,
+      ball: balls.length + 1,
+      ...ballFields,
+      [field]: source._id,
+    }));
+  }
+
+  const partnerships = [];
+  for (const field of ["batsman1Id", "batsman2Id"]) {
+    partnerships.push(await Partnership.create({
+      matchId: match._id,
+      inning: 1,
+      wicketNumber: partnerships.length + 1,
+      batsman1Id: otherBatter._id,
+      batsman2Id: otherFielder._id,
+      [field]: source._id,
+    }));
+  }
+  const review = await Review.create({
+    matchId: match._id,
+    inning: 1,
+    overBall: "1.1",
+    requestedBy: "batting_team",
+    decisionChallenged: "out",
+    playerReviewed: source._id,
+  });
+  const blog = await Blog.create({
+    title: "Player article",
+    content: "Article",
+    relatedType: "Player",
+    relatedId: source._id,
+  });
+  const post = await CommunityPost.create({
+    authorUser: new mongoose.Types.ObjectId(),
+    subject: { type: "player", ref: source._id },
+    kind: "photo",
+    title: "Player post",
+  });
+
+  const { plan, errors } = await planNameChanges({
+    rows: [answerRow(source, team, "Existing Player")],
+    players: await Player.find({}),
+    teams: await Team.find({}),
+    matches: await Match.find({}),
+  });
+  assert.deepEqual(errors, []);
+  await applyPlan(plan);
+
+  for (const [index, field] of deliveryFields.entries()) {
+    const updated = await Delivery.findById(deliveries[index]._id).lean();
+    assert.equal(String(updated[field]), String(target._id));
+    for (const untouchedField of deliveryFields.filter((entry) => entry !== field)) {
+      assert.equal(String(updated[untouchedField]), String(playerIds[untouchedField]));
+    }
+  }
+  for (const [index, field] of Object.keys(ballFields).entries()) {
+    const updated = await Ball.findById(balls[index]._id).lean();
+    assert.equal(String(updated[field]), String(target._id));
+    for (const untouchedField of Object.keys(ballFields).filter((entry) => entry !== field)) {
+      assert.equal(String(updated[untouchedField]), String(ballFields[untouchedField]));
+    }
+  }
+  for (const [index, field] of ["batsman1Id", "batsman2Id"].entries()) {
+    const updated = await Partnership.findById(partnerships[index]._id).lean();
+    assert.equal(String(updated[field]), String(target._id));
+    assert.equal(
+      String(updated[field === "batsman1Id" ? "batsman2Id" : "batsman1Id"]),
+      String(field === "batsman1Id" ? otherFielder._id : otherBatter._id),
+    );
+  }
+  assert.equal(String((await Review.findById(review._id)).playerReviewed), String(target._id));
+  assert.equal(String((await Blog.findById(blog._id)).relatedId), String(target._id));
+  assert.equal(String((await CommunityPost.findById(post._id)).subject.ref), String(target._id));
+
+  const preview = await previewMergeReferences([String(target._id)]);
+  assert.ok(preview.some((entry) => entry.collection === Blog.collection.collectionName && entry.field === "relatedId"));
+  assert.ok(preview.some((entry) => entry.collection === CommunityPost.collection.collectionName && entry.field === "subject.ref"));
+});
+
+test("integrity checker is read-only and groups all player references with suspicious ball rows", async () => {
+  const { team } = await seedBase();
+  const [target, source, otherPlayer] = await Player.create([
+    { name: "Target Player", team: team._id },
+    { name: "Placeholder (TBC)", team: team._id },
+    { name: "Other Player", team: team._id },
+  ]);
+  const match = await Match.create({
+    title: "Integrity check match",
+    teams: [team._id],
+    source: "live",
+    innings: [{ batting: [{ player: source._id }], bowling: [] }],
+  });
+  const delivery = await Delivery.create({
+    matchId: match._id,
+    inning: 1,
+    overNumber: 1,
+    ballNumber: 1,
+    batsmanId: source._id,
+    bowlerId: source._id,
+    nonStrikerId: otherPlayer._id,
+  });
+  const suspiciousDelivery = await Delivery.create({
+    matchId: match._id,
+    inning: 1,
+    overNumber: 1,
+    ballNumber: 2,
+    batsmanId: source._id,
+    bowlerId: otherPlayer._id,
+    nonStrikerId: otherPlayer._id,
+  });
+  const ball = await Ball.create({
+    matchId: match._id,
+    over: 1,
+    ball: 1,
+    batsman: source._id,
+    bowler: otherPlayer._id,
+  });
+  const partnership = await Partnership.create({
+    matchId: match._id,
+    inning: 1,
+    wicketNumber: 1,
+    batsman1Id: source._id,
+    batsman2Id: otherPlayer._id,
+  });
+  const review = await Review.create({
+    matchId: match._id,
+    inning: 1,
+    overBall: "1.1",
+    requestedBy: "batting_team",
+    decisionChallenged: "out",
+    playerReviewed: source._id,
+  });
+  const legacyReference = await mongoose.connection.db.collection("legacyPlayerRefs").insertOne({
+    matchId: match._id,
+    player: source._id,
+  });
+  const countsBefore = {
+    players: await Player.countDocuments(),
+    matches: await Match.countDocuments(),
+    deliveries: await Delivery.countDocuments(),
+    balls: await Ball.countDocuments(),
+    partnerships: await Partnership.countDocuments(),
+    reviews: await Review.countDocuments(),
+  };
+
+  const report = await checkPlayerMergeIntegrity({ playerId: String(source._id) });
+
+  assert.deepEqual({
+    players: await Player.countDocuments(),
+    matches: await Match.countDocuments(),
+    deliveries: await Delivery.countDocuments(),
+    balls: await Ball.countDocuments(),
+    partnerships: await Partnership.countDocuments(),
+    reviews: await Review.countDocuments(),
+  }, countsBefore);
+  assert.equal(report.matches.length, 1);
+  assert.equal(report.matches[0].matchId, String(match._id));
+  assert.equal(report.matches[0].nonManual, true);
+  assert.ok(report.matches[0].references.some((entry) =>
+    entry.collection === Delivery.collection.collectionName &&
+    entry.documentId === String(delivery._id) &&
+    entry.field === "batsmanId"));
+  for (const [collection, document] of [
+    [Delivery.collection.collectionName, suspiciousDelivery],
+    [Ball.collection.collectionName, ball],
+    [Partnership.collection.collectionName, partnership],
+    [Review.collection.collectionName, review],
+  ]) {
+    assert.ok(report.matches[0].references.some((entry) =>
+      entry.collection === collection && entry.documentId === String(document._id)));
+  }
+  assert.ok(report.matches[0].suspicious.some((entry) => entry.code === "SAME_BATSMAN_AND_BOWLER"));
+  assert.ok(report.matches[0].suspicious.some((entry) => entry.code === "BOWLER_IS_NON_STRIKER"));
+  assert.ok(report.matches[0].references.some((entry) =>
+    entry.collection === Match.collection.collectionName &&
+    entry.field === "innings[0].batting[0].player"));
+  assert.ok(report.matches[0].references.some((entry) =>
+    entry.collection === "legacyPlayerRefs" &&
+    entry.documentId === String(legacyReference.insertedId) &&
+    entry.field === "player"));
+  assert.ok(report.otherReferences.some((entry) =>
+    entry.collection === "legacyPlayerRefs" &&
+    entry.fields.includes("player")));
+  assert.notEqual(String(target._id), String(source._id));
+});
+
+test("a failed merge records partial counts, aborts later rows and blocks a silent retry", async () => {
+  const { team } = await seedBase();
+  const [target, source, laterRename] = await Player.create([
+    { name: "Existing Player", team: team._id },
+    { name: "Placeholder (TBC)", team: team._id },
+    { name: "Another Placeholder (TBC)", team: team._id },
+  ]);
+  const match = await Match.create({ title: "Partial merge", teams: [team._id] });
+  const delivery = await Delivery.create({
+    matchId: match._id,
+    inning: 1,
+    overNumber: 1,
+    ballNumber: 1,
+    batsmanId: source._id,
+    bowlerId: target._id,
+    nonStrikerId: target._id,
+  });
+  const { plan, errors } = await planNameChanges({
+    rows: [
+      answerRow(source, team, "Existing Player"),
+      answerRow(laterRename, team, "Renamed Later"),
+    ],
+    players: await Player.find({}),
+    teams: await Team.find({}),
+    matches: await Match.find({}),
+  });
+  assert.deepEqual(errors, []);
+
+  const originalUpdateMany = Delivery.updateMany;
+  Delivery.updateMany = async function (filter, ...rest) {
+    if (filter.fielderId) throw new Error("simulated failure");
+    return originalUpdateMany.call(this, filter, ...rest);
+  };
+  try {
+    await assert.rejects(
+      applyPlan(plan),
+      /Merge aborted.*No later rows were processed.*Partial collection counts: \{"deliveries":1\}.*Failed to rewrite deliveries\.fielderId/,
+    );
+  } finally {
+    Delivery.updateMany = originalUpdateMany;
+  }
+
+  assert.equal(String((await Delivery.findById(delivery._id)).batsmanId), String(target._id));
+  assert.ok(await Player.findById(source._id));
+  assert.equal((await Player.findById(laterRename._id)).name, "Another Placeholder (TBC)");
+  const audit = await AuditLog.findOne({ action: "player.name_cleanup" }).lean();
+  assert.equal(audit.metadata.status, "partial");
+  assert.deepEqual(audit.metadata.counts, { deliveries: 1 });
+  const retry = await planNameChanges({
+    rows: [answerRow(source, team, "Existing Player")],
+    players: await Player.find({}),
+    teams: await Team.find({}),
+    matches: await Match.find({}),
+    auditLogs: [audit],
+  });
+  assert.match(retry.errors[0], /prior partial merge.*reconciled/i);
 });
 
 test("cross-team merges require both explicit row and command-line authorization", async () => {
