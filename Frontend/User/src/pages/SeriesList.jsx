@@ -7,6 +7,37 @@ import ErrorState from "../components/cricapi/ErrorState";
 
 const LOCAL_TYPES = ["single-match", "series", "tri-series", "tournament", "world-cup", "champions-trophy", "league"];
 
+const STATUS_FILTERS = [
+  { key: "", label: "All" },
+  { key: "live", label: "Live" },
+  { key: "ongoing", label: "In Progress" },
+  { key: "upcoming", label: "Upcoming" },
+  { key: "completed", label: "Completed" },
+];
+
+const normalizeStatus = (value) => {
+  const status = String(value || "upcoming").trim().toLowerCase();
+  return status === "in-progress" || status === "in_progress" || status === "in progress"
+    ? "ongoing"
+    : status;
+};
+
+const listFrom = (response, field) => {
+  const data = response?.data;
+  if (Array.isArray(data)) return data;
+  if (Array.isArray(data?.[field])) return data[field];
+  return [];
+};
+
+const normalizeLocalItem = (item, source) => ({
+  ...item,
+  // Tournament documents have `type` (knockout/league/...), not `eventType`.
+  // Map them onto the existing "tournament" type filter so they are not
+  // invisible when a type tab is selected.
+  eventType: item.eventType || (source === "tournament" || item.type ? "tournament" : "event"),
+  status: normalizeStatus(item.publicStatus || item.status),
+});
+
 export default function SeriesList() {
   const [events, setEvents] = useState([]);
   const [providerSeries, setProviderSeries] = useState([]);
@@ -16,6 +47,7 @@ export default function SeriesList() {
   const [providerError, setProviderError] = useState(null);
   const [apiStatus, setApiStatus] = useState(null);
   const [filter, setFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
   const [search, setSearch] = useState("");
 
   const loadData = useCallback(async () => {
@@ -41,26 +73,39 @@ export default function SeriesList() {
     };
 
     const loadLocal = async () => {
-      try {
-        const res = await api.get("/events", { params: { limit: 100 }, timeout: 8000 });
-        const eventsData = Array.isArray(res.data) ? res.data : (res.data?.events || []);
-        if (eventsData.length) {
-          setEvents(eventsData);
-        } else {
-          const tournamentRes = await api.get("/tournaments", { params: { limit: 100 }, timeout: 8000 });
-          setEvents(Array.isArray(tournamentRes.data) ? tournamentRes.data : (tournamentRes.data?.tournaments || []));
+      // Events and tournaments are separate collections. Loading tournaments
+      // only when /events happened to be empty meant every tournament vanished
+      // from /series as soon as the site had one event. Fetch both and merge.
+      const [eventsResult, tournamentsResult] = await Promise.allSettled([
+        api.get("/events", { params: { limit: 100 }, timeout: 8000 }),
+        api.get("/tournaments", { params: { limit: 100 }, timeout: 8000 }),
+      ]);
+
+      const eventsData = eventsResult.status === "fulfilled"
+        ? listFrom(eventsResult.value, "events")
+        : [];
+      const tournamentsData = tournamentsResult.status === "fulfilled"
+        ? listFrom(tournamentsResult.value, "tournaments")
+        : [];
+
+      const merged = [];
+      const seen = new Set();
+      for (const [source, rows] of [["event", eventsData], ["tournament", tournamentsData]]) {
+        for (const row of rows) {
+          if (!row || typeof row !== "object") continue;
+          const key = String(row._id || row.slug || row.id || row.name || "");
+          if (!key || seen.has(key)) continue;
+          seen.add(key);
+          merged.push(normalizeLocalItem(row, source));
         }
-      } catch (error) {
-        try {
-          const tournamentRes = await api.get("/tournaments", { params: { limit: 100 }, timeout: 8000 });
-          setEvents(Array.isArray(tournamentRes.data) ? tournamentRes.data : (tournamentRes.data?.tournaments || []));
-        } catch {
-          setEvents([]);
-          setLocalError(error.response?.data?.message || error.message || "Failed to load local events.");
-        }
-      } finally {
-        setLocalLoading(false);
       }
+      setEvents(merged);
+
+      if (eventsResult.status === "rejected" && tournamentsResult.status === "rejected") {
+        const error = eventsResult.reason;
+        setLocalError(error?.response?.data?.message || error?.message || "Failed to load local events.");
+      }
+      setLocalLoading(false);
     };
 
     await Promise.allSettled([loadProvider(), loadLocal()]);
@@ -76,7 +121,10 @@ export default function SeriesList() {
     return providerSeries.filter((series) => series.name.toLowerCase().includes(term));
   }, [providerSeries, search]);
 
-  const localEvents = filter ? events.filter((event) => event.eventType === filter) : events;
+  const localEvents = events.filter((event) => (
+    (!filter || event.eventType === filter) &&
+    (!statusFilter || event.status === statusFilter)
+  ));
 
   return (
     <div className="min-h-screen bg-cric-bg">
@@ -134,7 +182,23 @@ export default function SeriesList() {
             <p className="text-xs font-semibold text-cric-muted">Your own app events, tournaments, leagues and created matches.</p>
           </div>
 
-          <div className="mb-6 flex gap-2 overflow-x-auto pb-3">
+          <div className="mb-3 flex gap-2 overflow-x-auto pb-2" aria-label="Filter by status">
+            {STATUS_FILTERS.map(({ key, label }) => {
+              const count = key ? events.filter((event) => event.status === key).length : events.length;
+              return (
+                <button
+                  key={key || "all"}
+                  onClick={() => setStatusFilter(key)}
+                  aria-label={`Status: ${label}`}
+                  className={`whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-bold ${statusFilter === key ? "bg-cric-accent text-white" : "border border-cric-border bg-cric-card text-cric-muted hover:bg-cric-bg"}`}
+                >
+                  {label} ({count})
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="mb-6 flex gap-2 overflow-x-auto pb-3" aria-label="Filter by event type">
             <button onClick={() => setFilter("")} className={`whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-bold ${!filter ? "bg-cric-accent text-white" : "border border-cric-border bg-cric-card text-cric-muted hover:bg-cric-bg"}`}>
               All ({events.length})
             </button>
@@ -155,8 +219,11 @@ export default function SeriesList() {
                 <Link key={event._id} to={`/series/${event.slug || event._id}`} className="group overflow-hidden rounded-2xl border border-cric-border bg-cric-card shadow-lg transition-all hover:shadow-xl">
                   <div className="relative flex aspect-[4/3] items-center justify-center bg-gradient-to-br from-cric-accent to-blue-700 p-6">
                     {event.logo ? <img src={event.logo} alt={event.name} className="h-full w-full object-contain" /> : <span className="text-6xl font-black text-white/80">{event.name?.charAt(0)}</span>}
-                    <span className={`absolute right-3 top-3 rounded-full px-2 py-0.5 text-[9px] font-bold uppercase ${event.status === "live" ? "bg-red-600 text-white animate-pulse" : event.status === "completed" ? "bg-green-600 text-white" : "bg-blue-500/30 text-blue-200"}`}>
-                      {event.status || "upcoming"}
+                    <span
+                      data-testid={`local-status-${event._id}`}
+                      className={`absolute right-3 top-3 rounded-full px-2 py-0.5 text-[9px] font-bold uppercase ${event.status === "live" ? "bg-red-600 text-white animate-pulse" : event.status === "ongoing" ? "bg-red-600 text-white" : event.status === "completed" ? "bg-green-600 text-white" : "bg-blue-500/30 text-blue-200"}`}
+                    >
+                      {event.status === "ongoing" ? "in progress" : (event.status || "upcoming")}
                     </span>
                   </div>
                   <div className="p-4">
