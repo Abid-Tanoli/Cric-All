@@ -1,17 +1,23 @@
 # CricAll automated MongoDB backups
 
 `Backend/src/scripts/backupDb.js` creates a gzip'd logical backup of the live
-MongoDB database and keeps only the most recent 14 backups. It tries, in order:
+MongoDB database. It tries, in order:
 
-1. `docker exec <container> mongodump` against the running `cricall-mongo`
-   container (`MONGO_CONTAINER_NAME` overrides the container name) — no host
-   MongoDB tools required.
+1. `docker exec <container> mongodump --uri <MONGO_URL>` against the running
+   `cricall-mongo` container (`MONGO_CONTAINER_NAME` overrides the container
+   name) — the full URL, including auth, is passed to `mongodump` so the backup
+   uses the same database/user as the backend. No host MongoDB tools required.
 2. A host `mongodump` binary pointed at the `MONGO_URL` / `MONGODB_URI` /
    `MONGO_URI` from `Backend/.env`.
 
+The script never logs the Mongo URL or password: error output from either tool
+is redacted before it is printed.
+
 Archives land in `Backend/backups/backup-<db>-YYYY-MM-DDTHH-MM-SS.archive.gz`
-and are ignored by git. Retention (default 14 files) is configurable via
-`BACKUP_KEEP_DAYS`, the output dir via `BACKUP_DIR`.
+and are ignored by git. Retention is a **window in days**, configured with
+`BACKUP_KEEP_DAYS` (default 14 days; `0` keeps only the newest archive). The
+newest archive is always kept, even if it is older than the window. The output
+dir is configurable via `BACKUP_DIR`.
 
 Run once:
 
