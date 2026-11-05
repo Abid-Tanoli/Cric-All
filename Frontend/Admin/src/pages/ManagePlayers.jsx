@@ -47,15 +47,19 @@ export default function ManagePlayers() {
   const onSubmit = async (data) => {
     try {
       if (editingId) {
-        await dispatch(updatePlayer({ id: editingId, data }));
+        // unwrap() makes a rejected thunk throw here. Without it the edit form
+        // closed even when the server refused the save (for example a 400 from
+        // validation), so the failure was invisible and impossible to retry.
+        await dispatch(updatePlayer({ id: editingId, data })).unwrap();
         setEditingId(null);
         setEditingData({});
       } else {
-        await dispatch(createPlayer(data));
+        await dispatch(createPlayer(data)).unwrap();
       }
     } catch (err) {
       console.error(err);
-      showToast(editingId ? "Failed to update player" : "Failed to create player", 'error');
+      const fallback = editingId ? "Failed to update player" : "Failed to create player";
+      showToast(typeof err === "string" && err.trim() ? err : fallback, 'error');
     }
   };
 

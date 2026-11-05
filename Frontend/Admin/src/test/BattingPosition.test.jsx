@@ -46,6 +46,31 @@ describe("Admin player form — batting position", () => {
     });
   });
 
+  it("clears a stored position and submits the empty value", async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    const { container } = render(
+      <PlayerForm
+        editingId="p1"
+        onSubmit={onSubmit}
+        defaultValues={{
+          name: "Existing",
+          playingRole: "Bowler",
+          battingStyle: "Left-handed",
+          bowlingStyle: "Left-arm Fast",
+          battingPosition: "tailender",
+        }}
+      />
+    );
+
+    fireEvent.change(container.querySelector('select[name="battingPosition"]'), {
+      target: { value: "" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /update file/i }));
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({ battingPosition: "" });
+  });
+
   it("seeds an edit with the stored value instead of resetting it to Not set", () => {
     const { container } = render(
       <PlayerForm

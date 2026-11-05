@@ -32,11 +32,18 @@ const EMPTY = {
   province: "",
 };
 
-/** Only send the keys the user actually filled in, so a PUT never blanks a field. */
+/**
+ * Keys that must be sent even when empty. A partial PUT otherwise cannot clear
+ * an optional select: dropping `battingPosition: ""` leaves the stored value in
+ * place, so choosing "Not set" appeared to do nothing.
+ */
+const ALWAYS_SENT_KEYS = new Set(["battingPosition"]);
+
+/** Only send filled-in keys, so a partial PUT never blanks a field by accident. */
 function toPayload(form) {
   const payload = {};
   for (const [key, value] of Object.entries(form)) {
-    if (typeof value === "string" && value.trim() === "") continue;
+    if (typeof value === "string" && value.trim() === "" && !ALWAYS_SENT_KEYS.has(key)) continue;
     payload[key] = typeof value === "string" ? value.trim() : value;
   }
   if (
