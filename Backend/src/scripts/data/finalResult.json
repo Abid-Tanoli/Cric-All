@@ -1,0 +1,208 @@
+{
+  "tournamentName": "All Baldia T20 Hard Ball Cricket Tournament",
+  "match": {
+    "id": "6ae4bd726170fe51ae2cbc90",
+    "stage": "final",
+    "stageLabel": "Final",
+    "teamA": "Sky Sports",
+    "teamB": "Young Star",
+    "storageTeamOrder": ["Young Star", "Sky Sports"],
+    "title": "Final: Sky Sports vs Young Star",
+    "venue": "Tahirabad Ground",
+    "startAt": "2026-11-01T05:30:00.000Z",
+    "totalOvers": 20,
+    "matchCategory": "Club",
+    "tossWinner": "",
+    "tossDecision": ""
+  },
+  "result": {
+    "sourceResultType": "wickets",
+    "resultType": "normal",
+    "winner": "Sky Sports",
+    "margin": "9 wickets",
+    "note": "Sky Sports won by 9 wickets (14 balls remaining)."
+  },
+  "manOfMatch": "Raheel",
+  "innings": [
+    {
+      "number": 1,
+      "battingTeam": "Young Star",
+      "bowlingTeam": "Sky Sports",
+      "runs": 292,
+      "wickets": 7,
+      "overs": "20.0",
+      "extras": {
+        "wides": 9,
+        "noBalls": 0,
+        "byes": 0,
+        "legByes": 0,
+        "penalties": 0
+      },
+      "batting": [
+        {
+          "name": "ZAHID SR",
+          "runs": 34,
+          "balls": 22,
+          "fours": 4,
+          "sixes": 1,
+          "dismissal": { "type": "stumped", "bowler": "Akbar", "fielder": "Sharafat" }
+        },
+        {
+          "name": "SALMAN SR",
+          "runs": 81,
+          "balls": 27,
+          "fours": 5,
+          "sixes": 9,
+          "dismissal": { "type": "caught", "bowler": "Wajid", "fielder": "Rehman" }
+        },
+        {
+          "name": "Luqman",
+          "runs": 31,
+          "balls": 15,
+          "fours": 2,
+          "sixes": 2,
+          "dismissal": { "type": "caught", "bowler": "Zarnain", "fielder": "Ali" }
+        },
+        {
+          "name": "DR AQAL",
+          "runs": 19,
+          "balls": 6,
+          "fours": 3,
+          "sixes": 1,
+          "dismissal": { "type": "bowled", "bowler": "Akbar" }
+        },
+        {
+          "name": "Ejaz kohistani",
+          "runs": 100,
+          "balls": 32,
+          "fours": 2,
+          "sixes": 14,
+          "dismissal": { "type": "caught", "bowler": "Kamran" }
+        },
+        {
+          "name": "Umar Afridi",
+          "runs": 11,
+          "balls": 9,
+          "fours": 2,
+          "sixes": 0,
+          "dismissal": { "type": "caught", "bowler": "Rehman" }
+        },
+        {
+          "name": "Naveed mochar",
+          "runs": 1,
+          "balls": 2,
+          "fours": 0,
+          "sixes": 0,
+          "dismissal": { "type": "caught", "bowler": "Zarnain" }
+        },
+        {
+          "name": "Dr Suleman",
+          "runs": 4,
+          "balls": 5,
+          "fours": 0,
+          "sixes": 0,
+          "dismissal": { "type": "not out" }
+        },
+        {
+          "name": "saleem koch",
+          "runs": 2,
+          "balls": 2,
+          "fours": 0,
+          "sixes": 0,
+          "dismissal": { "type": "not out" }
+        }
+      ],
+      "bowling": [
+        { "name": "Kamran Bhai", "overs": "3.0", "maidens": 0, "runs": 51, "wickets": 1 },
+        { "name": "Shahnawaz", "overs": "3.0", "maidens": 0, "runs": 44, "wickets": 0 },
+        { "name": "Wajid", "overs": "3.0", "maidens": 0, "runs": 37, "wickets": 1 },
+        { "name": "Raheel", "overs": "1.0", "maidens": 0, "runs": 20, "wickets": 0 },
+        { "name": "Akbar", "overs": "4.0", "maidens": 0, "runs": 51, "wickets": 2 },
+        { "name": "Zarnain", "overs": "4.0", "maidens": 0, "runs": 48, "wickets": 2 },
+        { "name": "Ali", "overs": "1.0", "maidens": 0, "runs": 23, "wickets": 0 },
+        { "name": "Rehman", "overs": "1.0", "maidens": 0, "runs": 18, "wickets": 1 }
+      ],
+      "fallOfWickets": [
+        { "player": "SALMAN SR", "runs": 102, "wickets": 1, "overs": "6.1" },
+        { "player": "ZAHID SR", "runs": 143, "wickets": 2, "overs": "10.0" },
+        { "player": "Luqman", "runs": 151, "wickets": 3, "overs": "10.5" },
+        { "player": "DR AQAL", "runs": 176, "wickets": 4, "overs": "11.5" },
+        { "player": "Umar Afridi", "runs": 237, "wickets": 5, "overs": "16.2" },
+        { "player": "Naveed mochar", "runs": 254, "wickets": 6, "overs": "17.1" },
+        { "player": "Ejaz kohistani", "runs": 289, "wickets": 7, "overs": "19.3" }
+      ],
+      "partnerships": [
+        { "batters": ["ZAHID SR", "SALMAN SR"], "runs": 102, "balls": 37, "out": "SALMAN SR" },
+        { "batters": ["ZAHID SR", "Luqman"], "runs": 41, "balls": 23, "out": "ZAHID SR" },
+        { "batters": ["DR AQAL", "Luqman"], "runs": 8, "balls": 5, "out": "Luqman" },
+        { "batters": ["DR AQAL", "Ejaz kohistani"], "runs": 25, "balls": 6, "out": "DR AQAL" },
+        { "batters": ["Umar Afridi", "Ejaz kohistani"], "runs": 61, "balls": 27, "out": "Umar Afridi" },
+        { "batters": ["Naveed mochar", "Ejaz kohistani"], "runs": 17, "balls": 5, "out": "Naveed mochar" },
+        { "batters": ["Dr Suleman", "Ejaz kohistani"], "runs": 35, "balls": 14, "out": "Ejaz kohistani" },
+        { "batters": ["Dr Suleman", "saleem koch"], "runs": 3, "balls": 3 }
+      ]
+    },
+    {
+      "number": 2,
+      "battingTeam": "Sky Sports",
+      "bowlingTeam": "Young Star",
+      "runs": 295,
+      "wickets": 1,
+      "overs": "17.4",
+      "extras": {
+        "wides": 9,
+        "noBalls": 0,
+        "byes": 0,
+        "legByes": 0,
+        "penalties": 0
+      },
+      "batting": [
+        {
+          "name": "Rehman",
+          "runs": 32,
+          "balls": 14,
+          "fours": 5,
+          "sixes": 1,
+          "dismissal": { "type": "caught", "bowler": "Ijaz Kohistani" }
+        },
+        {
+          "name": "Raheel",
+          "runs": 154,
+          "balls": 55,
+          "fours": 16,
+          "sixes": 12,
+          "dismissal": { "type": "not out" }
+        },
+        {
+          "name": "Wajid",
+          "runs": 100,
+          "balls": 39,
+          "fours": 11,
+          "sixes": 7,
+          "dismissal": { "type": "not out" }
+        }
+      ],
+      "bowling": [
+        { "name": "Ijaz Kohistani", "overs": "4.0", "maidens": 0, "runs": 42, "wickets": 1 },
+        { "name": "Kamran", "overs": "3.0", "maidens": 0, "runs": 55, "wickets": 0 },
+        { "name": "Umar", "overs": "2.0", "maidens": 0, "runs": 33, "wickets": 0 },
+        { "name": "Saleem", "overs": "2.4", "maidens": 0, "runs": 60, "wickets": 0 },
+        { "name": "Usman", "overs": "1.0", "maidens": 0, "runs": 14, "wickets": 0 },
+        { "name": "D Akal", "overs": "4.0", "maidens": 0, "runs": 67, "wickets": 0 },
+        { "name": "Naveed", "overs": "1.0", "maidens": 0, "runs": 24, "wickets": 0 }
+      ],
+      "fallOfWickets": null,
+      "partnerships": null
+    }
+  ],
+  "assumptions": [
+    "The scorebook labels the Final 'Sky Sports vs Young Star', but the match itself was Young Star batting first (292/7) and Sky Sports chasing (295/1). The stored team order is therefore Young Star then Sky Sports so the Admin manual editor opens with Team A / innings 1 = Young Star; the public title is preserved as 'Final: Sky Sports vs Young Star'.",
+    "Young Star innings 1 is a full 20.0-over card. Extras are 9 wides, with no byes or leg-byes; batter runs 283 + extras 9 = 292 and the eight-bowler card also reconciles to 292.",
+    "Sky Sports bowling merges 'Kamran Bhai' (2.0-0-41-0) and 'Kamran' (1.0-0-10-1) into one 3.0-0-51-1 spell because both refer to the same existing Sky Sports player, Kamran Kamal; this is an explicit assumption, not a new player.",
+    "The three Sky Sports catches by Rehman, Ali and Sharafat are recorded as fielders on the dismissals. Catches where the scorebook did not name a fielder are left with no fielder instead of inventing one.",
+    "Sky Sports innings 2 has 9 extras, entered as wides; the source did not split extras. The batting card has 108 balls faced against 106 legal balls (17.4 overs), so at least two no-balls or other non-wides are likely. The split remains UNCONFIRMED until the owner checks the book; the totals still reconcile (286 batting + 9 extras = 295).",
+    "The Sky Sports innings has one wicket but the source did not record a fall of wicket; fallOfWickets is null (not an empty list), so the importer reports it as not supplied instead of treating it as a contradiction. The dismissal itself is still stored against Rehman.",
+    "No toss is recorded, so tossWinner/tossDecision stay empty for the owner to fill in Admin if desired.",
+    "The young Star partnerships are entered for validation only and are not stored by the manual-scorecard schema; they reconcile cumulatively to each fall of wicket and to the 292 total over 120 balls."
+  ]
+}

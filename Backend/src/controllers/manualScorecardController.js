@@ -251,10 +251,12 @@ export const isEmptyUpcomingFixture = (match) => {
 export const convertUpcomingFixtureToManualDraft = async (
   matchId,
   body = {},
-  { req = null } = {},
+  { req = null, teamOrder = null } = {},
 ) => {
+  const originalTeams = [];
+  let match = null;
   try {
-    const match = await Match.findById(matchId);
+    match = await Match.findById(matchId);
     if (!match) return { ok: false, status: 404, message: "Match not found." };
     if (match.source === "manual") {
       return { ok: false, status: 409, message: "Match is already a manual scorecard." };
@@ -301,6 +303,33 @@ export const convertUpcomingFixtureToManualDraft = async (
       return { ok: false, status: 409, message: "Fixture must have exactly two teams." };
     }
 
+    // A caller may pin the stored team order (for example, so the manual editor
+    // opens with the team that batted first as Team A). It must be the same two
+    // teams, once each; anything else is a data error, never a silent swap.
+    originalTeams.push(...match.teams);
+    if (teamOrder != null) {
+      if (!Array.isArray(teamOrder) || teamOrder.length !== 2) {
+        return {
+          ok: false,
+          status: 400,
+          message: "teamOrder must list the fixture's two teams.",
+        };
+      }
+      const requested = teamOrder.map(idOf);
+      const current = match.teams.map(idOf);
+      if (
+        requested[0] === requested[1] ||
+        !requested.every((id) => current.includes(id))
+      ) {
+        return {
+          ok: false,
+          status: 400,
+          message: "teamOrder must list the fixture's two teams exactly once.",
+        };
+      }
+      match.teams = requested;
+    }
+
     // Preserve the bracket slot metadata even if a caller sends something else.
     const payload = {
       ...body,
@@ -318,12 +347,18 @@ export const convertUpcomingFixtureToManualDraft = async (
     const result = await applyManualMatch(match, payload, { req, requireComplete: false });
     if (!result.ok) {
       // Nothing was saved; restore the in-memory document so a caller that
-      // inspects it after a validation failure does not see a phantom flip.
+      // inspects it after a validation failure does not see a phantom flip
+      // (including a team-order swap).
       match.source = "live";
+      match.teams = originalTeams;
       return result;
     }
     return result;
   } catch (error) {
+    if (match) {
+      match.source = "live";
+      if (originalTeams.length === 2) match.teams = originalTeams;
+    }
     return { ok: false, status: 400, message: error.message || "Failed to convert the fixture." };
   }
 };
