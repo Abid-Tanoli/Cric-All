@@ -201,6 +201,8 @@ test("dry run validates the SF1 scorecard and writes nothing", async () => {
   assert.deepEqual(report.plan.errors, []);
   assert.equal(report.plan.innings[0].checks.total, 274);
   assert.equal(report.plan.innings[1].checks.total, 275);
+  assert.equal(report.plan.payload.innings[0].fallOfWickets[0].overs, "1.4");
+  assert.equal(report.plan.payload.innings[0].fallOfWickets[2].overs, "15.5");
   assert.deepEqual(
     report.placeholders.wouldCreate.map((row) => row.name).sort(),
     ["Ali (TBC)", "Attack (TBC)", "Attack 1 (TBC)"],

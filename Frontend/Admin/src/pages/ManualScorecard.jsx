@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import api from "../services/api";
 import { useToast } from "../components/Toast";
+import { formatOversFromBalls, normalizeOversText } from "../utils/overs";
 
 // P1: fast entry of a completed match from a paper scorebook. The form writes
 // the same summary innings a live-scored match has, so standings, tournament
@@ -45,11 +46,10 @@ const idOf = (value) => String(value?._id || value || "");
 
 const oversText = (balls, overs) => {
   const totalBalls = Number(balls);
-  if (Number.isFinite(totalBalls) && totalBalls > 0) {
-    return `${Math.floor(totalBalls / 6)}.${totalBalls % 6}`;
+  if (Number.isSafeInteger(totalBalls) && totalBalls > 0) {
+    return formatOversFromBalls(totalBalls);
   }
-  const whole = Number(overs);
-  return Number.isFinite(whole) && whole > 0 ? `${whole}.0` : "";
+  return normalizeOversText(overs);
 };
 
 const localDateTimeValue = (value) => {
@@ -161,8 +161,9 @@ const formFromMatch = (match) => {
         runs: row.runs,
         wickets: row.wickets ?? row.wicket,
         player: idOf(row.player),
-        // Manual scorecards store this as balls, matching the validator.
-        overs: Number.isFinite(Number(row.overs)) ? oversText(row.overs, 0) : "",
+        overs: Number.isSafeInteger(Number(row.overs)) && Number(row.overs) > Number(match?.totalOvers || 20)
+          ? formatOversFromBalls(Number(row.overs))
+          : normalizeOversText(row.overs),
       })),
     };
   });

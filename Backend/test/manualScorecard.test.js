@@ -229,6 +229,34 @@ test("manual validator: enforces over format and the overs quota", async () => {
   const tooMany = buildPayload(club);
   tooMany.innings[0].overs = "25";
   assert.ok(validate(tooMany, club).errors.some((e) => /exceed/.test(e.message)));
+
+  const beyondLastBall = buildPayload(club);
+  beyondLastBall.innings[0].overs = "20.1";
+  assert.ok(validate(beyondLastBall, club).errors.some((e) => /exceed/.test(e.message)));
+});
+
+test("manual validator reports the innings and fall-of-wicket location for invalid overs", async () => {
+  const club = await makeClub();
+  const payload = buildPayload(club);
+  payload.innings[0].fallOfWickets[0].overs = "0.1.4";
+  const result = validate(payload, club);
+  const error = result.errors.find((entry) => entry.path === "innings[0].fallOfWickets[0].overs");
+  assert.equal(error.message, 'Innings 1, fall of wicket 1: overs "0.1.4" must look like 12 or 19.4');
+});
+
+test("manual validator normalizes nearby float noise before publishing", async () => {
+  const club = await makeClub();
+  const payload = buildPayload(club);
+  payload.innings[0].overs = "19.399999999999999";
+  payload.innings[0].bowling[1].overs = "3.3999999999999986";
+  payload.innings[0].fallOfWickets[0].overs = "7.1999999999999993";
+  const result = validate(payload, club);
+  assert.equal(result.ok, true, JSON.stringify(result.errors));
+  assert.equal(result.data.innings[0].overs, 19);
+  assert.equal(result.data.innings[0].balls, 118);
+  assert.equal(result.data.innings[0].bowling[1].overs, 3);
+  assert.equal(result.data.innings[0].bowling[1].balls, 22);
+  assert.equal(result.data.innings[0].fallOfWickets[0].overs, 7.2);
 });
 
 test("manual validator: rejects a winner who is not one of the two teams", async () => {

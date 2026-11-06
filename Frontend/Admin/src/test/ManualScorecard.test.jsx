@@ -267,4 +267,30 @@ describe("ManualScorecard", () => {
     ]);
     expect(payload.result).toMatchObject({ resultType: "normal", winner: "A", margin: "3 runs" });
   });
+
+  it("normalizes float-noise fall-of-wicket overs when loading for edit", async () => {
+    mockManualLibrary();
+    const defaultGet = get.getMockImplementation();
+    const noisyDetail = {
+      ...DRAFT_DETAIL,
+      innings: [
+        {
+          ...DRAFT_DETAIL.innings[0],
+          fallOfWickets: [{ ...DRAFT_DETAIL.innings[0].fallOfWickets[0], overs: 3.3999999999999986 }],
+        },
+        DRAFT_DETAIL.innings[1],
+      ],
+    };
+    get.mockImplementation((url) =>
+      url === "/matches/draft1" ? Promise.resolve({ data: noisyDetail }) : defaultGet(url)
+    );
+    renderPageAt("/admin/manual-scorecard/draft1");
+
+    await waitFor(() => expect(screen.getByLabelText("Team A")).toHaveValue("A"));
+    fireEvent.click(screen.getByRole("button", { name: /^publish$/i }));
+
+    await waitFor(() => expect(put).toHaveBeenCalledTimes(1));
+    const [, payload] = put.mock.calls[0];
+    expect(payload.innings[0].fallOfWickets[0].overs).toBe("3.4");
+  });
 });

@@ -40,6 +40,7 @@ import {
 import {
   validateManualScorecard,
   parseOvers,
+  formatOvers,
   normalizeDismissalType,
 } from "../services/manualScorecard.js";
 import { isTestTarget } from "./createSemiFinals.js";
@@ -495,7 +496,7 @@ function buildInningsPlan(raw, context) {
     bowling.push({
       sourceName: row.name,
       player: String(mapped.player._id),
-      overs: String(row.overs ?? ""),
+      overs: formatOvers(row.overs),
       maidens: Number(row.maidens) || 0,
       runs: Number(row.runs) || 0,
       wickets: Number(row.wickets) || 0,
@@ -531,7 +532,7 @@ function buildInningsPlan(raw, context) {
       runs: Number(row.runs) || 0,
       wickets: Number(row.wickets) || 0,
       player: batter.player,
-      overs: String(row.overs ?? ""),
+      overs: formatOvers(row.overs),
     });
   }
 
@@ -566,7 +567,7 @@ function buildInningsPlan(raw, context) {
       team: squadKey(battingTeam),
       runs: Number(raw.runs) || 0,
       wickets: Number(raw.wickets) || 0,
-      overs: String(raw.overs ?? ""),
+      overs: formatOvers(raw.overs),
       extras,
       batting,
       bowling,
