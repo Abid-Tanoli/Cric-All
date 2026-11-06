@@ -192,7 +192,7 @@ function resolveSquadPlayer(squad, name) {
   if (!matches.length) return { error: `"${name}" was not found in ${squad.team.name}'s squad` };
   return {
     error: `"${name}" is ambiguous in ${squad.team.name}'s squad (${matches
-      .map((player) => player.name)
+      .map((player) => `${player.name} ${player._id}`)
       .join(", ")})`,
   };
 }
@@ -299,49 +299,98 @@ function mapSourceName({ sourceName, squad, squads, mapping, role, inningsLabel 
   };
 }
 
-/** Resolve the man of the match against both squads; must be unique overall. */
-function resolveManOfMatch(sourceName, squads, mapping) {
-  if (!sourceName) return { player: null };
-  const allPlayers = [...squads.values()].flatMap((squad) => squad.players);
-  const wanted = normalizeName(sourceName);
-  const direct = allPlayers.filter((player) => normalizeName(player.name) === wanted);
-  if (direct.length === 1) return { player: direct[0], reason: "exact squad name" };
-  if (direct.length > 1) {
+function candidateDetails(squad) {
+  return (squad?.players || []).map(
+    (player) => `${player.name} (${player._id}, ${squad.team.name})`,
+  );
+}
+
+/**
+ * Resolve the man of the match inside the named finalist squad only. The source
+ * must carry the team: names such as "Raheel" exist on several tournament teams,
+ * and only the finalist's squad can decide which player won the award.
+ */
+function resolveManOfMatch(source, finalists, squads, mapping) {
+  const sourceName = String(
+    typeof source === "object" && source !== null ? source.name || "" : source || "",
+  ).trim();
+  const sourceTeam = String(
+    typeof source === "object" && source !== null ? source.team || "" : "",
+  ).trim();
+  if (!sourceName) return { player: null, sourceName: "", sourceTeam: "" };
+  if (!sourceTeam) {
     return {
-      error: `man of the match "${sourceName}" is ambiguous across the two squads (${direct
-        .map((player) => player.name)
-        .join(", ")})`,
-      candidates: [...new Set(allPlayers.map((player) => player.name))],
+      sourceName,
+      sourceTeam,
+      error: `man of the match "${sourceName}" must name its team so the search stays inside one finalist squad`,
+      candidates: [...squads.values()].flatMap(candidateDetails),
     };
   }
 
-  const matched = new Map();
-  for (const squad of squads.values()) {
-    for (const rawTarget of mappingValues(mapping, squad.team.name, sourceName)) {
-      if (isCreateMapping(rawTarget)) {
-        return {
-          error: `man of the match "${sourceName}" uses a CREATE: mapping; this importer never creates players`,
-          candidates: [...new Set(allPlayers.map((player) => player.name))],
-        };
-      }
-      const resolved = allPlayers.filter(
-        (player) => normalizeName(player.name) === normalizeName(rawTarget),
-      );
-      for (const player of resolved) matched.set(player._id, player);
-    }
+  const teamLookup = resolveTeamByName(finalists, sourceTeam);
+  if (teamLookup.error) {
+    return {
+      sourceName,
+      sourceTeam,
+      error: `man of the match team: ${teamLookup.error}`,
+      candidates: [...squads.values()].flatMap(candidateDetails),
+    };
   }
-  if (matched.size === 1) return { player: [...matched.values()][0], reason: "name map" };
+  const squad = squads.get(squadKey(teamLookup.team));
+  if (!squad) {
+    return {
+      sourceName,
+      sourceTeam,
+      error: `man of the match team "${sourceTeam}" has no loaded finalist squad`,
+      candidates: [...squads.values()].flatMap(candidateDetails),
+    };
+  }
+
+  const row = {
+    sourceName,
+    sourceTeam: teamLookup.team.name,
+    team: teamLookup.team.name,
+    teamId: squadKey(teamLookup.team),
+  };
+  const direct = resolveSquadPlayer(squad, sourceName);
+  if (direct.player) return { ...row, player: direct.player, reason: "exact squad name" };
+  if (direct.error && /is ambiguous/.test(direct.error)) {
+    return { ...row, error: `man of the match ${direct.error}`, candidates: candidateDetails(squad) };
+  }
+
+  const matched = new Map();
+  const ambiguous = [];
+  for (const rawTarget of mappingValues(mapping, squad.team.name, sourceName)) {
+    if (isCreateMapping(rawTarget)) {
+      return {
+        ...row,
+        error: `man of the match "${sourceName}" uses a CREATE: mapping; this importer never creates players`,
+        candidates: candidateDetails(squad),
+      };
+    }
+    const resolved = resolveSquadPlayer(squad, rawTarget);
+    if (resolved.player) matched.set(resolved.player._id, resolved.player);
+    else if (resolved.error && /is ambiguous/.test(resolved.error)) ambiguous.push(resolved.error);
+  }
+  if (ambiguous.length) {
+    return { ...row, error: `man of the match ${ambiguous.join("; ")}`, candidates: candidateDetails(squad) };
+  }
+  if (matched.size === 1) return { ...row, player: [...matched.values()][0], reason: "name map" };
   if (matched.size > 1) {
     return {
-      error: `man of the match "${sourceName}" is ambiguous (${[...matched.values()]
-        .map((player) => player.name)
+      ...row,
+      error: `man of the match "${sourceName}" matches more than one ${teamLookup.team.name} player (${[
+        ...matched.values(),
+      ]
+        .map((player) => `${player.name} ${player._id}`)
         .join(", ")})`,
-      candidates: [...new Set(allPlayers.map((player) => player.name))],
+      candidates: candidateDetails(squad),
     };
   }
   return {
-    error: `man of the match "${sourceName}" did not match exactly one existing player`,
-    candidates: [...new Set(allPlayers.map((player) => player.name))],
+    ...row,
+    error: `man of the match "${sourceName}" did not match any ${teamLookup.team.name} player`,
+    candidates: candidateDetails(squad),
   };
 }
 
@@ -909,11 +958,6 @@ async function buildPlan({ data, mapping, tournament, match, teams }) {
   const notes = [];
   const squadByTeam = {};
   const squads = new Map();
-  for (const team of teams) {
-    const squad = await loadSquad(team);
-    squads.set(squadKey(team), squad);
-    if (squad.warning) notes.push(`${team.name}: ${squad.warning}`);
-  }
 
   const teamA = resolveTeamByName(teams, data.match.teamA);
   const teamB = resolveTeamByName(teams, data.match.teamB);
@@ -931,6 +975,16 @@ async function buildPlan({ data, mapping, tournament, match, teams }) {
       squads,
       storageTeamIds: [],
     };
+  }
+
+  // Resolve every name inside the two finalist squads only. Loading the whole
+  // tournament here used to make the man-of-the-match search see players from
+  // teams that are not even playing this Final (for example Orangi Warriors'
+  // Raheel alongside Sky Sports' Raheel).
+  for (const team of [teamA.team, teamB.team]) {
+    const squad = await loadSquad(team);
+    squads.set(squadKey(team), squad);
+    if (squad.warning) notes.push(`${team.name}: ${squad.warning}`);
   }
 
   const expectedTeams = new Set([squadKey(teamA.team), squadKey(teamB.team)]);
@@ -1008,11 +1062,15 @@ async function buildPlan({ data, mapping, tournament, match, teams }) {
   const resultWinner = resolveTeamByName([teamA.team, teamB.team], data.result?.winner);
   if (resultWinner.error) errors.push(`result winner: ${resultWinner.error}`);
 
-  const manOfMatch = resolveManOfMatch(data.manOfMatch, squads, mapping);
-  manOfMatch.sourceName = data.manOfMatch || "";
+  const manOfMatch = resolveManOfMatch(
+    data.manOfMatch,
+    [teamA.team, teamB.team],
+    squads,
+    mapping,
+  );
   if (manOfMatch.error) {
     errors.push(manOfMatch.error);
-    notes.push(`man-of-the-match candidates: ${manOfMatch.candidates.join(", ")}`);
+    notes.push(`man-of-the-match candidates: ${(manOfMatch.candidates || []).join(", ")}`);
   }
 
   const payload = {
@@ -1119,16 +1177,20 @@ function printNameMap(plan, log) {
       log(`      candidates: ${(row.candidates || []).join(", ") || "(none)"}`);
     } else {
       log(
-        `  [${row.role}] "${row.sourceName}" [${row.team || "?"}] -> ${row.player.name} (${row.reason})`,
+        `  [${row.role}] "${row.sourceName}" [${row.team || "?"}] -> ${row.player.name} (${row.player._id}) (${row.reason})`,
       );
     }
   }
   if (plan.manOfMatch?.error) {
     unresolved += 1;
-    log(`  [man-of-match] "${plan.manOfMatch.sourceName || ""}" -> UNRESOLVED: ${plan.manOfMatch.error}`);
+    log(
+      `  [man-of-match] "${plan.manOfMatch.sourceName || ""}" [${plan.manOfMatch.sourceTeam || "?"}] -> UNRESOLVED: ${plan.manOfMatch.error}`,
+    );
     log(`      candidates: ${(plan.manOfMatch.candidates || []).join(", ") || "(none)"}`);
   } else if (plan.manOfMatch?.player) {
-    log(`  [man-of-match] -> ${plan.manOfMatch.player.name} (${plan.manOfMatch.reason})`);
+    log(
+      `  [man-of-match] "${plan.manOfMatch.sourceName || ""}" [${plan.manOfMatch.sourceTeam || "?"}] -> ${plan.manOfMatch.player.name} (${plan.manOfMatch.player._id}) (${plan.manOfMatch.reason})`,
+    );
   }
   log(`  unresolved names: ${unresolved}`);
 }
@@ -1172,7 +1234,13 @@ function printExactFields(plan, { match, data }, log) {
   log(`  toss               : ${payload.tossWinner ? teamName(payload.tossWinner) : "(empty)"} ${payload.tossDecision || ""}`.trim());
   log(`  result             : ${payload.result.resultType} | winner=${teamName(payload.result.winner)} | margin=${payload.result.margin}`);
   log(`  result.description : ${payload.result.note}`);
-  log(`  manOfMatch         : ${plan.manOfMatch?.player ? plan.manOfMatch.player.name : "(empty)"}`);
+  log(
+    `  manOfMatch         : ${
+      plan.manOfMatch?.player
+        ? `${plan.manOfMatch.player.name} (${plan.manOfMatch.player._id}) [${plan.manOfMatch.sourceTeam}]`
+        : "(empty)"
+    }`,
+  );
   log(`  source/manualDraft : manual / true; status upcoming`);
   log(`  players created    : none`);
   for (const innings of payload.innings || []) {
