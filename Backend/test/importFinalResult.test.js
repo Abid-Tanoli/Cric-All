@@ -87,6 +87,17 @@ const ROSTERS = {
     "Zahid",
     "Dr. Suleman",
   ],
+  // Deliberate duplicate names on a team that is NOT in the Final. Name
+  // resolution must never leak across tournament teams.
+  "Orangi Warriors": [
+    "Raheel",
+    "Farooq",
+    "Hamza",
+    "Yaseen",
+    "Sabir",
+    "Rehman",
+    "Wajid",
+  ],
 };
 
 async function seedTournament() {
@@ -196,6 +207,7 @@ async function seedTournament() {
     final,
     sky: byName.get("Sky Sports"),
     youngStar: byName.get("Young Star"),
+    orangi: byName.get("Orangi Warriors"),
   };
 }
 
@@ -232,10 +244,16 @@ beforeEach(async () => {
 // ---------------------------------------------------------------------------
 
 test("dry run validates the Final scorecard and writes nothing", async () => {
-  const { tournament, final } = await seedTournament();
+  const { tournament, final, sky, youngStar, orangi } = await seedTournament();
   const original = await Match.findById(final._id).lean();
   const playerCountBefore = await Player.countDocuments({});
   const linkedBefore = (await Tournament.findById(tournament._id).lean()).matches.map(String);
+  const sulman = await findPlayerOnTeam(youngStar._id, "Sulman Afridi");
+  const skyRaheel = await findPlayerOnTeam(sky._id, "Raheel");
+  const orangiRaheel = await findPlayerOnTeam(orangi._id, "Raheel");
+  assert.ok(sulman);
+  assert.ok(skyRaheel);
+  assert.ok(orangiRaheel);
 
   const lines = [];
   const report = await runImportFinal({
@@ -252,6 +270,14 @@ test("dry run validates the Final scorecard and writes nothing", async () => {
   assert.equal(report.plan.innings[1].checks.bowlingTotal, 295);
   assert.equal(report.plan.innings[0].checks.inningsBalls, 120);
   assert.equal(report.plan.innings[1].checks.inningsBalls, 106);
+  assert.equal(report.plan.innings[0].innings.batting.length, 9);
+  assert.ok(
+    report.plan.innings[0].validations.every((check) => check.ok),
+    `innings 1 must have no FAIL: ${report.plan.innings[0].validations
+      .filter((check) => !check.ok)
+      .map((check) => `${check.label}: ${check.detail}`)
+      .join("; ")}`,
+  );
   assert.equal(report.plan.validator.ok, true);
   assert.ok(
     report.plan.mapping.every((row) => !row.error),
@@ -261,10 +287,37 @@ test("dry run validates the Final scorecard and writes nothing", async () => {
       .join("; ")}`,
   );
 
+  // Every batter/bowler/fielder must resolve inside the team that owns the
+  // source row, even when another tournament team carries the same name.
+  for (const row of report.plan.mapping.filter((mapping) => mapping.player)) {
+    assert.equal(String(row.player.team), row.teamId, `${row.sourceName} must stay in ${row.team}`);
+  }
+  const drSulemanMapping = report.plan.mapping.find((row) => row.sourceName === "Dr Suleman");
+  assert.equal(drSulemanMapping.player._id, String(sulman._id));
+  assert.equal(drSulemanMapping.team, "Young Star");
+  assert.equal(
+    report.plan.manOfMatch.player._id,
+    String(skyRaheel._id),
+    "man of the match must be Sky Sports' Raheel, not Orangi Warriors' duplicate",
+  );
+  assert.equal(report.plan.manOfMatch.sourceTeam, "Sky Sports");
+  assert.notEqual(report.plan.manOfMatch.player._id, String(orangiRaheel._id));
+
   const text = lines.join("\n");
   assert.match(text, /Young Star 292\/7 \(20.0\) vs Sky Sports 295\/1 \(17\.4\)/);
   assert.match(text, /PASS  batting \+ extras = total/);
   assert.match(text, /PASS  partnerships vs fall of wickets/);
+  assert.doesNotMatch(text, /^ +FAIL  /m, "the validation section must contain no FAIL rows");
+  assert.match(
+    text,
+    new RegExp(`\\[batting\\] "Dr Suleman" \\[Young Star\\] -> Sulman Afridi \\(${sulman._id}\\)`),
+  );
+  assert.match(
+    text,
+    new RegExp(
+      `\\[man-of-match\\] "Raheel" \\[Sky Sports\\] -> Raheel \\(${skyRaheel._id}\\)`,
+    ),
+  );
   assert.match(text, /teams \(stored\)     : \[Young Star, Sky Sports\]/);
   assert.match(text, /players created    : none/);
 
@@ -286,11 +339,14 @@ test("dry run validates the Final scorecard and writes nothing", async () => {
 // ---------------------------------------------------------------------------
 
 test("apply converts the existing Final fixture into a draft in place", async () => {
-  const { tournament, final, sky, youngStar } = await seedTournament();
+  const { tournament, final, sky, youngStar, orangi } = await seedTournament();
   const original = await Match.findById(final._id).lean();
   const matchCountBefore = await Match.countDocuments({});
   const playerCountBefore = await Player.countDocuments({});
   const linkedBefore = (await Tournament.findById(tournament._id).lean()).matches.map(String).sort();
+  const sulman = await findPlayerOnTeam(youngStar._id, "Sulman Afridi");
+  const skyRaheel = await findPlayerOnTeam(sky._id, "Raheel");
+  const orangiRaheel = await findPlayerOnTeam(orangi._id, "Raheel");
   const lines = [];
 
   const report = await runImportFinal({
@@ -370,6 +426,10 @@ test("apply converts the existing Final fixture into a draft in place", async ()
   assert.equal(kamranSpell.balls, 18);
   assert.equal(kamranSpell.wickets, 1);
 
+  const drSuleman = youngInnings.batting.find((row) => row.runs === 4);
+  assert.equal(String(drSuleman.player), String(sulman._id));
+  assert.equal(await playerName(drSuleman.player), "Sulman Afridi");
+
   assert.equal(youngInnings.fallOfWickets[0].runs, 102);
   assert.equal(youngInnings.fallOfWickets[0].wickets, 1);
   assert.equal(await playerName(youngInnings.fallOfWickets[0].player), "Salman Khan");
@@ -398,7 +458,9 @@ test("apply converts the existing Final fixture into a draft in place", async ()
   assert.equal(saved.result.margin, "9 wickets");
   assert.equal(saved.result.resultType, "normal");
   assert.equal(saved.result.description, "Sky Sports won by 9 wickets (14 balls remaining).");
+  assert.equal(String(saved.manOfMatch), String(skyRaheel._id));
   assert.equal(await playerName(saved.manOfMatch), "Raheel");
+  assert.notEqual(String(saved.manOfMatch), String(orangiRaheel._id));
 
   // The player count must not move: this importer never creates anyone.
   assert.equal(await Player.countDocuments({}), playerCountBefore);
@@ -509,6 +571,31 @@ test("a name that matches two squad players is ambiguous and BLOCKS", async () =
   const unchanged = await Match.findById(final._id).lean();
   assert.equal(unchanged.source, "live");
   assert.equal(await Player.countDocuments({ name: "Zahid (TBC)" }), 1);
+});
+
+test("man-of-the-match ambiguity stays inside its named team and prints ids", async () => {
+  const { final, sky, orangi } = await seedTournament();
+  const orangiRaheel = await findPlayerOnTeam(orangi._id, "Raheel");
+  const extra = await Player.create({ name: "Raheel", team: sky._id, role: "" });
+  await Team.updateOne({ _id: sky._id }, { $addToSet: { players: extra._id } });
+  const lines = [];
+
+  const report = await runImportFinal({
+    apply: true,
+    log: (line) => lines.push(String(line ?? "")),
+  });
+
+  assert.equal(report.blocked, true);
+  assert.match(
+    report.plan.errors.join("\n"),
+    /man of the match "Raheel" is ambiguous in Sky Sports's squad/,
+  );
+  const text = lines.join("\n");
+  assert.match(text, new RegExp(`Raheel \\(${extra._id}, Sky Sports\\)`));
+  assert.doesNotMatch(text, new RegExp(orangiRaheel._id));
+  const unchanged = await Match.findById(final._id).lean();
+  assert.equal(unchanged.source, "live");
+  assert.equal(await Player.countDocuments({ name: "Raheel", team: sky._id }), 2);
 });
 
 test("a CREATE: mapping is rejected and no player is created", async () => {

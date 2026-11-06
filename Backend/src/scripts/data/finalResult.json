@@ -22,7 +22,10 @@
     "margin": "9 wickets",
     "note": "Sky Sports won by 9 wickets (14 balls remaining)."
   },
-  "manOfMatch": "Raheel",
+  "manOfMatch": {
+    "team": "Sky Sports",
+    "name": "Raheel"
+  },
   "innings": [
     {
       "number": 1,
@@ -202,6 +205,7 @@
     "The three Sky Sports catches by Rehman, Ali and Sharafat are recorded as fielders on the dismissals. Catches where the scorebook did not name a fielder are left with no fielder instead of inventing one.",
     "Sky Sports innings 2 has 9 extras, entered as wides; the source did not split extras. The batting card has 108 balls faced against 106 legal balls (17.4 overs), so at least two no-balls or other non-wides are likely. The split remains UNCONFIRMED until the owner checks the book; the totals still reconcile (286 batting + 9 extras = 295).",
     "The Sky Sports innings has one wicket but the source did not record a fall of wicket; fallOfWickets is null (not an empty list), so the importer reports it as not supplied instead of treating it as a contradiction. The dismissal itself is still stored against Rehman.",
+    "The scorebook's 'Dr Suleman' is Young Star's existing player Sulman Afridi, and the man of the match is Sky Sports' existing Raheel (not the Orangi Warriors player of the same name). Both resolve only inside the named finalist squad; no player is created.",
     "No toss is recorded, so tossWinner/tossDecision stay empty for the owner to fill in Admin if desired.",
     "The young Star partnerships are entered for validation only and are not stored by the manual-scorecard schema; they reconcile cumulatively to each fall of wicket and to the 292 total over 120 balls."
   ]
