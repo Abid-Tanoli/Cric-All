@@ -227,6 +227,11 @@ test("dry run validates the SF2 scorecard and writes nothing", async () => {
   assert.equal(report.plan.innings[1].checks.total, 199);
   assert.equal(report.plan.innings[0].checks.bowlingTotal, 198);
   assert.equal(report.plan.innings[1].checks.bowlingTotal, 199);
+  assert.ok(
+    report.plan.payload.innings
+      .flatMap((innings) => innings.fallOfWickets)
+      .every((row) => /^\d+(?:\.[0-5])?$/.test(String(row.overs))),
+  );
   assert.deepEqual(
     report.placeholders.wouldCreate.map((row) => row.name).sort(),
     ["Player3 (TBC)", "Shani (TBC)"],

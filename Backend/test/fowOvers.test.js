@@ -1,8 +1,17 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import mongoose from "mongoose";
-import { validateManualScorecard } from "../src/services/manualScorecard.js";
+import {
+  formatOvers,
+  normalizeOvers,
+  validateManualScorecard,
+} from "../src/services/manualScorecard.js";
 import { planFowOvers, inningsTotalBalls, overFigureFromBalls } from "../src/scripts/fixFowOvers.js";
+import { planOversRepair, readSetFile, runOversRepair } from "../src/scripts/fixOversFormat.js";
+import { scanOversFormat } from "../src/scripts/scanOversFormat.js";
 
 // Fall-of-wicket `overs` is stored as ONE printed over figure ("2.1" = two overs
 // and one ball), the same unit the live scoring engine writes. The manual
@@ -84,4 +93,104 @@ test("backfill: helpers round-trip the over figure", () => {
   assert.equal(overFigureFromBalls(13), 2.1);
   assert.equal(overFigureFromBalls(30), 5);
   assert.equal(overFigureFromBalls(51), 8.3);
+});
+
+test("normalizeOvers accepts legal notation and only repairs nearby float noise", () => {
+  for (const [input, expected] of [
+    ["12", 12],
+    ["19.4", 19.4],
+    [3.3999999999999986, 3.4],
+    ["2.4000000000000004", 2.4],
+    [3.1999999999999993, 3.2],
+  ]) {
+    const result = normalizeOvers(input);
+    assert.equal(result.valid, true);
+    assert.equal(result.value, expected);
+  }
+  assert.equal(normalizeOvers("3.45").valid, false);
+  assert.equal(normalizeOvers("19.6").valid, false);
+  assert.equal(normalizeOvers("0.1.4").valid, false);
+  assert.equal(normalizeOvers("3.0.3999999999999986").valid, false);
+});
+
+test("formatOvers uses integer ball counts without decimal arithmetic", () => {
+  assert.equal(formatOvers("", 13), "2.1");
+  assert.equal(formatOvers("", 120), "20.0");
+  assert.equal(formatOvers("3.3999999999999986"), "3.4");
+  assert.equal(formatOvers("0.1.4"), "0.1.4");
+});
+
+test("overs-format repair plans dry-run and applied fixture updates", async () => {
+  const fixture = {
+    _id: "match-fixture",
+    stageLabel: "SF1",
+    innings: [{
+      overs: "10",
+      bowling: [{ overs: 1.399999999 }],
+      fallOfWickets: [{ overs: "0.1.4" }],
+      partnerships: [{ overs: 2.4000000000000004 }],
+    }],
+  };
+  const setValues = new Map([["innings[0].fallOfWickets[0].overs", 1.4]]);
+  const planned = planOversRepair(fixture);
+  assert.deepEqual(planned.changes.map((change) => [change.path, change.to]), [
+    ["innings[0].bowling[0].overs", 1.4],
+    ["innings[0].partnerships[0].overs", 2.4],
+  ]);
+  assert.deepEqual(planned.unresolved, [{ path: "innings[0].fallOfWickets[0].overs", value: "0.1.4" }]);
+  assert.equal(scanOversFormat([fixture]).find((row) => row.path.includes("fallOfWickets")).suggestion, "UNRESOLVED");
+
+  let writeCount = 0;
+  let auditCount = 0;
+  const writeMatch = async (match, updates) => {
+    writeCount += 1;
+    for (const [path, value] of Object.entries(updates)) {
+      const tokens = path.split(".");
+      const key = tokens.pop();
+      const target = tokens.reduce((current, token) => current[token], match);
+      target[key] = value;
+    }
+  };
+  const writeAudit = async () => { auditCount += 1; };
+
+  await runOversRepair({ matches: [fixture], writeMatch, writeAudit });
+  assert.equal(writeCount, 0);
+  assert.equal(auditCount, 0);
+  assert.equal(fixture.innings[0].bowling[0].overs, 1.399999999);
+
+  const applied = await runOversRepair({
+    matches: [fixture],
+    apply: true,
+    setValues,
+    writeMatch,
+    writeAudit,
+  });
+  assert.equal(applied[0].outcome, "FIXED");
+  assert.equal(writeCount, 1);
+  assert.equal(auditCount, 1);
+  assert.equal(fixture.innings[0].bowling[0].overs, 1.4);
+  assert.equal(fixture.innings[0].fallOfWickets[0].overs, 1.4);
+  assert.equal(fixture.innings[0].partnerships[0].overs, 2.4);
+});
+
+test("--set accepts only paths and values that normalize to valid overs", async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "overs-format-test-"));
+  const file = path.join(directory, "set.json");
+  try {
+    await fs.writeFile(file, JSON.stringify({
+      "innings[0].fallOfWickets[0].overs": "1.399999999",
+    }));
+    const values = await readSetFile(file);
+    assert.equal(values.get("innings[0].fallOfWickets[0].overs"), 1.4);
+
+    await fs.writeFile(file, JSON.stringify({
+      "innings[0].fallOfWickets[0].overs": "0.1.4",
+    }));
+    await assert.rejects(readSetFile(file), /Invalid --set value/);
+
+    await fs.writeFile(file, JSON.stringify({ "innings[0].unknown[0].overs": 1.4 }));
+    await assert.rejects(readSetFile(file), /Unsupported overs JSON path/);
+  } finally {
+    await fs.rm(directory, { recursive: true, force: true });
+  }
 });
