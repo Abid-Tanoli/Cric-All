@@ -701,6 +701,13 @@ test("publishing the draft reveals the Final, derives completed, and crowns Sky 
   assert.equal(afterFinal.placeholder, false);
   assert.equal(afterFinal.stageLabel, "Final");
   assert.equal(afterFinal.winner._id, String(sky._id));
+  assert.equal(afterFinal.result.winnerId, String(sky._id));
+  assert.equal(
+    afterFinal.result.description,
+    "Sky Sports won by 9 wickets (14 balls remaining).",
+  );
+  assert.equal(afterBracket.champion._id, String(sky._id));
+  assert.equal(afterBracket.champion.name, "Sky Sports");
   assert.deepEqual(afterFinal.teams.map((team) => team.name), ["Young Star", "Sky Sports"]);
   assert.equal(afterFinal.teams.find((team) => team.name === "Young Star").score.text, "292/7");
   assert.equal(afterFinal.teams.find((team) => team.name === "Sky Sports").score.text, "295/1");
