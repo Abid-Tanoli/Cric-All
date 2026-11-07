@@ -104,4 +104,64 @@ describe("buildTournamentAwards", () => {
       "Best Bowler",
     ]);
   });
+
+  it("prefers official awards over the legacy honours and derived stats", () => {
+    const rows = buildTournamentAwards(
+      {
+        officialAwards: {
+          playerOfTournament: {
+            playerId: "p9",
+            name: "Raheel Official",
+            team: "Sky Sports",
+            playingRole: "All-Rounder",
+            official: true,
+          },
+          note: "Committee pick",
+        },
+        awards: { playerOfTournament: { _id: "p1", name: "Legacy Pick" } },
+      },
+      {
+        playerOfTournament: { leader: { playerId: "p2", name: "Derived Pick", impact: 500 } },
+        topRunScorers: [{ playerId: "p3", name: "Derived Batter", runs: 300 }],
+        topWicketTakers: [{ playerId: "p4", name: "Derived Bowler", wickets: 20 }],
+      },
+    );
+
+    const pot = rows.find((r) => r.title === "Player of the Tournament");
+    expect(pot).toMatchObject({
+      name: "Raheel Official",
+      team: "Sky Sports",
+      playerId: "p9",
+      official: true,
+      derived: false,
+    });
+    // Unset official awards fall back to the derived leaders; the legacy field
+    // alone does not fill a slot that also has a derived leader.
+    expect(rows.find((r) => r.title === "Best Batsman")).toMatchObject({
+      name: "Derived Batter",
+      derived: true,
+    });
+    expect(rows.find((r) => r.title === "Best Bowler")).toMatchObject({
+      name: "Derived Bowler",
+      derived: true,
+    });
+  });
+
+  it("falls back to derived stats when no honours are set at all", () => {
+    const rows = buildTournamentAwards(
+      { _id: "t1", name: "Cup" },
+      {
+        playerOfTournament: { leader: { playerId: "p2", name: "Derived Pick", impact: 500 } },
+        topRunScorers: [{ playerId: "p3", name: "Derived Batter", runs: 300 }],
+        topWicketTakers: [{ playerId: "p4", name: "Derived Bowler", wickets: 20 }],
+      },
+    );
+
+    expect(rows.map((r) => r.title)).toEqual([
+      "Player of the Tournament",
+      "Best Batsman",
+      "Best Bowler",
+    ]);
+    expect(rows.every((r) => r.derived && !r.official)).toBe(true);
+  });
 });

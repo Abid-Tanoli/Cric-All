@@ -1,5 +1,7 @@
 import Match from "../models/Match.js";
+import Tournament from "../models/Tournament.js";
 import { hiddenTeamIds, isHiddenTeamDoc, isReservedTestName } from "../utils/publicProjection.js";
+import { publicOfficialAwards } from "./tournamentOfficialAwards.js";
 
 // ---------------------------------------------------------------------------
 // Tournament statistics
@@ -946,6 +948,17 @@ export function computeTournamentStats(input = {}) {
 export const STATS_PLAYER_SELECT = "name imageUrl";
 export const STATS_TEAM_SELECT = "name shortName logo isPublic";
 
+// The public "Official award" cards need the player's name/role and team label.
+const OFFICIAL_AWARD_STATS_POPULATE = [
+  "playerOfTournament",
+  "bestBatsman",
+  "bestBowler",
+].map((key) => ({
+  path: `officialAwards.${key}`,
+  select: "name playingRole role battingPosition team imageUrl",
+  populate: { path: "team", select: "name shortName logo" },
+}));
+
 /**
  * Loads the completed matches of one tournament with exactly the fields the
  * aggregator needs, then computes the stats. Public-safe: hidden/private and
@@ -1017,6 +1030,21 @@ export async function gatherTournamentStats(tournament, opts = {}) {
     hasData: impactRows.length > 0,
   };
 
+  // Official awards are organiser-confirmed, not computed. They are attached to
+  // the payload so the public page can label them, but they never alter
+  // `playerOfTournament.rows`, `leader`, points or rank.
+  const officialTournament = await Tournament.findById(tournamentId)
+    .select("officialAwards")
+    .populate(OFFICIAL_AWARD_STATS_POPULATE)
+    .lean();
+  const officialAwards = publicOfficialAwards(officialTournament);
+  for (const key of ["playerOfTournament", "bestBatsman", "bestBowler"]) {
+    const award = officialAwards[key];
+    if (award && award.teamId && hidden.has(String(award.teamId))) {
+      officialAwards[key] = null;
+    }
+  }
+
   return {
     ...stats,
     topRunScorers: strip(stats.topRunScorers),
@@ -1036,7 +1064,12 @@ export async function gatherTournamentStats(tournament, opts = {}) {
     },
     hasFielding: topFielders.length > 0,
     hasTeamStats: (stats.teamStats || []).length > 0,
-    playerOfTournament,
+    playerOfTournament: {
+      ...playerOfTournament,
+      officialAward: officialAwards.playerOfTournament || null,
+      officialNote: officialAwards.note || "",
+    },
+    officialAwards,
   };
 }
 

@@ -22,6 +22,11 @@ import {
 import { deriveTournamentPublicState } from "../services/tournamentPublicState.js";
 import { deleteTournamentContent } from "../services/tournamentContent.js";
 import {
+  OFFICIAL_AWARD_KEYS,
+  validateOfficialAwards,
+} from "../services/tournamentOfficialAwards.js";
+import { invalidateTournamentStatsCache } from "../services/tournamentStats.js";
+import {
   CONTROLLER_MATCH_CATEGORY,
   OVER_BY_FORMAT,
   normalizeMatchType,
@@ -48,6 +53,16 @@ export {
 // Public reads hide manual drafts. A platform admin keeps seeing them so the
 // Admin fixtures/scorecard screens can work against the same endpoint.
 const canSeeDrafts = (req) => req?.principalType === "admin";
+
+// Populates the official award players with just enough public profile and team
+// data for the "Official award" cards. Used by both the list and detail reads.
+const OFFICIAL_AWARD_POPULATE = OFFICIAL_AWARD_KEYS.flatMap((key) => [
+  {
+    path: `officialAwards.${key}`,
+    select: "name playingRole role battingPosition team",
+    populate: { path: "team", select: "name shortName logo" },
+  },
+]);
 
 const MIN_TEAMS_BY_TYPE = {
   knockout: 2,
@@ -150,6 +165,7 @@ export const getTournaments = async (req, res) => {
       .populate("winner", "name shortName logo")
       .populate("runnerUp", "name shortName logo")
       .populate("awards.playerOfTournament awards.bestBatsman awards.bestBowler", "name playingRole role battingPosition")
+      .populate(OFFICIAL_AWARD_POPULATE)
       .sort({ startDate: -1 })
       .maxTimeMS(5000)
       .lean();
@@ -247,7 +263,8 @@ export const getTournament = async (req, res) => {
       .populate("groups.teams", "name shortName logo")
       .populate("winner", "name shortName logo")
       .populate("runnerUp", "name shortName logo")
-      .populate("awards.playerOfTournament awards.bestBatsman awards.bestBowler", "name playingRole role battingPosition");
+      .populate("awards.playerOfTournament awards.bestBatsman awards.bestBowler", "name playingRole role battingPosition")
+      .populate(OFFICIAL_AWARD_POPULATE);
 
     if (!tournament) {
       return res.status(404).json({ message: "Tournament not found" });
@@ -887,6 +904,101 @@ export const setTournamentAwards = async (req, res) => {
     console.error("Error setting tournament awards:", error);
     res.status(400).json({
       message: "Failed to save tournament awards",
+      error: error.message,
+    });
+  }
+};
+
+export const setTournamentOfficialAwards = async (req, res) => {
+  try {
+    const tournament = await Tournament.findById(req.params.id);
+    if (!tournament) {
+      return res.status(404).json({ message: "Tournament not found" });
+    }
+
+    const squadPlayerIds = (tournament.tournamentSquads || []).flatMap((squad) =>
+      (squad.players || []).map((player) => player?._id || player),
+    );
+
+    // Only valid ids are looked up. An invalid id never reaches Mongoose (which
+    // would throw a CastError) — the pure validator reports it field-by-field.
+    const requestedPlayerIds = OFFICIAL_AWARD_KEYS
+      .map((key) => req.body?.[key])
+      .map((value) => (value && typeof value === "object" ? value._id ?? value.id : value))
+      .map((value) => (value === null || value === undefined ? "" : String(value).trim()))
+      .filter((value) => value && mongoose.isValidObjectId(value));
+
+    const players = requestedPlayerIds.length
+      ? await Player.find({ _id: { $in: requestedPlayerIds } }).select("_id team").lean()
+      : [];
+    const playerTeamById = new Map(
+      players.map((player) => [String(player._id), player.team ? String(player.team) : ""]),
+    );
+
+    const validation = validateOfficialAwards({
+      body: req.body || {},
+      teamIds: tournament.teams || [],
+      squadPlayerIds,
+      playerTeamById,
+    });
+
+    if (!validation.ok) {
+      return res.status(400).json({
+        message: "Please fix the official awards before saving.",
+        errors: validation.errors,
+      });
+    }
+
+    const { data } = validation;
+    const current = tournament.officialAwards
+      ? (tournament.officialAwards.toObject
+        ? tournament.officialAwards.toObject()
+        : tournament.officialAwards)
+      : {};
+    const next = { ...current };
+    for (const key of OFFICIAL_AWARD_KEYS) {
+      if (data[key] !== undefined) next[key] = data[key] || null;
+    }
+    if (data.note !== undefined) next.note = data.note || "";
+    tournament.officialAwards = next;
+
+    await tournament.save();
+    await tournament.populate("teams", "name shortName logo");
+    await tournament.populate("winner", "name shortName logo");
+    await tournament.populate("runnerUp", "name shortName logo");
+    await tournament.populate("awards.playerOfTournament awards.bestBatsman awards.bestBowler", "name playingRole role battingPosition");
+    await tournament.populate(OFFICIAL_AWARD_POPULATE);
+
+    // The public stats payload embeds these awards, so drop its short-lived
+    // cache immediately rather than waiting for the 15-second TTL.
+    invalidateTournamentStatsCache(tournament._id);
+
+    recordAudit({
+      req,
+      action: "tournament.official_awards_set",
+      targetType: "tournament",
+      targetId: tournament._id,
+      targetLabel: tournament.name,
+      metadata: {
+        playerOfTournament: tournament.officialAwards?.playerOfTournament || null,
+        bestBatsman: tournament.officialAwards?.bestBatsman || null,
+        bestBowler: tournament.officialAwards?.bestBowler || null,
+        note: tournament.officialAwards?.note || "",
+      },
+    });
+
+    try {
+      const io = getIO();
+      io.emit("tournament:updated", tournament);
+    } catch (socketError) {
+      console.log("Socket not available:", socketError.message);
+    }
+
+    res.status(200).json({ tournament, message: "Official awards saved" });
+  } catch (error) {
+    console.error("Error setting tournament official awards:", error);
+    res.status(400).json({
+      message: "Failed to save official awards",
       error: error.message,
     });
   }

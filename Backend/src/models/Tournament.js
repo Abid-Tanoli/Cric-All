@@ -106,6 +106,17 @@ const tournamentSchema = new mongoose.Schema(
       bestBatsman: { type: mongoose.Schema.Types.ObjectId, ref: "Player", default: null },
       bestBowler: { type: mongoose.Schema.Types.ObjectId, ref: "Player", default: null },
     },
+    // Organiser-confirmed official awards. Kept separate from `awards` so the
+    // public page can label them "Official award" and so setting one never
+    // changes a player's computed impact points or the ranking order. Every
+    // field is nullable; an empty value clears that award. The note is a short
+    // public explanation (for example, the presentation citation).
+    officialAwards: {
+      playerOfTournament: { type: mongoose.Schema.Types.ObjectId, ref: "Player", default: null },
+      bestBatsman: { type: mongoose.Schema.Types.ObjectId, ref: "Player", default: null },
+      bestBowler: { type: mongoose.Schema.Types.ObjectId, ref: "Player", default: null },
+      note: { type: String, default: "", trim: true, maxlength: 500 },
+    },
     sponsors: [{
       name: String,
       logo: String

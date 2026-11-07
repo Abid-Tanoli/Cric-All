@@ -9,6 +9,7 @@ import { startTestDb, stopTestDb } from "./helpers/testDb.js";
 import Match from "../src/models/Match.js";
 import Team from "../src/models/Team.js";
 import Player from "../src/models/Player.js";
+import Tournament from "../src/models/Tournament.js";
 import { computeTournamentStats, gatherTournamentStats } from "../src/services/tournamentStats.js";
 import {
   IMPACT_WEIGHTS,
@@ -18,6 +19,9 @@ import {
   impactExplanation,
   milestonePoints,
   strikeRatePoints,
+  teamRunSharePoints,
+  teamWicketSharePoints,
+  wonByWickets,
 } from "../src/services/tournamentImpact.js";
 
 let mongod;
@@ -41,8 +45,11 @@ const plainWeights = (overrides = {}) => ({
     ...IMPACT_WEIGHTS.batting,
     milestones: [],
     strikeRate: { minBalls: 10_000, tiers: [], slowMax: 0, slowPoints: 0 },
+    teamRunShare: 0,
+    notOut: 0,
+    chaseFinish: 0,
   },
-  bowling: { ...IMPACT_WEIGHTS.bowling, economyWeight: 0, hauls: [] },
+  bowling: { ...IMPACT_WEIGHTS.bowling, economyWeight: 0, hauls: [], teamWicketShare: 0 },
   fielding: { catch: 0, runOut: 0, stumping: 0 },
   team: { winMultiplier: 1 },
   manOfMatch: 0,
@@ -76,6 +83,127 @@ test("weights helpers convert runs, balls and wickets exactly", () => {
   assert.equal(economyAdjustment(36, 24, 7.5), -6);
   assert.equal(economyAdjustment(0, 3, 7.5), 0, "a part over never swings the score");
   assert.equal(economyAdjustment(24, 24, null), 0, "no tournament economy, no adjustment");
+});
+
+test("team-share and chase helpers are bounded and read the result margin", () => {
+  // (runs / team runs) x 20, capped at one full share.
+  assert.equal(teamRunSharePoints(40, 200), 4);
+  assert.equal(teamRunSharePoints(0, 200), 0);
+  assert.equal(teamRunSharePoints(40, 0), 0, "no team total, no invented points");
+  assert.equal(teamRunSharePoints(250, 200), 20, "a malformed total cannot exceed one share");
+
+  // (wickets / team wickets) x 20, capped at one full share.
+  assert.equal(teamWicketSharePoints(2, 8), 5);
+  assert.equal(teamWicketSharePoints(0, 8), 0);
+  assert.equal(teamWicketSharePoints(2, 0), 0);
+  assert.equal(teamWicketSharePoints(12, 8), 20);
+
+  // Stored innings carry target 0, so the result text is the chase signal.
+  assert.equal(wonByWickets({ result: { description: "Sky Sports won by 4 wickets" } }), true);
+  assert.equal(wonByWickets({ result: { margin: "won by 6 wickets" } }), true);
+  assert.equal(wonByWickets({ result: { description: "Young Star won by 122 runs" } }), false);
+  assert.equal(wonByWickets({ result: {} }), false, "no margin means no guess");
+});
+
+test("an unbeaten chase finish is worth more than the same runs when out", () => {
+  const alpha = team("t-alpha", "Alpha");
+  const beta = team("t-beta", "Beta");
+  const finisher = player("p-finisher", "Finisher");
+  const dismissed = player("p-dismissed", "Dismissed");
+
+  const impact = computeTournamentImpact({
+    weights: plainWeights({
+      batting: {
+        ...plainWeights().batting,
+        teamRunShare: 20,
+        notOut: 2,
+        chaseFinish: 12,
+      },
+      team: { winMultiplier: 1 },
+    }),
+    matches: [
+      {
+        _id: "chase",
+        status: "completed",
+        teams: [alpha, beta],
+        result: { resultType: "normal", winner: beta, description: "Beta won by 5 wickets" },
+        innings: [
+          {
+            team: alpha,
+            runs: 50,
+            wickets: 5,
+            batting: [
+              { player: { _id: "p-alpha", name: "Alpha Batter" }, runs: 50, balls: 30, isOut: true },
+            ],
+            bowling: [],
+          },
+          {
+            team: beta,
+            runs: 50,
+            wickets: 5,
+            batting: [
+              { player: finisher, runs: 30, balls: 20, isOut: false },
+              { player: dismissed, runs: 10, balls: 10, isOut: true },
+            ],
+            bowling: [],
+          },
+        ],
+      },
+    ],
+  });
+
+  const finisherRow = impact.rows.find((row) => row.playerId === "p-finisher");
+  const dismissedRow = impact.rows.find((row) => row.playerId === "p-dismissed");
+
+  // 30 runs, no other weights: 12 team share + 2 not out + 12 chase finish.
+  assert.equal(finisherRow.breakdown.teamShare, 12);
+  assert.equal(finisherRow.breakdown.finishing, 14);
+  assert.equal(finisherRow.impact, 56);
+  // 10 runs from a 50 total: 4 team share, no finishing credit.
+  assert.equal(dismissedRow.breakdown.teamShare, 4);
+  assert.equal(dismissedRow.breakdown.finishing, 0);
+  assert.equal(dismissedRow.impact, 14);
+  assert.ok(finisherRow.rank < dismissedRow.rank);
+});
+
+test("an equal-run not-out innings is never scored below the dismissed innings", () => {
+  const alpha = team("t-alpha", "Alpha");
+  const beta = team("t-beta", "Beta");
+  const notOut = player("p-not-out", "Not Out");
+  const out = player("p-out", "Out");
+
+  const impact = computeTournamentImpact({
+    weights: plainWeights({
+      batting: { ...plainWeights().batting, notOut: 2, chaseFinish: 12 },
+      team: { winMultiplier: 1 },
+    }),
+    matches: [
+      {
+        _id: "same-runs",
+        status: "completed",
+        teams: [alpha, beta],
+        innings: [
+          {
+            team: alpha,
+            runs: 40,
+            wickets: 1,
+            batting: [
+              { player: notOut, runs: 20, balls: 15, isOut: false },
+              { player: out, runs: 20, balls: 15, isOut: true },
+            ],
+            bowling: [],
+          },
+          { team: beta, batting: [], bowling: [] },
+        ],
+      },
+    ],
+  });
+
+  const notOutRow = impact.rows.find((row) => row.playerId === "p-not-out");
+  const outRow = impact.rows.find((row) => row.playerId === "p-out");
+  assert.equal(notOutRow.breakdown.finishing, 2);
+  assert.equal(outRow.breakdown.finishing, 0);
+  assert.ok(notOutRow.impact > outRow.impact);
 });
 
 test("a winning innings beats a heavier-scoring innings on the losing side", () => {
@@ -113,14 +241,19 @@ test("a winning innings beats a heavier-scoring innings on the losing side", () 
   const losingRow = impact.rows.find((row) => row.playerId === "p-loser");
 
   // 75 runs + 8 fours + 6 for sixes + 16 for the fifty + 4 for SR 250 = 109.
-  // Winning side: x1.2 = 130.8, plus the 20-point man-of-the-match award.
+  // Team share (75 of 75) +20, unbeaten finish +2. Winning side: x1.2 = 157.2,
+  // plus the 20-point man-of-the-match award.
   assert.equal(winningRow.breakdown.batting, 109);
-  assert.equal(winningRow.breakdown.winBonus, 21.8);
+  assert.equal(winningRow.breakdown.teamShare, 20);
+  assert.equal(winningRow.breakdown.finishing, 2);
+  assert.equal(winningRow.breakdown.winBonus, 26.2);
   assert.equal(winningRow.breakdown.manOfMatchBonus, 20);
-  assert.equal(winningRow.impact, 150.8);
+  assert.equal(winningRow.impact, 177.2);
 
-  // 100 + 6 + 4 + 32 + 2 for SR 153.85 = 144, with no win or award bonus.
-  assert.equal(losingRow.impact, 144);
+  // 100 + 6 + 4 + 32 + 2 for SR 153.85 = 144, plus a 20 team-share bonus and
+  // no win or award bonus.
+  assert.equal(losingRow.breakdown.teamShare, 20);
+  assert.equal(losingRow.impact, 164);
   assert.equal(losingRow.breakdown.winBonus, 0);
   assert.equal(losingRow.breakdown.manOfMatchBonus, 0);
 
@@ -220,7 +353,8 @@ test("manual scorecards earn no fielding points and lose none for missing fielde
 
   const manualRow = impact.rows.find((row) => row.playerId === "p-bowler");
   assert.equal(manualRow.breakdown.fielding, 0);
-  assert.equal(manualRow.impact, 50, "two wickets, no invisible catches");
+  assert.equal(manualRow.breakdown.teamShare, 20, "two of the one recorded opposition wicket is capped at a full share");
+  assert.equal(manualRow.impact, 70, "two wickets plus team share, no invisible catches");
   assert.ok(manualRow.impact > 0);
 
   const fielderRow = impact.rows.find((row) => row.playerId === "p-fielder");
@@ -383,7 +517,7 @@ test("the public explanation is generated from the weights", () => {
   const lines = impactExplanation();
   assert.ok(lines.length >= 8);
   const text = lines.join(" ");
-  for (const needle of ["1 point per run", "25 points per wicket", "8 per catch", "1.2", "20 extra points", "16 for 50+"]) {
+  for (const needle of ["1 point per run", "25 points per wicket", "8 per catch", "1.2", "20 extra points", "16 for 50+", "Team share", "Finishing"]) {
     assert.ok(text.includes(needle), `explanation should mention "${needle}"`);
   }
   assert.ok(Object.isFrozen(IMPACT_WEIGHTS));
@@ -398,6 +532,23 @@ test("gatherTournamentStats exposes matches played and the Player of the Tournam
   const star = await Player.create({ name: "Impact Star", team: alpha._id });
   const bowler = await Player.create({ name: "Impact Bowler", team: beta._id });
   const tournamentId = "6adf4baed38e4ffcae94e000";
+
+  await Tournament.create({
+    _id: tournamentId,
+    name: "Impact Official Awards Cup",
+    shortName: "IOAC",
+    type: "knockout",
+    startDate: new Date("2026-10-20"),
+    endDate: new Date("2026-10-21"),
+    teams: [alpha._id, beta._id],
+    // The committee's pick deliberately differs from the computed leader below.
+    officialAwards: {
+      playerOfTournament: bowler._id,
+      bestBatsman: star._id,
+      bestBowler: bowler._id,
+      note: "Chosen on presentation night",
+    },
+  });
 
   await Match.create({
     title: "Impact fixture",
@@ -445,4 +596,14 @@ test("gatherTournamentStats exposes matches played and the Player of the Tournam
     stats.playerOfTournament.rows.map((row) => row.rank),
     [1, 2],
   );
+
+  // Official awards ride along for presentation only. The computed leader is
+  // still the impact leader; the organiser's pick never overwrites it.
+  assert.equal(stats.officialAwards.playerOfTournament.name, "Impact Bowler");
+  assert.equal(stats.officialAwards.bestBatsman.name, "Impact Star");
+  assert.equal(stats.officialAwards.bestBowler.name, "Impact Bowler");
+  assert.equal(stats.officialAwards.note, "Chosen on presentation night");
+  assert.equal(stats.playerOfTournament.officialAward.name, "Impact Bowler");
+  assert.equal(stats.playerOfTournament.leader.name, "Impact Star");
+  assert.equal(stats.playerOfTournament.rows[0].name, "Impact Star");
 });

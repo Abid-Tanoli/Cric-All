@@ -130,9 +130,35 @@ describe("tournament Stats tab", () => {
 
   it("explains the calculation from the server-provided weights", () => {
     renderTab();
-    fireEvent.click(screen.getByText(/How it's calculated/i));
+    fireEvent.click(screen.getByText(/How points are calculated/i));
     expect(screen.getByText(/1 point per run/)).toBeInTheDocument();
     expect(screen.getByText(/20 extra points/)).toBeInTheDocument();
+    expect(screen.getByText(/Points reward runs, wickets, fielding/i)).toBeInTheDocument();
+  });
+
+  it("labels an organiser's pick as an official award without changing the leader", () => {
+    renderTab({
+      ...stats,
+      officialAwards: {
+        playerOfTournament: {
+          playerId: "p9",
+          name: "Raheel Official",
+          team: "Sky Sports",
+          playingRole: "All-Rounder",
+          official: true,
+        },
+        bestBatsman: null,
+        bestBowler: null,
+        note: "Selected by the tournament committee",
+      },
+    });
+
+    expect(screen.getByTestId("official-player-of-tournament")).toBeInTheDocument();
+    expect(screen.getByText("Official award")).toBeInTheDocument();
+    expect(screen.getByText("Raheel Official")).toBeInTheDocument();
+    expect(screen.getByText("Selected by the tournament committee")).toBeInTheDocument();
+    // The computed impact leader remains the ranking leader.
+    expect(screen.getAllByText("Wali Amber").length).toBeGreaterThan(1);
   });
 
   it("stays graceful with no data yet", () => {

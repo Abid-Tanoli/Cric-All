@@ -13,6 +13,8 @@ import Match from "../src/models/Match.js";
 import Tournament from "../src/models/Tournament.js";
 import AuditLog from "../src/models/AuditLog.js";
 import { validateTournamentAwards } from "../src/controllers/TournamentController.js";
+import { validateOfficialAwards } from "../src/services/tournamentOfficialAwards.js";
+import { gatherTournamentStats } from "../src/services/tournamentStats.js";
 import { generateToken } from "../src/utils/jwt.js";
 
 // P4: end-of-tournament honours. An admin names a champion, a runner-up and
@@ -307,6 +309,140 @@ test("awards route: a non-admin is refused", async () => {
   });
 
   assert.equal(refused.status, 403);
+});
+
+// --- official awards --------------------------------------------------------
+
+test("official awards: squad and tournament-team players are accepted, partial updates preserved", () => {
+  const tournamentTeam = "aaaaaaaaaaaaaaaaaaaaaaaa";
+  const otherTournamentTeam = "bbbbbbbbbbbbbbbbbbbbbbbb";
+  const squadPlayer = "cccccccccccccccccccccccc";
+  const teamPlayer = "dddddddddddddddddddddddd";
+
+  const result = validateOfficialAwards({
+    body: {
+      playerOfTournament: squadPlayer,
+      bestBatsman: teamPlayer,
+      bestBowler: "",
+      note: "  Presented at the final  ",
+    },
+    teamIds: [tournamentTeam, otherTournamentTeam],
+    squadPlayerIds: [squadPlayer],
+    playerTeamById: new Map([[teamPlayer, otherTournamentTeam]]),
+  });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.data, {
+    playerOfTournament: squadPlayer,
+    bestBatsman: teamPlayer,
+    bestBowler: null,
+    note: "Presented at the final",
+  });
+});
+
+test("official awards: a player outside the tournament is refused", () => {
+  const result = validateOfficialAwards({
+    body: { bestBowler: "eeeeeeeeeeeeeeeeeeeeeeee" },
+    teamIds: ["aaaaaaaaaaaaaaaaaaaaaaaa"],
+    squadPlayerIds: [],
+    playerTeamById: new Map([["eeeeeeeeeeeeeeeeeeeeeeee", "ffffffffffffffffffffffff"]]),
+  });
+
+  assert.equal(result.ok, false);
+  assert.match(result.errors.bestBowler, /one of this tournament's teams/);
+});
+
+test("official awards: an invalid id and an overlong note are refused field-by-field", () => {
+  const invalid = validateOfficialAwards({
+    body: { playerOfTournament: "not-an-id" },
+    teamIds: ["aaaaaaaaaaaaaaaaaaaaaaaa"],
+  });
+  assert.equal(invalid.ok, false);
+  assert.match(invalid.errors.playerOfTournament, /not a valid player id/);
+
+  const longNote = validateOfficialAwards({
+    body: { note: "x".repeat(501) },
+    teamIds: ["aaaaaaaaaaaaaaaaaaaaaaaa"],
+  });
+  assert.equal(longNote.ok, false);
+  assert.match(longNote.errors.note, /500 characters/);
+});
+
+test("official awards route: an admin saves, public stats expose, and the award never changes the ranking", async () => {
+  const { token } = await makeAdmin();
+  const { teamA, teamB, playerInA, playerInB, tournament } = await makeKnockout({
+    user: await User.findOne({ role: "admin" }),
+  });
+
+  const saved = await call("PUT", `/tournaments/${tournament._id}/official-awards`, token, {
+    playerOfTournament: playerInA._id.toString(),
+    bestBatsman: playerInA._id.toString(),
+    bestBowler: playerInB._id.toString(),
+    note: "Selected by the tournament committee",
+  });
+
+  assert.equal(saved.status, 200, JSON.stringify(saved.body));
+  assert.equal(saved.body.tournament.officialAwards.playerOfTournament.name, playerInA.name);
+  assert.equal(saved.body.tournament.officialAwards.bestBowler.name, playerInB.name);
+  assert.equal(saved.body.tournament.officialAwards.note, "Selected by the tournament committee");
+
+  const read = await call("GET", `/tournaments/${tournament._id}`, null);
+  assert.equal(read.status, 200);
+  assert.equal(read.body.officialAwards.bestBatsman.name, playerInA.name);
+
+  const stats = await gatherTournamentStats(tournament._id);
+  assert.equal(stats.officialAwards.playerOfTournament.name, playerInA.name);
+  assert.equal(stats.officialAwards.note, "Selected by the tournament committee");
+  assert.equal(stats.playerOfTournament.officialAward.name, playerInA.name);
+  // No completed matches, so no computed ranking exists to disturb.
+  assert.deepEqual(stats.playerOfTournament.rows, []);
+
+  const audit = await AuditLog.findOne({ action: "tournament.official_awards_set" });
+  assert.ok(audit, "setting official awards is audited");
+  assert.equal(String(audit.targetId), String(tournament._id));
+});
+
+test("official awards route: a player from a team outside the tournament is refused", async () => {
+  const { token } = await makeAdmin();
+  const { tournament } = await makeKnockout({ user: await User.findOne({ role: "admin" }) });
+  const outsiderTeam = await Team.create({ name: `OPENCODE_TEST Official Outsider Team ${counter}` });
+  const outsiderPlayer = await Player.create({
+    name: `OPENCODE_TEST Official Outsider ${counter}`,
+    team: outsiderTeam._id,
+  });
+
+  const refused = await call("PUT", `/tournaments/${tournament._id}/official-awards`, token, {
+    bestBatsman: outsiderPlayer._id.toString(),
+  });
+
+  assert.equal(refused.status, 400);
+  assert.match(refused.body.errors.bestBatsman, /one of this tournament's teams/);
+
+  const unchanged = await Tournament.findById(tournament._id).lean();
+  assert.equal(unchanged.officialAwards?.bestBatsman || null, null, "nothing is written on failure");
+});
+
+test("official awards route: clearing one award leaves the others alone", async () => {
+  const { token } = await makeAdmin();
+  const { playerInA, playerInB, tournament } = await makeKnockout({
+    user: await User.findOne({ role: "admin" }),
+  });
+
+  await call("PUT", `/tournaments/${tournament._id}/official-awards`, token, {
+    playerOfTournament: playerInA._id.toString(),
+    bestBowler: playerInB._id.toString(),
+    note: "Keep me",
+  });
+
+  const cleared = await call("PUT", `/tournaments/${tournament._id}/official-awards`, token, {
+    bestBowler: "",
+  });
+  assert.equal(cleared.status, 200, JSON.stringify(cleared.body));
+
+  const after = await Tournament.findById(tournament._id).lean();
+  assert.equal(after.officialAwards.bestBowler, null);
+  assert.equal(String(after.officialAwards.playerOfTournament), String(playerInA._id));
+  assert.equal(after.officialAwards.note, "Keep me");
 });
 
 // --- player of the match ----------------------------------------------------

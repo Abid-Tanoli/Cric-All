@@ -13,11 +13,13 @@ const Breakdown = ({ row }) => {
     ["Batting", row.breakdown?.batting],
     ["Bowling", row.breakdown?.bowling],
     ["Fielding", row.breakdown?.fielding],
+    ["Team share", row.breakdown?.teamShare],
+    ["Finishing", row.breakdown?.finishing],
     ["Winning", row.breakdown?.winBonus],
     ["Player of the Match", row.breakdown?.manOfMatchBonus],
   ];
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
       {items.map(([label, value]) => (
         <div key={label} className="rounded-lg bg-cric-bg px-3 py-2">
           <div className="text-[9px] uppercase tracking-wide text-cric-muted font-bold">{label}</div>
@@ -30,11 +32,13 @@ const Breakdown = ({ row }) => {
   );
 };
 
-export default function PlayerOfTournament({ data }) {
+export default function PlayerOfTournament({ data, officialAwards }) {
   const [openId, setOpenId] = useState(null);
   const rows = Array.isArray(data?.rows) ? data.rows : [];
   const leader = data?.leader || rows[0] || null;
   const explanation = Array.isArray(data?.explanation) ? data.explanation : [];
+  const official = officialAwards?.playerOfTournament || data?.officialAward || null;
+  const officialNote = officialAwards?.note || data?.officialNote || "";
 
   return (
     <div className="bg-cric-card rounded-2xl shadow-sm overflow-hidden border border-cric-border">
@@ -45,7 +49,42 @@ export default function PlayerOfTournament({ data }) {
         <p className="text-xs text-white/80 mt-1">
           Impact ranking, not just runs or wickets · provisional until the Final is completed
         </p>
+        <p className="text-xs text-white/90 mt-2 max-w-3xl">
+          Points reward runs, wickets, fielding and your share of the team&apos;s runs and
+          wickets, with extra credit for finishing an unbeaten chase and for winning.
+        </p>
       </div>
+
+      {official && (
+        <div
+          data-testid="official-player-of-tournament"
+          className="border-b border-amber-200 bg-amber-50 px-6 py-4"
+        >
+          <div className="text-[10px] font-black uppercase tracking-widest text-amber-700">
+            Official award
+          </div>
+          <div className="mt-1 flex flex-wrap items-baseline gap-x-2">
+            {official.playerId ? (
+              <Link
+                to={`/players/${official.playerId}`}
+                className="text-lg font-black text-cric-text hover:text-cric-accent"
+              >
+                {official.name}
+              </Link>
+            ) : (
+              <span className="text-lg font-black text-cric-text">{official.name}</span>
+            )}
+            {official.team ? <span className="text-xs text-cric-muted">{official.team}</span> : null}
+          </div>
+          {official.playingRole ? (
+            <div className="text-xs text-cric-muted">{official.playingRole}</div>
+          ) : null}
+          {officialNote ? <p className="mt-2 text-xs text-cric-muted">{officialNote}</p> : null}
+          <p className="mt-2 text-[10px] text-cric-muted">
+            Selected by the organisers. This label never changes the computed points or ranking below.
+          </p>
+        </div>
+      )}
 
       {!leader && (
         <div className="px-4 py-8 text-center text-cric-muted">
@@ -159,7 +198,7 @@ export default function PlayerOfTournament({ data }) {
       {explanation.length > 0 && (
         <details className="border-t border-cric-border px-4 py-3">
           <summary className="cursor-pointer text-xs font-black uppercase tracking-wide text-cric-muted">
-            How it&apos;s calculated
+            How points are calculated
           </summary>
           <ul className="mt-3 space-y-1 text-xs text-cric-muted list-disc pl-5">
             {explanation.map((line) => (

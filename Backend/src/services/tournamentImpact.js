@@ -4,6 +4,7 @@ import {
   applyLatestPlayerTeamAppearances,
   collectPlayedMatches,
   inningsForMatch,
+  inningsTotals,
   isDidNotBat,
   isDraftMatch,
   isOutEntry,
@@ -17,18 +18,26 @@ import {
 //
 // One number per player that rewards actually winning cricket rather than just
 // volume: runs and wickets, boundary and milestone bonuses, economy relative to
-// the tournament's own average, fielding where it was recorded, a bonus for
-// contributing in a winning cause and for a man-of-the-match award.
+// the tournament's own average, fielding where it was recorded, how large a
+// share of the team's runs/wickets the player produced, an unbeaten finish to a
+// successful chase, a bonus for contributing in a winning cause and for a
+// man-of-the-match award.
 //
 // EVERY weight lives in `IMPACT_WEIGHTS` below. Change a number there and both
-// the ranking and the public "How it's calculated" text (`impactExplanation`)
-// follow; never hard-code a weight anywhere else.
+// the ranking and the public "How points are calculated" text
+// (`impactExplanation`) follow; never hard-code a weight anywhere else.
 //
 // The score is built per match, then summed:
 //
-//   match points = batting + bowling + fielding
+//   match points = batting + bowling + fielding + teamShare + finishing
 //   match points *= winMultiplier   when the player's side won that match
 //   total        = sum(match points) + manOfMatch per award
+//
+// `teamShare` is the player's share of his side's runs in each innings plus his
+// share of the wickets his side took. `finishing` is a small unbeaten-innings
+// credit, plus a larger credit when that unbeaten innings completed a run
+// chase. Both are earned in the same match as the underlying runs/wickets, so
+// the win multiplier applies to them as well.
 //
 // Fielding is only added when a ball-by-ball card recorded it. Manual
 // scorecards have no fielder, so a manual-only player is never punished for the
@@ -62,6 +71,25 @@ export const IMPACT_WEIGHTS = Object.freeze({
       slowMax: 100,
       slowPoints: -2,
     }),
+    /**
+     * Share-of-team-runs bonus, per innings: (batter runs / team innings runs)
+     * x this value. 20 means a player who scores half his side's runs earns a
+     * 10-point bonus. It rewards the innings that actually built the total,
+     * without turning a big total into a penalty for everyone else.
+     */
+    teamRunShare: 20,
+    /**
+     * A small credit for being unbeaten. It exists so an equal-run not-out
+     * innings can never rank below the same innings with a dismissal; the duck
+     * penalty already applies only when a batter was actually out.
+     */
+    notOut: 2,
+    /**
+     * Extra finishing credit when an unbeaten innings completed a successful
+     * run chase (the side won by wickets). Chase detection uses the result
+     * margin text because stored innings do not carry a reliable `target`.
+     */
+    chaseFinish: 12,
   }),
   bowling: Object.freeze({
     wicket: 25,
@@ -79,10 +107,21 @@ export const IMPACT_WEIGHTS = Object.freeze({
       Object.freeze({ wickets: 5, points: 25 }),
       Object.freeze({ wickets: 3, points: 10 }),
     ]),
+    /**
+     * Share-of-team-wickets bonus, per innings: (bowler wickets / wickets the
+     * bowling side took in that innings) x this value. A bowler who takes half
+     * the side's wickets earns a 10-point bonus. Capped at one full share.
+     */
+    teamWicketShare: 20,
   }),
   fielding: Object.freeze({ catch: 8, runOut: 12, stumping: 10 }),
   team: Object.freeze({
-    /** A player's match points are multiplied by this when his side won. */
+    /**
+     * Everything earned in a match the player's side won is multiplied by this
+     * value, so winning runs and wickets are worth more than the same output in
+     * a defeat. Context bonuses (team share, finishing) are multiplied too; the
+     * man-of-the-match award is deliberately a flat addition.
+     */
     winMultiplier: 1.2,
   }),
   /** Flat bonus when the match's man of the match is this player. */
@@ -158,6 +197,44 @@ export function economyAdjustment(runs, balls, tournamentEconomy, weights = IMPA
 }
 
 /**
+ * Whether the winner chased: a win "by wickets" means the side batting second
+ * completed a target. Stored innings all carry `target: 0` today, so the result
+ * margin/description is the only trustworthy signal. Returns false when no
+ * margin is recorded rather than guessing.
+ */
+export function wonByWickets(match) {
+  const margin = String(
+    match?.result?.margin ?? match?.result?.description ?? match?.resultText ?? "",
+  ).toLowerCase();
+  return /wicket/.test(margin);
+}
+
+/**
+ * Share of the team's innings runs, as impact points. A batter who scored 40 of
+ * a 200 total gets 20% of `weights.batting.teamRunShare`; the bonus is capped at
+ * one full share so malformed totals cannot invent points.
+ */
+export function teamRunSharePoints(runs, teamRuns, weights = IMPACT_WEIGHTS) {
+  const total = Number(teamRuns) || 0;
+  if (total <= 0) return 0;
+  const share = Math.min(1, Math.max(0, (Number(runs) || 0) / total));
+  return share * weights.batting.teamRunShare;
+}
+
+/**
+ * Share of the wickets the bowling side took in an innings, as impact points.
+ * Capped at one full share because a bowler's wicket column can occasionally
+ * exceed the recorded team wickets in an incomplete manual card.
+ */
+export function teamWicketSharePoints(wickets, teamWickets, weights = IMPACT_WEIGHTS) {
+  const total = Number(teamWickets) || 0;
+  const taken = Number(wickets) || 0;
+  if (total <= 0 || taken <= 0) return 0;
+  const share = Math.min(1, taken / total);
+  return share * weights.bowling.teamWicketShare;
+}
+
+/**
  * Plain-English explanation generated FROM the constants, so the public text can
  * never drift from the numbers actually used.
  */
@@ -180,8 +257,10 @@ export function impactExplanation(weights = IMPACT_WEIGHTS) {
     `Bowling: ${bowl.wicket} points per wicket and ${bowl.maiden} per maiden.`,
     `Economy vs the tournament average, per full over bowled: (tournament economy - bowler economy) x ${bowl.economyWeight}.`,
     `Bowling hauls (the highest one counts): ${hauls} wickets.`,
+    `Team share: up to ${bat.teamRunShare} points for your share of your team's runs in an innings, and up to ${bowl.teamWicketShare} for your share of the wickets your side took.`,
+    `Finishing: ${bat.notOut} point${bat.notOut === 1 ? "" : "s"} for an unbeaten innings, plus ${bat.chaseFinish} more when that unbeaten innings completes a successful run chase. An unbeaten innings is never scored below the same runs after being dismissed.`,
     `Fielding, where the scorecard records it: ${field.catch} per catch, ${field.stumping} per stumping, ${field.runOut} per run out. Manual scorecards do not record fielders, so nobody loses points there.`,
-    `Winning: everything a player earned in a match his team won is multiplied by ${weights.team.winMultiplier} (+${win}%).`,
+    `Winning: runs, wickets and the context bonuses above are multiplied by ${weights.team.winMultiplier} (+${win}%) in a match your team won; the same output in a defeat keeps its base points.`,
     `Man of the Match: ${weights.manOfMatch} extra points.`,
   ];
 }
@@ -244,7 +323,15 @@ export function computeTournamentImpact({ matches = [], weights = IMPACT_WEIGHTS
         runOuts: 0,
         manOfMatchAwards: 0,
         impact: 0,
-        breakdown: { batting: 0, bowling: 0, fielding: 0, winBonus: 0, manOfMatchBonus: 0 },
+        breakdown: {
+          batting: 0,
+          bowling: 0,
+          fielding: 0,
+          teamShare: 0,
+          finishing: 0,
+          winBonus: 0,
+          manOfMatchBonus: 0,
+        },
       });
     }
     const row = players.get(playerId);
@@ -271,7 +358,14 @@ export function computeTournamentImpact({ matches = [], weights = IMPACT_WEIGHTS
     const perMatch = new Map();
     const touch = (playerId) => {
       if (!perMatch.has(playerId)) {
-        perMatch.set(playerId, { batting: 0, bowling: 0, fielding: 0, teamId: null });
+        perMatch.set(playerId, {
+          batting: 0,
+          bowling: 0,
+          fielding: 0,
+          teamShare: 0,
+          finishing: 0,
+          teamId: null,
+        });
       }
       return perMatch.get(playerId);
     };
@@ -279,6 +373,11 @@ export function computeTournamentImpact({ matches = [], weights = IMPACT_WEIGHTS
     for (const innings of inningsForMatch(match)) {
       const battingTeam = teamForInnings(match, innings, "batting");
       const fieldingTeam = teamForInnings(match, innings, "fielding");
+      const totals = inningsTotals(innings);
+      // A successful chase is a win by wickets. Only the side that batted in
+      // this innings can earn the chase-finishing credit.
+      const chaseWin =
+        decided && battingTeam.id === winnerId && wonByWickets(match);
 
       for (const entry of innings.batting || []) {
         if (isDidNotBat(entry)) continue;
@@ -289,6 +388,8 @@ export function computeTournamentImpact({ matches = [], weights = IMPACT_WEIGHTS
         const balls = Number(entry.balls) || 0;
         const fours = Number(entry.fours) || 0;
         const sixes = Number(entry.sixes) || 0;
+        const retired = entry.isRetiredHurt === true || entry.isRetired === true;
+        const notOut = !isOutEntry(entry) && !retired;
 
         let points =
           runs * weights.batting.run +
@@ -298,15 +399,25 @@ export function computeTournamentImpact({ matches = [], weights = IMPACT_WEIGHTS
           strikeRatePoints(runs, balls, weights);
         if (runs === 0 && isOutEntry(entry)) points += weights.batting.duck;
 
+        const sharePoints = teamRunSharePoints(runs, totals.runs, weights);
+        let finishingPoints = notOut ? weights.batting.notOut : 0;
+        if (notOut && chaseWin && runs > 0) {
+          finishingPoints += weights.batting.chaseFinish;
+        }
+
         row.innings += 1;
         row.runs += runs;
         row.balls += balls;
         row.fours += fours;
         row.sixes += sixes;
         row.breakdown.batting += points;
+        row.breakdown.teamShare += sharePoints;
+        row.breakdown.finishing += finishingPoints;
 
         const slot = touch(playerId);
         slot.batting += points;
+        slot.teamShare += sharePoints;
+        slot.finishing += finishingPoints;
         slot.teamId = battingTeam.id || slot.teamId;
 
         // Fielding credit belongs to the side that was NOT batting.
@@ -338,14 +449,17 @@ export function computeTournamentImpact({ matches = [], weights = IMPACT_WEIGHTS
           maidens * weights.bowling.maiden +
           haulPoints(wickets, weights) +
           economyAdjustment(runs, balls, tournamentEconomy, weights);
+        const sharePoints = teamWicketSharePoints(wickets, totals.wickets, weights);
 
         row.wickets += wickets;
         row.ballsBowled += balls;
         row.maidens += maidens;
         row.breakdown.bowling += points;
+        row.breakdown.teamShare += sharePoints;
 
         const slot = touch(playerId);
         slot.bowling += points;
+        slot.teamShare += sharePoints;
         slot.teamId = fieldingTeam.id || slot.teamId;
       }
     }
@@ -362,7 +476,8 @@ export function computeTournamentImpact({ matches = [], weights = IMPACT_WEIGHTS
     for (const [playerId, slot] of perMatch) {
       const row = players.get(playerId);
       if (!row) continue;
-      const earned = slot.batting + slot.bowling + slot.fielding;
+      const earned =
+        slot.batting + slot.bowling + slot.fielding + slot.teamShare + slot.finishing;
       const won = decided && slot.teamId && slot.teamId === winnerId;
       if (won) {
         row.breakdown.winBonus += earned * (weights.team.winMultiplier - 1);
@@ -385,6 +500,8 @@ export function computeTournamentImpact({ matches = [], weights = IMPACT_WEIGHTS
       batting: round2(row.breakdown.batting),
       bowling: round2(row.breakdown.bowling),
       fielding: round2(row.breakdown.fielding),
+      teamShare: round2(row.breakdown.teamShare),
+      finishing: round2(row.breakdown.finishing),
       winBonus: round2(row.breakdown.winBonus),
       manOfMatchBonus: round2(row.breakdown.manOfMatchBonus),
     },
@@ -422,4 +539,7 @@ export default {
   strikeRatePoints,
   haulPoints,
   economyAdjustment,
+  wonByWickets,
+  teamRunSharePoints,
+  teamWicketSharePoints,
 };

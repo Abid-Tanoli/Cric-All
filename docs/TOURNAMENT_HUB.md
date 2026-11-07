@@ -379,6 +379,39 @@ maths anywhere else. `Bracket` / `Awards` tabs drop in via the registry (§2).
 
 ---
 
+## 9. Player of the Tournament and official awards
+
+The computed ranking lives in `Backend/src/services/tournamentImpact.js`. Every
+weight is in its single `IMPACT_WEIGHTS` block, and the public "How points are
+calculated" text is generated from that block, so the explanation cannot drift
+from the maths.
+
+Match points are `batting + bowling + fielding + teamShare + finishing`, then
+multiplied by the win factor (`1.2`) for a player on the winning side, and added
+across the tournament together with a flat player-of-the-match bonus. Team share
+rewards the player's proportion of his side's runs and of the wickets his side
+took. Finishing gives a small credit for an unbeaten innings and a larger credit
+when that innings completes a successful run chase. No organiser pick, override
+or per-player rule feeds into these points.
+
+Organisers may separately confirm `Tournament.officialAwards`
+(`playerOfTournament`, `bestBatsman`, `bestBowler`, optional `note`) through
+`PUT /api/tournaments/:id/official-awards` or the Admin tournament **Awards** tab.
+The server validates that each player belongs to one of the tournament's teams
+or squads, rejects invalid ids, and audits the change. The public Awards tab and
+Player of the Tournament card label these picks **Official award** and fall back
+in this order:
+
+1. `officialAwards.*` (organiser-confirmed, labelled **Official award**)
+2. `awards.*` (the older manual honours field)
+3. the current stats leaders (labelled **Derived from stats**)
+
+Official awards are presentation only: they never change the computed points,
+the leader, or the ranking order.
+
+
+---
+
 ## 9. Known gaps / not done
 
 - No push, no deploy, no production/VPS/DB access was performed.

@@ -24,6 +24,10 @@ const TOURNAMENT = {
   winner: { _id: "teamA", name: "Alpha CC" },
   runnerUp: { _id: "teamB", name: "Beta CC" },
   awards: { bestBowler: { _id: "p3", name: "Cleo" } },
+  officialAwards: {
+    playerOfTournament: { _id: "p2", name: "Ben" },
+    note: "Selected by the committee",
+  },
 };
 
 const SQUADS = [
@@ -115,5 +119,38 @@ describe("TournamentManagement awards tab", () => {
         "error",
       )
     );
+  });
+
+  it("offers squad-limited picks and seeds the official awards section", async () => {
+    await openAwards();
+
+    expect(optionValues("Official player of the tournament")).toEqual(["", "p1", "p2", "p3"]);
+    expect(optionValues("Official best batsman")).toEqual(["", "p1", "p2", "p3"]);
+    expect(optionValues("Official best bowler")).toEqual(["", "p1", "p2", "p3"]);
+    expect(screen.getByLabelText("Official player of the tournament").value).toBe("p2");
+    expect(screen.getByLabelText("Official best batsman").value).toBe("");
+    expect(screen.getByLabelText("Official awards note").value).toBe("Selected by the committee");
+  });
+
+  it("posts the official awards and lets a clear button empty a pick", async () => {
+    await openAwards();
+
+    fireEvent.change(screen.getByLabelText("Official best batsman"), { target: { value: "p1" } });
+    fireEvent.change(screen.getByLabelText("Official best bowler"), { target: { value: "p3" } });
+    fireEvent.click(screen.getByRole("button", { name: /clear official player of the tournament/i }));
+    fireEvent.change(screen.getByLabelText("Official awards note"), {
+      target: { value: "Presented at the final" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /save official awards/i }));
+
+    await waitFor(() =>
+      expect(put).toHaveBeenCalledWith("/tournaments/t1/official-awards", {
+        playerOfTournament: "",
+        bestBatsman: "p1",
+        bestBowler: "p3",
+        note: "Presented at the final",
+      })
+    );
+    expect(get.mock.calls.filter(([u]) => u === "/tournaments/t1").length).toBeGreaterThan(1);
   });
 });
