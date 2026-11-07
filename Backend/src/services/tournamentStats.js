@@ -1053,7 +1053,35 @@ export async function gatherTournamentStats(tournament, opts = {}) {
   officialAwards.topPlayers = (officialAwards.topPlayers || [])
     .filter((award) => !(award?.teamId && hidden.has(String(award.teamId))))
     .map((award, index) => ({ ...award, position: index + 1 }));
-  officialAwards.playerOfTournament = officialAwards.topPlayers[0] || null;
+  const publicTopRunScorers = strip(stats.topRunScorers);
+  const publicTopWicketTakers = strip(stats.topWicketTakers);
+  const withAwardStats = (award, rows, fields) => {
+    if (!award) return null;
+    const row = rows.find((entry) => String(entry.playerId) === String(award.playerId));
+    if (!row) return award;
+    const summary = Object.fromEntries(
+      fields
+        .map(([key, sourceKey = key]) => [key, row[sourceKey]])
+        .filter(([, value]) => value !== null && value !== undefined),
+    );
+    return Object.keys(summary).length ? { ...award, stats: summary } : award;
+  };
+  const impactFields = [["matches"], ["runs"], ["wickets"]];
+  officialAwards.topPlayers = officialAwards.topPlayers.map((award) =>
+    withAwardStats(award, impactRows, impactFields),
+  );
+  officialAwards.playerOfTournament = officialAwards.topPlayers[0]
+    || withAwardStats(officialAwards.playerOfTournament, impactRows, impactFields);
+  officialAwards.bestBatsman = withAwardStats(officialAwards.bestBatsman, publicTopRunScorers, [
+    ["runs"],
+    ["highest", "highestText"],
+    ["strikeRate"],
+  ]);
+  officialAwards.bestBowler = withAwardStats(officialAwards.bestBowler, publicTopWicketTakers, [
+    ["wickets"],
+    ["economy"],
+    ["bestFigures"],
+  ]);
   const officialTopPlayers = officialAwards.topPlayers;
   const derivedTopPlayers = impactRows.slice(0, 3).map((row, index) => ({
     playerId: row.playerId,
@@ -1068,8 +1096,8 @@ export async function gatherTournamentStats(tournament, opts = {}) {
 
   return {
     ...stats,
-    topRunScorers: strip(stats.topRunScorers),
-    topWicketTakers: strip(stats.topWicketTakers),
+    topRunScorers: publicTopRunScorers,
+    topWicketTakers: publicTopWicketTakers,
     topFielders,
     highestScores: strip(stats.highestScores),
     bestBowling: strip(stats.bestBowling),

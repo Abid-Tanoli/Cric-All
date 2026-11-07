@@ -631,6 +631,61 @@ test("stats payload falls back to the computed top three and uses the match stag
   assert.deepEqual(stats.officialAwards.topPlayers, []);
 });
 
+test("public stats attach computed summaries to the three official awards", async () => {
+  const { teamA, teamB, playerInA, playerInA2, playerInB, tournament } = await makeKnockout({
+    user: await User.findOne({ role: "admin" }),
+  });
+  playerInA.imageUrl = "https://example.test/award-batter.png";
+  playerInB.imageUrl = "https://example.test/award-bowler.png";
+  await Promise.all([playerInA.save(), playerInB.save()]);
+
+  tournament.officialAwards = {
+    playerOfTournament: playerInA._id,
+    topPlayers: [playerInA._id],
+    bestBatsman: playerInA._id,
+    bestBowler: playerInB._id,
+  };
+  await tournament.save();
+
+  await Match.create({
+    title: "OPENCODE_TEST Official Awards Stats",
+    venue: "Ground",
+    matchType: "T20",
+    totalOvers: 20,
+    startAt: new Date("2026-10-18T10:00:00.000Z"),
+    tournament: tournament._id,
+    teams: [teamA._id, teamB._id],
+    status: "completed",
+    result: { resultType: "normal", winner: teamA._id, margin: "5 runs" },
+    innings: [
+      {
+        team: teamA._id,
+        runs: 42,
+        wickets: 3,
+        balls: 24,
+        batting: [{ player: playerInA._id, runs: 42, balls: 24, isOut: true }],
+        bowling: [{ player: playerInB._id, runs: 18, balls: 24, wickets: 3 }],
+      },
+      {
+        team: teamB._id,
+        runs: 20,
+        wickets: 1,
+        balls: 18,
+        batting: [{ player: playerInB._id, runs: 20, balls: 18, isOut: true }],
+        bowling: [{ player: playerInA2._id, runs: 20, balls: 18, wickets: 1 }],
+      },
+    ],
+  });
+
+  const stats = await gatherTournamentStats(tournament._id);
+  assert.deepEqual(stats.officialAwards.playerOfTournament.stats, { matches: 1, runs: 42, wickets: 0 });
+  assert.deepEqual(stats.officialAwards.bestBatsman.stats, { runs: 42, highest: "42", strikeRate: 175 });
+  assert.deepEqual(stats.officialAwards.bestBowler.stats, { wickets: 3, economy: 4.5, bestFigures: "3/18" });
+  assert.equal(stats.officialAwards.playerOfTournament.imageUrl, playerInA.imageUrl);
+  assert.equal(stats.officialAwards.bestBatsman.team, teamA.name);
+  assert.equal(stats.officialAwards.bestBowler.team, teamB.name);
+});
+
 test("official awards route: a podium with a duplicate player is refused and nothing is written", async () => {
   const { token } = await makeAdmin();
   const { playerInA, tournament } = await makeKnockout({

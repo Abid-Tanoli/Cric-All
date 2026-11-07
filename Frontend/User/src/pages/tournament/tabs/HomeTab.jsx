@@ -1,6 +1,7 @@
 import React from "react";
 import { Link } from "react-router-dom";
 import { groupMatches } from "../matchUtils";
+import TournamentAwardsShowcase from "../../../components/TournamentAwardsShowcase";
 
 function StatBox({ value, label, tone = "text-cric-text" }) {
   return (
@@ -34,6 +35,7 @@ export default function HomeTab({ content, matches = [], stats = {}, basePath })
 
   return (
     <div className="space-y-8">
+      <TournamentAwardsShowcase stats={stats} showDerived={overview.status === "completed"} />
       {(overview.shortDescription || overview.city) && (
         <div className="bg-cric-card rounded-2xl shadow-sm p-6 border border-cric-border">
           {overview.shortDescription && <p className="text-sm text-cric-text">{overview.shortDescription}</p>}

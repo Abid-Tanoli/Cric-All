@@ -84,7 +84,7 @@ export default function StatsTab({ stats = {} }) {
 
   return (
     <div className="space-y-8">
-      <PlayerOfTournament data={stats.playerOfTournament} officialAwards={stats.officialAwards} />
+      <PlayerOfTournament data={stats.playerOfTournament} officialAwards={stats.officialAwards} stats={stats} />
 
       {!empty && <BoundaryMeter stats={boundaryMeter} />}
 
