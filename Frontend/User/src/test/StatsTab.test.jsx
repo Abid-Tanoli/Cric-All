@@ -113,7 +113,7 @@ describe("tournament Stats tab", () => {
 
   it("highlights the leader and lists the top 10 by impact", () => {
     renderTab();
-    expect(screen.getByText("Player of the Tournament")).toBeInTheDocument();
+    expect(screen.getAllByText("Player of the Tournament").length).toBeGreaterThan(1);
     expect(screen.getByText(/provisional until the Final/i)).toBeInTheDocument();
     expect(screen.getAllByText("Wali Amber").length).toBeGreaterThan(1);
     expect(screen.getAllByText("318.4").length).toBeGreaterThan(0);
@@ -154,7 +154,7 @@ describe("tournament Stats tab", () => {
     });
 
     expect(screen.getByText("Official Top 3")).toBeInTheDocument();
-    expect(screen.getByText("Raheel Official")).toBeInTheDocument();
+    expect(screen.getAllByText("Raheel Official").length).toBeGreaterThan(1);
     expect(screen.getByText("Selected by the tournament committee")).toBeInTheDocument();
     // The computed impact leader remains the ranking leader.
     expect(screen.getAllByText("Wali Amber").length).toBeGreaterThan(1);
@@ -173,7 +173,7 @@ describe("tournament Stats tab", () => {
     });
 
     expect(screen.getByText("Official Top 3")).toBeInTheDocument();
-    expect(screen.getByTestId("podium-place-1")).toContainElement(screen.getByText("Official First"));
+    expect(screen.getByTestId("podium-place-1").textContent).toContain("Official First");
     expect(screen.getByTestId("podium-avatar-p8")).toHaveTextContent("OS");
     expect(screen.getByText("Chosen by organizers")).toBeInTheDocument();
     expect(screen.getAllByText("Wali Amber").length).toBeGreaterThan(1);

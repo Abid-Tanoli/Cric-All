@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { Link } from "react-router-dom";
+import TournamentAwardsShowcase from "../../../components/TournamentAwardsShowcase";
 
 // ---------------------------------------------------------------------------
 // Player of the Tournament
@@ -82,7 +83,7 @@ const PodiumPlayer = ({ player, position }) => {
   );
 };
 
-export default function PlayerOfTournament({ data, officialAwards }) {
+export default function PlayerOfTournament({ data, officialAwards, stats = {} }) {
   const [openId, setOpenId] = useState(null);
   const rows = Array.isArray(data?.rows) ? data.rows : [];
   const leader = data?.leader || rows[0] || null;
@@ -100,7 +101,9 @@ export default function PlayerOfTournament({ data, officialAwards }) {
   const isOfficialPodium = officialTopPlayers.length > 0 || Boolean(legacyOfficialPlayer);
 
   return (
-    <div className="bg-cric-card rounded-2xl shadow-sm overflow-hidden border border-cric-border">
+    <>
+      <TournamentAwardsShowcase stats={stats} showDerived />
+      <div className="bg-cric-card rounded-2xl shadow-sm overflow-hidden border border-cric-border">
       <div className="p-6 border-b border-cric-border bg-gradient-to-r from-amber-500 to-orange-600 text-white">
         <h3 className="text-xl font-black uppercase tracking-tight flex items-center gap-2">
           <span className="text-2xl">🌟</span> Player of the Tournament
@@ -258,6 +261,7 @@ export default function PlayerOfTournament({ data, officialAwards }) {
           </p>
         </details>
       )}
-    </div>
+      </div>
+    </>
   );
 }

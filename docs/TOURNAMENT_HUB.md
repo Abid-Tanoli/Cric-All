@@ -416,6 +416,19 @@ The detail and stats payloads include player name, team and photo, while hidden
 team players remain suppressed. The podium is presentation only: it never
 changes computed points, the ranking leader, or the order and values in the
 ranking list below it.
+The public stats payload attaches `officialAwards.playerOfTournament.stats`
+(`matches`, `runs`, `wickets`), `officialAwards.bestBatsman.stats` (`runs`,
+`highest`, `strikeRate`) and `officialAwards.bestBowler.stats` (`wickets`,
+`economy`, `bestFigures`) from those existing stat rows; missing values are
+omitted rather than inferred.
+
+The public Tournament Awards showcase reuses those official picks and existing
+impact, batting and bowling stat rows. It displays the Player of the Tournament,
+Best Batsman and Best Bowler above the Home overview when the event is complete
+or an official award exists, and above the impact podium in the Stats tab.
+Unset awards use the corresponding current stat leader and are labelled **Top
+by stats**; a card is omitted when neither an official pick nor a stat leader
+exists. Stat summaries are omitted when that player's values are unavailable.
 
 
 ---
