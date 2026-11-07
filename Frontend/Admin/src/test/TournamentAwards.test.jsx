@@ -124,10 +124,12 @@ describe("TournamentManagement awards tab", () => {
   it("offers squad-limited picks and seeds the official awards section", async () => {
     await openAwards();
 
-    expect(optionValues("Official player of the tournament")).toEqual(["", "p1", "p2", "p3"]);
+    expect(optionValues("Official 1st place")).toEqual(["", "p1", "p2", "p3"]);
+    expect(optionValues("Official 2nd place")).toEqual(["", "p1", "p2", "p3"]);
+    expect(optionValues("Official 3rd place")).toEqual(["", "p1", "p2", "p3"]);
     expect(optionValues("Official best batsman")).toEqual(["", "p1", "p2", "p3"]);
     expect(optionValues("Official best bowler")).toEqual(["", "p1", "p2", "p3"]);
-    expect(screen.getByLabelText("Official player of the tournament").value).toBe("p2");
+    expect(screen.getByLabelText("Official 1st place").value).toBe("p2");
     expect(screen.getByLabelText("Official best batsman").value).toBe("");
     expect(screen.getByLabelText("Official awards note").value).toBe("Selected by the committee");
   });
@@ -137,7 +139,8 @@ describe("TournamentManagement awards tab", () => {
 
     fireEvent.change(screen.getByLabelText("Official best batsman"), { target: { value: "p1" } });
     fireEvent.change(screen.getByLabelText("Official best bowler"), { target: { value: "p3" } });
-    fireEvent.click(screen.getByRole("button", { name: /clear official player of the tournament/i }));
+    fireEvent.change(screen.getByLabelText("Official 1st place"), { target: { value: "p1" } });
+    fireEvent.change(screen.getByLabelText("Official 2nd place"), { target: { value: "p2" } });
     fireEvent.change(screen.getByLabelText("Official awards note"), {
       target: { value: "Presented at the final" },
     });
@@ -145,12 +148,22 @@ describe("TournamentManagement awards tab", () => {
 
     await waitFor(() =>
       expect(put).toHaveBeenCalledWith("/tournaments/t1/official-awards", {
-        playerOfTournament: "",
+        topPlayers: ["p1", "p2", ""],
         bestBatsman: "p1",
         bestBowler: "p3",
         note: "Presented at the final",
       })
     );
     expect(get.mock.calls.filter(([u]) => u === "/tournaments/t1").length).toBeGreaterThan(1);
+  });
+
+  it("closes podium gaps when an earlier place is cleared", async () => {
+    await openAwards();
+
+    fireEvent.change(screen.getByLabelText("Official 2nd place"), { target: { value: "p3" } });
+    fireEvent.click(screen.getByRole("button", { name: /clear official 1st place/i }));
+
+    expect(screen.getByLabelText("Official 1st place").value).toBe("p3");
+    expect(screen.getByLabelText("Official 2nd place").value).toBe("");
   });
 });

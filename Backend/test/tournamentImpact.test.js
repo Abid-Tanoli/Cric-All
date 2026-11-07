@@ -22,6 +22,9 @@ import {
   teamRunSharePoints,
   teamWicketSharePoints,
   wonByWickets,
+  stageWeightFor,
+  isDominantWin,
+  resultMultiplierFor,
 } from "../src/services/tournamentImpact.js";
 
 let mongod;
@@ -36,6 +39,9 @@ after(async () => {
 
 const team = (id, name) => ({ _id: id, name });
 const player = (id, name) => ({ _id: id, name });
+// Multipliers are products of decimal constants, so compare with a tiny margin.
+const closeTo = (actual, expected, message) =>
+  assert.ok(Math.abs(actual - expected) < 1e-9, message || `${actual} ~= ${expected}`);
 
 // A minimal weights object for exact-arithmetic tests: no milestones, no
 // strike-rate nudge and no economy so only the knob under test moves.
@@ -51,7 +57,15 @@ const plainWeights = (overrides = {}) => ({
   },
   bowling: { ...IMPACT_WEIGHTS.bowling, economyWeight: 0, hauls: [], teamWicketShare: 0 },
   fielding: { catch: 0, runOut: 0, stumping: 0 },
-  team: { winMultiplier: 1 },
+  // Neutral result multipliers, so exact-arithmetic tests only move the knob
+  // under test.
+  result: {
+    ...IMPACT_WEIGHTS.result,
+    winMultiplier: 1,
+    competitiveLossMultiplier: 1,
+    dominantLossMultiplier: 1,
+    stageWeights: { group: 1, league: 1, quarterFinal: 1, semiFinal: 1, final: 1 },
+  },
   manOfMatch: 0,
   ...overrides,
 });
@@ -105,6 +119,124 @@ test("team-share and chase helpers are bounded and read the result margin", () =
   assert.equal(wonByWickets({ result: {} }), false, "no margin means no guess");
 });
 
+test("result multipliers reward wins, discount losses, and only winners get the stage weight", () => {
+  const alpha = team("t-alpha", "Alpha");
+  const beta = team("t-beta", "Beta");
+  const match = (overrides = {}) => ({
+    teams: [alpha, beta],
+    result: { resultType: "normal", winner: alpha, ...(overrides.result || {}) },
+    totalOvers: 20,
+    ...overrides,
+  });
+
+  // Same group win: 1.35 for the winner, 0.85 for a competitive loser.
+  assert.equal(resultMultiplierFor(match({ stage: "group" }), alpha), 1.35);
+  assert.equal(resultMultiplierFor(match({ stage: "group" }), beta), 0.85);
+  // The stage weight applies to the winner only.
+  closeTo(resultMultiplierFor(match({ stage: "final" }), alpha), 2.025);
+  assert.equal(resultMultiplierFor(match({ stage: "final" }), beta), 0.85);
+  closeTo(resultMultiplierFor(match({ stage: "quarter_final" }), alpha), 1.485);
+  closeTo(resultMultiplierFor(match({ stage: "semi_final" }), alpha), 1.6875);
+  closeTo(resultMultiplierFor(match({ stageLabel: "Final" }), alpha), 2.025);
+  // Unknown/empty stage stays neutral for the win multiplier.
+  assert.equal(resultMultiplierFor(match({ stage: "" }), alpha), 1.35);
+  assert.equal(stageWeightFor(match({ stage: "third_place" })), 1);
+
+  // Dominant margins: 8+ wickets, or 40+ runs in a 20-over match.
+  assert.equal(isDominantWin(match({ result: { winner: alpha, margin: "9 wickets" } })), true);
+  assert.equal(isDominantWin(match({ result: { winner: alpha, margin: "7 wickets" } })), false);
+  assert.equal(isDominantWin(match({ result: { winner: alpha, margin: "40 runs" } })), true);
+  assert.equal(isDominantWin(match({ result: { winner: alpha, margin: "39 runs" } })), false);
+  assert.equal(resultMultiplierFor(match({ stage: "final", result: { winner: alpha, margin: "9 wickets" } }), beta), 0.6);
+  assert.equal(resultMultiplierFor(match({ result: { winner: alpha, margin: "60 runs" } }), beta), 0.6);
+
+  // The run threshold scales with the format: 60 runs is not dominant in 50
+  // overs, but 100 is.
+  assert.equal(
+    isDominantWin({ totalOvers: 50, result: { winner: alpha, margin: "60 runs" } }),
+    false,
+  );
+  assert.equal(
+    isDominantWin({ totalOvers: 50, result: { winner: alpha, margin: "100 runs" } }),
+    true,
+  );
+
+  // Ties, draws, no-results and abandoned matches are neutral for both sides.
+  for (const resultType of ["tie", "draw", "no result", "abandoned"]) {
+    assert.equal(resultMultiplierFor(match({ result: { resultType } }), alpha), 1);
+    assert.equal(resultMultiplierFor(match({ result: { resultType } }), beta), 1);
+  }
+  // A team that was not in the match is not penalised.
+  assert.equal(resultMultiplierFor(match({ stage: "final" }), team("t-gamma", "Gamma")), 1);
+});
+
+test("the same 50 runs score more in a win than a loss, and most in a final", () => {
+  const alpha = team("t-alpha", "Alpha");
+  const beta = team("t-beta", "Beta");
+  const groupWinner = player("p-group-winner", "Group Winner");
+  const groupLoser = player("p-group-loser", "Group Loser");
+  const finalWinner = player("p-final-winner", "Final Winner");
+  const finalLoser = player("p-final-loser", "Final Loser");
+  const heavyLoser = player("p-heavy-loser", "Heavy Loser");
+  const filler = player("p-filler", "Filler");
+
+  const innings = (teamRef, batter, runs = 50) => ({
+    team: teamRef,
+    runs,
+    wickets: 1,
+    batting: [{ player: batter, runs, balls: 40, isOut: true }],
+    bowling: [],
+  });
+
+  const impact = computeTournamentImpact({
+    weights: plainWeights({
+      result: IMPACT_WEIGHTS.result,
+    }),
+    matches: [
+      {
+        _id: "group-close",
+        status: "completed",
+        stage: "group",
+        teams: [alpha, beta],
+        result: { resultType: "normal", winner: alpha, margin: "5 runs" },
+        innings: [
+          innings(alpha, groupWinner),
+          innings(beta, groupLoser),
+        ],
+      },
+      {
+        _id: "final-close",
+        status: "completed",
+        stage: "final",
+        teams: [alpha, beta],
+        result: { resultType: "normal", winner: alpha, margin: "5 runs" },
+        innings: [
+          innings(alpha, finalWinner),
+          innings(beta, finalLoser),
+        ],
+      },
+      {
+        _id: "group-heavy",
+        status: "completed",
+        stage: "group",
+        teams: [alpha, beta],
+        result: { resultType: "normal", winner: alpha, margin: "80 runs" },
+        innings: [
+          innings(alpha, filler),
+          innings(beta, heavyLoser),
+        ],
+      },
+    ],
+  });
+
+  const impactOf = (id) => impact.rows.find((row) => row.playerId === id).impact;
+  assert.equal(impactOf("p-group-winner"), 67.5, "50 x 1.35");
+  assert.equal(impactOf("p-group-loser"), 42.5, "50 x 0.85");
+  assert.equal(impactOf("p-final-winner"), 101.25, "50 x 1.35 x 1.50");
+  assert.equal(impactOf("p-final-loser"), 42.5, "the final stage never boosts a loser");
+  assert.equal(impactOf("p-heavy-loser"), 30, "50 x 0.60 after an 80-run defeat");
+});
+
 test("an unbeaten chase finish is worth more than the same runs when out", () => {
   const alpha = team("t-alpha", "Alpha");
   const beta = team("t-beta", "Beta");
@@ -119,7 +251,6 @@ test("an unbeaten chase finish is worth more than the same runs when out", () =>
         notOut: 2,
         chaseFinish: 12,
       },
-      team: { winMultiplier: 1 },
     }),
     matches: [
       {
@@ -175,7 +306,6 @@ test("an equal-run not-out innings is never scored below the dismissed innings",
   const impact = computeTournamentImpact({
     weights: plainWeights({
       batting: { ...plainWeights().batting, notOut: 2, chaseFinish: 12 },
-      team: { winMultiplier: 1 },
     }),
     matches: [
       {
@@ -241,20 +371,22 @@ test("a winning innings beats a heavier-scoring innings on the losing side", () 
   const losingRow = impact.rows.find((row) => row.playerId === "p-loser");
 
   // 75 runs + 8 fours + 6 for sixes + 16 for the fifty + 4 for SR 250 = 109.
-  // Team share (75 of 75) +20, unbeaten finish +2. Winning side: x1.2 = 157.2,
-  // plus the 20-point man-of-the-match award.
+  // Team share (75 of 75) +20, unbeaten finish +2 = 131. Winning side: x1.35 =
+  // 176.85, plus the 20-point man-of-the-match award. An unknown stage is
+  // neutral (x1.00).
   assert.equal(winningRow.breakdown.batting, 109);
   assert.equal(winningRow.breakdown.teamShare, 20);
   assert.equal(winningRow.breakdown.finishing, 2);
-  assert.equal(winningRow.breakdown.winBonus, 26.2);
+  assert.equal(winningRow.breakdown.winBonus, 45.85);
   assert.equal(winningRow.breakdown.manOfMatchBonus, 20);
-  assert.equal(winningRow.impact, 177.2);
+  assert.equal(winningRow.impact, 196.85);
 
-  // 100 + 6 + 4 + 32 + 2 for SR 153.85 = 144, plus a 20 team-share bonus and
-  // no win or award bonus.
+  // 100 + 6 + 4 + 32 + 2 for SR 153.85 = 144, plus a 20 team-share bonus = 164.
+  // The losing side is discounted by the competitive-loss multiplier (x0.85),
+  // so the win adjustment is negative, and there is no award bonus.
   assert.equal(losingRow.breakdown.teamShare, 20);
-  assert.equal(losingRow.impact, 164);
-  assert.equal(losingRow.breakdown.winBonus, 0);
+  assert.equal(losingRow.impact, 139.4);
+  assert.equal(losingRow.breakdown.winBonus, -24.6);
   assert.equal(losingRow.breakdown.manOfMatchBonus, 0);
 
   assert.equal(impact.leader.playerId, "p-winner", "the match-winner tops the ranking");
@@ -517,7 +649,7 @@ test("the public explanation is generated from the weights", () => {
   const lines = impactExplanation();
   assert.ok(lines.length >= 8);
   const text = lines.join(" ");
-  for (const needle of ["1 point per run", "25 points per wicket", "8 per catch", "1.2", "20 extra points", "16 for 50+", "Team share", "Finishing"]) {
+  for (const needle of ["1 point per run", "25 points per wicket", "8 per catch", "1.35", "20 extra points", "16 for 50+", "Team share", "Finishing"]) {
     assert.ok(text.includes(needle), `explanation should mention "${needle}"`);
   }
   assert.ok(Object.isFrozen(IMPACT_WEIGHTS));

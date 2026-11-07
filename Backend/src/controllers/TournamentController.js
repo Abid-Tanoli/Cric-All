@@ -56,13 +56,20 @@ const canSeeDrafts = (req) => req?.principalType === "admin";
 
 // Populates the official award players with just enough public profile and team
 // data for the "Official award" cards. Used by both the list and detail reads.
-const OFFICIAL_AWARD_POPULATE = OFFICIAL_AWARD_KEYS.flatMap((key) => [
+const OFFICIAL_AWARD_POPULATE = [
+  ...OFFICIAL_AWARD_KEYS.flatMap((key) => [
+    {
+      path: `officialAwards.${key}`,
+      select: "name playingRole role battingPosition team imageUrl",
+      populate: { path: "team", select: "name shortName logo" },
+    },
+  ]),
   {
-    path: `officialAwards.${key}`,
-    select: "name playingRole role battingPosition team",
+    path: "officialAwards.topPlayers",
+    select: "name playingRole role battingPosition team imageUrl",
     populate: { path: "team", select: "name shortName logo" },
   },
-]);
+];
 
 const MIN_TEAMS_BY_TYPE = {
   knockout: 2,
@@ -280,7 +287,25 @@ export const getTournament = async (req, res) => {
     // Fix B: detail-by-id stays reachable (ids are unguessable) but a guest's
     // tournament page does not carry a hidden team's standings, matches or
     // honour. The roster used to be populated with whole Player documents here.
-    stripHiddenTeamRefs(tournament, new Set(await hiddenTeamIds()));
+    const hidden = new Set(await hiddenTeamIds());
+    stripHiddenTeamRefs(tournament, hidden);
+    const officialAwards = tournament.officialAwards;
+    if (officialAwards) {
+      const belongsToHiddenTeam = (player) => {
+        const team = player?.team;
+        const teamId = team && typeof team === "object" ? team._id : team;
+        return Boolean(teamId && hidden.has(String(teamId)));
+      };
+      for (const key of ["playerOfTournament", "bestBatsman", "bestBowler"]) {
+        if (belongsToHiddenTeam(officialAwards[key])) officialAwards[key] = null;
+      }
+      if (Array.isArray(officialAwards.topPlayers)) {
+        officialAwards.topPlayers = officialAwards.topPlayers.filter((player) => !belongsToHiddenTeam(player));
+        if (officialAwards.topPlayers.length) {
+          officialAwards.playerOfTournament = officialAwards.topPlayers[0];
+        }
+      }
+    }
 
     res.status(200).json(tournament);
   } catch (error) {
@@ -922,8 +947,10 @@ export const setTournamentOfficialAwards = async (req, res) => {
 
     // Only valid ids are looked up. An invalid id never reaches Mongoose (which
     // would throw a CastError) — the pure validator reports it field-by-field.
-    const requestedPlayerIds = OFFICIAL_AWARD_KEYS
-      .map((key) => req.body?.[key])
+    const requestedPlayerIds = [
+      ...OFFICIAL_AWARD_KEYS.map((key) => req.body?.[key]),
+      ...(Array.isArray(req.body?.topPlayers) ? req.body.topPlayers : []),
+    ]
       .map((value) => (value && typeof value === "object" ? value._id ?? value.id : value))
       .map((value) => (value === null || value === undefined ? "" : String(value).trim()))
       .filter((value) => value && mongoose.isValidObjectId(value));
@@ -956,8 +983,14 @@ export const setTournamentOfficialAwards = async (req, res) => {
         : tournament.officialAwards)
       : {};
     const next = { ...current };
-    for (const key of OFFICIAL_AWARD_KEYS) {
+    for (const key of ["bestBatsman", "bestBowler"]) {
       if (data[key] !== undefined) next[key] = data[key] || null;
+    }
+    if (data.topPlayers !== undefined) {
+      // The ordered podium is the source of truth; the alias always mirrors
+      // its first place so older readers keep working.
+      next.topPlayers = data.topPlayers;
+      next.playerOfTournament = data.topPlayers[0] || null;
     }
     if (data.note !== undefined) next.note = data.note || "";
     tournament.officialAwards = next;
@@ -981,6 +1014,7 @@ export const setTournamentOfficialAwards = async (req, res) => {
       targetLabel: tournament.name,
       metadata: {
         playerOfTournament: tournament.officialAwards?.playerOfTournament || null,
+        topPlayers: tournament.officialAwards?.topPlayers || [],
         bestBatsman: tournament.officialAwards?.bestBatsman || null,
         bestBowler: tournament.officialAwards?.bestBowler || null,
         note: tournament.officialAwards?.note || "",

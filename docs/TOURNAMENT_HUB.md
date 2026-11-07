@@ -382,32 +382,40 @@ maths anywhere else. `Bracket` / `Awards` tabs drop in via the registry (§2).
 ## 9. Player of the Tournament and official awards
 
 The computed ranking lives in `Backend/src/services/tournamentImpact.js`. Every
-weight is in its single `IMPACT_WEIGHTS` block, and the public "How points are
-calculated" text is generated from that block, so the explanation cannot drift
-from the maths.
+scoring weight and result threshold is in its single `IMPACT_WEIGHTS` block, and
+the public "How points are calculated" text is generated from those constants.
 
-Match points are `batting + bowling + fielding + teamShare + finishing`, then
-multiplied by the win factor (`1.2`) for a player on the winning side, and added
-across the tournament together with a flat player-of-the-match bonus. Team share
-rewards the player's proportion of his side's runs and of the wickets his side
-took. Finishing gives a small credit for an unbeaten innings and a larger credit
-when that innings completes a successful run chase. No organiser pick, override
-or per-player rule feeds into these points.
+For each match, batting, bowling, fielding, team-share and finishing points are
+added, then multiplied by the result factor. A win is worth `1.35` times the
+stage weight: group/league `1.00`, quarter-final `1.10`, semi-final `1.25` and
+final `1.50`. The stage weight applies only to the winning side. A competitive
+loss is multiplied by `0.85`; a dominant loss is multiplied by `0.60` when the
+winner takes at least 8 wickets or wins by at least 40 runs in a 20-over match.
+The run margin threshold scales with the match's total overs. Ties, no-results
+and abandoned matches use `1.00` for both sides. Man of the Match remains a flat
+`+20` outside the result multiplier. Chase-finishing and team-share points pass
+through the same multiplier as the other match components. Wins count more,
+finals and semi-finals count most, and performances in a lost match count less,
+especially when the defeat was dominant. These rules are uniform; organiser
+choices and player identity never affect points or ranking.
 
-Organisers may separately confirm `Tournament.officialAwards`
-(`playerOfTournament`, `bestBatsman`, `bestBowler`, optional `note`) through
-`PUT /api/tournaments/:id/official-awards` or the Admin tournament **Awards** tab.
-The server validates that each player belongs to one of the tournament's teams
-or squads, rejects invalid ids, and audits the change. The public Awards tab and
-Player of the Tournament card label these picks **Official award** and fall back
-in this order:
+Organisers may separately set `Tournament.officialAwards.topPlayers`, an ordered
+list of up to three distinct squad/team players. Place one is also the
+`playerOfTournament` compatibility alias; places two and three are optional but
+cannot contain gaps. The same form sets `bestBatsman`, `bestBowler` and an
+optional note through `PUT /api/tournaments/:id/official-awards` or the Admin
+tournament **Awards** tab. Invalid ids, duplicate players, gaps and players
+outside the tournament are rejected before anything is saved; changes are
+audited and refresh the stats cache.
 
-1. `officialAwards.*` (organiser-confirmed, labelled **Official award**)
-2. `awards.*` (the older manual honours field)
-3. the current stats leaders (labelled **Derived from stats**)
-
-Official awards are presentation only: they never change the computed points,
-the leader, or the ranking order.
+The public stats response includes populated `officialAwards.topPlayers` and a
+`playerOfTournament.topPlayers` list for display. If the organisers have not set
+a podium, the latter contains the current computed top three and is labelled
+**Top 3 by impact points**. An organiser-set podium is labelled **Official Top 3**.
+The detail and stats payloads include player name, team and photo, while hidden
+team players remain suppressed. The podium is presentation only: it never
+changes computed points, the ranking leader, or the order and values in the
+ranking list below it.
 
 
 ---

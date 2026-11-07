@@ -32,13 +32,72 @@ const Breakdown = ({ row }) => {
   );
 };
 
+const PodiumPlayer = ({ player, position }) => {
+  const first = position === 1;
+  const initials = (player.name || "?")
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join("")
+    .toUpperCase() || "?";
+  const size = first ? "h-28 w-28 text-3xl" : "h-20 w-20 text-2xl";
+
+  return (
+    <div
+      className={`flex min-w-0 flex-col items-center rounded-xl border border-cric-border bg-cric-card px-3 py-4 text-center ${
+        first ? "order-1 md:order-2 md:scale-105" : position === 2 ? "order-2 md:order-1 md:mt-6" : "order-3 md:mt-6"
+      }`}
+      data-testid={`podium-place-${position}`}
+    >
+      <span className="rounded-full bg-amber-500 px-3 py-1 text-[10px] font-black uppercase text-white">
+        {position === 1 ? "1st place" : position === 2 ? "2nd place" : "3rd place"}
+      </span>
+      {player.imageUrl ? (
+        <img
+          src={player.imageUrl}
+          alt={player.name || "Player"}
+          className={`${size} mt-3 rounded-full border-4 ${first ? "border-amber-400" : "border-cric-border"} object-cover`}
+        />
+      ) : (
+        <div
+          aria-label={`${player.name || "Player"} avatar`}
+          className={`${size} mt-3 flex items-center justify-center rounded-full border-4 ${first ? "border-amber-400 bg-amber-500/15 text-amber-700" : "border-cric-border bg-cric-bg text-cric-muted"} font-black`}
+          data-testid={`podium-avatar-${player.playerId || position}`}
+        >
+          {initials}
+        </div>
+      )}
+      <div className="mt-3 min-w-0">
+        {player.playerId ? (
+          <Link to={`/players/${player.playerId}`} className="break-words font-black text-cric-text hover:text-cric-accent">
+            {player.name || "Player"}
+          </Link>
+        ) : (
+          <span className="break-words font-black text-cric-text">{player.name || "Player"}</span>
+        )}
+        <div className="mt-1 break-words text-xs text-cric-muted">{player.team || ""}</div>
+      </div>
+    </div>
+  );
+};
+
 export default function PlayerOfTournament({ data, officialAwards }) {
   const [openId, setOpenId] = useState(null);
   const rows = Array.isArray(data?.rows) ? data.rows : [];
   const leader = data?.leader || rows[0] || null;
   const explanation = Array.isArray(data?.explanation) ? data.explanation : [];
-  const official = officialAwards?.playerOfTournament || data?.officialAward || null;
   const officialNote = officialAwards?.note || data?.officialNote || "";
+  const officialTopPlayers = Array.isArray(officialAwards?.topPlayers)
+    ? officialAwards.topPlayers
+    : [];
+  const legacyOfficialPlayer = officialAwards?.playerOfTournament || data?.officialAward || null;
+  const podiumPlayers = officialTopPlayers.length
+    ? officialTopPlayers.slice(0, 3)
+    : legacyOfficialPlayer
+      ? [{ ...legacyOfficialPlayer, position: 1 }]
+      : (Array.isArray(data?.topPlayers) ? data.topPlayers : rows.slice(0, 3));
+  const isOfficialPodium = officialTopPlayers.length > 0 || Boolean(legacyOfficialPlayer);
 
   return (
     <div className="bg-cric-card rounded-2xl shadow-sm overflow-hidden border border-cric-border">
@@ -55,35 +114,24 @@ export default function PlayerOfTournament({ data, officialAwards }) {
         </p>
       </div>
 
-      {official && (
-        <div
-          data-testid="official-player-of-tournament"
-          className="border-b border-amber-200 bg-amber-50 px-6 py-4"
-        >
-          <div className="text-[10px] font-black uppercase tracking-widest text-amber-700">
-            Official award
+      {podiumPlayers.length > 0 && (
+        <section className="border-b border-cric-border px-4 py-5 sm:px-6" data-testid="tournament-podium">
+          <h4 className="mb-4 text-center text-xs font-black uppercase tracking-widest text-cric-muted">
+            {isOfficialPodium ? "Official Top 3" : "Top 3 by impact points"}
+          </h4>
+          <div className="mx-auto grid max-w-4xl grid-cols-1 items-end gap-3 md:grid-cols-3">
+            {podiumPlayers.slice(0, 3).map((player, index) => (
+              <PodiumPlayer
+                key={player.playerId || player.position || index}
+                player={player}
+                position={player.position || index + 1}
+              />
+            ))}
           </div>
-          <div className="mt-1 flex flex-wrap items-baseline gap-x-2">
-            {official.playerId ? (
-              <Link
-                to={`/players/${official.playerId}`}
-                className="text-lg font-black text-cric-text hover:text-cric-accent"
-              >
-                {official.name}
-              </Link>
-            ) : (
-              <span className="text-lg font-black text-cric-text">{official.name}</span>
-            )}
-            {official.team ? <span className="text-xs text-cric-muted">{official.team}</span> : null}
-          </div>
-          {official.playingRole ? (
-            <div className="text-xs text-cric-muted">{official.playingRole}</div>
+          {officialNote && isOfficialPodium ? (
+            <p className="mx-auto mt-3 max-w-3xl text-center text-xs text-cric-muted">{officialNote}</p>
           ) : null}
-          {officialNote ? <p className="mt-2 text-xs text-cric-muted">{officialNote}</p> : null}
-          <p className="mt-2 text-[10px] text-cric-muted">
-            Selected by the organisers. This label never changes the computed points or ranking below.
-          </p>
-        </div>
+        </section>
       )}
 
       {!leader && (
@@ -145,7 +193,7 @@ export default function PlayerOfTournament({ data, officialAwards }) {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {rows.slice(0, 10).map((row) => {
+              {rows.map((row) => {
                 const key = row.playerId || row.name;
                 const open = openId === key;
                 return (

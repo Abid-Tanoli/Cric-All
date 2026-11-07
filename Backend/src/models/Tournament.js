@@ -113,6 +113,9 @@ const tournamentSchema = new mongoose.Schema(
     // public explanation (for example, the presentation citation).
     officialAwards: {
       playerOfTournament: { type: mongoose.Schema.Types.ObjectId, ref: "Player", default: null },
+      // Ordered organiser podium: 1st, 2nd, 3rd. `playerOfTournament` above is a
+      // compatibility alias for the first entry and is kept in sync with it.
+      topPlayers: [{ type: mongoose.Schema.Types.ObjectId, ref: "Player" }],
       bestBatsman: { type: mongoose.Schema.Types.ObjectId, ref: "Player", default: null },
       bestBowler: { type: mongoose.Schema.Types.ObjectId, ref: "Player", default: null },
       note: { type: String, default: "", trim: true, maxlength: 500 },

@@ -108,6 +108,7 @@ async function makeKnockout(admin) {
   const teams = [teamA, teamB, teamC];
 
   const playerInA = await Player.create({ name: `OPENCODE_TEST Awards Batter ${counter}`, team: teamA._id });
+  const playerInA2 = await Player.create({ name: `OPENCODE_TEST Awards All-rounder ${counter}`, team: teamA._id });
   const playerInB = await Player.create({ name: `OPENCODE_TEST Awards Bowler ${counter}`, team: teamB._id });
   // Named in a squad but not on either team â€” the sort of stray id an award
   // form must refuse.
@@ -122,12 +123,12 @@ async function makeKnockout(admin) {
     teams: teams.map((t) => t._id),
     createdByAdmin: admin?.user?._id || null,
     tournamentSquads: [
-      { team: teamA._id, players: [playerInA._id] },
+      { team: teamA._id, players: [playerInA._id, playerInA2._id] },
       { team: teamB._id, players: [playerInB._id] },
     ],
   });
 
-  return { teamA, teamB, teamC, playerInA, playerInB, outsider, tournament };
+  return { teamA, teamB, teamC, playerInA, playerInA2, playerInB, outsider, tournament };
 }
 
 async function makeMatch({ teamA, teamB, player, status }) {
@@ -334,6 +335,7 @@ test("official awards: squad and tournament-team players are accepted, partial u
   assert.equal(result.ok, true);
   assert.deepEqual(result.data, {
     playerOfTournament: squadPlayer,
+    topPlayers: [squadPlayer],
     bestBatsman: teamPlayer,
     bestBowler: null,
     note: "Presented at the final",
@@ -368,6 +370,119 @@ test("official awards: an invalid id and an overlong note are refused field-by-f
   assert.match(longNote.errors.note, /500 characters/);
 });
 
+test("official awards: the podium is ordered, distinct and gap-free, and the alias mirrors 1st", () => {
+  const teamId = "aaaaaaaaaaaaaaaaaaaaaaaa";
+  const first = "cccccccccccccccccccccccc";
+  const second = "dddddddddddddddddddddddd";
+  const third = "eeeeeeeeeeeeeeeeeeeeeeee";
+
+  const result = validateOfficialAwards({
+    body: { topPlayers: [first, second, third] },
+    teamIds: [teamId],
+    squadPlayerIds: [first, second, third],
+  });
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.data.topPlayers, [first, second, third]);
+  assert.equal(result.data.playerOfTournament, first);
+
+  // Trailing blanks are ignored, so a two-player podium is valid.
+  const two = validateOfficialAwards({
+    body: { topPlayers: [first, second, ""] },
+    teamIds: [teamId],
+    squadPlayerIds: [first, second, third],
+  });
+  assert.equal(two.ok, true);
+  assert.deepEqual(two.data.topPlayers, [first, second]);
+
+  // A single alias save is a one-place podium.
+  const aliasOnly = validateOfficialAwards({
+    body: { playerOfTournament: second },
+    teamIds: [teamId],
+    squadPlayerIds: [first, second, third],
+  });
+  assert.equal(aliasOnly.ok, true);
+  assert.deepEqual(aliasOnly.data.topPlayers, [second]);
+  assert.equal(aliasOnly.data.playerOfTournament, second);
+});
+
+test("official awards: a podium cannot repeat a player, skip a place, or exceed three", () => {
+  const teamId = "aaaaaaaaaaaaaaaaaaaaaaaa";
+  const players = [
+    "cccccccccccccccccccccccc",
+    "dddddddddddddddddddddddd",
+    "eeeeeeeeeeeeeeeeeeeeeeee",
+    "ffffffffffffffffffffffff",
+  ];
+
+  const duplicate = validateOfficialAwards({
+    body: { topPlayers: [players[0], players[0]] },
+    teamIds: [teamId],
+    squadPlayerIds: players,
+  });
+  assert.equal(duplicate.ok, false);
+  assert.match(duplicate.errors.topPlayers, /different player/);
+
+  const gap = validateOfficialAwards({
+    body: { topPlayers: [players[0], "", players[2]] },
+    teamIds: [teamId],
+    squadPlayerIds: players,
+  });
+  assert.equal(gap.ok, false);
+  assert.match(gap.errors.topPlayers, /cannot skip a place/);
+
+  const tooMany = validateOfficialAwards({
+    body: { topPlayers: players },
+    teamIds: [teamId],
+    squadPlayerIds: players,
+  });
+  assert.equal(tooMany.ok, false);
+  assert.match(tooMany.errors.topPlayers, /at most 3/);
+});
+
+test("official awards: podium ids are validated and must belong to the tournament", () => {
+  const teamId = "aaaaaaaaaaaaaaaaaaaaaaaa";
+  const known = "cccccccccccccccccccccccc";
+
+  const invalid = validateOfficialAwards({
+    body: { topPlayers: [known, "not-an-id"] },
+    teamIds: [teamId],
+    squadPlayerIds: [known],
+  });
+  assert.equal(invalid.ok, false);
+  assert.match(invalid.errors.topPlayers, /Place 2 is not a valid player id/);
+
+  const outsider = validateOfficialAwards({
+    body: { topPlayers: ["eeeeeeeeeeeeeeeeeeeeeeee"] },
+    teamIds: [teamId],
+    squadPlayerIds: [known],
+  });
+  assert.equal(outsider.ok, false);
+  assert.match(outsider.errors.topPlayers, /one of this tournament's teams/);
+});
+
+test("official awards: a topPlayers pick that disagrees with the alias is refused", () => {
+  const teamId = "aaaaaaaaaaaaaaaaaaaaaaaa";
+  const first = "cccccccccccccccccccccccc";
+  const second = "dddddddddddddddddddddddd";
+
+  const refused = validateOfficialAwards({
+    body: { topPlayers: [first, second], playerOfTournament: second },
+    teamIds: [teamId],
+    squadPlayerIds: [first, second],
+  });
+  assert.equal(refused.ok, false);
+  assert.match(refused.errors.playerOfTournament, /same as the 1st-place pick/);
+
+  const agreed = validateOfficialAwards({
+    body: { topPlayers: [first, second], playerOfTournament: first },
+    teamIds: [teamId],
+    squadPlayerIds: [first, second],
+  });
+  assert.equal(agreed.ok, true);
+  assert.deepEqual(agreed.data.topPlayers, [first, second]);
+  assert.equal(agreed.data.playerOfTournament, first);
+});
+
 test("official awards route: an admin saves, public stats expose, and the award never changes the ranking", async () => {
   const { token } = await makeAdmin();
   const { teamA, teamB, playerInA, playerInB, tournament } = await makeKnockout({
@@ -400,6 +515,138 @@ test("official awards route: an admin saves, public stats expose, and the award 
   const audit = await AuditLog.findOne({ action: "tournament.official_awards_set" });
   assert.ok(audit, "setting official awards is audited");
   assert.equal(String(audit.targetId), String(tournament._id));
+});
+
+test("public tournament detail preserves a legacy official player-of-tournament alias", async () => {
+  const { playerInA, tournament } = await makeKnockout({
+    user: await User.findOne({ role: "admin" }),
+  });
+  tournament.officialAwards.playerOfTournament = playerInA._id;
+  await tournament.save();
+
+  const detail = await call("GET", `/tournaments/${tournament._id}`, null);
+  assert.equal(detail.status, 200);
+  assert.equal(detail.body.officialAwards.playerOfTournament.name, playerInA.name);
+  assert.deepEqual(detail.body.officialAwards.topPlayers, []);
+});
+
+test("official awards route: saves the three-place podium, syncs the alias and exposes photos", async () => {
+  const { token } = await makeAdmin();
+  const { teamA, playerInA, playerInA2, playerInB, tournament } = await makeKnockout({
+    user: await User.findOne({ role: "admin" }),
+  });
+  await Player.updateOne({ _id: playerInA._id }, { imageUrl: "https://example.test/winner.png" });
+
+  const podium = [playerInA, playerInA2, playerInB].map((p) => p._id.toString());
+  const saved = await call("PUT", `/tournaments/${tournament._id}/official-awards`, token, {
+    topPlayers: podium,
+    bestBatsman: playerInA._id.toString(),
+    bestBowler: playerInB._id.toString(),
+  });
+
+  assert.equal(saved.status, 200, JSON.stringify(saved.body));
+  assert.deepEqual(
+    saved.body.tournament.officialAwards.topPlayers.map((p) => p.name),
+    [playerInA.name, playerInA2.name, playerInB.name],
+  );
+  assert.equal(
+    String(saved.body.tournament.officialAwards.playerOfTournament._id),
+    String(playerInA._id),
+    "the compatibility alias mirrors 1st place",
+  );
+
+  const stats = await gatherTournamentStats(tournament._id);
+  assert.deepEqual(
+    stats.officialAwards.topPlayers.map((p) => p.playerId),
+    podium,
+  );
+  assert.equal(stats.officialAwards.topPlayers[0].imageUrl, "https://example.test/winner.png");
+  assert.equal(stats.officialAwards.topPlayers[0].team, teamA.name);
+  assert.equal(stats.officialAwards.playerOfTournament.playerId, podium[0]);
+  // The organiser pick never alters the computed ranking.
+  assert.deepEqual(stats.playerOfTournament.rows, []);
+
+  const detail = await call("GET", `/tournaments/${tournament._id}`, null);
+  assert.deepEqual(
+    detail.body.officialAwards.topPlayers.map((p) => p.name),
+    [playerInA.name, playerInA2.name, playerInB.name],
+  );
+  assert.equal(detail.body.officialAwards.topPlayers[0].imageUrl, "https://example.test/winner.png");
+});
+
+test("stats payload falls back to the computed top three and uses the match stage", async () => {
+  const { teamA, teamB, playerInA, playerInB, tournament } = await makeKnockout({
+    user: await User.findOne({ role: "admin" }),
+  });
+  await Player.updateOne({ _id: playerInA._id }, { imageUrl: "https://example.test/derived.png" });
+
+  await Match.create({
+    title: "OPENCODE_TEST Derived Podium Final",
+    venue: "Ground",
+    matchType: "T20",
+    totalOvers: 20,
+    startAt: new Date("2026-10-18T10:00:00.000Z"),
+    tournament: tournament._id,
+    teams: [teamA._id, teamB._id],
+    stage: "final",
+    stageLabel: "Final",
+    status: "completed",
+    result: {
+      resultType: "normal",
+      winner: teamA._id,
+      margin: "5 runs",
+      description: "Alpha won by 5 runs",
+    },
+    innings: [
+      {
+        team: teamA._id,
+        runs: 20,
+        wickets: 1,
+        balls: 20,
+        batting: [{ player: playerInA._id, runs: 20, balls: 20, isOut: true }],
+        bowling: [],
+      },
+      {
+        team: teamB._id,
+        runs: 10,
+        wickets: 1,
+        balls: 10,
+        batting: [{ player: playerInB._id, runs: 10, balls: 10, isOut: true }],
+        bowling: [],
+      },
+    ],
+  });
+
+  const stats = await gatherTournamentStats(tournament._id);
+  const ranking = stats.playerOfTournament;
+  assert.equal(ranking.topPlayersSource, "impact");
+  assert.deepEqual(
+    ranking.topPlayers.map((player) => player.playerId),
+    ranking.rows.slice(0, 3).map((player) => player.playerId),
+  );
+  assert.equal(ranking.topPlayers[0].name, playerInA.name);
+  assert.equal(ranking.topPlayers[0].team, teamA.name);
+  assert.equal(ranking.topPlayers[0].imageUrl, "https://example.test/derived.png");
+  assert.equal(ranking.rows.find((row) => row.playerId === String(playerInA._id)).impact, 81);
+  assert.deepEqual(stats.officialAwards.topPlayers, []);
+});
+
+test("official awards route: a podium with a duplicate player is refused and nothing is written", async () => {
+  const { token } = await makeAdmin();
+  const { playerInA, tournament } = await makeKnockout({
+    user: await User.findOne({ role: "admin" }),
+  });
+  const id = playerInA._id.toString();
+
+  const refused = await call("PUT", `/tournaments/${tournament._id}/official-awards`, token, {
+    topPlayers: [id, id],
+  });
+
+  assert.equal(refused.status, 400);
+  assert.match(refused.body.errors.topPlayers, /different player/);
+  const unchanged = await Tournament.findById(tournament._id).lean();
+  assert.deepEqual(unchanged.officialAwards?.topPlayers || [], []);
+  assert.ok(!unchanged.officialAwards?.playerOfTournament);
 });
 
 test("official awards route: a player from a team outside the tournament is refused", async () => {

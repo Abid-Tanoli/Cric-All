@@ -117,7 +117,7 @@ describe("tournament Stats tab", () => {
     expect(screen.getByText(/provisional until the Final/i)).toBeInTheDocument();
     expect(screen.getAllByText("Wali Amber").length).toBeGreaterThan(1);
     expect(screen.getAllByText("318.4").length).toBeGreaterThan(0);
-    expect(screen.getByText("Ijaz Koistani")).toBeInTheDocument();
+    expect(screen.getAllByText("Ijaz Koistani").length).toBeGreaterThan(1);
     expect(screen.getByText("275.5")).toBeInTheDocument();
   });
 
@@ -153,12 +153,50 @@ describe("tournament Stats tab", () => {
       },
     });
 
-    expect(screen.getByTestId("official-player-of-tournament")).toBeInTheDocument();
-    expect(screen.getByText("Official award")).toBeInTheDocument();
+    expect(screen.getByText("Official Top 3")).toBeInTheDocument();
     expect(screen.getByText("Raheel Official")).toBeInTheDocument();
     expect(screen.getByText("Selected by the tournament committee")).toBeInTheDocument();
     // The computed impact leader remains the ranking leader.
     expect(screen.getAllByText("Wali Amber").length).toBeGreaterThan(1);
+  });
+
+  it("shows the official podium above the unchanged impact ranking", () => {
+    renderTab({
+      ...stats,
+      officialAwards: {
+        topPlayers: [
+          { playerId: "p9", name: "Official First", team: "Alpha CC", imageUrl: "/first.jpg", position: 1 },
+          { playerId: "p8", name: "Official Second", team: "Beta CC", imageUrl: "", position: 2 },
+        ],
+        note: "Chosen by organizers",
+      },
+    });
+
+    expect(screen.getByText("Official Top 3")).toBeInTheDocument();
+    expect(screen.getByTestId("podium-place-1")).toContainElement(screen.getByText("Official First"));
+    expect(screen.getByTestId("podium-avatar-p8")).toHaveTextContent("OS");
+    expect(screen.getByText("Chosen by organizers")).toBeInTheDocument();
+    expect(screen.getAllByText("Wali Amber").length).toBeGreaterThan(1);
+    expect(screen.getAllByText("318.4").length).toBeGreaterThan(1);
+  });
+
+  it("falls back to the computed top three and uses initials when photos are missing", () => {
+    renderTab({
+      ...stats,
+      officialAwards: { topPlayers: [], playerOfTournament: null },
+      playerOfTournament: {
+        ...stats.playerOfTournament,
+        rows: [
+          ...stats.playerOfTournament.rows,
+          { playerId: "p4", rank: 3, name: "Third Player", team: "Gamma CC", impact: 120 },
+        ],
+        topPlayers: undefined,
+      },
+    });
+
+    expect(screen.getByText("Top 3 by impact points")).toBeInTheDocument();
+    expect(screen.getByTestId("podium-place-3").textContent).toContain("Third Player");
+    expect(screen.getByTestId("podium-avatar-p1")).toHaveTextContent("WA");
   });
 
   it("stays graceful with no data yet", () => {

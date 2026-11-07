@@ -22,6 +22,9 @@ export const OFFICIAL_AWARD_KEYS = Object.freeze([
   "bestBowler",
 ]);
 
+/** The organiser podium has at most three places: 1st, 2nd and 3rd. */
+export const PODIUM_SIZE = 3;
+
 export const OFFICIAL_AWARDS_NOTE_MAX = 500;
 
 const hasOwn = (object, key) => Object.prototype.hasOwnProperty.call(object || {}, key);
@@ -81,9 +84,83 @@ export function validateOfficialAwards({
   };
 
   const data = {};
-  for (const key of OFFICIAL_AWARD_KEYS) {
+  // The compatibility alias and the ordered podium are validated together
+  // below; best batsman/bowler are independent single-player awards.
+  for (const key of ["bestBatsman", "bestBowler"]) {
     const value = parsePlayer(key);
     if (value !== undefined) data[key] = value;
+  }
+
+  const hasTopPlayers = hasOwn(body, "topPlayers");
+  const hasAlias = hasOwn(body, "playerOfTournament");
+  let topPlayers;
+  let alias;
+
+  if (hasAlias) alias = parsePlayer("playerOfTournament");
+
+  if (hasTopPlayers) {
+    const raw = body.topPlayers;
+    if (!Array.isArray(raw)) {
+      errors.topPlayers = `Top players must be a list of up to ${PODIUM_SIZE} players.`;
+    } else {
+      // Drop blank trailing places so ["a", "", ""] means a one-player podium,
+      // but keep interior blanks so a skipped place can be rejected.
+      const values = raw.map((value) => cleanId(value));
+      while (values.length && !values[values.length - 1]) values.pop();
+
+      if (values.length > PODIUM_SIZE) {
+        errors.topPlayers = `The podium can have at most ${PODIUM_SIZE} players.`;
+      } else if (values.some((id) => !id)) {
+        errors.topPlayers =
+          "The podium cannot skip a place. Fill 1st before 2nd, and 2nd before 3rd.";
+      } else {
+        const ids = [];
+        for (let index = 0; index < values.length; index += 1) {
+          const id = values[index];
+          if (!mongoose.isValidObjectId(id)) {
+            errors.topPlayers = `Place ${index + 1} is not a valid player id.`;
+            break;
+          }
+          if (!teamSet.size) {
+            errors.topPlayers = "This tournament has no teams to award yet.";
+            break;
+          }
+          if (!squadSet.has(id)) {
+            const teamId = teamOf(id);
+            if (!teamId || !teamSet.has(teamId)) {
+              errors.topPlayers = "The player must belong to one of this tournament's teams.";
+              break;
+            }
+          }
+          if (ids.includes(id)) {
+            errors.topPlayers = "Each podium place must be a different player.";
+            break;
+          }
+          ids.push(id);
+        }
+        if (!errors.topPlayers) topPlayers = ids;
+      }
+    }
+  }
+
+  if (hasTopPlayers) {
+    if (!errors.topPlayers) {
+      const first = topPlayers[0] || null;
+      // When both are supplied they must agree; the podium is the source of
+      // truth and the alias is always rewritten from its first place.
+      if (hasAlias && !errors.playerOfTournament && alias !== first) {
+        errors.playerOfTournament =
+          "The Player of the Tournament must be the same as the 1st-place pick.";
+      }
+      if (!errors.playerOfTournament) {
+        data.topPlayers = topPlayers;
+        data.playerOfTournament = first;
+      }
+    }
+  } else if (hasAlias && !errors.playerOfTournament) {
+    // A legacy/single-pick save is a one-place podium (or a clear).
+    data.topPlayers = alias ? [alias] : [];
+    data.playerOfTournament = alias || null;
   }
 
   if (hasOwn(body, "note")) {
@@ -114,7 +191,7 @@ export function validateOfficialAwards({
 export function shapeOfficialAward(ref, { official = true } = {}) {
   if (!ref) return null;
   if (typeof ref !== "object") {
-    return { playerId: String(ref), name: "", team: "", playingRole: "", official };
+    return { playerId: String(ref), name: "", team: "", playingRole: "", imageUrl: "", official };
   }
   const teamRef = ref.team;
   const team =
@@ -130,6 +207,7 @@ export function shapeOfficialAward(ref, { official = true } = {}) {
     team,
     teamId,
     playingRole: ref.playingRole || ref.role || "",
+    imageUrl: ref.imageUrl || "",
     official,
   };
 }
@@ -144,6 +222,20 @@ export function publicOfficialAwards(tournament) {
   for (const key of OFFICIAL_AWARD_KEYS) {
     shaped[key] = shapeOfficialAward(source[key]);
   }
+
+  const sourceTop = Array.isArray(source.topPlayers) ? source.topPlayers : [];
+  shaped.topPlayers = sourceTop
+    .map((ref) => shapeOfficialAward(ref))
+    .filter(Boolean)
+    .map((player, index) => ({ ...player, position: index + 1 }));
+
+  // Legacy documents (and saves that only sent the alias) carry no topPlayers
+  // array. Mirror the alias as a one-player podium so the public page has a
+  // single shape to render.
+  if (!shaped.topPlayers.length && shaped.playerOfTournament) {
+    shaped.topPlayers = [{ ...shaped.playerOfTournament, position: 1 }];
+  }
+
   shaped.note = source.note || "";
   return shaped;
 }
