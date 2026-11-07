@@ -379,6 +379,47 @@ maths anywhere else. `Bracket` / `Awards` tabs drop in via the registry (§2).
 
 ---
 
+## 9. Player of the Tournament and official awards
+
+The computed ranking lives in `Backend/src/services/tournamentImpact.js`. Every
+scoring weight and result threshold is in its single `IMPACT_WEIGHTS` block, and
+the public "How points are calculated" text is generated from those constants.
+
+For each match, batting, bowling, fielding, team-share and finishing points are
+added, then multiplied by the result factor. A win is worth `1.35` times the
+stage weight: group/league `1.00`, quarter-final `1.10`, semi-final `1.25` and
+final `1.50`. The stage weight applies only to the winning side. A competitive
+loss is multiplied by `0.85`; a dominant loss is multiplied by `0.60` when the
+winner takes at least 8 wickets or wins by at least 40 runs in a 20-over match.
+The run margin threshold scales with the match's total overs. Ties, no-results
+and abandoned matches use `1.00` for both sides. Man of the Match remains a flat
+`+20` outside the result multiplier. Chase-finishing and team-share points pass
+through the same multiplier as the other match components. Wins count more,
+finals and semi-finals count most, and performances in a lost match count less,
+especially when the defeat was dominant. These rules are uniform; organiser
+choices and player identity never affect points or ranking.
+
+Organisers may separately set `Tournament.officialAwards.topPlayers`, an ordered
+list of up to three distinct squad/team players. Place one is also the
+`playerOfTournament` compatibility alias; places two and three are optional but
+cannot contain gaps. The same form sets `bestBatsman`, `bestBowler` and an
+optional note through `PUT /api/tournaments/:id/official-awards` or the Admin
+tournament **Awards** tab. Invalid ids, duplicate players, gaps and players
+outside the tournament are rejected before anything is saved; changes are
+audited and refresh the stats cache.
+
+The public stats response includes populated `officialAwards.topPlayers` and a
+`playerOfTournament.topPlayers` list for display. If the organisers have not set
+a podium, the latter contains the current computed top three and is labelled
+**Top 3 by impact points**. An organiser-set podium is labelled **Official Top 3**.
+The detail and stats payloads include player name, team and photo, while hidden
+team players remain suppressed. The podium is presentation only: it never
+changes computed points, the ranking leader, or the order and values in the
+ranking list below it.
+
+
+---
+
 ## 9. Known gaps / not done
 
 - No push, no deploy, no production/VPS/DB access was performed.

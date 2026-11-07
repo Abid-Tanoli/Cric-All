@@ -56,6 +56,8 @@ export default function TournamentManagement() {
     const [filters, setFilters] = useState({ status: '', team: '' });
     const awardsFormBlank = { winner: '', runnerUp: '', playerOfTournament: '', bestBatsman: '', bestBowler: '' };
     const [awardsForm, setAwardsForm] = useState(awardsFormBlank);
+    const officialAwardsFormBlank = { topPlayers: ['', '', ''], bestBatsman: '', bestBowler: '', note: '' };
+    const [officialAwardsForm, setOfficialAwardsForm] = useState(officialAwardsFormBlank);
     const [awardSquads, setAwardSquads] = useState([]);
 
     const fetchTournaments = useCallback(async () => {
@@ -119,6 +121,21 @@ export default function TournamentManagement() {
             playerOfTournament: detail.awards?.playerOfTournament?._id || '',
             bestBatsman: detail.awards?.bestBatsman?._id || '',
             bestBowler: detail.awards?.bestBowler?._id || '',
+        });
+        const savedTop = Array.isArray(detail.officialAwards?.topPlayers)
+            ? detail.officialAwards.topPlayers.map((p) => p?._id || p || '')
+            : [];
+        if (!savedTop.length && detail.officialAwards?.playerOfTournament) {
+            // Legacy documents only carry the alias: it is the 1st-place pick.
+            savedTop.push(
+                detail.officialAwards.playerOfTournament?._id || detail.officialAwards.playerOfTournament,
+            );
+        }
+        setOfficialAwardsForm({
+            topPlayers: [savedTop[0] || '', savedTop[1] || '', savedTop[2] || ''],
+            bestBatsman: detail.officialAwards?.bestBatsman?._id || '',
+            bestBowler: detail.officialAwards?.bestBowler?._id || '',
+            note: detail.officialAwards?.note || '',
         });
     }, [detail]);
 
@@ -321,6 +338,33 @@ export default function TournamentManagement() {
             const errors = err.response?.data?.errors;
             const firstFieldError = errors && Object.values(errors)[0];
             showToast(firstFieldError || err.response?.data?.message || 'Failed to save awards', 'error');
+        }
+    };
+
+    const setPodiumPlace = (index, value) => {
+        setOfficialAwardsForm((form) => {
+            const next = [...form.topPlayers];
+            if (value) {
+                next[index] = value;
+            } else {
+                // Clearing a place closes the gap: 2nd becomes 1st, 3rd becomes
+                // 2nd. The server also refuses a podium with a skipped place.
+                next.splice(index, 1);
+                next.push('');
+            }
+            return { ...form, topPlayers: next.slice(0, 3) };
+        });
+    };
+
+    const saveOfficialAwards = async () => {
+        try {
+            const res = await api.put(`/tournaments/${selectedId}/official-awards`, officialAwardsForm);
+            showToast(res.data?.message || 'Official awards saved', 'success');
+            loadDetail(selectedId);
+        } catch (err) {
+            const errors = err.response?.data?.errors;
+            const firstFieldError = errors && Object.values(errors)[0];
+            showToast(firstFieldError || err.response?.data?.message || 'Failed to save official awards', 'error');
         }
     };
 
@@ -604,6 +648,90 @@ export default function TournamentManagement() {
                 </p>
             )}
             <button className={btnPrimary} onClick={saveAwards}>Save awards</button>
+
+            <div className="border-t border-slate-200 pt-5 mt-2 space-y-4">
+                <div>
+                    <h3 className="text-sm font-black uppercase tracking-wide text-[#031d44]">Official awards</h3>
+                    <p className="text-xs text-slate-500 mt-1">
+                        Organiser-confirmed Top 3 and awards, shown at the top of the public Player of the Tournament page. They do not change the computed points or ranking order.
+                    </p>
+                </div>
+                <div>
+                    <p className="text-xs font-bold text-slate-600 mb-2">Official Top 3 podium</p>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        {['1st', '2nd', '3rd'].map((place, index) => (
+                            <div key={place} className="flex flex-col gap-1 text-xs font-bold text-slate-600">
+                                <label htmlFor={`official-place-${index}`}>{place} place</label>
+                                <div className="flex gap-2">
+                                    <select
+                                        id={`official-place-${index}`}
+                                        aria-label={`Official ${place} place`}
+                                        className={`${inputCls} flex-1`}
+                                        value={officialAwardsForm.topPlayers[index] || ''}
+                                        onChange={(e) => setPodiumPlace(index, e.target.value)}
+                                    >
+                                        <option value="">Not awarded</option>
+                                        {awardPlayerOptions.map((p) => <option key={p.id} value={p.id}>{p.name} ({p.team})</option>)}
+                                    </select>
+                                    <button
+                                        type="button"
+                                        aria-label={`Clear official ${place} place`}
+                                        className="px-3 py-2 rounded-lg border border-slate-300 text-xs font-bold text-slate-600 hover:bg-slate-100"
+                                        onClick={() => setPodiumPlace(index, '')}
+                                    >
+                                        Clear
+                                    </button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                    <p className="mt-2 text-[11px] text-slate-500">
+                        The 1st-place pick is the official Player of the Tournament. Leave 2nd and 3rd empty for a one-player podium.
+                    </p>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {[
+                        ['bestBatsman', 'Official Best Batsman', 'Official best batsman'],
+                        ['bestBowler', 'Official Best Bowler', 'Official best bowler'],
+                    ].map(([field, label, ariaLabel]) => (
+                        <div key={field} className="flex flex-col gap-1 text-xs font-bold text-slate-600">
+                            <label htmlFor={`official-${field}`}>{label}</label>
+                            <div className="flex gap-2">
+                                <select
+                                    id={`official-${field}`}
+                                    aria-label={ariaLabel}
+                                    className={`${inputCls} flex-1`}
+                                    value={officialAwardsForm[field]}
+                                    onChange={(e) => setOfficialAwardsForm({ ...officialAwardsForm, [field]: e.target.value })}
+                                >
+                                    <option value="">Not awarded</option>
+                                    {awardPlayerOptions.map((p) => <option key={p.id} value={p.id}>{p.name} ({p.team})</option>)}
+                                </select>
+                                <button
+                                    type="button"
+                                    aria-label={`Clear ${label.toLowerCase()}`}
+                                    className="px-3 py-2 rounded-lg border border-slate-300 text-xs font-bold text-slate-600 hover:bg-slate-100"
+                                    onClick={() => setOfficialAwardsForm({ ...officialAwardsForm, [field]: '' })}
+                                >
+                                    Clear
+                                </button>
+                            </div>
+                        </div>
+                    ))}
+                    <label className="flex flex-col gap-1 text-xs font-bold text-slate-600 md:col-span-2">
+                        Note (optional)
+                        <textarea
+                            aria-label="Official awards note"
+                            className={`${inputCls} min-h-[70px]`}
+                            maxLength={500}
+                            placeholder="e.g. Presented at the final ceremony"
+                            value={officialAwardsForm.note}
+                            onChange={(e) => setOfficialAwardsForm({ ...officialAwardsForm, note: e.target.value })}
+                        />
+                    </label>
+                </div>
+                <button className={btnPrimary} onClick={saveOfficialAwards}>Save official awards</button>
+            </div>
         </div>
     );
 

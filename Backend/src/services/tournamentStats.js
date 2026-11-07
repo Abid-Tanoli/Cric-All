@@ -1,5 +1,7 @@
 import Match from "../models/Match.js";
+import Tournament from "../models/Tournament.js";
 import { hiddenTeamIds, isHiddenTeamDoc, isReservedTestName } from "../utils/publicProjection.js";
+import { publicOfficialAwards } from "./tournamentOfficialAwards.js";
 
 // ---------------------------------------------------------------------------
 // Tournament statistics
@@ -946,6 +948,20 @@ export function computeTournamentStats(input = {}) {
 export const STATS_PLAYER_SELECT = "name imageUrl";
 export const STATS_TEAM_SELECT = "name shortName logo isPublic";
 
+// The public "Official award" cards need the player's name/role and team label.
+const OFFICIAL_AWARD_STATS_POPULATE = [
+  ...["playerOfTournament", "bestBatsman", "bestBowler"].map((key) => ({
+    path: `officialAwards.${key}`,
+    select: "name playingRole role battingPosition team imageUrl",
+    populate: { path: "team", select: "name shortName logo" },
+  })),
+  {
+    path: "officialAwards.topPlayers",
+    select: "name playingRole role battingPosition team imageUrl",
+    populate: { path: "team", select: "name shortName logo" },
+  },
+];
+
 /**
  * Loads the completed matches of one tournament with exactly the fields the
  * aggregator needs, then computes the stats. Public-safe: hidden/private and
@@ -964,7 +980,7 @@ export async function gatherTournamentStats(tournament, opts = {}) {
     manualDraft: { $ne: true },
   })
     .select(
-      "status startAt updatedAt createdAt result manOfMatch teams innings.team innings.runs innings.wickets innings.balls innings.overs " +
+      "status startAt updatedAt createdAt stage stageLabel totalOvers result manOfMatch teams innings.team innings.runs innings.wickets innings.balls innings.overs " +
         "innings.extras innings.batting.player innings.batting.runs " +
         "innings.batting.balls innings.batting.fours innings.batting.sixes innings.batting.isOut " +
         "innings.batting.dismissalType innings.batting.fielder innings.bowling.player innings.bowling.balls " +
@@ -1017,6 +1033,39 @@ export async function gatherTournamentStats(tournament, opts = {}) {
     hasData: impactRows.length > 0,
   };
 
+  // Official awards are organiser-confirmed, not computed. They are attached to
+  // the payload so the public page can label them, but they never alter
+  // `playerOfTournament.rows`, `leader`, points or rank.
+  const officialTournament = await Tournament.findById(tournamentId)
+    .select("officialAwards")
+    .populate(OFFICIAL_AWARD_STATS_POPULATE)
+    .lean();
+  const officialAwards = publicOfficialAwards(officialTournament);
+  for (const key of ["playerOfTournament", "bestBatsman", "bestBowler"]) {
+    const award = officialAwards[key];
+    if (award && award.teamId && hidden.has(String(award.teamId))) {
+      officialAwards[key] = null;
+    }
+  }
+  // Suppress hidden-team players from the podium, close the gaps and renumber
+  // the places so the public page never shows a blank step. The compatibility
+  // alias always mirrors the first remaining player.
+  officialAwards.topPlayers = (officialAwards.topPlayers || [])
+    .filter((award) => !(award?.teamId && hidden.has(String(award.teamId))))
+    .map((award, index) => ({ ...award, position: index + 1 }));
+  officialAwards.playerOfTournament = officialAwards.topPlayers[0] || null;
+  const officialTopPlayers = officialAwards.topPlayers;
+  const derivedTopPlayers = impactRows.slice(0, 3).map((row, index) => ({
+    playerId: row.playerId,
+    name: row.name,
+    team: row.team,
+    teamId: row.teamId,
+    imageUrl: row.imageUrl || "",
+    official: false,
+    position: index + 1,
+  }));
+  const topPlayers = officialTopPlayers.length ? officialTopPlayers : derivedTopPlayers;
+
   return {
     ...stats,
     topRunScorers: strip(stats.topRunScorers),
@@ -1036,7 +1085,14 @@ export async function gatherTournamentStats(tournament, opts = {}) {
     },
     hasFielding: topFielders.length > 0,
     hasTeamStats: (stats.teamStats || []).length > 0,
-    playerOfTournament,
+    playerOfTournament: {
+      ...playerOfTournament,
+      topPlayers,
+      topPlayersSource: officialTopPlayers.length ? "official" : "impact",
+      officialAward: officialAwards.playerOfTournament || null,
+      officialNote: officialAwards.note || "",
+    },
+    officialAwards,
   };
 }
 

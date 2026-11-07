@@ -314,10 +314,12 @@ export default function Series() {
     stats.boundaryMeter?.mostFours?.[0] && { title: "Most Fours", name: stats.boundaryMeter.mostFours[0].name, team: stats.boundaryMeter.mostFours[0].team, value: `${stats.boundaryMeter.mostFours[0].count} fours`, playerId: stats.boundaryMeter.mostFours[0].playerId },
   ].filter(Boolean);
 
-  // P4: honours an organiser sets by hand at the end of the tournament. Unlike
-  // the stat-derived awards above, these come straight off the tournament
-  // document, so they can be present even before anyone has batted.
-  const tournamentAwards = buildTournamentAwards(series);
+  // P4: honours an organiser sets by hand at the end of the tournament. Official
+  // awards are shown first; when none are set the tab falls back to the older
+  // manual honours and then to the current stats leaders. None of this changes
+  // the computed Player of the Tournament points or order.
+  const tournamentAwards = buildTournamentAwards(series, stats);
+  const officialAwardsNote = series.officialAwards?.note || stats.officialAwards?.note || "";
 
   // P3: only a knockout tournament gets a bracket, and only when it has
   // fixtures that actually carry a bracket stage.
@@ -917,6 +919,9 @@ export default function Series() {
             {tournamentAwards.length > 0 && (
               <div data-testid="tournament-awards">
                 <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-cric-muted mb-3">Tournament Honours</h3>
+                {officialAwardsNote ? (
+                  <p className="mb-4 text-xs text-cric-muted">{officialAwardsNote}</p>
+                ) : null}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                   {tournamentAwards.map(award => (
                     <div
@@ -924,8 +929,20 @@ export default function Series() {
                       className="bg-cric-card rounded-2xl shadow-sm p-6 border border-cric-border"
                     >
                       <p className="text-[10px] font-black uppercase tracking-widest text-cric-accent mb-2">{award.title}</p>
+                      {award.official ? (
+                        <p className="mb-2 inline-block rounded-full bg-amber-100 px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-amber-700">
+                          Official award
+                        </p>
+                      ) : null}
+                      {award.derived ? (
+                        <p className="mb-2 text-[9px] font-bold uppercase tracking-widest text-cric-muted">
+                          Derived from stats
+                        </p>
+                      ) : null}
                       <p className="text-lg font-black text-cric-text">{award.name || "To be decided"}</p>
                       {award.subtitle ? <p className="text-xs text-cric-muted">{award.subtitle}</p> : null}
+                      {award.team ? <p className="text-xs text-cric-muted">{award.team}</p> : null}
+                      {award.value ? <p className="mt-1 text-sm font-bold text-cric-text">{award.value}</p> : null}
                       {award.playerId ? (
                         <Link to={`/players/${award.playerId}`} className="mt-3 inline-block text-xs font-black uppercase tracking-widest text-cric-accent">
                           View profile

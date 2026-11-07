@@ -13,11 +13,13 @@ const Breakdown = ({ row }) => {
     ["Batting", row.breakdown?.batting],
     ["Bowling", row.breakdown?.bowling],
     ["Fielding", row.breakdown?.fielding],
+    ["Team share", row.breakdown?.teamShare],
+    ["Finishing", row.breakdown?.finishing],
     ["Winning", row.breakdown?.winBonus],
     ["Player of the Match", row.breakdown?.manOfMatchBonus],
   ];
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
       {items.map(([label, value]) => (
         <div key={label} className="rounded-lg bg-cric-bg px-3 py-2">
           <div className="text-[9px] uppercase tracking-wide text-cric-muted font-bold">{label}</div>
@@ -30,11 +32,72 @@ const Breakdown = ({ row }) => {
   );
 };
 
-export default function PlayerOfTournament({ data }) {
+const PodiumPlayer = ({ player, position }) => {
+  const first = position === 1;
+  const initials = (player.name || "?")
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join("")
+    .toUpperCase() || "?";
+  const size = first ? "h-28 w-28 text-3xl" : "h-20 w-20 text-2xl";
+
+  return (
+    <div
+      className={`flex min-w-0 flex-col items-center rounded-xl border border-cric-border bg-cric-card px-3 py-4 text-center ${
+        first ? "order-1 md:order-2 md:scale-105" : position === 2 ? "order-2 md:order-1 md:mt-6" : "order-3 md:mt-6"
+      }`}
+      data-testid={`podium-place-${position}`}
+    >
+      <span className="rounded-full bg-amber-500 px-3 py-1 text-[10px] font-black uppercase text-white">
+        {position === 1 ? "1st place" : position === 2 ? "2nd place" : "3rd place"}
+      </span>
+      {player.imageUrl ? (
+        <img
+          src={player.imageUrl}
+          alt={player.name || "Player"}
+          className={`${size} mt-3 rounded-full border-4 ${first ? "border-amber-400" : "border-cric-border"} object-cover`}
+        />
+      ) : (
+        <div
+          aria-label={`${player.name || "Player"} avatar`}
+          className={`${size} mt-3 flex items-center justify-center rounded-full border-4 ${first ? "border-amber-400 bg-amber-500/15 text-amber-700" : "border-cric-border bg-cric-bg text-cric-muted"} font-black`}
+          data-testid={`podium-avatar-${player.playerId || position}`}
+        >
+          {initials}
+        </div>
+      )}
+      <div className="mt-3 min-w-0">
+        {player.playerId ? (
+          <Link to={`/players/${player.playerId}`} className="break-words font-black text-cric-text hover:text-cric-accent">
+            {player.name || "Player"}
+          </Link>
+        ) : (
+          <span className="break-words font-black text-cric-text">{player.name || "Player"}</span>
+        )}
+        <div className="mt-1 break-words text-xs text-cric-muted">{player.team || ""}</div>
+      </div>
+    </div>
+  );
+};
+
+export default function PlayerOfTournament({ data, officialAwards }) {
   const [openId, setOpenId] = useState(null);
   const rows = Array.isArray(data?.rows) ? data.rows : [];
   const leader = data?.leader || rows[0] || null;
   const explanation = Array.isArray(data?.explanation) ? data.explanation : [];
+  const officialNote = officialAwards?.note || data?.officialNote || "";
+  const officialTopPlayers = Array.isArray(officialAwards?.topPlayers)
+    ? officialAwards.topPlayers
+    : [];
+  const legacyOfficialPlayer = officialAwards?.playerOfTournament || data?.officialAward || null;
+  const podiumPlayers = officialTopPlayers.length
+    ? officialTopPlayers.slice(0, 3)
+    : legacyOfficialPlayer
+      ? [{ ...legacyOfficialPlayer, position: 1 }]
+      : (Array.isArray(data?.topPlayers) ? data.topPlayers : rows.slice(0, 3));
+  const isOfficialPodium = officialTopPlayers.length > 0 || Boolean(legacyOfficialPlayer);
 
   return (
     <div className="bg-cric-card rounded-2xl shadow-sm overflow-hidden border border-cric-border">
@@ -45,7 +108,31 @@ export default function PlayerOfTournament({ data }) {
         <p className="text-xs text-white/80 mt-1">
           Impact ranking, not just runs or wickets · provisional until the Final is completed
         </p>
+        <p className="text-xs text-white/90 mt-2 max-w-3xl">
+          Points reward runs, wickets, fielding and your share of the team&apos;s runs and
+          wickets, with extra credit for finishing an unbeaten chase and for winning.
+        </p>
       </div>
+
+      {podiumPlayers.length > 0 && (
+        <section className="border-b border-cric-border px-4 py-5 sm:px-6" data-testid="tournament-podium">
+          <h4 className="mb-4 text-center text-xs font-black uppercase tracking-widest text-cric-muted">
+            {isOfficialPodium ? "Official Top 3" : "Top 3 by impact points"}
+          </h4>
+          <div className="mx-auto grid max-w-4xl grid-cols-1 items-end gap-3 md:grid-cols-3">
+            {podiumPlayers.slice(0, 3).map((player, index) => (
+              <PodiumPlayer
+                key={player.playerId || player.position || index}
+                player={player}
+                position={player.position || index + 1}
+              />
+            ))}
+          </div>
+          {officialNote && isOfficialPodium ? (
+            <p className="mx-auto mt-3 max-w-3xl text-center text-xs text-cric-muted">{officialNote}</p>
+          ) : null}
+        </section>
+      )}
 
       {!leader && (
         <div className="px-4 py-8 text-center text-cric-muted">
@@ -106,7 +193,7 @@ export default function PlayerOfTournament({ data }) {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {rows.slice(0, 10).map((row) => {
+              {rows.map((row) => {
                 const key = row.playerId || row.name;
                 const open = openId === key;
                 return (
@@ -159,7 +246,7 @@ export default function PlayerOfTournament({ data }) {
       {explanation.length > 0 && (
         <details className="border-t border-cric-border px-4 py-3">
           <summary className="cursor-pointer text-xs font-black uppercase tracking-wide text-cric-muted">
-            How it&apos;s calculated
+            How points are calculated
           </summary>
           <ul className="mt-3 space-y-1 text-xs text-cric-muted list-disc pl-5">
             {explanation.map((line) => (

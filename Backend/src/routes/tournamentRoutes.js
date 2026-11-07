@@ -18,7 +18,8 @@ import {
   setTournamentGroups,
   previewTournamentFixtures,
   applyTournamentFixtures,
-  setTournamentAwards
+  setTournamentAwards,
+  setTournamentOfficialAwards
 } from '../controllers/TournamentController.js';
 
 const router = express.Router();
@@ -46,6 +47,7 @@ router.post('/:id/fixtures/apply', ...ownerOrAdmin, validateObjectId('id'), appl
 
 router.put('/:id', ...ownerOrAdmin, validateObjectId('id'), updateTournament);
 router.put('/:id/awards', ...ownerOrAdmin, validateObjectId('id'), setTournamentAwards);
+router.put('/:id/official-awards', ...ownerOrAdmin, validateObjectId('id'), setTournamentOfficialAwards);
 router.delete('/:id', ...ownerOrAdmin, validateObjectId('id'), deleteTournament);
 router.delete('/:tournamentId/squad/:teamId', ...ownerOrAdmin, validateObjectId('tournamentId'), validateObjectId('teamId'), deleteTournamentSquad);
 
