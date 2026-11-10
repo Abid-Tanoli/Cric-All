@@ -121,6 +121,12 @@ describe("tournament Stats tab", () => {
     expect(screen.getByText("275.5")).toBeInTheDocument();
   });
 
+  it("drops the provisional note when the derived public status is completed", () => {
+    renderTab({ ...stats, publicStatus: "completed" });
+    expect(screen.queryByText(/provisional until the Final/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/Final ranking/)).toBeInTheDocument();
+  });
+
   it("reveals a player's breakdown when the row is opened", () => {
     renderTab();
     fireEvent.click(screen.getByText("275.5")); // the impact cell of Ijaz's row

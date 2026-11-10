@@ -19,7 +19,10 @@ import {
   PUBLIC_MATCH_FILTER,
   isDraftMatchDoc,
 } from "../utils/publicProjection.js";
-import { deriveTournamentPublicState } from "../services/tournamentPublicState.js";
+import {
+  deriveTournamentPublicState,
+  resolveTournamentHonours,
+} from "../services/tournamentPublicState.js";
 import { deleteTournamentContent } from "../services/tournamentContent.js";
 import {
   OFFICIAL_AWARD_KEYS,
@@ -203,24 +206,32 @@ export const getTournaments = async (req, res) => {
       : { tournament: { $in: ids } };
     const matches = ids.length
       ? await Match.find(matchQuery)
-        .select("_id tournament stage stageLabel round status startAt manualDraft isDraft")
+        .select(
+          "_id tournament stage stageLabel round status startAt manualDraft isDraft " +
+            "teams result.winner result.resultType result.margin result.isTie",
+        )
         .lean()
       : [];
     const matchesByTournament = new Map();
     for (const match of matches) {
       const tournamentId = String(match.tournament || matchOwner.get(String(match._id)) || "");
       if (!tournamentId) continue;
+      // A final involving a hidden team cannot name a public champion.
+      if ((match.teams || []).some((team) => hidden.has(String(team?._id || team)))) continue;
       if (!matchesByTournament.has(tournamentId)) matchesByTournament.set(tournamentId, []);
       matchesByTournament.get(tournamentId).push(match);
     }
 
     const enriched = visible.map((tournament) => {
-      const state = deriveTournamentPublicState(
-        tournament,
-        matchesByTournament.get(String(tournament._id)) || [],
-      );
+      const tournamentMatches = matchesByTournament.get(String(tournament._id)) || [];
+      const state = deriveTournamentPublicState(tournament, tournamentMatches);
+      const honours = resolveTournamentHonours(tournament, tournamentMatches);
       return {
         ...tournament,
+        // Stored honours win; only an unset field falls back to the completed
+        // Final. The list is read-only, so nothing is persisted here.
+        winner: honours.winner,
+        runnerUp: honours.runnerUp,
         publicStatus: state.status,
         publicEndDate: state.endDate,
       };
@@ -307,7 +318,14 @@ export const getTournament = async (req, res) => {
       }
     }
 
-    res.status(200).json(tournament);
+    // The header/banner/card reads winner/runnerUp from this endpoint. Return
+    // the effective honours (stored value first, completed Final as fallback)
+    // without saving anything back to the tournament document.
+    const honours = resolveTournamentHonours(tournament, tournament.matches || []);
+    const payload = tournament.toObject();
+    payload.winner = honours.winner;
+    payload.runnerUp = honours.runnerUp;
+    res.status(200).json(payload);
   } catch (error) {
     console.error("Error fetching tournament:", error);
     res.status(500).json({

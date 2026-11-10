@@ -99,6 +99,9 @@ export default function PlayerOfTournament({ data, officialAwards, stats = {} })
       ? [{ ...legacyOfficialPlayer, position: 1 }]
       : (Array.isArray(data?.topPlayers) ? data.topPlayers : rows.slice(0, 3));
   const isOfficialPodium = officialTopPlayers.length > 0 || Boolean(legacyOfficialPlayer);
+  // The note follows the derived public status, not a stored winner: a
+  // completed Final means the ranking is final even when winner is unset.
+  const isCompleted = String(stats?.publicStatus || "").toLowerCase() === "completed";
 
   return (
     <>
@@ -109,7 +112,7 @@ export default function PlayerOfTournament({ data, officialAwards, stats = {} })
           <span className="text-2xl">🌟</span> Player of the Tournament
         </h3>
         <p className="text-xs text-white/80 mt-1">
-          Impact ranking, not just runs or wickets · provisional until the Final is completed
+          Impact ranking, not just runs or wickets · {isCompleted ? "Final ranking" : "provisional until the Final is completed"}
         </p>
         <p className="text-xs text-white/90 mt-2 max-w-3xl">
           Points reward runs, wickets, fielding and your share of the team&apos;s runs and
