@@ -77,6 +77,7 @@ export const updateScore = async (req, res) => {
       pitchY = null,
       nextBatsmanId = null,
       didCross,
+      wicketDidCross,
       groundZone = "",
       fieldedByPosition = "",
       shotTypeName = "",
@@ -141,7 +142,7 @@ export const updateScore = async (req, res) => {
         pitchX,
         pitchY,
         nextBatsmanId,
-        didCross,
+        didCross: didCross !== undefined ? didCross : wicketDidCross,
       });
     } catch (engineErr) {
       if (engineErr.code === 'SAME_BOWLER_CONSECUTIVE') {
@@ -1349,13 +1350,16 @@ export const revertLastBall = async (req, res) => {
       }
     }
 
-    // 10. Free-hit state is whatever the previous delivery left behind.
+    // 10. Free-hit state is whatever the previous delivery left behind. The
+    // persisted `freeHitNext` flag captures that after the previous ball (a
+    // wide during a free hit keeps it alive), whereas checking `isNoBall` alone
+    // would wrongly clear a free hit extended by a wide.
     let prevBall = lastOver.balls.length ? lastOver.balls[lastOver.balls.length - 1] : null;
     if (!prevBall && innings.oversHistory.length > 1) {
       const prevOver = innings.oversHistory[innings.oversHistory.length - 2];
       if (prevOver && prevOver.balls && prevOver.balls.length) prevBall = prevOver.balls[prevOver.balls.length - 1];
     }
-    innings.isFreeHit = !!(prevBall && prevBall.isNoBall);
+    innings.isFreeHit = !!(prevBall && prevBall.freeHitNext);
 
     // 11. Restore who is at the crease / bowling, so scoring can continue.
     innings.onStrikeBatsman = ball.batsmanOnStrike;

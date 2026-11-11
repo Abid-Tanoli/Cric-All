@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { ScoringEngine } from "../src/services/scoring/ScoringEngine.js";
+import { processDeliveryWithEngine } from "../src/services/scoring/controllerAdapter.js";
 import Match from "../src/models/Match.js";
 
 function createInnings(team) {
@@ -186,4 +187,277 @@ test("a run-out charges the dismissal to the batsman the scorer named", () => {
   assert.equal(nonStrikerCard.isOut, true, "the non-striker is shown out");
   assert.equal(nonStrikerCard.dismissalType, "runOut");
   assert.ok(!strikerCard || strikerCard.isOut !== true, "the striker is not shown out");
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Run-out ends: which batter is out, and where the replacement comes in.
+// ─────────────────────────────────────────────────────────────────────────────
+
+test("a run-out of the striker without crossing leaves the striker's end vacant", () => {
+  const engine = createEngine();
+  const result = engine.processDelivery(delivery({
+    isWicket: true,
+    wicketType: "runOut",
+    dismissedPlayer: "batter-1",
+  }));
+
+  assert.equal(result.ball.dismissedPlayer, "batter-1");
+  assert.equal(result.ball.nextBatsmanOnStrike, "batter-1");
+  assert.equal(result.ball.nextBatsmanNonStrike, "batter-2");
+});
+
+test("a run-out of the striker after crossing swaps the surviving batters", () => {
+  const engine = createEngine();
+  const result = engine.processDelivery(delivery({
+    isWicket: true,
+    wicketType: "runOut",
+    dismissedPlayer: "batter-1",
+    didCross: true,
+  }));
+
+  assert.equal(result.ball.nextBatsmanOnStrike, "batter-2");
+  assert.equal(result.ball.nextBatsmanNonStrike, "batter-1");
+});
+
+test("a run-out of the non-striker without crossing keeps the striker on strike", () => {
+  const engine = createEngine();
+  const result = engine.processDelivery(delivery({
+    isWicket: true,
+    wicketType: "runOut",
+    dismissedPlayer: "batter-2",
+  }));
+
+  assert.equal(result.ball.nextBatsmanOnStrike, "batter-1");
+  assert.equal(result.ball.nextBatsmanNonStrike, "batter-2");
+});
+
+test("a run-out of the non-striker after crossing puts the replacement on strike", () => {
+  const engine = createEngine();
+  const result = engine.processDelivery(delivery({
+    isWicket: true,
+    wicketType: "runOut",
+    dismissedPlayer: "batter-2",
+    didCross: true,
+  }));
+
+  assert.equal(result.ball.nextBatsmanOnStrike, "batter-2");
+  assert.equal(result.ball.nextBatsmanNonStrike, "batter-1");
+});
+
+test("obstructing the field follows the same crossing rules as a run-out", () => {
+  const engine = createEngine();
+  const result = engine.processDelivery(delivery({
+    isWicket: true,
+    wicketType: "obstructingField",
+    dismissedPlayer: "batter-2",
+    didCross: true,
+  }));
+
+  assert.equal(result.ball.nextBatsmanOnStrike, "batter-2");
+  assert.equal(result.ball.nextBatsmanNonStrike, "batter-1");
+  assert.equal(result.innings.bowling[0].wickets, 0);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Bowler credit
+// ─────────────────────────────────────────────────────────────────────────────
+
+test("only dismissals that belong to the bowler are credited to the bowler", () => {
+  const bowlerDismissals = ["bowled", "caught", "lbw", "stumped", "hitWicket"];
+  const nonBowlerDismissals = ["runOut", "retiredOut", "obstructingField", "hitTwice", "handledBall", "timedOut"];
+
+  for (const wicketType of bowlerDismissals) {
+    const engine = createEngine();
+    const result = engine.processDelivery(delivery({
+      isWicket: true,
+      wicketType,
+      dismissedPlayer: "batter-1",
+      fielder: "fielder-1",
+    }));
+    assert.equal(result.innings.bowling[0].wickets, 1, `${wicketType} should credit the bowler`);
+  }
+
+  for (const wicketType of nonBowlerDismissals) {
+    const engine = createEngine();
+    const result = engine.processDelivery(delivery({
+      isWicket: true,
+      wicketType,
+      dismissedPlayer: "batter-1",
+      fielder: "fielder-1",
+    }));
+    assert.equal(result.innings.bowling[0].wickets, 0, `${wicketType} must not credit the bowler`);
+  }
+});
+
+test("an absent dismissed player still defaults to the striker for old clients", () => {
+  const engine = createEngine();
+  const result = engine.processDelivery(delivery({
+    isWicket: true,
+    wicketType: "caught",
+    fielder: "fielder-1",
+  }));
+
+  assert.equal(result.ball.dismissedPlayer, "batter-1");
+  assert.equal(result.innings.fallOfWickets[0].player, "batter-1");
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Free hit persistence
+// ─────────────────────────────────────────────────────────────────────────────
+
+test("a free hit survives a wide and a chain of no-balls until a legal ball", () => {
+  const engine = createEngine();
+
+  const noBall = engine.processDelivery(delivery({ isNoBall: true, runs: 1 }));
+  assert.equal(noBall.freeHitNext, true);
+
+  const wide = engine.processDelivery(delivery({ isWide: true, runs: 1 }));
+  assert.equal(wide.freeHitNext, true, "a wide must not clear the free hit");
+  assert.equal(wide.ball.isFreeHit, true);
+
+  const secondNoBall = engine.processDelivery(delivery({ isNoBall: true, runs: 0 }));
+  assert.equal(secondNoBall.freeHitNext, true, "another no-ball keeps the free hit alive");
+
+  const legal = engine.processDelivery(delivery({ runs: 0 }));
+  assert.equal(legal.freeHitNext, false, "a legal ball clears the free hit");
+});
+
+test("a free hit extended by a wide still only allows non-bowler dismissals", () => {
+  const engine = createEngine();
+  engine.processDelivery(delivery({ isNoBall: true, runs: 0 }));
+
+  const stumpedOnWide = engine.processDelivery(delivery({
+    isWide: true,
+    isWicket: true,
+    wicketType: "stumped",
+    dismissedPlayer: "batter-1",
+  }));
+  assert.equal(stumpedOnWide.ball.isWicket, false);
+  assert.equal(stumpedOnWide.freeHitNext, true);
+
+  const runOutOnWide = engine.processDelivery(delivery({
+    isWide: true,
+    isWicket: true,
+    wicketType: "runOut",
+    dismissedPlayer: "batter-2",
+  }));
+  assert.equal(runOutOnWide.ball.isWicket, true);
+  assert.equal(runOutOnWide.innings.wickets, 1);
+  assert.equal(runOutOnWide.freeHitNext, true);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// New batter placement (adapter layer)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function createMatchDoc() {
+  return {
+    matchType: "T20",
+    status: "live",
+    currentInnings: 0,
+    innings: [{
+      ...createInnings({ _id: "team-1", name: "Falcons" }),
+      status: "live",
+      onStrikeBatsman: "batter-1",
+      currentBatsman1: "batter-1",
+      currentBatsman2: "batter-2",
+      currentBowler: "bowler-1",
+    }],
+    markModified() {},
+    toObject() { return this; },
+  };
+}
+
+function playLegalBalls(doc, count) {
+  for (let i = 0; i < count; i += 1) {
+    processDeliveryWithEngine(doc, {
+      inningsIndex: 0,
+      runs: 0,
+      bowlerId: "bowler-1",
+      batsmanOnStrikeId: "batter-1",
+      batsmanNonStrikeId: "batter-2",
+    });
+  }
+}
+
+test("the incoming batter replaces the dismissed non-striker at the non-striker's end", () => {
+  const doc = createMatchDoc();
+  processDeliveryWithEngine(doc, {
+    inningsIndex: 0,
+    runs: 0,
+    isWicket: true,
+    wicketType: "runOut",
+    dismissedPlayerId: "batter-2",
+    didCross: false,
+    nextBatsmanId: "batter-3",
+    bowlerId: "bowler-1",
+    batsmanOnStrikeId: "batter-1",
+    batsmanNonStrikeId: "batter-2",
+  });
+
+  assert.equal(doc.innings[0].onStrikeBatsman, "batter-1");
+  assert.equal(doc.innings[0].currentBatsman1, "batter-1");
+  assert.equal(doc.innings[0].currentBatsman2, "batter-3");
+});
+
+test("a crossed run-out of the non-striker puts the incoming batter on strike", () => {
+  const doc = createMatchDoc();
+  processDeliveryWithEngine(doc, {
+    inningsIndex: 0,
+    runs: 0,
+    isWicket: true,
+    wicketType: "runOut",
+    dismissedPlayerId: "batter-2",
+    didCross: true,
+    nextBatsmanId: "batter-3",
+    bowlerId: "bowler-1",
+    batsmanOnStrikeId: "batter-1",
+    batsmanNonStrikeId: "batter-2",
+  });
+
+  assert.equal(doc.innings[0].onStrikeBatsman, "batter-3");
+  assert.equal(doc.innings[0].currentBatsman1, "batter-3");
+  assert.equal(doc.innings[0].currentBatsman2, "batter-1");
+});
+
+test("a wicket on the last ball of an over leaves the correct batter on strike next over", () => {
+  const doc = createMatchDoc();
+  playLegalBalls(doc, 5);
+
+  processDeliveryWithEngine(doc, {
+    inningsIndex: 0,
+    runs: 0,
+    isWicket: true,
+    wicketType: "runOut",
+    dismissedPlayerId: "batter-2",
+    didCross: false,
+    nextBatsmanId: "batter-3",
+    bowlerId: "bowler-1",
+    batsmanOnStrikeId: "batter-1",
+    batsmanNonStrikeId: "batter-2",
+  });
+
+  assert.equal(doc.innings[0].onStrikeBatsman, "batter-3");
+  assert.equal(doc.innings[0].currentBatsman2, "batter-1");
+});
+
+test("a striker dismissed on the last ball of an over leaves the non-striker on strike", () => {
+  const doc = createMatchDoc();
+  playLegalBalls(doc, 5);
+
+  processDeliveryWithEngine(doc, {
+    inningsIndex: 0,
+    runs: 0,
+    isWicket: true,
+    wicketType: "caught",
+    dismissedPlayerId: "batter-1",
+    fielderId: "fielder-1",
+    nextBatsmanId: "batter-3",
+    bowlerId: "bowler-1",
+    batsmanOnStrikeId: "batter-1",
+    batsmanNonStrikeId: "batter-2",
+  });
+
+  assert.equal(doc.innings[0].onStrikeBatsman, "batter-2");
+  assert.equal(doc.innings[0].currentBatsman2, "batter-3");
 });

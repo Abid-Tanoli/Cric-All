@@ -13,6 +13,14 @@
 // (it has no `batsmanRuns` column, so that engine field is dropped on save), so
 // fall back to `runs` when `batsmanRuns` is absent. For an engine record the two
 // are always equal, which keeps apply and revert reading the same value.
+
+// Dismissals that are never credited to the bowler: a run-out is completed by a
+// fielder and the rest are umpire decisions. Shared with the engine so the apply
+// path and the undo path agree on whether the bowler's wicket count moved.
+export const NON_BOWLER_DISMISSALS = new Set([
+  'runOut', 'retiredOut', 'obstructingField', 'hitTwice', 'handledBall', 'timedOut'
+]);
+
 export function computeBallAccounting(ball = {}) {
   const isWide = !!ball.isWide;
   const isNoBall = !!ball.isNoBall;
@@ -70,7 +78,7 @@ export function computeBallAccounting(ball = {}) {
       wides: isWide ? 1 : 0,
       noBalls: isNoBall ? 1 : 0,
       dotBalls: isPlainLegal && batsmanRuns === 0 ? 1 : 0,
-      wickets: isWicket && ball.wicketType !== "runOut" ? 1 : 0,
+      wickets: isWicket && !NON_BOWLER_DISMISSALS.has(ball.wicketType) ? 1 : 0,
     },
   };
 }

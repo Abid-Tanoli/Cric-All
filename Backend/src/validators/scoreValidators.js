@@ -39,6 +39,7 @@ export const updateScoreSchema = z.object({
   pitchY: z.number().nullable().default(null),
   nextBatsmanId: nullableObjectId,
   didCross: z.boolean().optional(),
+  wicketDidCross: z.boolean().optional(),
   groundZone: z.string().default(""),
   fieldedByPosition: z.string().default(""),
   shotTypeName: z.string().default(""),

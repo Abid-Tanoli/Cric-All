@@ -12,7 +12,8 @@ import ScorecardTab from '../components/ScoreManagement/ScorecardTab';
 import CommentaryTab from '../components/ScoreManagement/CommentaryTab';
 import BattingPositionBadge from '@shared/components/BattingPositionBadge';
 import StatsTab from '../components/ScoreManagement/StatsTab';
-import { TABS, getScoreTabPath, formatOvers, FIELD_POSITIONS, WICKET_TYPES } from '../components/ScoreManagement/constants';
+import { TABS, getScoreTabPath, formatOvers, FIELD_POSITIONS } from '../components/ScoreManagement/constants';
+import WicketDetailsForm from '../components/ScoreManagement/WicketDetailsForm';
 import ScoringMobileBar from '../components/ScoringMobileBar';
 import PlayerOfMatchCard from '../components/ScoreManagement/PlayerOfMatchCard';
 import { formatMatchDate, formatMatchTime, teamShortName } from '../utils/teamDisplay';
@@ -827,53 +828,19 @@ export default function ManageScore() {
                             </div>
 
                             {showSelectionModal === 'wicket' && (
-                                <div className="space-y-8">
-                                    <div className="grid grid-cols-2 md:grid-cols-3 gap-2 sm:gap-4">
-                                        {WICKET_TYPES.map(type => (
-                                            <button key={type} onClick={() => setSelectedWicket(type)} className={`score-touch-btn p-3 sm:p-6 rounded-2xl sm:rounded-3xl border-2 font-black uppercase text-[9px] sm:text-xs tracking-widest transition-all ${selectedWicket === type ? 'bg-red-600 border-red-400 text-white shadow-lg' : 'bg-black/5 dark:bg-white/2 border-cric-border text-slate-500 hover:border-cric-border/80'}`}>
-                                                {type}
-                                            </button>
-                                        ))}
-                                    </div>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-8">
-                                        <div className="space-y-2">
-                                            <label className="text-[10px] font-black uppercase text-slate-500 tracking-widest pl-2">Next Batsman</label>
-                                            <select value={setupState.wicketNewBatter} onChange={(e) => setSetupState(s => ({ ...s, wicketNewBatter: e.target.value }))} className="w-full p-3 sm:p-6 bg-cric-bg border border-cric-border rounded-2xl sm:rounded-3xl text-cric-text font-black outline-none focus:border-red-500">
-                                                <option value="">Select Next In...</option>
-                                                {battingXI.filter(p => {
-                                                    const pId = p._id || p;
-                                                    const stats = curInn?.batting?.find(b => String(b.player?._id || b.player) === String(pId));
-                                                    const isCurrent = [String(strikerId), String(nonStrikerId)].includes(String(pId));
-                                                    const isOut = stats?.isOut || stats?.isRetired;
-                                                    return !isCurrent && (!stats || stats.isRetiredHurt) && !isOut;
-                                                }).map(p => (
-                                                    <option key={p._id} value={p._id}>{p.name}</option>
-                                                ))}
-                                            </select>
-                                        </div>
-                                        <div className="space-y-2">
-                                            <label className="text-[10px] font-black uppercase text-slate-500 tracking-widest pl-2">Fielder Involved</label>
-                                            <select value={setupState.wicketFielder} onChange={(e) => setSetupState(s => ({ ...s, wicketFielder: e.target.value }))} className="w-full p-3 sm:p-6 bg-cric-bg border border-cric-border rounded-2xl sm:rounded-3xl text-cric-text font-black outline-none focus:border-red-500">
-                                                <option value="">Select Fielder...</option>
-                                                {bowlingXI.map(p => (
-                                                    <option key={p._id} value={p._id}>{p.name}</option>
-                                                ))}
-                                            </select>
-                                        </div>
-                                    </div>
-                                    <button 
-                                        onClick={() => {
-                                            if (!setupState.wicketNewBatter && curInn.wickets < 9 && selectedWicket !== 'retired hurt') {
-                                                showToast("Please select the next batsman before confirming.", 'warning');
-                                                return;
-                                            }
-                                            setShowSelectionModal('');
-                                        }} 
-                                        className="score-touch-btn w-full py-4 sm:py-8 rounded-2xl sm:rounded-[2rem] bg-red-600 text-white font-black font-raj text-base sm:text-2xl italic tracking-tighter uppercase shadow-xl hover:scale-105 transition-all mt-4 sm:mt-8"
-                                    >
-                                        Confirm Wicket Details
-                                    </button>
-                                </div>
+                                <WicketDetailsForm
+                                    selectedWicket={selectedWicket}
+                                    setSelectedWicket={setSelectedWicket}
+                                    setupState={setupState}
+                                    setSetupState={setSetupState}
+                                    battingXI={battingXI}
+                                    bowlingXI={bowlingXI}
+                                    curInn={curInn}
+                                    strikerId={strikerId}
+                                    nonStrikerId={nonStrikerId}
+                                    showToast={showToast}
+                                    onConfirm={() => setShowSelectionModal('')}
+                                />
                             )}
 
                             {(showSelectionModal === 'striker' || showSelectionModal === 'nonStriker') && (

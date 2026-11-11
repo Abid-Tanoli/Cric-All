@@ -1,4 +1,4 @@
-import { computeBallAccounting } from './ballAccounting.js';
+import { computeBallAccounting, NON_BOWLER_DISMISSALS } from './ballAccounting.js';
 
 const FORMATS = {
   T20: { maxOvers: 20, maxWickets: 10, superOver: true, maxBowlerOvers: 4, powerplayEnabled: true, powerplayOvers: 6 },
@@ -19,6 +19,10 @@ const MATCH_STATES = [
 
 const DRS_CATEGORIES = ['lbw', 'caughtBehind', 'batPad', 'edgeDetection'];
 const DRS_REVIEWS_PER_INNINGS = 2;
+
+// Dismissals where the batters may have crossed before the wicket fell, so the
+// scorer can tell us which end the surviving batter finished at.
+const CROSSING_DISMISSALS = new Set(['runOut', 'obstructingField']);
 
 const POWERPLAY_RULES = {
   T20: [{ start: 0, end: 6, fieldersOutside: 2 }, { start: 6, end: 20, fieldersOutside: 5 }],
@@ -131,8 +135,17 @@ class ScoringEngine {
     const overComplete = !ballRecord.isWide && !ballRecord.isNoBall && legalBallsInOver >= 6;
     if (overComplete) this._completeOver(innings, over);
 
-    innings.isFreeHit = ballRecord.isNoBall;
-    if (ballType === 'noBall') innings.freeHitActive = true;
+    // A free hit survives wides and a chain of no-balls; it is only cleared by
+    // a legal delivery (byes and leg-byes are legal deliveries too).
+    if (ballRecord.isNoBall) {
+      innings.isFreeHit = true;
+      innings.freeHitActive = true;
+    } else if (ballRecord.isWide) {
+      innings.isFreeHit = isFreeHit;
+    } else {
+      innings.isFreeHit = false;
+      innings.freeHitActive = false;
+    }
 
     this._updateStrikeRotation(innings, ballRecord);
 
@@ -195,9 +208,17 @@ class ScoringEngine {
     if (!d.isWicket) return false;
     const wt = d.wicketType;
 
-    if (ballType === 'noBall') {
-      if (['runOut', 'obstructingField', 'hitTwice'].includes(wt)) return true;
-      this.events.push({ type: 'invalidDismissal', reason: 'No Ball - only run out/obstructing/hit twice allowed' });
+    // On a free hit (including one that has been extended by a wide or another
+    // no-ball) only dismissals that do not depend on the ball beating the bat
+    // are possible.
+    if (ballType === 'noBall' || isFreeHit) {
+      if (NON_BOWLER_DISMISSALS.has(wt)) return true;
+      this.events.push({
+        type: 'invalidDismissal',
+        reason: isFreeHit && ballType !== 'noBall'
+          ? 'Free Hit - only run out/obstructing/hit twice allowed'
+          : 'No Ball - only run out/obstructing/hit twice allowed'
+      });
       return false;
     }
     if (ballType === 'wide') {
@@ -205,12 +226,10 @@ class ScoringEngine {
       this.events.push({ type: 'invalidDismissal', reason: 'Wide - only run out/stumped allowed' });
       return false;
     }
-    if (isFreeHit && ballType === 'legal') {
-      if (['runOut', 'obstructingField', 'hitTwice'].includes(wt)) return true;
-      this.events.push({ type: 'invalidDismissal', reason: 'Free Hit - only run out/obstructing/hit twice allowed' });
-      return false;
-    }
-    const validTypes = ['bowled', 'caught', 'lbw', 'runOut', 'stumped', 'hitWicket', 'retiredOut', 'obstructingField', 'hitTwice'];
+    const validTypes = [
+      'bowled', 'caught', 'lbw', 'runOut', 'stumped', 'hitWicket',
+      'retiredOut', 'obstructingField', 'hitTwice', 'handledBall', 'timedOut'
+    ];
     return validTypes.includes(wt);
   }
 
@@ -237,6 +256,11 @@ class ScoringEngine {
   // ══════════════════════════════════════════════════════════════════════════════
 
   _buildBallRecord(d, ballType, isValidDismissal, isFreeHit, ballNum, displayBallNum) {
+    // Older clients only send the wicket type. Keep their behaviour by
+    // attributing the dismissal to the striker when no player was named.
+    const dismissedPlayer = isValidDismissal
+      ? (d.dismissedPlayer || d.batsmanOnStrike)
+      : null;
     return {
       ballNumber: ballNum,
       displayBallNumber: (ballType === 'legal' || ballType === 'bye' || ballType === 'legBye') ? displayBallNum : undefined,
@@ -251,9 +275,9 @@ class ScoringEngine {
       isBye: d.isBye || false, isLegBye: d.isLegBye || false,
       isWicket: d.isWicket && isValidDismissal, isFreeHit,
       wicketType: isValidDismissal ? d.wicketType : null,
-      dismissedPlayer: isValidDismissal ? d.dismissedPlayer : null,
+      dismissedPlayer,
       fielder: d.fielder || null,
-      didCross: d.didCross,
+      didCross: d.didCross === true,
       isAssistedRunOut: d.isAssistedRunOut || false,
       isDirectHitRunOut: d.isDirectHitRunOut || false,
       commentary: d.commentary || '', vividCommentary: d.vividCommentary || '',
@@ -343,10 +367,8 @@ class ScoringEngine {
     const cp = innings.partnerships[innings.partnerships.length - 1];
     if (cp) { cp.endedAt = innings.wickets; cp.endedBy = br.dismissedPlayer; }
 
-    if (br.wicketType === 'runOut') {
-      if (br.didCross === true) {
-        this._swapNextStrike(br);
-      }
+    if (CROSSING_DISMISSALS.has(br.wicketType) && br.didCross === true) {
+      this._swapNextStrike(br);
     }
   }
 
@@ -426,6 +448,7 @@ class ScoringEngine {
     bowl.wides += acc.bowling.wides;
     bowl.noBalls += acc.bowling.noBalls;
     bowl.runs += acc.bowling.runs;
+    // computeBallAccounting already excludes non-bowler dismissals.
     bowl.wickets += acc.bowling.wickets;
     const tb = bowl.balls;
     bowl.overs = Math.floor(tb / 6);

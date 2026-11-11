@@ -11,6 +11,10 @@ export const WICKET_TYPE_ALIASES = {
   obstructing_the_field: "obstructingField",
   "hit the ball twice": "hitTwice",
   hit_twice: "hitTwice",
+  "timed out": "timedOut",
+  timed_out: "timedOut",
+  "handled the ball": "handledBall",
+  handled_the_ball: "handledBall",
 };
 
 export const normalizeWicketType = (type = "") => {
