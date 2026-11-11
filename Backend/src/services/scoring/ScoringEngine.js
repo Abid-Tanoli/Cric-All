@@ -1,3 +1,5 @@
+import { computeBallAccounting } from './ballAccounting.js';
+
 const FORMATS = {
   T20: { maxOvers: 20, maxWickets: 10, superOver: true, maxBowlerOvers: 4, powerplayEnabled: true, powerplayOvers: 6 },
   ODI: { maxOvers: 50, maxWickets: 10, superOver: true, maxBowlerOvers: 10, powerplayEnabled: true, powerplayOvers: 10 },
@@ -112,7 +114,7 @@ class ScoringEngine {
 
     this._applyRuns(innings, ballRecord, ballType, delivery);
     this._applyExtras(innings, ballRecord, ballType);
-    innings.runs = (innings.runs || 0) + (ballRecord.batsmanRuns || 0) + (ballRecord.extraRuns || 0) + (ballRecord.penaltyRuns || 0);
+    innings.runs = (innings.runs || 0) + computeBallAccounting(ballRecord).totalRuns;
     this._applyWicket(innings, ballRecord, ballType, isValidDismissal);
     this._updateBattingStats(innings, ballRecord);
     this._updateBowlingStats(innings, ballRecord, ballType);
@@ -272,21 +274,18 @@ class ScoringEngine {
     }
     if (ballType === 'noBall') {
       br.extraRuns = 1; br.runs = runs; br.batsmanRuns = runs;
-      innings.extras.noBalls = (innings.extras.noBalls || 0) + 1;
       this.events.push({ type: 'noBall', extra: 1, batsmanRuns: runs });
       this._checkBoundary(br, runs);
       return;
     }
     if (ballType === 'bye') {
       br.extraRuns = runs; br.runs = 0; br.batsmanRuns = 0;
-      innings.extras.byes = (innings.extras.byes || 0) + runs;
       this.events.push({ type: 'bye', runs });
       return;
     }
     if (ballType === 'legBye') {
       br.extraRuns = runs; br.runs = 0; br.batsmanRuns = 0;
       br.isLegBye = true;
-      innings.extras.legByes = (innings.extras.legByes || 0) + runs;
       this.events.push({ type: 'legBye', runs });
       return;
     }
@@ -312,7 +311,12 @@ class ScoringEngine {
     innings.extras.legByes = innings.extras.legByes || 0;
     innings.extras.penalty = innings.extras.penalty || 0;
 
-    if (ballType === 'wide') innings.extras.wides += br.extraRuns || 0;
+    const acc = computeBallAccounting(br);
+    innings.extras.wides += acc.extras.wides;
+    innings.extras.noBalls += acc.extras.noBalls;
+    innings.extras.byes += acc.extras.byes;
+    innings.extras.legByes += acc.extras.legByes;
+    innings.extras.penalty += acc.extras.penalties;
 
     innings.extras.total = (innings.extras.wides || 0) + (innings.extras.noBalls || 0)
       + (innings.extras.byes || 0) + (innings.extras.legByes || 0) + (innings.extras.penalty || 0);
@@ -355,6 +359,7 @@ class ScoringEngine {
     if (!innings.batting) innings.batting = [];
     const sid = String(br.batsmanOnStrike?._id || br.batsmanOnStrike);
     const nid = String(br.batsmanNonStrike?._id || br.batsmanNonStrike);
+    const acc = computeBallAccounting(br);
 
     if (sid) {
       let bat = innings.batting.find(b => String(b.player?._id || b.player) === sid);
@@ -380,10 +385,11 @@ class ScoringEngine {
         }
         outBat.isOut = true; outBat.dismissalType = br.wicketType; outBat.dismissedBy = br.bowler; outBat.fielder = br.fielder;
       }
-      bat.runs += br.batsmanRuns;
-      if (!br.isWide && !br.isNoBall) { bat.ballsFaced += 1; if (br.batsmanRuns === 0 && !br.isWicket) bat.dotBalls += 1; }
-      if (br.isFour) bat.fours += 1;
-      if (br.isSix) bat.sixes += 1;
+      bat.runs += acc.batting.runs;
+      if (acc.batting.balls) bat.ballsFaced += acc.batting.balls;
+      if (acc.batting.dotBalls) bat.dotBalls += acc.batting.dotBalls;
+      if (acc.batting.fours) bat.fours += acc.batting.fours;
+      if (acc.batting.sixes) bat.sixes += acc.batting.sixes;
     }
     if (nid && br.batsmanRuns % 2 === 1) {
       let bat = innings.batting.find(b => String(b.player?._id || b.player) === nid);
@@ -406,15 +412,21 @@ class ScoringEngine {
     if (!innings.bowling) innings.bowling = [];
     let bowl = innings.bowling.find(b => String(b.player?._id || b.player) === bowlerId);
     if (!bowl) {
-      bowl = { player: br.bowler, overs: 0, maidens: 0, runs: 0, wickets: 0, wides: 0, noBalls: 0, balls: 0, dots: 0, economy: 0 };
+      bowl = { player: br.bowler, overs: 0, maidens: 0, runs: 0, wickets: 0, wides: 0, noBalls: 0, balls: 0, dotBalls: 0, economy: 0 };
       innings.bowling.push(bowl);
     }
-    if (!br.isWide && !br.isNoBall) { bowl.balls += 1; if (br.batsmanRuns === 0 && ballType === 'legal') bowl.dots += 1; }
-    if (ballType === 'wide') bowl.wides += 1;
-    if (ballType === 'noBall') bowl.noBalls += 1;
-    if (ballType === 'wide' || ballType === 'noBall') bowl.runs += br.extraRuns + br.batsmanRuns;
-    else if (ballType === 'legal') bowl.runs += br.batsmanRuns;
-    if (br.isWicket && br.wicketType !== 'runOut') bowl.wickets += 1;
+    // Older in-memory bowls used `dots`; the persisted/aggregated field is
+    // `dotBalls`. Normalise on read so the count keeps accumulating across
+    // deliveries instead of being frozen at the first dot ball.
+    if (bowl.dotBalls == null) bowl.dotBalls = bowl.dots || 0;
+    const acc = computeBallAccounting(br);
+    bowl.balls += acc.bowling.balls;
+    bowl.dotBalls += acc.bowling.dotBalls;
+    bowl.dots = bowl.dotBalls;
+    bowl.wides += acc.bowling.wides;
+    bowl.noBalls += acc.bowling.noBalls;
+    bowl.runs += acc.bowling.runs;
+    bowl.wickets += acc.bowling.wickets;
     const tb = bowl.balls;
     bowl.overs = Math.floor(tb / 6);
     bowl.economy = tb > 0 ? ((bowl.runs / tb) * 6).toFixed(2) : '0.00';
@@ -454,7 +466,10 @@ class ScoringEngine {
   _completeOver(innings, over) {
     over.isComplete = true;
     this.events.push({ type: 'overComplete', overNumber: over.overNumber, runs: over.runsScored, wickets: over.wickets });
-    const isMaiden = over.balls.every(b => b.batsmanRuns === 0 && !b.isWide && !b.isNoBall);
+    // Persisted balls keep the runs off the bat in `runs` (there is no
+    // `batsmanRuns` column), so read whichever is present. Without the fallback
+    // an over re-read from the database could never be detected as a maiden.
+    const isMaiden = over.balls.every(b => (b.batsmanRuns ?? b.runs ?? 0) === 0 && !b.isWide && !b.isNoBall);
     if (isMaiden) { over.isMaiden = true; this.events.push({ type: 'maiden', overNumber: over.overNumber }); }
     const bowler = innings.bowling?.find(b => String(b.player?._id || b.player) === String(over.bowler?._id || over.bowler));
     if (bowler && isMaiden) bowler.maidens = (bowler.maidens || 0) + 1;
@@ -500,8 +515,9 @@ class ScoringEngine {
       p = { runs: 0, balls: 0, batsman1: br.batsmanOnStrike, batsman2: br.batsmanNonStrike, startedAt: innings.wickets + 1, endedAt: null, endedBy: null };
       innings.partnerships.push(p);
     }
-    p.runs += (br.runs || 0) + (br.extraRuns || 0) + (br.penaltyRuns || 0);
-    if (!br.isWide && !br.isNoBall) p.balls += 1;
+    const acc = computeBallAccounting(br);
+    p.runs += acc.totalRuns;
+    if (acc.isLegal) p.balls += 1;
   }
 
   // ══════════════════════════════════════════════════════════════════════════════
