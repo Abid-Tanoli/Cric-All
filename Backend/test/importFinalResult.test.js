@@ -760,6 +760,8 @@ test("publishing the draft reveals the Final, derives completed, and crowns Sky 
     (beforeHub.body.matches || []).some((match) => String(match._id) === String(final._id)),
     false,
   );
+  // A draft Final is not public, so it must not crown anyone either.
+  assert.ok(beforeHub.body.winner == null, "a draft Final must not supply a champion");
 
   const beforeFixtures = mockRes();
   await getTournamentFixtures(mockReq({ params: { id: String(tournament._id) } }), beforeFixtures);
@@ -814,8 +816,12 @@ test("publishing the draft reveals the Final, derives completed, and crowns Sky 
     (afterHub.body.matches || []).some((match) => String(match._id) === String(final._id)),
     "the published Final must be on the public tournament page",
   );
-  // Known gap: publishing does not write Tournament.winner/runnerUp.
-  assert.equal(afterHub.body.winner, undefined);
+  // Publishing still does not write Tournament.winner/runnerUp, but the hub now
+  // falls back to the completed Final, so the response carries the honours the
+  // page renders without persisting anything.
+  const honourId = (value) => String(value?._id || value);
+  assert.equal(honourId(afterHub.body.winner), String(sky._id));
+  assert.equal(honourId(afterHub.body.runnerUp), String(youngStar._id));
 
   const afterFixtures = mockRes();
   await getTournamentFixtures(mockReq({ params: { id: String(tournament._id) } }), afterFixtures);
