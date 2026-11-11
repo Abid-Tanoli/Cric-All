@@ -1,6 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { deriveTournamentPublicState } from "../src/services/tournamentPublicState.js";
+import {
+  deriveTournamentPublicState,
+  deriveCompletedFinalHonours,
+  resolveTournamentHonours,
+} from "../src/services/tournamentPublicState.js";
 
 // The public header reads its status/range from the content endpoint. These
 // tests pin the derivation: a knockout is not "completed" until its final is,
@@ -134,4 +138,69 @@ test("an already-later stored end date is not shortened by an earlier fixture", 
     [match("final", "upcoming", FINAL_START)],
   );
   assert.equal(state.endDate.toISOString(), laterStored.toISOString());
+});
+
+// --- effective champion / runner-up ---------------------------------------
+
+const CHAMPION = "aaaaaaaaaaaaaaaaaaaaaaaa";
+const RUNNER_UP = "bbbbbbbbbbbbbbbbbbbbbbbb";
+
+const finalMatch = (extra = {}) => ({
+  _id: "cccccccccccccccccccccccc",
+  stage: "final",
+  stageLabel: "Final",
+  status: "completed",
+  teams: [
+    { _id: CHAMPION, name: "Sky Sports" },
+    { _id: RUNNER_UP, name: "Young Star" },
+  ],
+  result: { resultType: "normal", winner: { _id: CHAMPION, name: "Sky Sports" } },
+  ...extra,
+});
+
+test("a completed final gives the effective champion and runner-up when both are unset", () => {
+  const tournament = { type: "knockout", winner: null, runnerUp: null, teams: finalMatch().teams };
+  const honours = resolveTournamentHonours(tournament, [finalMatch()]);
+
+  assert.equal(String(honours.winner?._id), CHAMPION);
+  assert.equal(honours.winner.name, "Sky Sports");
+  assert.equal(String(honours.runnerUp?._id), RUNNER_UP);
+  assert.equal(honours.runnerUp.name, "Young Star");
+});
+
+test("stored honours take precedence over the final result", () => {
+  const storedWinner = { _id: "dddddddddddddddddddddddd", name: "Stored Winner" };
+  const storedRunnerUp = { _id: "eeeeeeeeeeeeeeeeeeeeeeee", name: "Stored Runner-up" };
+  const honours = resolveTournamentHonours(
+    { winner: storedWinner, runnerUp: storedRunnerUp, teams: [] },
+    [finalMatch()],
+  );
+
+  assert.equal(honours.winner, storedWinner);
+  assert.equal(honours.runnerUp, storedRunnerUp);
+});
+
+test("no completed final, a pending final and a tie are not guessed", () => {
+  assert.equal(deriveCompletedFinalHonours([]), null);
+  assert.equal(deriveCompletedFinalHonours([finalMatch({ status: "upcoming" })]), null);
+  assert.equal(
+    deriveCompletedFinalHonours([
+      finalMatch({ result: { resultType: "tie", winner: null, isTie: true } }),
+    ]),
+    null,
+  );
+  assert.equal(
+    deriveCompletedFinalHonours([
+      finalMatch({ result: { resultType: "no result", winner: null } }),
+    ]),
+    null,
+  );
+
+  const honours = resolveTournamentHonours({ winner: null, runnerUp: null }, []);
+  assert.equal(honours.winner, null);
+  assert.equal(honours.runnerUp, null);
+});
+
+test("a draft final never supplies the public champion", () => {
+  assert.equal(deriveCompletedFinalHonours([finalMatch({ manualDraft: true })]), null);
 });

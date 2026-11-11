@@ -110,8 +110,19 @@ export const getTournamentStats = async (req, res) => {
       writeTournamentStatsCache(tournament._id, settings.stats, stats, now);
     }
 
+    // The Player of the Tournament card needs to know whether the Final is
+    // actually over. Derive it from all fixtures (the stats cache only holds
+    // completed matches) so the note is never driven by a stale stored winner.
+    const statusMatches = await Match.find({
+      tournament: tournament._id,
+      manualDraft: { $ne: true },
+    })
+      .select("stage stageLabel round status startAt manualDraft isDraft")
+      .lean();
+    const publicState = deriveTournamentPublicState(tournament, statusMatches);
+
     res.set("Cache-Control", "public, max-age=15, stale-while-revalidate=30");
-    res.status(200).json(stats);
+    res.status(200).json({ ...stats, publicStatus: publicState.status });
   } catch (error) {
     if (error instanceof HttpError) return res.status(error.status).json({ message: error.message });
     console.error("Error computing tournament stats:", error);

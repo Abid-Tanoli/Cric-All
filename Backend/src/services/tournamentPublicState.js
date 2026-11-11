@@ -34,6 +34,29 @@ const FINISHED_MATCH_STATUSES = new Set(["completed", "abandoned"]);
 
 const statusOf = (match) => String(match?.status || "").toLowerCase();
 
+const idOf = (value) => {
+  if (!value) return "";
+  if (typeof value === "object") return String(value._id || value.id || "");
+  return String(value);
+};
+
+const isDraft = (match) => match?.manualDraft === true || match?.isDraft === true;
+
+const UNDECIDED_RESULT_TYPES = new Set([
+  "tie",
+  "tied",
+  "draw",
+  "drawn",
+  "no_result",
+  "noresult",
+  "abandoned",
+  "cancelled",
+  "canceled",
+]);
+
+const normalizeResultType = (value) =>
+  String(value || "").trim().toLowerCase().replace(/[\s-]+/g, "_");
+
 const validDate = (value) => {
   if (!value) return null;
   const date = new Date(value);
@@ -96,4 +119,73 @@ export function deriveTournamentPublicState(tournament = {}, matches = []) {
   return { status: "upcoming", endDate };
 }
 
-export default { deriveTournamentPublicState };
+/**
+ * Pure: derive the champion and runner-up from a completed Final.
+ *
+ * This mirrors the bracket champion rule: only a published (non-draft) Final
+ * whose status is "completed" and whose result has a decided winner counts.
+ * Ties, draws, no-results and abandoned finals have no winner, so they return
+ * null rather than guessing. The runner-up is the other team in that Final.
+ *
+ * @param {Array} matches Match-like documents (stage/stageLabel/status/teams/result).
+ * @returns {{ winnerId: string, runnerUpId: string, winner: any, runnerUp: any, final: object }|null}
+ */
+export function deriveCompletedFinalHonours(matches = []) {
+  const finals = (matches || [])
+    .filter((match) => match && !isDraft(match) && normalizeBracketStage(match) === "final")
+    .sort(
+      (a, b) =>
+        new Date(a.startAt || 0).getTime() - new Date(b.startAt || 0).getTime() ||
+        (Number(a.matchNumber) || 0) - (Number(b.matchNumber) || 0),
+    );
+
+  const final = finals.find((match) => {
+    if (statusOf(match) !== "completed") return false;
+    if (!idOf(match.result?.winner)) return false;
+    if (match.result?.isTie === true) return false;
+    const resultType = normalizeResultType(match.result?.resultType);
+    return !UNDECIDED_RESULT_TYPES.has(resultType);
+  });
+  if (!final) return null;
+
+  const winnerId = idOf(final.result?.winner);
+  const teams = (final.teams || []).filter((team) => idOf(team));
+  const runnerUp = teams.find((team) => idOf(team) !== winnerId);
+  // A final without both teams is not enough to name a runner-up; refuse to
+  // invent one from a bare winner id.
+  if (!teams.some((team) => idOf(team) === winnerId) || !runnerUp) return null;
+
+  const teamOf = (id) => teams.find((team) => idOf(team) === id) || id;
+  return {
+    final,
+    winnerId,
+    runnerUpId: idOf(runnerUp),
+    winner: teamOf(winnerId),
+    runnerUp: teamOf(idOf(runnerUp)),
+  };
+}
+
+/**
+ * Pure: the honours the public API should return. A stored value always wins;
+ * only an unset field falls back to the completed Final. Nothing is written.
+ */
+export function resolveTournamentHonours(tournament = {}, matches = []) {
+  const storedWinner = tournament?.winner || null;
+  const storedRunnerUp = tournament?.runnerUp || null;
+  const derived = deriveCompletedFinalHonours(matches);
+  if (!derived) return { winner: storedWinner, runnerUp: storedRunnerUp, derived: null };
+
+  const teamPool = [...(tournament?.teams || []), ...(derived.final?.teams || [])];
+  const pick = (stored, id, fallback) => {
+    if (stored) return stored;
+    return teamPool.find((team) => idOf(team) === id) || fallback || id;
+  };
+
+  return {
+    winner: pick(storedWinner, derived.winnerId, derived.winner),
+    runnerUp: pick(storedRunnerUp, derived.runnerUpId, derived.runnerUp),
+    derived,
+  };
+}
+
+export default { deriveTournamentPublicState, deriveCompletedFinalHonours, resolveTournamentHonours };
