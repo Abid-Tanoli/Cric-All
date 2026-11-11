@@ -9,6 +9,7 @@ import { featureFlags } from "../config/features";
 import KnockoutRounds from "../components/KnockoutRounds";
 import { STAGE_ORDER } from "../components/knockoutBracket";
 import { buildTournamentAwards } from "../utils/tournamentAwards";
+import { teamShortName } from "../utils/teamDisplay";
 
 export default function Series() {
   const { seriesId } = useParams();
@@ -434,7 +435,7 @@ export default function Series() {
                   <div className="space-y-2">
                     {completedMatches.slice(0, 5).map(match => (
                       <Link key={match._id} to={`/match/${match._id}`} className="block p-3 rounded-lg hover:bg-cric-bg transition-colors">
-                        <p className="font-bold text-sm text-cric-text">{match.teams?.map(t => t.shortName || t.name).join(" vs ")}</p>
+                        <p className="font-bold text-sm text-cric-text">{match.teams?.map(teamShortName).join(" vs ")}</p>
                         <p className="text-xs text-cric-muted">{match.result?.description || "Completed"}</p>
                       </Link>
                     ))}
@@ -449,7 +450,7 @@ export default function Series() {
                   <div className="space-y-2">
                     {upcomingMatches.slice(0, 5).map(match => (
                       <Link key={match._id} to={`/match/${match._id}`} className="block p-3 rounded-lg hover:bg-cric-bg transition-colors">
-                        <p className="font-bold text-sm text-cric-text">{match.teams?.map(t => t.shortName || t.name).join(" vs ")}</p>
+                        <p className="font-bold text-sm text-cric-text">{match.teams?.map(teamShortName).join(" vs ")}</p>
                         <p className="text-xs text-cric-muted">{match.startAt ? new Date(match.startAt).toLocaleString() : "Date TBD"}</p>
                       </Link>
                     ))}

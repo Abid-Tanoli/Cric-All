@@ -11,6 +11,7 @@ import { initSocket } from "../services/socket";
 import CreatePlayerProfile from "../components/CreatePlayerProfile";
 import { featureFlags } from "../config/features";
 import { useCricketProviderStatus, isProviderConfigured } from "../hooks/useCricketProviderStatus";
+import { teamShortName } from "../utils/teamDisplay";
 
 const statusBadge = (match) => {
   const s = match.status;
@@ -133,7 +134,7 @@ export function Home() {
                 <div className="w-5 h-5 rounded-full bg-cric-muted/20 flex-shrink-0 flex items-center justify-center text-[9px] font-bold text-cric-muted overflow-hidden">
                   {team?.logo ? <img src={team.logo} alt="" className="w-full h-full object-cover" /> : (team?.shortName || team?.name || "T")?.charAt(0)}
                 </div>
-                <span className="text-sm font-bold text-cric-text truncate">{team?.shortName || team?.name || "Team"}</span>
+                <span className="text-sm font-bold text-cric-text truncate">{teamShortName(team)}</span>
               </div>
               <span className="text-sm font-black tabular-nums text-cric-text ml-2">
                 {inn ? `${inn.runs || 0}/${inn.wickets ?? "-"}` : "-"}
@@ -243,7 +244,7 @@ export function Home() {
                           const inn = m.innings?.[idx];
                           return (
                             <div key={team?._id || idx} className="flex items-center justify-between py-0.5">
-                              <span className="text-sm font-bold text-cric-text truncate">{team?.shortName || team?.name || "Team"}</span>
+                              <span className="text-sm font-bold text-cric-text truncate">{teamShortName(team)}</span>
                               <span className="text-sm font-black tabular-nums text-cric-text ml-2">{inn ? `${inn.runs || 0}/${inn.wickets ?? "-"}` : "-"}</span>
                             </div>
                           );

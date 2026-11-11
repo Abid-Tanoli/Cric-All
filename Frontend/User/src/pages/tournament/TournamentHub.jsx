@@ -4,6 +4,7 @@ import useTournamentHub from "./useTournamentHub";
 import { resolveTabs } from "./registry";
 import TournamentSidebar from "./TournamentSidebar";
 import ShareButton from "../../components/ShareButton";
+import TournamentChampionHero from "../../components/TournamentChampionHero";
 import HomeTab from "./tabs/HomeTab";
 import FixturesTab from "./tabs/FixturesTab";
 import TableTab from "./tabs/TableTab";
@@ -169,6 +170,8 @@ export default function TournamentHub() {
                 </p>
               </div>
             </div>
+
+            <TournamentChampionHero tournament={tournament} overview={overview} />
           </div>
         </div>
 

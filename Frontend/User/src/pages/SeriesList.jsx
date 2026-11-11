@@ -4,6 +4,7 @@ import { api } from "../services/api";
 import SeriesCard from "../components/cricapi/SeriesCard";
 import Loader from "../components/cricapi/Loader";
 import ErrorState from "../components/cricapi/ErrorState";
+import { buildTournamentAwards } from "../utils/tournamentAwards";
 
 const LOCAL_TYPES = ["single-match", "series", "tri-series", "tournament", "world-cup", "champions-trophy", "league"];
 
@@ -126,6 +127,18 @@ export default function SeriesList() {
     (!statusFilter || event.status === statusFilter)
   ));
 
+  // Reuse the shared award builder so the same `winner`/`runnerUp` rule the
+  // tournament page uses decides whether a completed card names a champion.
+  const championByEvent = useMemo(() => {
+    const names = new Map();
+    for (const event of events) {
+      if (event.status !== "completed") continue;
+      const champion = buildTournamentAwards(event).find((row) => row.title === "Champion");
+      if (champion?.name) names.set(String(event._id), champion.name);
+    }
+    return names;
+  }, [events]);
+
   return (
     <div className="min-h-screen bg-cric-bg">
       <div className="bg-gradient-to-r from-cric-accent via-[#0a2d5e] to-cric-accent py-8 text-white">
@@ -235,6 +248,11 @@ export default function SeriesList() {
                       <span>{event.matches?.length || 0} Matches</span>
                       {event.startDate && <><span>-</span><span>{new Date(event.startDate).toLocaleDateString()}</span></>}
                     </div>
+                    {championByEvent.get(String(event._id)) && (
+                      <p data-testid={`local-champion-${event._id}`} className="mt-2 truncate text-xs font-bold text-amber-600 dark:text-amber-400">
+                        Champions: <span className="text-cric-text">{championByEvent.get(String(event._id))}</span>
+                      </p>
+                    )}
                   </div>
                 </Link>
               ))}
