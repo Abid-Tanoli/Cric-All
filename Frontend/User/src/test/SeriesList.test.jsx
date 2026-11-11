@@ -50,6 +50,8 @@ const completedTournament = {
   publicStatus: "completed",
   teams: [],
   matches: [],
+  winner: { _id: "team-sky", name: "Sky Sports", shortName: "" },
+  runnerUp: { _id: "team-young", name: "Young Star", shortName: "" },
 };
 
 function mockApi() {
@@ -89,6 +91,14 @@ describe("SeriesList local events and tournaments", () => {
 
     expect(await screen.findByTestId(`local-status-${ONGOING_ID}`)).toHaveTextContent("in progress");
     expect(screen.getByTestId(`local-status-${COMPLETED_ID}`)).toHaveTextContent("completed");
+  });
+
+  it("shows the champion on a completed tournament card", async () => {
+    renderPage();
+
+    await screen.findByText(completedTournament.name);
+    expect(screen.getByTestId(`local-champion-${COMPLETED_ID}`)).toHaveTextContent("Champions: Sky Sports");
+    expect(screen.queryByTestId(`local-champion-${ONGOING_ID}`)).not.toBeInTheDocument();
   });
 
   it("filters by status and restores both collections under All", async () => {

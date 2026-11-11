@@ -2,6 +2,8 @@ import React from "react";
 import { Link } from "react-router-dom";
 import { groupMatches } from "../matchUtils";
 import TournamentAwardsShowcase from "../../../components/TournamentAwardsShowcase";
+import TournamentChampionCard from "../../../components/TournamentChampionCard";
+import { teamShortName } from "../../../utils/teamDisplay";
 
 function StatBox({ value, label, tone = "text-cric-text" }) {
   return (
@@ -16,7 +18,7 @@ function MiniMatchLink({ match }) {
   return (
     <Link to={`/match/${match._id}`} className="block p-3 rounded-lg hover:bg-cric-bg transition-colors">
       <p className="font-bold text-sm text-cric-text">
-        {(match.teams || []).map((t) => t?.shortName || t?.name).filter(Boolean).join(" vs ") || match.title}
+        {(match.teams || []).map(teamShortName).filter(Boolean).join(" vs ") || match.title}
       </p>
       <p className="text-xs text-cric-muted">
         {match.result?.description || (match.startAt ? new Date(match.startAt).toLocaleString() : "Date TBD")}
@@ -25,7 +27,7 @@ function MiniMatchLink({ match }) {
   );
 }
 
-export default function HomeTab({ content, matches = [], stats = {}, basePath }) {
+export default function HomeTab({ tournament, content, matches = [], stats = {}, basePath }) {
   const { live, completed, upcoming } = groupMatches(matches);
   const overview = content?.overview || {};
   const sixes = stats?.boundaryMeter?.sixes ?? stats?.totalSixes ?? 0;
@@ -35,6 +37,7 @@ export default function HomeTab({ content, matches = [], stats = {}, basePath })
 
   return (
     <div className="space-y-8">
+      <TournamentChampionCard tournament={tournament} overview={overview} matches={matches} />
       <TournamentAwardsShowcase stats={stats} showDerived={overview.status === "completed"} />
       {(overview.shortDescription || overview.city) && (
         <div className="bg-cric-card rounded-2xl shadow-sm p-6 border border-cric-border">
