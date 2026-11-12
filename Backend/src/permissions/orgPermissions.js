@@ -13,6 +13,11 @@ export const PERMISSIONS = Object.freeze({
   MANAGE_TEAMS: "manage_teams",
   MANAGE_PLAYERS: "manage_players",
   CREATE_MATCH: "create_match",
+  // Phase 2 (org-owned competitions): create/manage the organization's
+  // tournaments and series. Deliberately NOT granted to `manager`: a manager may
+  // run a match (create_match) but may not mint a competition. owner/admin hold
+  // it through ALL_PERMISSIONS.
+  MANAGE_COMPETITIONS: "manage_competitions",
   SCORE_MATCH: "score_match",
   PUBLISH_CONTENT: "publish_content",
   MODERATE_COMMENTS: "moderate_comments",

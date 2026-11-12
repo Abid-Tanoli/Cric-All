@@ -992,10 +992,15 @@ export const getMatchSquads = async (req, res) => {
       ? tournamentRule === true
       : matchRule === true;
     const platformEnabled = platformSettings?.enableSuperSub === true;
+    // Phase 2: an organization's own match does not need the platform master
+    // switch — the host's per-match/tournament setting is authoritative. A
+    // platform (org-less) match keeps the narrowing rule.
+    const isOrgMatch = Boolean(match.organizationRef);
     const twelfthManRule = {
-      enabled: platformEnabled && scopedEnabled,
+      enabled: isOrgMatch ? scopedEnabled : (platformEnabled && scopedEnabled),
       platformEnabled,
       scopedEnabled,
+      organizationControlled: isOrgMatch,
       matchValue: matchRule ?? null,
       tournamentValue: tournamentRule ?? null,
       source: matchRule === null || matchRule === undefined
@@ -1730,18 +1735,22 @@ export const setImpactPlayer = async (req, res) => {
     const { matchId } = req.params;
     const { teamId, playerId, replacesPlayerId } = req.body;
 
-    // 1. Platform master switch. Off blocks the rule everywhere.
-    const settings = await getPlatformSettings();
-    if (!settings?.enableSuperSub) {
-      return res.status(403).json({
-        message: "The 12th Man rule is disabled for this platform.",
-        code: "TWELFTH_MAN_DISABLED",
-      });
-    }
-
     const match = await Match.findById(matchId);
     if (!match) {
       return res.status(404).json({ message: "Match not found" });
+    }
+
+    // 1. Platform master switch. Off blocks the rule everywhere EXCEPT an
+    //    organization's own match, where the host's per-match/tournament
+    //    setting is authoritative (Phase 2).
+    if (!match.organizationRef) {
+      const settings = await getPlatformSettings();
+      if (!settings?.enableSuperSub) {
+        return res.status(403).json({
+          message: "The 12th Man rule is disabled for this platform.",
+          code: "TWELFTH_MAN_DISABLED",
+        });
+      }
     }
 
     // 2. Scope: this match's rule, else its tournament's rule, else off. Enabling

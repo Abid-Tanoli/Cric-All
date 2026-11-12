@@ -6,6 +6,7 @@ import {
   requireOrgMembership,
   requireOrgOwner,
   requireOrgPermission,
+  requirePlatformAdminDelete,
 } from '../middleware/orgAccess.js';
 import { PERMISSIONS } from '../permissions/orgPermissions.js';
 import validateObjectId from '../middleware/validateObjectId.js';
@@ -61,9 +62,37 @@ import {
   listOrgEvents,
   listOrgMatches,
   setOrgMatchSquads,
+  setOrgMatchTwelfthMan,
   updateOrgEvent,
   updateOrgMatch,
 } from '../controllers/orgMatchesController.js';
+import {
+  addOrgTournamentTeams,
+  applyOrgTournamentFixtures,
+  createOrgSeries,
+  createOrgTournament,
+  createOrgTournamentMatch,
+  deleteOrgSeries,
+  deleteOrgTournament,
+  deleteOrgTournamentSquad,
+  getOrgSeries,
+  getOrgTournament,
+  getOrgTournamentFixtures,
+  getOrgTournamentPointsTable,
+  getOrgTournamentSquad,
+  listOrgSeries,
+  listOrgTournaments,
+  previewOrgTournamentFixtures,
+  recomputeOrgTournamentPoints,
+  removeOrgTournamentTeam,
+  setOrgTournamentAwards,
+  setOrgTournamentGroups,
+  setOrgTournamentOfficialAwards,
+  setOrgTournamentSquad,
+  updateOrgSeries,
+  updateOrgTournament,
+} from '../controllers/orgCompetitionsController.js';
+import { requireOrgSeries, requireOrgTournament } from '../middleware/orgCompetition.js';
 import {
   addOrgMember,
   getMyOrgAccess,
@@ -179,16 +208,141 @@ const matchRead = [...orgScoped, requireOrgMembership];
 const matchWrite = [...orgScoped, validateObjectId('matchId'), requireOrgPermission(PERMISSIONS.CREATE_MATCH)];
 const eventWrite = [...orgScoped, validateObjectId('eventId'), requireOrgPermission(PERMISSIONS.CREATE_MATCH)];
 
+// Product rule: only the platform admin may hard-delete a match, event,
+// tournament or series. The guard runs before the permission check so *every*
+// org role (owner included) gets the same ADMIN_ONLY_DELETE refusal and is told
+// to request the deletion instead. Cancelling/abandoning a match through status
+// and unlinking a team or player stay allowed and are untouched below.
+const matchDelete = [...orgScoped, requirePlatformAdminDelete, validateObjectId('matchId'), requireOrgPermission(PERMISSIONS.CREATE_MATCH)];
+const eventDelete = [...orgScoped, requirePlatformAdminDelete, validateObjectId('eventId'), requireOrgPermission(PERMISSIONS.CREATE_MATCH)];
+
 router.get('/:id/matches', ...matchRead, listOrgMatches);
 router.post('/:id/matches', ...orgScoped, requireOrgPermission(PERMISSIONS.CREATE_MATCH), validate(createOrgMatchSchema), createOrgMatch);
 router.patch('/:id/matches/:matchId', ...matchWrite, validate(updateOrgMatchSchema), updateOrgMatch);
-router.delete('/:id/matches/:matchId', ...matchWrite, deleteOrgMatch);
+router.delete('/:id/matches/:matchId', ...matchDelete, deleteOrgMatch);
 router.put('/:id/matches/:matchId/squads', ...matchWrite, validate(setOrgMatchSquadsSchema), setOrgMatchSquads);
+
+// Phase 2: the per-match "12th Man" switch belongs to the competition owner, not
+// to whoever sets a XI, so it needs manage_competitions rather than create_match.
+router.put(
+  '/:id/matches/:matchId/twelfth-man',
+  ...orgScoped,
+  validateObjectId('matchId'),
+  requireOrgPermission(PERMISSIONS.MANAGE_COMPETITIONS),
+  setOrgMatchTwelfthMan
+);
 
 router.get('/:id/events', ...matchRead, listOrgEvents);
 router.post('/:id/events', ...orgScoped, requireOrgPermission(PERMISSIONS.CREATE_MATCH), validate(createOrgEventSchema), createOrgEvent);
 router.patch('/:id/events/:eventId', ...eventWrite, validate(updateOrgEventSchema), updateOrgEvent);
-router.delete('/:id/events/:eventId', ...eventWrite, deleteOrgEvent);
+router.delete('/:id/events/:eventId', ...eventDelete, deleteOrgEvent);
+
+// --- competitions this organization owns (Phase 2) --------------------------
+// Tournaments and series used to be a platform-Admin-only surface. An
+// organization now runs its own: creating/editing/deleting a competition and
+// its housekeeping (teams, groups, points, honours) needs manage_competitions,
+// while match setup inside one (fixtures, matches, squads) needs create_match,
+// so a manager can run the day without being able to mint a competition.
+//
+// Every by-id route resolves the document WITH organizationRef:
+// requireOrgTournament/requireOrgSeries make another tenant's competition a 404
+// (never a 403 — whether it exists is not this caller's business), and re-point
+// `req.params.id`/`tournamentId`/`seriesId` at the verified document so the
+// reused Admin handler can never act on an unscoped id.
+const competitionRead = [...orgScoped, requireOrgMembership];
+const competitionWrite = [...orgScoped, requireOrgPermission(PERMISSIONS.MANAGE_COMPETITIONS)];
+const competitionFixture = [...orgScoped, requireOrgPermission(PERMISSIONS.CREATE_MATCH)];
+
+const tournamentRead = [...competitionRead, requireOrgTournament()];
+const tournamentWrite = [...competitionWrite, requireOrgTournament()];
+const tournamentFixture = [...competitionFixture, requireOrgTournament()];
+const tournamentDelete = [
+  ...orgScoped,
+  requirePlatformAdminDelete,
+  requireOrgPermission(PERMISSIONS.MANAGE_COMPETITIONS),
+  requireOrgTournament(),
+];
+
+// Tournaments
+router.get('/:id/tournaments', ...competitionRead, listOrgTournaments);
+router.post('/:id/tournaments', ...competitionWrite, createOrgTournament);
+router.get('/:id/tournaments/:tournamentId', ...tournamentRead, getOrgTournament);
+router.put('/:id/tournaments/:tournamentId', ...tournamentWrite, updateOrgTournament);
+router.delete('/:id/tournaments/:tournamentId', ...tournamentDelete, deleteOrgTournament);
+
+// Teams entered in a tournament. Guest teams from another organization are
+// registered here by the host, so this is a competition-level edit.
+router.post('/:id/tournaments/:tournamentId/teams', ...tournamentWrite, addOrgTournamentTeams);
+router.delete(
+  '/:id/tournaments/:tournamentId/teams/:teamId',
+  ...tournamentWrite,
+  validateObjectId('teamId'),
+  removeOrgTournamentTeam
+);
+
+// Draw / bracket / groups and the points table.
+router.put('/:id/tournaments/:tournamentId/groups', ...tournamentWrite, setOrgTournamentGroups);
+router.get('/:id/tournaments/:tournamentId/points-table', ...tournamentRead, getOrgTournamentPointsTable);
+router.post(
+  '/:id/tournaments/:tournamentId/points-table/recompute',
+  ...tournamentWrite,
+  recomputeOrgTournamentPoints
+);
+
+// Fixtures (draw generation plus a single scheduled match) are match setup.
+router.get('/:id/tournaments/:tournamentId/fixtures', ...tournamentRead, getOrgTournamentFixtures);
+router.post(
+  '/:id/tournaments/:tournamentId/fixtures/preview',
+  ...tournamentFixture,
+  previewOrgTournamentFixtures
+);
+router.post(
+  '/:id/tournaments/:tournamentId/fixtures/apply',
+  ...tournamentFixture,
+  applyOrgTournamentFixtures
+);
+router.post('/:id/tournaments/:tournamentId/matches', ...tournamentFixture, createOrgTournamentMatch);
+
+// Squads are part of naming a XI, so create_match — the same gate as the org
+// match squads above.
+router.get('/:id/tournaments/:tournamentId/squad', ...tournamentRead, getOrgTournamentSquad);
+router.get(
+  '/:id/tournaments/:tournamentId/squad/:teamId',
+  ...tournamentRead,
+  validateObjectId('teamId'),
+  getOrgTournamentSquad
+);
+router.post('/:id/tournaments/:tournamentId/squad', ...tournamentFixture, setOrgTournamentSquad);
+router.delete(
+  '/:id/tournaments/:tournamentId/squad/:teamId',
+  ...tournamentFixture,
+  validateObjectId('teamId'),
+  deleteOrgTournamentSquad
+);
+
+// Honours: winner/runner-up and the player awards.
+router.put('/:id/tournaments/:tournamentId/awards', ...tournamentWrite, setOrgTournamentAwards);
+router.put(
+  '/:id/tournaments/:tournamentId/official-awards',
+  ...tournamentWrite,
+  setOrgTournamentOfficialAwards
+);
+
+// Series
+const seriesRead = [...competitionRead, requireOrgSeries()];
+const seriesWrite = [...competitionWrite, requireOrgSeries()];
+const seriesDelete = [
+  ...orgScoped,
+  requirePlatformAdminDelete,
+  requireOrgPermission(PERMISSIONS.MANAGE_COMPETITIONS),
+  requireOrgSeries(),
+];
+
+router.get('/:id/series', ...competitionRead, listOrgSeries);
+router.post('/:id/series', ...competitionWrite, createOrgSeries);
+router.get('/:id/series/:seriesId', ...seriesRead, getOrgSeries);
+router.put('/:id/series/:seriesId', ...seriesWrite, updateOrgSeries);
+router.delete('/:id/series/:seriesId', ...seriesDelete, deleteOrgSeries);
 
 // --- dashboard support -------------------------------------------------------
 router.get('/:id/access', ...manage, validateObjectId('id'), getMyOrgAccess);

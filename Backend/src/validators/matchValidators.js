@@ -74,6 +74,10 @@ export const createOrgMatchSchema = z
       .length(2, 'A fixture needs exactly two teams')
       .refine((teams) => teams[0] !== teams[1], { message: 'A team cannot play itself' }),
     eventId: objectId.optional(),
+    // A fixture may be filed under one of the organization's own tournaments,
+    // in which case its two teams only need to be registered in that
+    // tournament (which is how a guest team from another org takes part).
+    tournamentId: objectId.optional(),
     series: z.string().trim().max(200).optional(),
     seriesMatchNumber: z.number().int().min(1).max(500).optional(),
   })

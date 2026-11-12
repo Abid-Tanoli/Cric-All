@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 import Match from "../models/Match.js";
 import Event from "../models/Event.js";
 import Team from "../models/Team.js";
+import Tournament from "../models/Tournament.js";
 import { recordAudit } from "../utils/audit.js";
 import { emitToAll } from "../socket/socket.js";
 import { buildMatchInnings } from "../utils/matchInnings.js";
@@ -53,6 +54,46 @@ async function assertEventInOrg(orgId, eventId) {
     throw error;
   }
   return event;
+}
+
+/**
+ * Phase 2: a fixture inside an org tournament may field guest teams — a team
+ * owned by another organization that the host registered in the tournament.
+ * The rule is therefore "belongs to this org OR is registered in this
+ * tournament", not "belongs to this org". The tournament itself must still be
+ * the host's own, and every team must be on its registered list.
+ */
+async function assertTeamsRegisteredInTournament(orgId, tournamentId, teamIds) {
+  const tournament = await Tournament.findOne({ _id: tournamentId, organizationRef: orgId })
+    .select("teams")
+    .lean();
+  if (!tournament) {
+    const error = new Error("That tournament does not belong to this organization");
+    error.code = "TOURNAMENT_NOT_IN_ORG";
+    error.status = 422;
+    throw error;
+  }
+  const registered = new Set((tournament.teams || []).map((id) => String(id?._id || id)));
+  if (!teamIds.every((id) => registered.has(String(id)))) {
+    const error = new Error("Both teams must be registered in this tournament");
+    error.code = "TOURNAMENT_TEAM_NOT_REGISTERED";
+    error.status = 422;
+    throw error;
+  }
+  const teams = await Team.find({ _id: { $in: teamIds } }).select("_id name").lean();
+  if (teams.length !== teamIds.length) {
+    const error = new Error("One or both teams do not exist");
+    error.code = "MATCH_TEAM_NOT_FOUND";
+    error.status = 422;
+    throw error;
+  }
+  return teams;
+}
+
+/** Resolve the two teams for a fixture, honouring a tournament's guest list. */
+async function assertFixtureTeams(orgId, teams, tournamentId) {
+  if (tournamentId) return assertTeamsRegisteredInTournament(orgId, tournamentId, teams);
+  return assertTeamsInOrg(orgId, teams);
 }
 
 function sendError(res, error, fallback) {
@@ -126,8 +167,11 @@ export const listOrgMatches = async (req, res) => {
 
 export const createOrgMatch = async (req, res) => {
   try {
-    const { title, venue, matchType, startAt, teams, eventId, series, seriesMatchNumber } = req.body;
-    const ownedTeams = await assertTeamsInOrg(req.org._id, teams);
+    const { title, venue, matchType, startAt, teams, eventId, series, seriesMatchNumber, tournamentId } = req.body;
+    // A standalone fixture needs two teams this organization owns; a fixture
+    // filed under one of the org's tournaments may instead use guest teams the
+    // host registered in that tournament.
+    const ownedTeams = await assertFixtureTeams(req.org._id, teams, tournamentId);
     if (eventId) await assertEventInOrg(req.org._id, eventId);
 
     // Keep the order the caller chose: "A vs B" is not the same fixture as
@@ -141,9 +185,11 @@ export const createOrgMatch = async (req, res) => {
       startAt,
       teams,
       event: eventId || null,
+      tournament: tournamentId || null,
       series: series || "",
       seriesMatchNumber: seriesMatchNumber ?? null,
-      // The tenant key is stamped here, from the authorized organization.
+      // The tenant key is stamped here, from the authorized organization. A
+      // guest team playing in the host's tournament still gets the host's ref.
       organizationRef: req.org._id,
       organization: req.org.name || "",
       status: "upcoming",
@@ -152,6 +198,12 @@ export const createOrgMatch = async (req, res) => {
 
     if (eventId) {
       await Event.updateOne({ _id: eventId, organization: req.org._id }, { $addToSet: { matches: match._id } });
+    }
+    if (tournamentId) {
+      await Tournament.updateOne(
+        { _id: tournamentId, organizationRef: req.org._id },
+        { $addToSet: { matches: match._id } },
+      );
     }
 
     await recordAudit({
@@ -197,7 +249,7 @@ export const updateOrgMatch = async (req, res) => {
           code: "MATCH_ALREADY_SCORED",
         });
       }
-      await assertTeamsInOrg(req.org._id, teams);
+      await assertFixtureTeams(req.org._id, teams, match.tournament);
       match.teams = teams;
       match.innings = [
         { team: teams[0], status: "upcoming" },
@@ -338,6 +390,41 @@ export const setOrgMatchSquads = async (req, res) => {
   }
 };
 
+// Phase 2: the per-match "12th Man" switch, set by the host organization. The
+// platform master switch no longer gates an org match (see matchController),
+// so this is the owner's own on/off for one fixture.
+export const setOrgMatchTwelfthMan = async (req, res) => {
+  try {
+    const match = await Match.findOne({ _id: req.params.matchId, organizationRef: req.org._id });
+    if (!match) return matchNotFound(res);
+
+    const enabled = req.body?.enabled;
+    if (typeof enabled !== "boolean") {
+      return res.status(400).json({ message: "`enabled` must be a boolean", code: "TWELFTH_MAN_BAD_VALUE" });
+    }
+
+    match.rules = {
+      ...(match.rules?.toObject ? match.rules.toObject() : (match.rules || {})),
+      twelfthManEnabled: enabled,
+    };
+    await match.save();
+
+    await recordAudit({
+      req,
+      organization: req.org._id,
+      action: "match.twelfth_man_updated",
+      targetType: "match",
+      targetId: match._id,
+      targetLabel: match.title,
+      metadata: { twelfthManEnabled: enabled },
+    });
+
+    res.status(200).json({ rules: match.rules });
+  } catch (error) {
+    sendError(res, error, "Failed to update the 12th Man rule");
+  }
+};
+
 // ---------------------------------------------------------------------------
 // Events
 // ---------------------------------------------------------------------------
@@ -470,6 +557,7 @@ export default {
   updateOrgMatch,
   deleteOrgMatch,
   setOrgMatchSquads,
+  setOrgMatchTwelfthMan,
   listOrgEvents,
   createOrgEvent,
   updateOrgEvent,

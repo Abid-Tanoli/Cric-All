@@ -141,6 +141,15 @@ const tournamentSchema = new mongoose.Schema(
       ref: "Admin",
       default: null
     },
+    // Phase 2 (org-owned competitions): the organization that owns this
+    // tournament. `null` means a platform tournament that only the Admin app may
+    // write; documents written before this field existed read back as null and
+    // therefore stay platform-owned, so no migration is required.
+    organizationRef: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "TeamOrganization",
+      default: null
+    },
     // Per-tournament rule defaults for its matches. A match with its own
     // rules.twelfthManEnabled set overrides this; otherwise the match inherits.
     // The "12th Man" rule is still gated by the platform master switch
@@ -203,6 +212,9 @@ const tournamentSchema = new mongoose.Schema(
 
 tournamentSchema.index({ status: 1, startDate: -1 });
 tournamentSchema.index({ teams: 1 });
+// The organization dashboard's tournament list: this tenant's competitions,
+// soonest first.
+tournamentSchema.index({ organizationRef: 1, startDate: -1 });
 
 const Tournament = mongoose.models.Tournament || mongoose.model("Tournament", tournamentSchema);
 
