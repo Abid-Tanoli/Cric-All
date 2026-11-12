@@ -1058,16 +1058,28 @@ describe("Phase 11 - cross-tenant authorization matrix", () => {
     });
 
     test("a destructive verb is still reachable for the principals entitled to it", async () => {
-      // The suite is non-destructive everywhere else, so the success side of
-      // DELETE is only asserted here, against fixtures nothing else reads. Two
-      // throwaway matches exist precisely so the tenant-scoped owner path and the
-      // global platform-admin path can both be proven without one eating the
-      // other's fixture.
-      await assertPermitted({
+      // Hard-deletes are platform-admin only now. The suite is non-destructive
+      // everywhere else, so the success side of DELETE is only asserted here,
+      // against fixtures nothing else reads: two throwaway matches exist so the
+      // org-scoped admin path and the global admin path can both be proven, plus
+      // one owner refusal on the org route.
+      const refused = await assertRefused({
         api: world.actors.owner.api,
         method: "delete",
         path: `/organizations/${v().orgId}/matches/${world.disposable.matchId}`,
         label: "tenant match delete as owner",
+      });
+      assert.strictEqual(
+        refused.body?.code,
+        "ADMIN_ONLY_DELETE",
+        `owner delete refusal returned code ${refused.body?.code}`,
+      );
+
+      await assertPermitted({
+        api: world.actors.admin.api,
+        method: "delete",
+        path: `/organizations/${v().orgId}/matches/${world.disposable.matchId}`,
+        label: "tenant match delete as platform admin",
       });
 
       await assertPermitted({

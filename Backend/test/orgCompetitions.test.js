@@ -11,6 +11,7 @@ import User from "../src/models/User.js";
 import Admin from "../src/models/Admin.js";
 import Team from "../src/models/Team.js";
 import Match from "../src/models/Match.js";
+import Event from "../src/models/Event.js";
 import Tournament from "../src/models/Tournament.js";
 import Series from "../src/models/Series.js";
 import TeamOrganization from "../src/models/TeamOrganization.js";
@@ -63,6 +64,7 @@ beforeEach(async () => {
     Admin.deleteMany({}),
     Team.deleteMany({}),
     Match.deleteMany({}),
+    Event.deleteMany({}),
     Tournament.deleteMany({}),
     Series.deleteMany({}),
     TeamOrganization.deleteMany({}),
@@ -191,6 +193,21 @@ async function makeWorld() {
     teams: [teamB1._id, teamB2._id],
   });
 
+  const eventA = await Event.create({
+    name: `Org A Event ${tag}`,
+    eventType: "series",
+    organization: orgA._id,
+    startDate: plusDays(-1),
+    endDate: plusDays(2),
+  });
+  const eventB = await Event.create({
+    name: `Org B Event ${tag}`,
+    eventType: "series",
+    organization: orgB._id,
+    startDate: plusDays(-1),
+    endDate: plusDays(2),
+  });
+
   const makeMatch = (org, teams) =>
     Match.create({
       title: `${org.name} fixture ${tag}`,
@@ -212,7 +229,7 @@ async function makeWorld() {
   return {
     ownerA, managerA, scorerA, stranger, ownerB, admin,
     orgA, orgB, teamA1, teamA2, teamB1, teamB2,
-    tournamentA, tournamentB, seriesA, seriesB, matchA, matchB,
+    tournamentA, tournamentB, seriesA, seriesB, eventA, eventB, matchA, matchB,
   };
 }
 
@@ -231,6 +248,8 @@ function actorsOf(w) {
 const READ = ["owner", "manager", "score_handler", "platform_admin"];
 const COMP = ["owner", "platform_admin"];
 const FIXTURE = ["owner", "manager", "platform_admin"];
+// Product rule: hard-deletes are platform-admin-only; every org role is refused.
+const PLATFORM_DELETE = ["platform_admin"];
 
 /** Every new org competition route, with the roles allowed to pass its guard. */
 function routeCases(w) {
@@ -255,18 +274,20 @@ function routeCases(w) {
     { name: "fixtures apply", method: "POST", path: `${t}/fixtures/apply`, allowed: FIXTURE, body: () => ({}) },
     { name: "create tournament match", method: "POST", path: `${t}/matches`, allowed: FIXTURE, body: () => ({ team1: w.teamA1._id, team2: w.teamA2._id }) },
     { name: "create standalone match", method: "POST", path: `${o}/matches`, allowed: FIXTURE, body: () => ({ teams: [w.teamA1._id, w.teamA2._id], startAt: new Date().toISOString() }) },
+    { name: "delete match", method: "DELETE", path: `${o}/matches/${w.matchA._id}`, allowed: PLATFORM_DELETE },
+    { name: "delete event", method: "DELETE", path: `${o}/events/${w.eventA._id}`, allowed: PLATFORM_DELETE },
     { name: "get squads", method: "GET", path: `${t}/squad`, allowed: READ },
     { name: "get team squad", method: "GET", path: `${t}/squad/${w.teamA1._id}`, allowed: READ },
     { name: "set squad", method: "POST", path: `${t}/squad`, allowed: FIXTURE, body: () => ({ teamId: w.teamA1._id, players: [] }) },
     { name: "delete squad", method: "DELETE", path: `${t}/squad/${w.teamA1._id}`, allowed: FIXTURE },
     { name: "set awards", method: "PUT", path: `${t}/awards`, allowed: COMP, body: () => ({ winner: w.teamA1._id }) },
     { name: "set official awards", method: "PUT", path: `${t}/official-awards`, allowed: COMP, body: () => ({ bestBatsman: null }) },
-    { name: "delete tournament", method: "DELETE", path: t, allowed: COMP },
+    { name: "delete tournament", method: "DELETE", path: t, allowed: PLATFORM_DELETE },
     { name: "list series", method: "GET", path: `${o}/series`, allowed: READ },
     { name: "create series", method: "POST", path: `${o}/series`, allowed: COMP, body: () => ({ name: `Created Series ${uniq()}` }) },
     { name: "get series", method: "GET", path: s, allowed: READ },
     { name: "update series", method: "PUT", path: s, allowed: COMP, body: () => ({ venue: "Series Ground" }) },
-    { name: "delete series", method: "DELETE", path: s, allowed: COMP },
+    { name: "delete series", method: "DELETE", path: s, allowed: PLATFORM_DELETE },
     { name: "toggle 12th man", method: "PUT", path: `${o}/matches/${w.matchA._id}/twelfth-man`, allowed: COMP, body: () => ({ enabled: true }) },
   ];
 }
@@ -378,7 +399,6 @@ test("a member of one org gets a 404 for another org's tournament, series and ma
   const cases = [
     ["GET", tB],
     ["PUT", tB, { venue: "Hijack" }],
-    ["DELETE", tB],
     ["POST", `${tB}/teams`, { teamIds: [w.teamB1._id] }],
     ["DELETE", `${tB}/teams/${w.teamB1._id}`],
     ["PUT", `${tB}/groups`, { groups: [{ name: "A", teams: [w.teamB1._id, w.teamB2._id] }] }],
@@ -396,7 +416,6 @@ test("a member of one org gets a 404 for another org's tournament, series and ma
     ["PUT", `${tB}/official-awards`, { bestBatsman: null }],
     ["GET", sB],
     ["PUT", sB, { venue: "Hijack" }],
-    ["DELETE", sB],
     ["PATCH", `${o}/matches/${w.matchB._id}`, { venue: "Hijack" }],
     ["PUT", `${o}/matches/${w.matchB._id}/twelfth-man`, { enabled: true }],
   ];
@@ -404,6 +423,16 @@ test("a member of one org gets a 404 for another org's tournament, series and ma
   for (const [method, path, body] of cases) {
     const res = await call(method, path, token, body);
     assert.strictEqual(res.status, 404, `${method} ${path} leaked ${res.status}: ${JSON.stringify(res.body)}`);
+  }
+
+  // Deletes are platform-admin-only, so they refuse with a blanket 403 that does
+  // not depend on whose document it is (the owner is refused its own too — see
+  // the permission matrix), and the target is never even resolved.
+  const deletePaths = [tB, sB, `${o}/matches/${w.matchB._id}`, `${o}/events/${w.eventB._id}`];
+  for (const path of deletePaths) {
+    const res = await call("DELETE", path, token);
+    assert.strictEqual(res.status, 403, `DELETE ${path} leaked ${res.status}: ${JSON.stringify(res.body)}`);
+    assert.strictEqual(res.body?.code, "ADMIN_ONLY_DELETE", `DELETE ${path} returned code ${res.body?.code}`);
   }
 
   // Nothing was touched.

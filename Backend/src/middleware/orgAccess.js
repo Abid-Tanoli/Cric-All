@@ -159,6 +159,23 @@ export const requireOrgMembership = requireOrgPermission(null);
 // Backwards-compatible alias: manage_org is what "owner or admin" used to mean.
 export const requireOrgWrite = requireOrgPermission(PERMISSIONS.MANAGE_ORG);
 
+/**
+ * Product rule: hard-deleting a match, event, tournament or series is a
+ * platform-admin action only. Club/organization roles cannot delete records at
+ * all — they ask the platform admin for a deletion instead (the request workflow
+ * lands in the issue-reporting phase). Mounted *after* `protect` so
+ * `req.user`/`req.principalType` are set: a platform admin passes, every org
+ * role gets the same clear refusal, and the refusal does not depend on whether
+ * the target exists (so it leaks nothing).
+ */
+export const requirePlatformAdminDelete = (req, res, next) => {
+  if (isPlatformAdmin(req)) return next();
+  return res.status(403).json({
+    message: "Only the platform admin can delete this. Please send a deletion request.",
+    code: "ADMIN_ONLY_DELETE",
+  });
+};
+
 /** Requires the literal `owner` role — used for role grants and ownership. */
 export const requireOrgOwner = async (req, res, next) => {
   try {
@@ -206,4 +223,5 @@ export default {
   requireOrgMembership,
   requireOrgWrite,
   requireOrgOwner,
+  requirePlatformAdminDelete,
 };
