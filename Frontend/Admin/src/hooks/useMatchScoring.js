@@ -9,6 +9,9 @@ import { API_BASE_URL } from '../services/api';
 
 const isIllegalDelivery = (ball) => !!(ball?.isWide || ball?.isNoBall);
 
+const CROSSING_WICKET_TYPES = ['run out', 'runOut', 'obstructing the field', 'obstructingField'];
+const isCrossingWicket = (type) => CROSSING_WICKET_TYPES.includes(type);
+
 export default function useMatchScoring() {
     const { token } = useSelector((state) => state.auth);
     const { matchId, tabId } = useParams();
@@ -117,7 +120,10 @@ export default function useMatchScoring() {
         bowlerId: '',
         wicketDismissal: '',
         wicketFielder: '',
-        wicketNewBatter: ''
+        wicketNewBatter: '',
+        wicketDismissedPlayer: 'striker',
+        wicketDidCross: false,
+        wicketRuns: 0
     });
 
     const [wizardStep, setWizardStep] = useState(1);
@@ -390,9 +396,19 @@ export default function useMatchScoring() {
         const b2Id = curInn.currentBatsman2?._id || curInn.currentBatsman2;
         const batsmanNonStrike = (String(b1Id) === String(batsmanOnStrike) ? b2Id : b1Id);
 
+        // A run-out (or obstructing the field) can dismiss either batter, and
+        // the scorer may have completed runs / crossed before the throw.
+        const crossingWicket = isCrossingWicket(selectedWicket);
+        const nonStrikerSelected = setupState.wicketDismissedPlayer === 'nonStriker'
+            || String(setupState.wicketDismissedPlayer) === String(batsmanNonStrike);
+        const dismissedPlayerId = crossingWicket
+            ? (nonStrikerSelected ? batsmanNonStrike : batsmanOnStrike)
+            : undefined;
+        const ballRuns = crossingWicket ? Number(setupState.wicketRuns || 0) : selectedRuns;
+
         const ballData = {
             inningsIndex: selectedMatch.currentInnings,
-            runs: selectedRuns,
+            runs: ballRuns,
             isWide: selectedExtra === 'WIDE',
             isNoBall: selectedExtra === 'NO BALL',
             isBye: selectedExtra === 'BYE',
@@ -403,6 +419,11 @@ export default function useMatchScoring() {
             batsmanOnStrikeId: batsmanOnStrike,
             batsmanNonStrikeId: batsmanNonStrike,
             bowlerId: curInn.currentBowler?._id || curInn.currentBowler,
+            ...(crossingWicket ? {
+                dismissedPlayerId,
+                didCross: !!setupState.wicketDidCross,
+                wicketDidCross: !!setupState.wicketDidCross
+            } : {}),
             ...(useAICommentary ? {
                 fieldingZone: activeGroundZone?.direction || FIELD_POSITIONS.find(p => p.id === fieldPos)?.name || fieldPos,
                 shotPlacement: activeGroundZone ? { x: activeGroundZone.x, y: activeGroundZone.y, angle: activeGroundZone.angle, distance: activeGroundZone.distance, position: activeGroundZone.direction } : null,
@@ -423,7 +444,6 @@ export default function useMatchScoring() {
             commentaryText: useAICommentary ? manualCommentary : (manualCommentary || ""),
             customCommentary: !useAICommentary,
             nextBatsmanId: setupState.wicketNewBatter || undefined,
-            didCross: setupState.wicketDidCross,
         };
 
         try {
@@ -452,14 +472,21 @@ export default function useMatchScoring() {
                 setToast("Innings should be ended!");
             }
 
-            if (selectedWicket && setupState.wicketNewBatter) {
-                try {
-                    await setRole(setupState.wicketNewBatter, 'striker');
-                } catch (e) { console.error(e); }
-                setSetupState(s => ({ ...s, wicketDismissal: '', wicketFielder: '', wicketNewBatter: '' }));
-            } else {
-                checkRoles(res.data.match);
+            if (selectedWicket) {
+                setSetupState(s => ({
+                    ...s,
+                    wicketDismissal: '',
+                    wicketFielder: '',
+                    wicketNewBatter: '',
+                    wicketDismissedPlayer: 'striker',
+                    wicketDidCross: false,
+                    wicketRuns: 0
+                }));
             }
+            // The server already placed the incoming batter at the dismissed
+            // batter's end, so trust its strike/end assignment instead of
+            // forcing the new batter onto strike.
+            checkRoles(res.data.match);
         } catch (err) {
             showToast(err.response?.data?.message || err.message, 'error');
         }

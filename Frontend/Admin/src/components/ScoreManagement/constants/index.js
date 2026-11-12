@@ -80,7 +80,21 @@ export const FIELD_POSITIONS = [
   { id: 'wide_leg', name: 'Wide (Leg Side)', x: 385, y: 200 },
 ];
 
-export const WICKET_TYPES = ['bowled', 'caught', 'lbw', 'run out', 'stumped', 'hit wicket'];
+export const WICKET_TYPES = [
+  'bowled',
+  'caught',
+  'lbw',
+  'run out',
+  'stumped',
+  'hit wicket',
+  'obstructing the field',
+  'hit the ball twice',
+  'timed out',
+];
+
+// Dismissals where the scorer must say which batter is out and whether the
+// batters crossed before the throw.
+export const CROSSING_WICKET_TYPES = ['run out', 'obstructing the field'];
 
 export const formatOvers = (balls) => {
   if (!balls) return "0.0";

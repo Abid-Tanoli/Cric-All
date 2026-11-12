@@ -149,6 +149,8 @@ async function snapshot(matchId) {
 // checks the applied state, undoes it, checks the rollback, re-scores it and
 // requires the match to land in exactly the same state.
 
+const idOf = (player) => String(player?._id || player || "");
+
 const cases = [
   {
     name: "dot ball",
@@ -312,6 +314,166 @@ const cases = [
       assert.ok(!match.result || !match.result.margin, "margin must be cleared on undo");
     },
   },
+  {
+    name: "run-out of the non-striker without crossing",
+    ball: () => ({
+      runs: 0,
+      isWicket: true,
+      wicketType: "runOut",
+      dismissedPlayerId: ids.bat2,
+      nextBatsmanId: ids.bat3,
+    }),
+    check: (i) => {
+      assert.equal(i.wickets, 1);
+      assert.equal(i.bowling[0].wickets, 0, "a run-out must not credit the bowler");
+      const dismissed = i.batting.find((b) => idOf(b.player) === String(ids.bat2));
+      assert.equal(dismissed.isOut, true);
+      assert.equal(idOf(i.onStrikeBatsman), String(ids.bat1));
+      assert.equal(idOf(i.currentBatsman2), String(ids.bat3));
+    },
+    checkUndo: (i) => {
+      assert.equal(i.wickets, 0);
+      assert.equal(i.bowling[0].wickets, 0, "undo must not push the bowler's wickets below zero");
+      const dismissed = i.batting.find((b) => idOf(b.player) === String(ids.bat2));
+      assert.equal(dismissed.isOut, false, "the dismissed non-striker must come back");
+      assert.equal(idOf(i.onStrikeBatsman), String(ids.bat1), "the original striker keeps strike");
+      assert.equal(idOf(i.currentBatsman1), String(ids.bat1));
+      assert.equal(idOf(i.currentBatsman2), String(ids.bat2), "the non-striker is restored at the other end");
+    },
+  },
+  {
+    name: "run-out of the non-striker after crossing",
+    ball: () => ({
+      runs: 0,
+      isWicket: true,
+      wicketType: "runOut",
+      dismissedPlayerId: ids.bat2,
+      didCross: true,
+      nextBatsmanId: ids.bat3,
+    }),
+    check: (i) => {
+      assert.equal(i.wickets, 1);
+      assert.equal(i.bowling[0].wickets, 0);
+      assert.equal(idOf(i.onStrikeBatsman), String(ids.bat3), "the replacement is on strike");
+      assert.equal(idOf(i.currentBatsman2), String(ids.bat1));
+    },
+    checkUndo: (i) => {
+      assert.equal(i.wickets, 0);
+      assert.equal(i.bowling[0].wickets, 0);
+      assert.equal(idOf(i.onStrikeBatsman), String(ids.bat1));
+      assert.equal(idOf(i.currentBatsman1), String(ids.bat1));
+      assert.equal(idOf(i.currentBatsman2), String(ids.bat2));
+    },
+  },
+  {
+    name: "run-out of the striker after crossing",
+    ball: () => ({
+      runs: 0,
+      isWicket: true,
+      wicketType: "runOut",
+      dismissedPlayerId: ids.bat1,
+      didCross: true,
+      nextBatsmanId: ids.bat3,
+    }),
+    check: (i) => {
+      assert.equal(i.wickets, 1);
+      assert.equal(i.bowling[0].wickets, 0);
+      assert.equal(idOf(i.onStrikeBatsman), String(ids.bat2));
+      assert.equal(idOf(i.currentBatsman2), String(ids.bat3));
+    },
+    checkUndo: (i) => {
+      assert.equal(i.wickets, 0);
+      assert.equal(i.bowling[0].wickets, 0);
+      assert.equal(idOf(i.onStrikeBatsman), String(ids.bat1), "the dismissed striker is back on strike");
+      assert.equal(idOf(i.currentBatsman1), String(ids.bat1));
+      assert.equal(idOf(i.currentBatsman2), String(ids.bat2));
+    },
+  },
+  {
+    name: "runs completed before a run-out",
+    ball: () => ({
+      runs: 2,
+      isWicket: true,
+      wicketType: "runOut",
+      dismissedPlayerId: ids.bat2,
+      nextBatsmanId: ids.bat3,
+    }),
+    check: (i) => {
+      assert.equal(i.runs, 2);
+      assert.equal(i.wickets, 1);
+      assert.equal(i.bowling[0].wickets, 0);
+      const striker = i.batting.find((b) => idOf(b.player) === String(ids.bat1));
+      assert.equal(striker.runs, 2);
+    },
+    checkUndo: (i) => {
+      assert.equal(i.runs, 0);
+      assert.equal(i.wickets, 0);
+      assert.equal(i.balls, 0);
+      assert.equal(i.bowling[0].wickets, 0);
+      const striker = i.batting.find((b) => idOf(b.player) === String(ids.bat1));
+      assert.equal(striker.runs, 0);
+      assert.equal(striker.balls, 0);
+      assert.equal(idOf(i.currentBatsman2), String(ids.bat2));
+    },
+  },
+  {
+    name: "undoing a non-bowler dismissal does not decrement the bowler's wickets",
+    setup: () => [{
+      runs: 0,
+      isWicket: true,
+      wicketType: "bowled",
+      dismissedPlayerId: ids.bat1,
+      nextBatsmanId: ids.bat3,
+    }],
+    ball: () => ({
+      runs: 0,
+      isWicket: true,
+      wicketType: "runOut",
+      dismissedPlayerId: ids.bat2,
+      nextBatsmanId: ids.bat4,
+    }),
+    check: (i) => {
+      assert.equal(i.wickets, 2);
+      assert.equal(i.bowling[0].wickets, 1);
+    },
+    checkUndo: (i) => {
+      assert.equal(i.wickets, 1);
+      assert.equal(i.bowling[0].wickets, 1, "the earlier bowler wicket must survive the undo");
+      assert.equal(idOf(i.onStrikeBatsman), String(ids.bat3));
+      assert.equal(idOf(i.currentBatsman2), String(ids.bat2));
+    },
+  },
+  {
+    name: "wide during a free hit restores the free hit on undo",
+    setup: () => [{ isNoBall: true, runs: 0 }],
+    ball: () => ({ isWide: true, runs: 0 }),
+    check: (i) => {
+      assert.equal(i.isFreeHit, true);
+      assert.equal(i.runs, 2);
+      assert.equal(i.extras.noBalls, 1);
+      assert.equal(i.extras.wides, 1);
+    },
+    checkUndo: (i) => {
+      assert.equal(i.isFreeHit, true, "undoing the wide must leave the free hit live");
+      assert.equal(i.runs, 1);
+      assert.equal(i.extras.wides, 0);
+    },
+  },
+  {
+    name: "no-ball during a free hit restores the free hit on undo",
+    setup: () => [{ isNoBall: true, runs: 0 }],
+    ball: () => ({ isNoBall: true, runs: 0 }),
+    check: (i) => {
+      assert.equal(i.isFreeHit, true);
+      assert.equal(i.runs, 2);
+      assert.equal(i.extras.noBalls, 2);
+    },
+    checkUndo: (i) => {
+      assert.equal(i.isFreeHit, true, "undoing the second no-ball must leave the first free hit live");
+      assert.equal(i.runs, 1);
+      assert.equal(i.extras.noBalls, 1);
+    },
+  },
 ];
 
 for (const c of cases) {
@@ -319,11 +481,13 @@ for (const c of cases) {
     const match = await newMatch(c.matchOptions || {});
     const inningsIndex = (c.matchOptions && c.matchOptions.inningsIndex) || 0;
 
-    for (const setupBall of c.setup || []) {
+    const setup = typeof c.setup === "function" ? c.setup() : (c.setup || []);
+    for (const setupBall of setup) {
       await score(match._id, inningsIndex, setupBall);
     }
 
-    const scored = await score(match._id, inningsIndex, c.ball);
+    const ball = typeof c.ball === "function" ? c.ball() : c.ball;
+    const scored = await score(match._id, inningsIndex, ball);
     if (c.check) c.check(scored.innings);
 
     const afterScore = await snapshot(match._id);
@@ -331,7 +495,7 @@ for (const c of cases) {
     const undone = await undo(match._id, inningsIndex);
     if (c.checkUndo) c.checkUndo(undone.match.innings[inningsIndex], undone.match);
 
-    await score(match._id, inningsIndex, c.ball);
+    await score(match._id, inningsIndex, ball);
     const afterRescore = await snapshot(match._id);
 
     assert.deepEqual(

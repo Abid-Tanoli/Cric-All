@@ -22,11 +22,14 @@
  * in the report rather than being silently absorbed here.
  */
 
-const DISMISSALS_OUTSIDE_BOWLER = new Set(["runOut", "obstructingField", "hitTwice", "retiredOut"]);
+const DISMISSALS_OUTSIDE_BOWLER = new Set([
+  "runOut", "obstructingField", "hitTwice", "retiredOut", "handledBall", "timedOut",
+]);
 
 export const VALID_DISMISSALS = [
   "bowled", "caught", "lbw", "runOut", "stumped",
   "hitWicket", "retiredOut", "obstructingField", "hitTwice",
+  "handledBall", "timedOut",
 ];
 
 function blankBatter(id, name) {
@@ -102,9 +105,11 @@ export function createTally({
    */
   function dismissalAllowed(type, wicketType, isFreeHit) {
     if (!wicketType) return false;
-    if (type === "noBall") return ["runOut", "obstructingField", "hitTwice"].includes(wicketType);
+    // A free hit survives wides and no-balls, and only non-bowler dismissals
+    // are possible while it is live.
+    if (isFreeHit) return DISMISSALS_OUTSIDE_BOWLER.has(wicketType);
+    if (type === "noBall") return DISMISSALS_OUTSIDE_BOWLER.has(wicketType);
     if (type === "wide") return ["runOut", "stumped"].includes(wicketType);
-    if (isFreeHit && type === "legal") return ["runOut", "obstructingField", "hitTwice"].includes(wicketType);
     return VALID_DISMISSALS.includes(wicketType);
   }
 
@@ -258,7 +263,10 @@ export function createTally({
     }
 
     // --- free hit ----------------------------------------------------------
-    state.freeHitNext = type === "noBall";
+    // Only a legal delivery clears it; wides and no-balls keep it alive.
+    if (type === "noBall") state.freeHitNext = true;
+    else if (type === "wide") state.freeHitNext = wasFreeHit;
+    else state.freeHitNext = false;
 
     // --- innings end -------------------------------------------------------
     state.ended = checkEnd();
