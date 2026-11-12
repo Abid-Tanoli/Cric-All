@@ -3,12 +3,25 @@ import Team from "../models/Team.js";
 import Player from "../models/Player.js";
 import TeamCategory from "../models/TeamCategory.js";
 import * as teamService from "../services/teamService.js";
+import * as playerService from "../services/playerService.js";
 import { recordAudit } from "../utils/audit.js";
 import {
   PLAYER_ROSTER_SELECT,
   resolveViewerContext,
   sanitizeTeamPublic,
 } from "../utils/publicProjection.js";
+
+// When the owner types a role inline, keep the free-text `role` for display and
+// also set `playingRole` when it is one of the model's classifications, so the
+// player does not show up as the default "Batsman" in every picker.
+const PLAYING_ROLES = new Set([
+  "Batsman",
+  "Bowler",
+  "All-Rounder",
+  "Batting-All-Rounder",
+  "Bowling-All-Rounder",
+  "Wicket-Keeper",
+]);
 
 // Phase 4: teams that an organization owns.
 //
@@ -207,9 +220,65 @@ export const addOrgTeamPlayers = async (req, res) => {
     if (!team) return;
 
     const assigned = [];
-    for (const playerId of req.body.playerIds) {
-      const player = await teamService.assignPlayerToTeam(team._id, playerId, "player");
-      assigned.push(player._id);
+    for (const playerId of req.body.playerIds || []) {
+      const player = await Player.findById(playerId).select("_id team createdBy name");
+      if (!player) {
+        return res.status(404).json({
+          message: "One of those players does not exist.",
+          code: "PLAYER_NOT_FOUND",
+        });
+      }
+
+      // A player already on another organization's roster belongs to that
+      // tenant; attaching it here would move a rival's player into this squad.
+      // An unattached profile is only attachable by the account that created it.
+      if (player.team) {
+        const owningTeam = await Team.findById(player.team).select("organizationRef").lean();
+        if (!owningTeam || String(owningTeam.organizationRef) !== String(req.org._id)) {
+          return res.status(403).json({
+            message: "That player belongs to another organization.",
+            code: "PLAYER_NOT_OWNED",
+          });
+        }
+      } else if (!player.createdBy || String(player.createdBy) !== String(req.user?._id)) {
+        return res.status(403).json({
+          message: "That player is not yours to add. Create a new player instead.",
+          code: "PLAYER_NOT_OWNED",
+        });
+      }
+
+      const assignedPlayer = await teamService.assignPlayerToTeam(team._id, playerId, "player");
+      assigned.push(assignedPlayer._id);
+    }
+
+    let createdPlayer = null;
+    if (req.body.newPlayer) {
+      const { name, role, phone } = req.body.newPlayer;
+      try {
+        await playerService.assertPlayerNotDuplicate({ name, team: team._id, phone });
+      } catch (dupErr) {
+        if (dupErr.code === "PLAYER_DUPLICATE") {
+          return res.status(409).json({
+            message: dupErr.message,
+            code: dupErr.code,
+            existing: dupErr.existing,
+          });
+        }
+        throw dupErr;
+      }
+
+      const storedPhone = playerService.canonicalPlayerPhone(phone);
+      const chosenRole = String(role || "").trim();
+      createdPlayer = await Player.create({
+        name,
+        role: chosenRole || "player",
+        ...(PLAYING_ROLES.has(chosenRole) ? { playingRole: chosenRole } : {}),
+        ...(storedPhone ? { phone: storedPhone } : {}),
+        team: team._id,
+        createdBy: req.user?._id || null,
+      });
+      await Team.findByIdAndUpdate(team._id, { $addToSet: { players: createdPlayer._id } });
+      assigned.push(createdPlayer._id);
     }
 
     await recordAudit({
@@ -223,7 +292,11 @@ export const addOrgTeamPlayers = async (req, res) => {
     });
 
     const fresh = await Team.findById(team._id).populate("players", "name role playingRole battingPosition imageUrl");
-    res.status(200).json({ team: teamPayload(fresh), message: "Players added successfully" });
+    res.status(200).json({
+      team: teamPayload(fresh),
+      player: createdPlayer,
+      message: createdPlayer ? "Player added to the team" : "Players added successfully",
+    });
   } catch (error) {
     if (/Player not found/i.test(error.message || "")) {
       return res.status(404).json({ message: "One of those players does not exist.", code: "PLAYER_NOT_FOUND" });

@@ -1,11 +1,17 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import {
+  addOrgTeamPlayer,
   createOrgMatch,
   deleteOrgMatch,
+  getMatchDetail,
+  getMatchSquads,
   listOrgMatches,
   listOrgTeamsManaged,
-  setOrgMatchSquads,
+  setMatchPlayingXI,
+  setMatchTeamRoles,
+  setMatchToss,
+  setMatchTwelfthMan,
   updateOrgMatch,
 } from "../../services/organizationApi";
 import { formatDate } from "../../lib/orgUi";
@@ -24,99 +30,542 @@ import {
 
 const MATCH_TYPES = ["T10", "T20", "6 Overs", "8 Overs", "ODI", "Test", "Tape Ball", "Super Over"];
 
-// A squad is 11 for a side and 20 for a tournament squad; the server enforces
-// the same bound, and this is only here to avoid a 422 on a typo.
-const MAX_SQUAD = 20;
-
 const emptyMatch = { teamA: "", teamB: "", matchType: "T20", venue: "", startAt: "", eventId: "" };
 
 const toDateInput = (value) => (value ? new Date(value).toISOString().slice(0, 10) : "");
 
 const teamName = (team) => team?.name || "Unknown team";
 
-/** Both sides of a fixture, as a fixture stores them: two ids, in order. */
-function SquadEditor({ orgId, match, teams, onClose, onSaved }) {
-  const [selection, setSelection] = useState(() => {
-    const initial = {};
-    for (const team of match.teams || []) initial[team._id] = [];
-    return initial;
-  });
+const idOf = (value) => String(value?._id || value || "");
+
+const EMPTY_SELECTION = {
+  xi: [],
+  captain: "",
+  viceCaptain: "",
+  wicketKeepers: [],
+  twelfthMan: "",
+};
+
+const playerName = (player) => player?.name || "Unknown player";
+
+/**
+ * Single-match setup for the organization owner.
+ *
+ * The optional 15-player squad step is gone: the XI, the 12th Man / Super Sub
+ * and the team roles all come from the full competition squad that
+ * GET /matches/:id/squads resolves (tournament squad -> event squad -> the
+ * club's whole roster). A new player can be created without leaving the picker.
+ */
+function MatchSetup({ orgId, match, onClose, onSaved }) {
+  const [detail, setDetail] = useState(null);
+  const [squadsById, setSquadsById] = useState({});
+  const [selection, setSelection] = useState({});
+  const [search, setSearch] = useState({});
+  const [toss, setToss] = useState({ winner: "", decision: "bat" });
+  const [addFor, setAddFor] = useState(null);
+  const [newPlayer, setNewPlayer] = useState({ name: "", role: "", phone: "" });
+  const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const [notice, setNotice] = useState("");
 
-  const toggle = (teamId, playerId) => {
+  const matchTeams = match.teams || [];
+
+  useEffect(() => {
+    let alive = true;
+    setLoading(true);
+    setErr("");
+    Promise.all([getMatchDetail(match._id), getMatchSquads(match._id)])
+      .then(([full, squadResponse]) => {
+        if (!alive) return;
+        const nextSquads = {};
+        for (const row of squadResponse?.teams || []) {
+          nextSquads[idOf(row.team)] = row;
+        }
+
+        const nextSelection = {};
+        for (const team of matchTeams) {
+          const teamId = idOf(team);
+          const xiEntry = (full.playingXI || []).find((entry) => idOf(entry.team) === teamId);
+          const roles = (full.teamRoles || []).find((entry) => idOf(entry.team) === teamId);
+          const twelfth = (full.twelfthMan || []).find((entry) => idOf(entry.team) === teamId);
+          nextSelection[teamId] = {
+            xi: (xiEntry?.players || []).map(idOf),
+            captain: idOf(roles?.captain),
+            viceCaptain: idOf(roles?.viceCaptain),
+            wicketKeepers: (roles?.wicketKeepers || []).map(idOf),
+            twelfthMan: idOf(twelfth?.player),
+          };
+        }
+
+        setDetail(full);
+        setSquadsById(nextSquads);
+        setSelection(nextSelection);
+        setToss({
+          winner: idOf(full.tossWinner),
+          decision: full.tossDecision || "bat",
+        });
+        setLoading(false);
+      })
+      .catch((error) => {
+        if (!alive) return;
+        setErr(error.message || "Could not load the match setup");
+        setLoading(false);
+      });
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [match._id]);
+
+  const squadFor = (teamId) => squadsById[teamId]?.squad || [];
+  const sourceFor = (teamId) => squadsById[teamId]?.squadSource || "roster";
+  const selectionFor = (teamId) => selection[teamId] || EMPTY_SELECTION;
+
+  const setTeamSelection = (teamId, patch) => {
+    setSelection((prev) => ({
+      ...prev,
+      [teamId]: { ...(prev[teamId] || EMPTY_SELECTION), ...patch },
+    }));
+  };
+
+  const togglePlayer = (teamId, playerId) => {
     setSelection((prev) => {
-      const current = prev[teamId] || [];
-      if (current.includes(playerId)) return { ...prev, [teamId]: current.filter((id) => id !== playerId) };
-      if (current.length >= MAX_SQUAD) return prev;
-      return { ...prev, [teamId]: [...current, playerId] };
+      const current = prev[teamId] || EMPTY_SELECTION;
+      if (current.xi.includes(playerId)) {
+        return {
+          ...prev,
+          [teamId]: {
+            ...current,
+            xi: current.xi.filter((id) => id !== playerId),
+            captain: current.captain === playerId ? "" : current.captain,
+            viceCaptain: current.viceCaptain === playerId ? "" : current.viceCaptain,
+            wicketKeepers: current.wicketKeepers.filter((id) => id !== playerId),
+          },
+        };
+      }
+      if (current.xi.length >= 11) return prev;
+      return {
+        ...prev,
+        [teamId]: {
+          ...current,
+          xi: [...current.xi, playerId],
+          twelfthMan: current.twelfthMan === playerId ? "" : current.twelfthMan,
+        },
+      };
     });
   };
 
-  const save = async () => {
-    const squads = Object.entries(selection)
-      .filter(([, players]) => players.length > 0)
-      .map(([team, players]) => ({ team, players }));
-    if (!squads.length) {
-      setErr("Pick at least one player for one of the sides");
+  const chooseCaptain = (teamId, playerId) => {
+    const current = selectionFor(teamId);
+    setTeamSelection(teamId, {
+      captain: playerId,
+      viceCaptain: current.viceCaptain === playerId ? "" : current.viceCaptain,
+    });
+  };
+
+  const chooseViceCaptain = (teamId, playerId) => {
+    const current = selectionFor(teamId);
+    setTeamSelection(teamId, {
+      viceCaptain: playerId,
+      captain: current.captain === playerId ? "" : current.captain,
+    });
+  };
+
+  const chooseWicketKeeper = (teamId, playerId) => {
+    setTeamSelection(teamId, { wicketKeepers: playerId ? [playerId] : [] });
+  };
+
+  const submitNewPlayer = async (teamId) => {
+    const name = newPlayer.name.trim();
+    if (!name) {
+      setErr("A player name is required.");
       return;
     }
     setBusy(true);
     setErr("");
+    setNotice("");
     try {
-      await setOrgMatchSquads(orgId, match._id, squads);
-      onSaved();
+      const response = await addOrgTeamPlayer(orgId, teamId, {
+        name,
+        ...(newPlayer.role.trim() ? { role: newPlayer.role.trim() } : {}),
+        ...(newPlayer.phone.trim() ? { phone: newPlayer.phone.trim() } : {}),
+      });
+      const created = response?.player;
+      if (created) {
+        const player = {
+          _id: idOf(created),
+          name: created.name,
+          role: created.role || "",
+          playingRole: created.playingRole || created.role || "",
+          battingPosition: created.battingPosition || "",
+        };
+        setSquadsById((prev) => {
+          const row = prev[teamId] || {
+            team: { _id: teamId },
+            squad: [],
+            squadSource: "roster",
+          };
+          return {
+            ...prev,
+            [teamId]: { ...row, squad: [...(row.squad || []), player] },
+          };
+        });
+        setSelection((prev) => {
+          const current = prev[teamId] || EMPTY_SELECTION;
+          if (current.xi.length >= 11 || current.xi.includes(player._id)) return prev;
+          return { ...prev, [teamId]: { ...current, xi: [...current.xi, player._id] } };
+        });
+        setNotice(`${player.name} added${selectionFor(teamId).xi.length < 11 ? " and selected." : "."}`);
+      }
+      setNewPlayer({ name: "", role: "", phone: "" });
+      setAddFor(null);
     } catch (error) {
-      setErr(error.message || "Could not save the squads");
+      setErr(error.message || "Could not add the player");
     } finally {
       setBusy(false);
     }
   };
 
+  const save = async () => {
+    const teamsToSave = matchTeams
+      .map(idOf)
+      .filter((teamId) => selectionFor(teamId).xi.length === 11);
+
+    if (!teamsToSave.length && !toss.winner) {
+      setErr("Pick a full Playing XI (11 players) or record the toss first.");
+      return;
+    }
+
+    setBusy(true);
+    setErr("");
+    setNotice("");
+    try {
+      // Clear a stored 12th Man before the XI when the nomination changed, so a
+      // player moving into the XI is never blocked by the previous nomination.
+      for (const team of matchTeams) {
+        const teamId = idOf(team);
+        const stored = (detail?.twelfthMan || []).find((entry) => idOf(entry.team) === teamId);
+        const storedId = idOf(stored?.player);
+        const current = selectionFor(teamId);
+        if (storedId && (storedId !== current.twelfthMan || current.xi.includes(storedId))) {
+          await setMatchTwelfthMan(match._id, teamId, null);
+        }
+      }
+
+      if (toss.winner) {
+        await setMatchToss(match._id, toss.winner, toss.decision);
+      }
+
+      let rolesMissing = false;
+      for (const teamId of teamsToSave) {
+        const current = selectionFor(teamId);
+        await setMatchPlayingXI(match._id, teamId, current.xi);
+        if (current.captain && current.viceCaptain && current.wicketKeepers.length) {
+          await setMatchTeamRoles(match._id, {
+            teamId,
+            captain: current.captain,
+            viceCaptain: current.viceCaptain,
+            wicketKeepers: current.wicketKeepers,
+          });
+        } else {
+          rolesMissing = true;
+        }
+        if (current.twelfthMan) {
+          await setMatchTwelfthMan(match._id, teamId, current.twelfthMan);
+        }
+      }
+
+      onSaved(
+        rolesMissing
+          ? "Playing XI saved. Choose a captain, vice-captain and wicket-keeper."
+          : "Match setup saved."
+      );
+    } catch (error) {
+      setErr(error.message || "Could not save the match setup");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="mt-3 rounded-xl border border-cric-border bg-cric-bg p-4">
+        <p className="text-xs font-semibold text-cric-muted">Loading match setup…</p>
+      </div>
+    );
+  }
+
   return (
-    <div className="mt-3 space-y-4 rounded-xl border border-cric-border bg-cric-bg p-4">
+    <div className="mt-3 space-y-5 rounded-xl border border-cric-border bg-cric-bg p-4">
       {err ? <Banner kind="error">{err}</Banner> : null}
-      {(match.teams || []).map((team) => {
-        const roster = teams.find((t) => t._id === team._id);
-        const chosen = selection[team._id] || [];
-        return (
-          <div key={team._id}>
-            <p className="text-[10px] font-black uppercase tracking-widest text-cric-muted">
-              {teamName(team)} · {chosen.length} selected
-            </p>
-            {(!roster || (roster.roster || []).length === 0) ? (
-              <p className="mt-1 text-xs font-semibold text-cric-muted">
-                This team has no players yet. Add them under Teams first — a squad can only be
-                chosen from the team roster.
-              </p>
-            ) : (
-              <div className="mt-2 flex flex-wrap gap-2">
-                {roster.roster.map((player) => {
-                  const on = chosen.includes(player._id);
-                  return (
-                    <button
-                      key={player._id}
-                      type="button"
-                      onClick={() => toggle(team._id, player._id)}
-                      title={player.playingRole}
-                      className={`rounded-lg border px-3 py-1 text-[10px] font-black uppercase tracking-widest transition ${
-                        on
-                          ? "border-cric-accent bg-cric-accent text-white"
-                          : "border-cric-border bg-cric-card text-cric-muted hover:text-cric-text"
-                      }`}
-                    >
-                      {player.name}
-                    </button>
-                  );
-                })}
+      {notice ? <Banner kind="success">{notice}</Banner> : null}
+
+      <div className="rounded-xl border border-cric-border bg-cric-card p-4">
+        <p className={eyebrow}>Toss</p>
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <Field label="Toss winner">
+            <select
+              value={toss.winner}
+              onChange={(event) => setToss((prev) => ({ ...prev, winner: event.target.value }))}
+              className={input}
+            >
+              <option value="">— Not set —</option>
+              {matchTeams.map((team) => (
+                <option key={idOf(team)} value={idOf(team)}>
+                  {teamName(team)}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Decision">
+            <select
+              value={toss.decision}
+              onChange={(event) => setToss((prev) => ({ ...prev, decision: event.target.value }))}
+              className={input}
+              disabled={!toss.winner}
+            >
+              <option value="bat">Bat first</option>
+              <option value="bowl">Bowl first</option>
+            </select>
+          </Field>
+        </div>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2">
+        {matchTeams.map((team) => {
+          const teamId = idOf(team);
+          const current = selectionFor(teamId);
+          const squad = squadFor(teamId);
+          const query = (search[teamId] || "").trim().toLowerCase();
+          const visible = query
+            ? squad.filter((player) => playerName(player).toLowerCase().includes(query))
+            : squad;
+          const xiPlayers = squad.filter((player) => current.xi.includes(idOf(player)));
+          const bench = squad.filter((player) => !current.xi.includes(idOf(player)));
+          const isRosterSource = sourceFor(teamId) === "roster";
+
+          return (
+            <div key={teamId} className="rounded-xl border border-cric-border bg-cric-card p-4">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <p className={eyebrow}>Playing XI</p>
+                  <p className="mt-1 text-sm font-black uppercase tracking-wide">{teamName(team)}</p>
+                </div>
+                <span
+                  className={`rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-widest ${
+                    current.xi.length === 11
+                      ? "bg-green-100 text-green-700"
+                      : "bg-cric-bg text-cric-muted"
+                  }`}
+                >
+                  {current.xi.length}/11
+                </span>
               </div>
-            )}
-          </div>
-        );
-      })}
-      <div className="flex gap-2">
+
+              <p className="mt-2 text-[10px] font-bold uppercase tracking-widest text-cric-muted">
+                {sourceFor(teamId) === "tournament"
+                  ? "From the tournament squad"
+                  : sourceFor(teamId) === "event"
+                    ? "From the event squad"
+                    : "From the club roster"}
+              </p>
+
+              <input
+                type="search"
+                value={search[teamId] || ""}
+                onChange={(event) =>
+                  setSearch((prev) => ({ ...prev, [teamId]: event.target.value }))
+                }
+                placeholder="Search players…"
+                className={`${input} mt-3`}
+                aria-label={`Search ${teamName(team)} players`}
+              />
+
+              {squad.length === 0 ? (
+                <p className="mt-3 text-xs font-semibold text-cric-muted">
+                  This team has no players yet. Add one below or under Teams.
+                </p>
+              ) : (
+                <div className="mt-3 max-h-64 space-y-2 overflow-y-auto pr-1">
+                  {visible.length === 0 ? (
+                    <p className="text-xs font-semibold text-cric-muted">No player matches that search.</p>
+                  ) : null}
+                  {visible.map((player) => {
+                    const playerId = idOf(player);
+                    const on = current.xi.includes(playerId);
+                    return (
+                      <button
+                        key={playerId}
+                        type="button"
+                        onClick={() => togglePlayer(teamId, playerId)}
+                        aria-pressed={on}
+                        className={`flex w-full items-center justify-between gap-3 rounded-lg border px-3 py-2 text-left transition ${
+                          on
+                            ? "border-cric-accent bg-cric-accent text-white"
+                            : "border-cric-border bg-cric-bg text-cric-text hover:border-cric-accent/60"
+                        }`}
+                      >
+                        <span className="truncate text-xs font-black uppercase tracking-wide">
+                          {playerName(player)}
+                        </span>
+                        <span
+                          className={`shrink-0 text-[10px] font-bold uppercase tracking-widest ${
+                            on ? "text-white/80" : "text-cric-muted"
+                          }`}
+                        >
+                          {player.playingRole || player.role || ""}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              {isRosterSource ? (
+                addFor === teamId ? (
+                  <div className="mt-3 space-y-2 rounded-lg border border-cric-border bg-cric-bg p-3">
+                    <input
+                      value={newPlayer.name}
+                      onChange={(event) =>
+                        setNewPlayer((prev) => ({ ...prev, name: event.target.value }))
+                      }
+                      placeholder="Player name *"
+                      className={input}
+                      aria-label={`New ${teamName(team)} player name`}
+                    />
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      <input
+                        value={newPlayer.role}
+                        onChange={(event) =>
+                          setNewPlayer((prev) => ({ ...prev, role: event.target.value }))
+                        }
+                        placeholder="Role (optional)"
+                        className={input}
+                        aria-label={`New ${teamName(team)} player role`}
+                      />
+                      <input
+                        value={newPlayer.phone}
+                        onChange={(event) =>
+                          setNewPlayer((prev) => ({ ...prev, phone: event.target.value }))
+                        }
+                        placeholder="Phone (optional)"
+                        className={input}
+                        inputMode="tel"
+                        aria-label={`New ${teamName(team)} player phone`}
+                      />
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => submitNewPlayer(teamId)}
+                        disabled={busy}
+                        className={primaryButton}
+                      >
+                        {busy ? "Adding…" : "Add player"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAddFor(null);
+                          setNewPlayer({ name: "", role: "", phone: "" });
+                        }}
+                        className={secondaryButton}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAddFor(teamId);
+                      setNewPlayer({ name: "", role: "", phone: "" });
+                      setErr("");
+                    }}
+                    className={`${secondaryButton} mt-3 w-full`}
+                  >
+                    + Add new player
+                  </button>
+                )
+              ) : null}
+
+              <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                <Field label="Captain">
+                  <select
+                    value={current.captain}
+                    onChange={(event) => chooseCaptain(teamId, event.target.value)}
+                    className={input}
+                    disabled={xiPlayers.length === 0}
+                  >
+                    <option value="">—</option>
+                    {xiPlayers.map((player) => (
+                      <option key={idOf(player)} value={idOf(player)}>
+                        {playerName(player)}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="Vice-captain">
+                  <select
+                    value={current.viceCaptain}
+                    onChange={(event) => chooseViceCaptain(teamId, event.target.value)}
+                    className={input}
+                    disabled={xiPlayers.length === 0}
+                  >
+                    <option value="">—</option>
+                    {xiPlayers.map((player) => (
+                      <option key={idOf(player)} value={idOf(player)}>
+                        {playerName(player)}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="Wicket-keeper">
+                  <select
+                    value={current.wicketKeepers[0] || ""}
+                    onChange={(event) => chooseWicketKeeper(teamId, event.target.value)}
+                    className={input}
+                    disabled={xiPlayers.length === 0}
+                  >
+                    <option value="">—</option>
+                    {xiPlayers.map((player) => (
+                      <option key={idOf(player)} value={idOf(player)}>
+                        {playerName(player)}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+              </div>
+
+              <div className="mt-3">
+                <Field
+                  label="12th Man / Super Sub (optional)"
+                  hint="Must be outside the Playing XI."
+                >
+                  <select
+                    value={current.twelfthMan}
+                    onChange={(event) => setTeamSelection(teamId, { twelfthMan: event.target.value })}
+                    className={input}
+                  >
+                    <option value="">— None —</option>
+                    {bench.map((player) => (
+                      <option key={idOf(player)} value={idOf(player)}>
+                        {playerName(player)}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="flex flex-wrap gap-2">
         <button type="button" onClick={save} disabled={busy} className={primaryButton}>
-          {busy ? "Saving…" : "Save squads"}
+          {busy ? "Saving…" : "Save setup"}
         </button>
         <button type="button" onClick={onClose} className={secondaryButton}>
           Close
@@ -259,7 +708,7 @@ export default function OrgMatches({ orgId, events = [], onChanged }) {
   const [busyId, setBusyId] = useState(null);
   const [editing, setEditing] = useState(null);
   const [creating, setCreating] = useState(false);
-  const [squadFor, setSquadFor] = useState(null);
+  const [setupFor, setSetupFor] = useState(null);
   const [notice, setNotice] = useState(null);
   const [err, setErr] = useState("");
 
@@ -278,9 +727,9 @@ export default function OrgMatches({ orgId, events = [], onChanged }) {
 
   useEffect(() => {
     load();
-    // The team list is needed for the create form and the squad editor, and both
-    // change when a team or a player is added, so it is re-read with the fixtures
-    // rather than cached for the life of the tab.
+    // The team list is needed for the create form, and it changes when a team
+    // or a player is added, so it is re-read with the fixtures rather than
+    // cached for the life of the tab.
     listOrgTeamsManaged(orgId)
       .then((res) => setTeams(Array.isArray(res?.items) ? res.items : Array.isArray(res) ? res : []))
       .catch(() => setTeams([]));
@@ -327,9 +776,8 @@ export default function OrgMatches({ orgId, events = [], onChanged }) {
             <p className={eyebrow}>Fixtures</p>
             <h2 className={sectionTitle}>Matches</h2>
             <p className="mt-1 text-xs font-semibold text-cric-muted">
-              Schedule a game between two of your own teams, nominate the squads, and call it off if
-              the weather turns. Running the match — toss, ball by ball, result — stays with the
-              platform scorers.
+              Schedule a game between two of your own teams, record the toss and pick the Playing XI
+              straight from the club roster. No 15-player squad step is needed.
             </p>
           </div>
           {teams.length < 2 ? (
@@ -380,7 +828,7 @@ export default function OrgMatches({ orgId, events = [], onChanged }) {
                 .
               </>
             ) : (
-              "Create one above and it will show up here with its squads and status."
+              "Create one above, then open Setup to pick each Playing XI."
             )}
           </p>
         </div>
@@ -407,8 +855,8 @@ export default function OrgMatches({ orgId, events = [], onChanged }) {
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    <button type="button" onClick={() => setSquadFor(squadFor?._id === match._id ? null : match)} className={secondaryButton}>
-                      Squads
+                    <button type="button" onClick={() => setSetupFor(setupFor?._id === match._id ? null : match)} className={secondaryButton}>
+                      Setup XI
                     </button>
                     <button type="button" onClick={() => setEditing(editing?._id === match._id ? null : match)} className={secondaryButton}>
                       Edit
@@ -452,15 +900,14 @@ export default function OrgMatches({ orgId, events = [], onChanged }) {
                   </div>
                 ) : null}
 
-                {squadFor?._id === match._id ? (
-                  <SquadEditor
+                {setupFor?._id === match._id ? (
+                  <MatchSetup
                     orgId={orgId}
                     match={match}
-                    teams={teams}
-                    onClose={() => setSquadFor(null)}
-                    onSaved={() => {
-                      setSquadFor(null);
-                      setNotice({ kind: "success", text: "Squads saved." });
+                    onClose={() => setSetupFor(null)}
+                    onSaved={(message) => {
+                      setSetupFor(null);
+                      setNotice({ kind: "success", text: message });
                       refresh();
                     }}
                   />

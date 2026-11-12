@@ -260,6 +260,7 @@ before(async () => {
       invitationId: ctx.invitationId,
       teamId: ctx.teams.a.id,
       otherTeamId: ctx.otherTeams.a.id,
+      otherPlayerId: String(ctx.otherTeams.a.players[0].id),
       playerId: ownerPlayerId,
       matchId: match.matchId,
       tournamentId,
@@ -612,6 +613,37 @@ describe("Phase 11 - cross-tenant authorization matrix", () => {
         });
       }
       assert.ok(playerId, "fixture sanity");
+    });
+
+    test("an owner cannot attach another organization's player to their own team", async () => {
+      // The owner is genuinely entitled to edit tenant A's team, so the only
+      // thing standing between them and a tenant B player is the ownership check
+      // on the player itself. Snapshot the victim's team, not the attacker's, to
+      // prove the player was not silently moved across the boundary.
+      const { orgId, teamId, otherTeamId, otherPlayerId } = v();
+      const snapshotOtherTeam = async () => {
+        const r = await world.actors.admin.api.get(`/teams/${otherTeamId}`);
+        return JSON.stringify(r.body?.team ?? r.body);
+      };
+      const before = await snapshotOtherTeam();
+
+      const res = await assertRefused({
+        api: world.actors.owner.api,
+        method: "post",
+        path: `/organizations/${orgId}/teams/${teamId}/players`,
+        body: { playerIds: [otherPlayerId] },
+        label: "attach a player owned by another organization",
+      });
+      assert.equal(res.status, 403, `expected 403, got ${res.status}: ${JSON.stringify(res.body)}`);
+      assert.equal(res.body?.code, "PLAYER_NOT_OWNED");
+      assert.equal(await snapshotOtherTeam(), before, "the foreign player must not move");
+
+      const mine = await world.actors.admin.api.get(`/teams/${teamId}`);
+      const roster = mine.body?.team?.players ?? mine.body?.players ?? [];
+      assert.ok(
+        !roster.some((player) => String(player?._id ?? player) === otherPlayerId),
+        "the foreign player must not appear in the attacker's roster",
+      );
     });
 
     test("the owner may rename a tenant-A team", async () => {
