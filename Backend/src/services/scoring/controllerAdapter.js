@@ -1,5 +1,6 @@
 import { ScoringEngine } from './ScoringEngine.js';
 import { getBallRunText } from '../../utils/cricketHelpers.js';
+import { getBowlerQuota, getBowlerBalls, currentOverNumber as getCurrentOverNumber } from './bowlerRules.js';
 
 const getId = (value) => {
   if (!value) return "";
@@ -274,6 +275,23 @@ export function processDeliveryWithEngine(mongooseMatch, deliveryData) {
         err.code = 'SAME_BOWLER_CONSECUTIVE';
         throw err;
       }
+    }
+
+    const quota = getBowlerQuota(mongooseMatch);
+    const bowlerBalls = getBowlerBalls(innings, deliveryData.bowlerId);
+    if (deliveryData.bowlerId && bowlerBalls >= quota * 6) {
+      const err = new Error(`This bowler has reached the ${quota}-over quota for this match.`);
+      err.code = 'BOWLER_QUOTA_REACHED';
+      throw err;
+    }
+
+    const replacedBlock = innings?.replacedBowlerBlock;
+    if (replacedBlock && deliveryData.bowlerId
+      && Number(replacedBlock.overNumber) === Number(getCurrentOverNumber(innings))
+      && String(replacedBlock.player) === String(deliveryData.bowlerId)) {
+      const err = new Error('The replaced bowler cannot bowl again in this over.');
+      err.code = 'REPLACED_BOWLER_IN_OVER';
+      throw err;
     }
   }
 
