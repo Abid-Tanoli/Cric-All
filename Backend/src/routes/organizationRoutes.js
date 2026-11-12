@@ -19,6 +19,7 @@ import {
 } from '../validators/orgValidators.js';
 import {
   createOrgTeamSchema,
+  orgTeamAddPlayersSchema,
   orgTeamPlayerRoleSchema,
   orgTeamPlayersSchema,
   updateOrgTeamSchema,
@@ -157,7 +158,7 @@ router.post('/:id/teams', ...teamWrite, validate(createOrgTeamSchema), createOrg
 router.patch('/:id/teams/:teamId', ...teamWrite, validateObjectId('teamId'), validate(updateOrgTeamSchema), updateOrgTeam);
 router.delete('/:id/teams/:teamId', ...teamWrite, validateObjectId('teamId'), deleteOrgTeam);
 
-router.post('/:id/teams/:teamId/players', ...squadWrite, validate(orgTeamPlayersSchema), addOrgTeamPlayers);
+router.post('/:id/teams/:teamId/players', ...squadWrite, validate(orgTeamAddPlayersSchema), addOrgTeamPlayers);
 router.delete('/:id/teams/:teamId/players', ...squadWrite, validate(orgTeamPlayersSchema), removeOrgTeamPlayers);
 router.put(
   '/:id/teams/:teamId/players/:playerId',

@@ -120,6 +120,28 @@ export const orgTeamPlayersSchema = z
   })
   .strict();
 
+// The owner-side squad route also creates a player inline. Keeping this a
+// separate schema lets DELETE keep requiring at least one existing player while
+// POST accepts either existing ids, one new player, or both.
+const orgTeamNewPlayerSchema = z
+  .object({
+    name: z.string().trim().min(1, "Player name is required").max(150),
+    role: z.string().trim().max(120).optional(),
+    phone: z.string().trim().max(40).optional(),
+  })
+  .strict();
+
+export const orgTeamAddPlayersSchema = z
+  .object({
+    playerIds: z.array(objectIdString).max(120).default([]),
+    newPlayer: orgTeamNewPlayerSchema.optional(),
+  })
+  .strict()
+  .refine(
+    (value) => value.playerIds.length > 0 || Boolean(value.newPlayer),
+    { message: "Pick at least one player or add a new one", path: ["playerIds"] }
+  );
+
 export const orgTeamPlayerRoleSchema = z
   .object({
     role: z.string().trim().min(1).max(60).optional(),
@@ -131,5 +153,6 @@ export default {
   createOrgTeamSchema,
   updateOrgTeamSchema,
   orgTeamPlayersSchema,
+  orgTeamAddPlayersSchema,
   orgTeamPlayerRoleSchema,
 };

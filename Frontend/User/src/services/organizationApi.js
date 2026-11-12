@@ -90,6 +90,12 @@ export const deleteOrgTeam = (orgId, teamId) => unwrap(api.delete(`/organization
 export const addOrgTeamPlayers = (orgId, teamId, playerIds) =>
   unwrap(api.post(`/organizations/${orgId}/teams/${teamId}/players`, { playerIds }));
 
+// Owner-side inline creation: the same route accepts minimal new-player fields
+// and creates the Player on the team in one call. A duplicate phone/name answers
+// 409 PLAYER_DUPLICATE.
+export const addOrgTeamPlayer = (orgId, teamId, newPlayer) =>
+  unwrap(api.post(`/organizations/${orgId}/teams/${teamId}/players`, { newPlayer }));
+
 export const removeOrgTeamPlayers = (orgId, teamId, playerIds) =>
   unwrap(api.delete(`/organizations/${orgId}/teams/${teamId}/players`, { data: { playerIds } }));
 
@@ -119,6 +125,26 @@ export const deleteOrgMatch = (orgId, matchId) => unwrap(api.delete(`/organizati
 /** Squads are chosen from the team roster; the server refuses anybody else. */
 export const setOrgMatchSquads = (orgId, matchId, squads) =>
   unwrap(api.put(`/organizations/${orgId}/matches/${matchId}/squads`, { squads }));
+
+// --- single-match setup (Playing XI straight from the roster) ----------------
+// These are the public match routes the Admin setup wizard also uses. The owner
+// has `create_match` in their own organization, which is what gates them.
+export const getMatchDetail = (matchId) => unwrap(api.get(`/matches/${matchId}`));
+
+export const getMatchSquads = (matchId) => unwrap(api.get(`/matches/${matchId}/squads`));
+
+export const setMatchPlayingXI = (matchId, teamId, players) =>
+  unwrap(api.put(`/matches/${matchId}/playing-xi`, { teamId, players }));
+
+export const setMatchTeamRoles = (matchId, payload) =>
+  unwrap(api.put(`/matches/${matchId}/team-roles`, payload));
+
+export const setMatchToss = (matchId, tossWinnerId, decision) =>
+  unwrap(api.put(`/matches/${matchId}/toss`, { tossWinnerId, decision }));
+
+// `null` clears the nomination; the server treats every falsy value the same.
+export const setMatchTwelfthMan = (matchId, teamId, playerId) =>
+  unwrap(api.put(`/matches/${matchId}/twelfth-man`, { teamId, playerId: playerId || null }));
 
 export const listOrgEvents = (orgId) => unwrap(api.get(`/organizations/${orgId}/events`));
 
@@ -159,6 +185,7 @@ export default {
   updateOrgTeam,
   deleteOrgTeam,
   addOrgTeamPlayers,
+  addOrgTeamPlayer,
   removeOrgTeamPlayers,
   updateOrgTeamPlayerRole,
   listOrgMatches,
@@ -166,6 +193,12 @@ export default {
   updateOrgMatch,
   deleteOrgMatch,
   setOrgMatchSquads,
+  getMatchDetail,
+  getMatchSquads,
+  setMatchPlayingXI,
+  setMatchTeamRoles,
+  setMatchToss,
+  setMatchTwelfthMan,
   listOrgEvents,
   createOrgEvent,
   updateOrgEvent,

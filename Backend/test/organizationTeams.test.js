@@ -418,7 +418,7 @@ test("squad: players are added, re-roled and removed, and each step is audited",
   );
   const teamId = created.body.team._id;
 
-  const player = await Player.create({ name: "Squad Player", role: "player" });
+  const player = await Player.create({ name: "Squad Player", role: "player", createdBy: owner._id });
 
   const addRes = mockRes();
   await addOrgTeamPlayers(
@@ -472,7 +472,7 @@ test("deleting a team removes it and its players' team pointer", async () => {
     created,
   );
   const teamId = created.body.team._id;
-  const player = await Player.create({ name: "Doomed Player" });
+  const player = await Player.create({ name: "Doomed Player", createdBy: owner._id });
   await addOrgTeamPlayers(
     mockReq({
       user: owner,
@@ -539,4 +539,139 @@ test("listOrgTeams only returns this organization's teams, and honours search", 
   );
   assert.strictEqual(searched.body.items.length, 1);
   assert.match(searched.body.items[0].name, /Alpha/);
+});
+
+test("squad: an owner creates and attaches a new player in the same call", async () => {
+  const owner = await makeUser();
+  const org = await makeOrg(owner, "Inline Player Org");
+
+  const created = mockRes();
+  await createOrgTeam(
+    mockReq({
+      user: owner,
+      principalType: "user",
+      params: { id: String(org._id) },
+      body: { name: "Inline XI" },
+      org,
+      orgAccess: ownerAccess,
+    }),
+    created,
+  );
+  const teamId = created.body.team._id;
+
+  const res = mockRes();
+  await addOrgTeamPlayers(
+    mockReq({
+      user: owner,
+      principalType: "user",
+      params: { id: String(org._id), teamId },
+      body: { newPlayer: { name: "Inline Player", role: "Bowler", phone: "0300 1234567" } },
+      org,
+      orgAccess: ownerAccess,
+    }),
+    res,
+  );
+  assert.strictEqual(res.statusCode, 200, JSON.stringify(res.body));
+  assert.strictEqual(res.body.player.name, "Inline Player");
+  assert.ok(res.body.team.players.some((player) => String(player._id) === String(res.body.player._id)));
+
+  const stored = await Player.findById(res.body.player._id);
+  assert.ok(stored.team.equals(teamId));
+  assert.ok(stored.createdBy.equals(owner._id));
+  assert.ok((await Team.findById(teamId)).players.some((id) => String(id) === String(stored._id)));
+
+  const duplicate = mockRes();
+  await addOrgTeamPlayers(
+    mockReq({
+      user: owner,
+      principalType: "user",
+      params: { id: String(org._id), teamId },
+      body: { newPlayer: { name: "Inline Player" } },
+      org,
+      orgAccess: ownerAccess,
+    }),
+    duplicate,
+  );
+  assert.strictEqual(duplicate.statusCode, 409);
+  assert.strictEqual(duplicate.body.code, "PLAYER_DUPLICATE");
+  assert.match(duplicate.body.message, /already exists/i);
+});
+
+test("squad: a player owned by another organization cannot be attached", async () => {
+  const owner = await makeUser();
+  const org = await makeOrg(owner, "Attach Org");
+  const otherOwner = await makeUser();
+  const otherOrg = await makeOrg(otherOwner, "Foreign Player Org");
+
+  const created = mockRes();
+  await createOrgTeam(
+    mockReq({
+      user: owner,
+      principalType: "user",
+      params: { id: String(org._id) },
+      body: { name: "Attach XI" },
+      org,
+      orgAccess: ownerAccess,
+    }),
+    created,
+  );
+  const teamId = created.body.team._id;
+
+  const foreignTeam = await Team.create({ name: "Foreign XI", organizationRef: otherOrg._id });
+  const foreignPlayer = await Player.create({
+    name: "Foreign Player",
+    team: foreignTeam._id,
+    createdBy: otherOwner._id,
+  });
+  foreignTeam.players = [foreignPlayer._id];
+  await foreignTeam.save();
+
+  const res = mockRes();
+  await addOrgTeamPlayers(
+    mockReq({
+      user: owner,
+      principalType: "user",
+      params: { id: String(org._id), teamId },
+      body: { playerIds: [String(foreignPlayer._id)] },
+      org,
+      orgAccess: ownerAccess,
+    }),
+    res,
+  );
+  assert.strictEqual(res.statusCode, 403, JSON.stringify(res.body));
+  assert.strictEqual(res.body.code, "PLAYER_NOT_OWNED");
+  assert.ok((await Player.findById(foreignPlayer._id)).team.equals(foreignTeam._id), "the player was not moved");
+  assert.strictEqual((await Team.findById(teamId)).players.length, 0);
+
+  const strangerPlayer = await Player.create({ name: "Unattached Stranger", createdBy: otherOwner._id });
+  const stranger = mockRes();
+  await addOrgTeamPlayers(
+    mockReq({
+      user: owner,
+      principalType: "user",
+      params: { id: String(org._id), teamId },
+      body: { playerIds: [String(strangerPlayer._id)] },
+      org,
+      orgAccess: ownerAccess,
+    }),
+    stranger,
+  );
+  assert.strictEqual(stranger.statusCode, 403);
+  assert.strictEqual(stranger.body.code, "PLAYER_NOT_OWNED");
+
+  const ownUnattached = await Player.create({ name: "My Free Agent", createdBy: owner._id });
+  const attached = mockRes();
+  await addOrgTeamPlayers(
+    mockReq({
+      user: owner,
+      principalType: "user",
+      params: { id: String(org._id), teamId },
+      body: { playerIds: [String(ownUnattached._id)] },
+      org,
+      orgAccess: ownerAccess,
+    }),
+    attached,
+  );
+  assert.strictEqual(attached.statusCode, 200, JSON.stringify(attached.body));
+  assert.ok((await Player.findById(ownUnattached._id)).team.equals(teamId));
 });

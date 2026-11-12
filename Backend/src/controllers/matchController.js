@@ -104,8 +104,12 @@ const isInSquad = (squad, playerId) =>
 
 const isInMatchSquad = (match, teamId, squad, playerId) => {
   const selectedSquad = (match.squad15 || []).find((entry) => sameId(entry.team, teamId));
+  // A configured squad narrows the choice, but an empty squad entry must not:
+  // single matches (no tournament/event squad) never need the optional 15 step,
+  // so `squad15` stays empty and the team roster is the whole pool.
+  const squadIsEmpty = !selectedSquad || (selectedSquad.players || []).length === 0;
   return isInSquad(squad, playerId) &&
-    (!selectedSquad || selectedSquad.players.some((player) => sameId(player, playerId)));
+    (squadIsEmpty || selectedSquad.players.some((player) => sameId(player, playerId)));
 };
 
 const resolveTeamSquad = ({ team, tournament, event }) => {
@@ -1287,20 +1291,21 @@ export const setPlayingXI = async (req, res) => {
       });
     }
     const configuredSquad = (match.squad15 || []).find((entry) => sameId(entry.team, teamId));
-    const configuredRoles = [
-      configuredSquad?.captain,
-      configuredSquad?.viceCaptain,
-      ...(configuredSquad?.wicketKeepers || []),
-      (match.teamRoles || []).find((entry) => sameId(entry.team, teamId))?.captain,
-      (match.teamRoles || []).find((entry) => sameId(entry.team, teamId))?.viceCaptain,
-      ...((match.teamRoles || []).find((entry) => sameId(entry.team, teamId))?.wicketKeepers || []),
-    ].filter(Boolean);
-    if (configuredRoles.some((roleId) => !players.some((player) => sameId(player, roleId)))) {
-      return res.status(400).json({
-        message: "Captain and wicket-keeper roles must be members of the Playing XI.",
-        code: "PLAYING_XI_ROLE_NOT_IN_XI",
-      });
-    }
+    const configuredTeamRoles = (match.teamRoles || []).find((entry) => sameId(entry.team, teamId));
+    const inNextXI = (roleId) => players.some((player) => sameId(player, roleId));
+    // The XI is authoritative: a role whose player just left the XI is stale, so
+    // clear it instead of refusing the save. The invariant this protects — every
+    // named C/VC/WK is in the XI — still holds after the prune.
+    const pruneRoles = (entry) => {
+      if (!entry) return;
+      if (entry.captain && !inNextXI(entry.captain)) entry.captain = null;
+      if (entry.viceCaptain && !inNextXI(entry.viceCaptain)) entry.viceCaptain = null;
+      if (Array.isArray(entry.wicketKeepers)) {
+        entry.wicketKeepers = entry.wicketKeepers.filter((roleId) => inNextXI(roleId));
+      }
+    };
+    pruneRoles(configuredSquad);
+    pruneRoles(configuredTeamRoles);
     const nominatedTwelfthMan = (match.twelfthMan || []).find((entry) => sameId(entry.team, teamId));
     if (nominatedTwelfthMan && players.some((player) => sameId(player, nominatedTwelfthMan.player))) {
       return res.status(400).json({
