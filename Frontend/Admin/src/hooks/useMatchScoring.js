@@ -12,6 +12,13 @@ const isIllegalDelivery = (ball) => !!(ball?.isWide || ball?.isNoBall);
 const CROSSING_WICKET_TYPES = ['run out', 'runOut', 'obstructing the field', 'obstructingField'];
 const isCrossingWicket = (type) => CROSSING_WICKET_TYPES.includes(type);
 
+const isOverInProgress = (innings) => {
+    const overs = innings?.oversHistory || [];
+    const lastOver = overs[overs.length - 1];
+    if (!lastOver || !Array.isArray(lastOver.balls) || lastOver.balls.length === 0) return false;
+    return lastOver.balls.filter((ball) => !ball.isWide && !ball.isNoBall).length < 6;
+};
+
 export default function useMatchScoring() {
     const { token } = useSelector((state) => state.auth);
     const { matchId, tabId } = useParams();
@@ -612,7 +619,7 @@ export default function useMatchScoring() {
         }
     };
 
-    const setRole = async (playerId, role) => {
+    const setRole = async (playerId, role, options = {}) => {
         try {
             const updated = { ...selectedMatch };
             const curInn = updated.innings[updated.currentInnings];
@@ -638,9 +645,26 @@ export default function useMatchScoring() {
                     batsman2Id: b2
                 }, { headers: { Authorization: `Bearer ${token}` } });
             } else if (role === 'bowler') {
+                const currentBowler = curInn.currentBowler?._id || curInn.currentBowler;
+                const changingBowler = String(currentBowler || '') !== String(playerId);
+                if (isOverInProgress(curInn) && changingBowler && !options.completeOverReplacement) {
+                    setConfirmModal({
+                        open: true,
+                        title: 'Change bowler mid-over?',
+                        message: 'The current over is not complete. Only replace the bowler if they are injured or have been removed. The new bowler will finish this over and the replaced bowler cannot bowl again in it.',
+                        confirmLabel: 'Replace injured bowler',
+                        variant: 'danger',
+                        onConfirm: () => {
+                            setConfirmModal({ open: false });
+                            setRole(playerId, 'bowler', { completeOverReplacement: true });
+                        },
+                    });
+                    return;
+                }
                 await axios.post(`${API_BASE_URL}/matches/${selectedMatch._id}/set-bowler`, {
                     inningsIndex: selectedMatch.currentInnings,
-                    bowlerId: playerId
+                    bowlerId: playerId,
+                    completeOverReplacement: !!options.completeOverReplacement,
                 }, { headers: { Authorization: `Bearer ${token}` } });
             }
 

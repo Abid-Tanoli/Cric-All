@@ -71,6 +71,7 @@ export const revertLastBallSchema = z.object({
 export const setBowlerSchema = z.object({
   inningsIndex: z.number().int().min(0),
   bowlerId: objectId,
+  completeOverReplacement: z.boolean().optional().default(false),
 });
 
 export const endInningsSchema = z.object({

@@ -17,6 +17,7 @@ import WicketDetailsForm from '../components/ScoreManagement/WicketDetailsForm';
 import ScoringMobileBar from '../components/ScoringMobileBar';
 import PlayerOfMatchCard from '../components/ScoreManagement/PlayerOfMatchCard';
 import { formatMatchDate, formatMatchTime, teamShortName } from '../utils/teamDisplay';
+import { getBowlerQuota, hasReachedBowlerQuota } from '../utils/bowlerQuota';
 
 export default function ManageScore() {
     const navigate = useNavigate();
@@ -870,6 +871,30 @@ export default function ManageScore() {
                                         const partTimers = bowlingXI.filter(p => 
                                             !['Bowler', 'All-Rounder', 'Bowling-All-Rounder'].includes(p.playingRole)
                                         );
+                                        const quota = getBowlerQuota(selectedMatch);
+                                        const bowlerStats = (p) => curInn?.bowling?.find(
+                                            b => String(b.player?._id || b.player) === String(p._id)
+                                        );
+                                        const bowlerButton = (p, roleLabel) => {
+                                            const reached = hasReachedBowlerQuota(bowlerStats(p), quota);
+                                            return (
+                                                <button
+                                                    key={p._id}
+                                                    onClick={() => setRole(p._id, 'bowler')}
+                                                    disabled={reached}
+                                                    aria-disabled={reached}
+                                                    title={reached ? `Quota reached (${quota} overs)` : undefined}
+                                                    className={`score-touch-btn p-4 sm:p-6 rounded-2xl sm:rounded-[2rem] border text-left min-w-0 transition-all ${reached
+                                                        ? 'bg-black/5 dark:bg-white/5 border-cric-border opacity-50 cursor-not-allowed'
+                                                        : 'bg-black/5 dark:bg-white/5 border-cric-border hover:border-blue-500 hover:bg-blue-500/5'}`}
+                                                >
+                                                    <div className="text-sm sm:text-lg font-black text-cric-text">{p.name}</div>
+                                                    <div className="text-[9px] font-black text-slate-500 uppercase tracking-widest mt-2 select-none">
+                                                        {reached ? `Quota reached (${quota} overs)` : roleLabel}
+                                                    </div>
+                                                </button>
+                                            );
+                                        };
 
                                         return (
                                             <>
@@ -877,13 +902,9 @@ export default function ManageScore() {
                                                     <div>
                                                         <h4 className="text-[10px] font-black uppercase text-slate-500 tracking-widest mb-4 pl-2">Main Bowlers</h4>
                                                         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4">
-                                                            {mainBowlers.map(p => (
-                                                                <button key={p._id} onClick={() => setRole(p._id, 'bowler')} className="score-touch-btn p-4 sm:p-6 rounded-2xl sm:rounded-[2rem] bg-black/5 dark:bg-white/5 border border-cric-border hover:border-blue-500 hover:bg-blue-500/5 transition-all text-left min-w-0">
-                                                                    <div className="text-sm sm:text-lg font-black text-cric-text">{p.name}</div>
-                                                                    <div className="text-[9px] font-black text-slate-500 uppercase tracking-widest mt-2 select-none">
-                                                                        {p.bowlingStyle && p.bowlingStyle !== 'Not Applicable' ? p.bowlingStyle : 'BOWLER'}
-                                                                    </div>
-                                                                </button>
+                                                            {mainBowlers.map(p => bowlerButton(
+                                                                p,
+                                                                p.bowlingStyle && p.bowlingStyle !== 'Not Applicable' ? p.bowlingStyle : 'BOWLER'
                                                             ))}
                                                         </div>
                                                     </div>
@@ -893,13 +914,9 @@ export default function ManageScore() {
                                                     <div className="pt-4 border-t border-cric-border/30">
                                                         <h4 className="text-[10px] font-black uppercase text-slate-500 tracking-widest mb-4 pl-2">Part-timer Bowlers</h4>
                                                         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4">
-                                                            {partTimers.map(p => (
-                                                                <button key={p._id} onClick={() => setRole(p._id, 'bowler')} className="score-touch-btn p-4 sm:p-6 rounded-2xl sm:rounded-[2rem] bg-black/5 dark:bg-white/5 border border-cric-border hover:border-blue-500 hover:bg-blue-500/5 transition-all text-left min-w-0">
-                                                                    <div className="text-sm sm:text-lg font-black text-cric-text">{p.name}</div>
-                                                                    <div className="text-[9px] font-black text-slate-500 uppercase tracking-widest mt-2 select-none">
-                                                                        {p.bowlingStyle && p.bowlingStyle !== 'Not Applicable' ? p.bowlingStyle : 'PART-TIMER'}
-                                                                    </div>
-                                                                </button>
+                                                            {partTimers.map(p => bowlerButton(
+                                                                p,
+                                                                p.bowlingStyle && p.bowlingStyle !== 'Not Applicable' ? p.bowlingStyle : 'PART-TIMER'
                                                             ))}
                                                         </div>
                                                     </div>

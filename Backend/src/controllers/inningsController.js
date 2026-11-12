@@ -1,6 +1,7 @@
 import Match from "../models/Match.js";
 import { getIO } from "../socket/socket.js";
 import { populateFullMatch } from "../utils/scoringHelpers.js";
+import { buildMatchResult } from "../utils/resultHelpers.js";
 
 export const endInnings = async (req, res) => {
   try {
@@ -70,35 +71,25 @@ export const endInnings = async (req, res) => {
 
       const inn1 = match.innings[0];
       const inn2 = match.innings[1];
+      const maxWickets = match.matchType === "Super Over" ? 2 : 10;
+      const result = buildMatchResult({
+        innings1: inn1,
+        innings2: inn2,
+        match,
+        maxWickets,
+      });
 
-      if (inn1.runs > inn2.runs) {
-        const runMargin = inn1.runs - inn2.runs;
-        match.result = {
-          winner: inn1.team,
-          margin: `${runMargin} runs`,
-          description: `${inn1.team.name} won by ${runMargin} runs`,
-          resultType: "normal"
-        };
-      } else if (inn2.runs > inn1.runs) {
-        const maxWickets = match.matchType === "Super Over" ? 2 : 10;
-        const wicketsLeft = Math.max(0, maxWickets - inn2.wickets);
-        const wicketWord = wicketsLeft === 1 ? "wicket" : "wickets";
-        const ballsLeft = (match.totalOvers * 6) - ((inn2.overs * 6) + inn2.balls);
-
-        match.result = {
-          winner: inn2.team,
-          margin: `${wicketsLeft} ${wicketWord}`,
-          description: `${inn2.team.name} won by ${wicketsLeft} ${wicketWord} (${ballsLeft} balls remaining)`,
-          resultType: "normal"
-        };
-      } else {
+      if (result?.isTie) {
         match.status = "pending_tie_resolution";
         match.tieResolution = "pending";
         match.result = {
+          ...result,
           margin: "Match tied",
           description: "Match ended in a tie - Resolution pending",
-          resultType: "tie"
+          resultType: "tie",
         };
+      } else if (result) {
+        match.result = result;
       }
     }
 

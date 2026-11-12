@@ -1,4 +1,5 @@
 import { computeBallAccounting, NON_BOWLER_DISMISSALS } from './ballAccounting.js';
+import { buildMatchResult, buildNoResultResult } from '../../utils/resultHelpers.js';
 
 const FORMATS = {
   T20: { maxOvers: 20, maxWickets: 10, superOver: true, maxBowlerOvers: 4, powerplayEnabled: true, powerplayOvers: 6 },
@@ -586,8 +587,13 @@ class ScoringEngine {
       innings.status = 'completed';
       this.match.matchState = 'completed';
       this.match.status = 'completed';
-      const w = 10 - innings.wickets;
-      this.match.result = { winner: innings.team, margin: `${w} wickets`, description: `${innings.team?.name || 'Team'} won by ${w} wickets` };
+      this.match.result = buildMatchResult({
+        innings1: this.match.innings[0],
+        innings2: innings,
+        match: this.match,
+        maxWickets: this.format.maxWickets,
+        superOverAvailable: this.format.superOver,
+      });
       this.events.push({ type: 'matchComplete', result: this.match.result });
     }
   }
@@ -631,15 +637,13 @@ class ScoringEngine {
       return;
     }
     this.match.status = 'completed'; this.match.matchState = 'completed';
-    if (i2.runs > i1.runs) {
-      const wl = this.format.maxWickets - i2.wickets;
-      this.match.result = { winner: i2.team, margin: `${wl} wickets`, description: `${i2.team?.name || 'Team 2'} won by ${wl} wickets${i2.balls ? ` (${i2.balls} balls remaining)` : ''}` };
-    } else if (i1.runs > i2.runs) {
-      const rm = i1.runs - i2.runs;
-      this.match.result = { winner: i1.team, margin: `${rm} runs`, description: `${i1.team?.name || 'Team 1'} won by ${rm} runs` };
-    } else {
-      this.match.result = { winner: null, margin: 'tie', description: 'Match tied', isTie: true, superOverAvailable: this.format.superOver };
-    }
+    this.match.result = buildMatchResult({
+      innings1: i1,
+      innings2: i2,
+      match: this.match,
+      maxWickets: this.format.maxWickets,
+      superOverAvailable: this.format.superOver,
+    });
     this.events.push({ type: 'result', result: this.match.result });
   }
 
@@ -954,7 +958,7 @@ class ScoringEngine {
     if (state === 'rainDelay') this.events.push({ type: 'rainDelay' });
     if (state === 'abandoned') {
       this.match.status = 'abandoned';
-      this.match.result = { winner: null, margin: 'noResult', description: 'Match abandoned' };
+      this.match.result = buildNoResultResult();
       this.events.push({ type: 'matchAbandoned' });
     }
     this.events.push({ type: 'matchStateChange', state });

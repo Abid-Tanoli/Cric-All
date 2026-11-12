@@ -160,6 +160,12 @@ const inningsSchema = new mongoose.Schema({
     overNumber: { type: Number, default: null },
     player: { type: mongoose.Schema.Types.ObjectId, ref: "Player", default: null },
   },
+  // When a bowler is replaced mid-over because of injury/removal, the old
+  // bowler may not return for the remainder of that same over.
+  replacedBowlerBlock: {
+    overNumber: { type: Number, default: null },
+    player: { type: mongoose.Schema.Types.ObjectId, ref: "Player", default: null },
+  },
   oversHistory: [overSchema],
   batting: [batsmanStatsSchema],
   bowling: [bowlerStatsSchema],
@@ -313,6 +319,12 @@ const matchSchema = new mongoose.Schema(
     totalOvers: {
       type: Number,
       default: 20
+    },
+    // Optional per-match override for the per-bowler over limit. Null means
+    // "use the format default, then ceil(totalOvers / 5)".
+    maxBowlerOvers: {
+      type: Number,
+      default: null,
     },
     startAt: {
       type: Date

@@ -16,6 +16,8 @@ import { computeProjectedScore, computeWinProbability, updateMatchAnalytics } fr
 import { getBallRunText } from "../utils/cricketHelpers.js";
 import { processDeliveryWithEngine, computeShouldEndInnings } from "../services/scoring/controllerAdapter.js";
 import { normalizeWicketType, calculateWinProbability, populateFullMatch } from "../utils/scoringHelpers.js";
+import { computeChaseState } from "../utils/resultHelpers.js";
+import { getBowlerQuota, getBowlerBalls, isOverInProgress, currentOverNumber, previousCompletedOver, overBowlerMatches } from "../services/scoring/bowlerRules.js";
 import { ensureMatchInnings } from "../utils/matchInnings.js";
 import { computeBallAccounting } from "../services/scoring/ballAccounting.js";
 
@@ -145,8 +147,8 @@ export const updateScore = async (req, res) => {
         didCross: didCross !== undefined ? didCross : wicketDidCross,
       });
     } catch (engineErr) {
-      if (engineErr.code === 'SAME_BOWLER_CONSECUTIVE') {
-        return res.status(400).json({ message: engineErr.message });
+      if (['SAME_BOWLER_CONSECUTIVE', 'BOWLER_QUOTA_REACHED', 'REPLACED_BOWLER_IN_OVER'].includes(engineErr.code)) {
+        return res.status(400).json({ message: engineErr.message, code: engineErr.code });
       }
       throw engineErr;
     }
@@ -174,6 +176,17 @@ export const updateScore = async (req, res) => {
     isWicket = engineWicket;
     batsmanOnStrikeId = strikerBeforeId;
     batsmanNonStrikeId = nonStrikerBeforeId;
+
+    // The engine leaves requiredRunRate untouched, so a chase would otherwise
+    // keep broadcasting whatever was last written by updateMatch/reduceOvers.
+    // Recompute it (plus the runs/balls inputs) from the post-delivery state
+    // before any score event or over summary is emitted.
+    const chaseState = (Number(inningsIndex) === 1 && innings.target)
+      ? computeChaseState(match, innings)
+      : { runsNeeded: null, ballsRemaining: null, requiredRunRate: null };
+    if (chaseState.requiredRunRate !== null) {
+      innings.requiredRunRate = chaseState.requiredRunRate;
+    }
 
     // Validate fielder for 1/2/3 runs (non-wicket, non-extras)
     const runsValue = parseInt(String(runs), 10);
@@ -470,6 +483,8 @@ export const updateScore = async (req, res) => {
         balls: innings.balls,
         runRate: innings.runRate,
         requiredRunRate: innings.requiredRunRate,
+        runsNeeded: chaseState.runsNeeded,
+        ballsRemaining: chaseState.ballsRemaining,
         powerplayStatus: innings.powerplayStatus,
         powerplayConfig: match.powerplayConfig,
         currentInnings: match.currentInnings,
@@ -505,8 +520,8 @@ export const updateScore = async (req, res) => {
               wickets: innings.wickets,
               totalOvers: match.totalOvers,
               target: innings.target,
-              remainingRuns: innings.target ? innings.target - innings.runs : null,
-              remainingBalls: innings.target ? ((match.totalOvers - innings.overs - (innings.balls % 6) / 6) * 6 | 0) : null,
+              remainingRuns: chaseState.runsNeeded,
+              remainingBalls: chaseState.ballsRemaining,
               rrr: innings.requiredRunRate,
               crr: innings.runRate,
               batter1: batsmanOnStrikeStats || {},
@@ -1533,7 +1548,7 @@ export const revertLastBall = async (req, res) => {
 export const setBowler = async (req, res) => {
   try {
     const { matchId } = req.params;
-    const { inningsIndex, bowlerId } = req.body;
+    const { inningsIndex, bowlerId, completeOverReplacement = false } = req.body;
 
     const match = await Match.findById(matchId);
     if (!match) return res.status(404).json({ message: "Match not found" });
@@ -1542,15 +1557,58 @@ export const setBowler = async (req, res) => {
     const innings = match.innings[inningsIndex];
     if (!innings) return res.status(400).json({ message: "Invalid innings index" });
 
+    const inProgress = isOverInProgress(innings);
+    const overNumber = currentOverNumber(innings);
+
     // 12th Man: a player swapped in mid-over on the fielding side may not bowl
     // the remainder of that over.
-    const currentOverNumber = Math.floor((innings.balls || 0) / 6);
     const bowlBlock = innings.twelfthManBowlBlock;
-    if (bowlBlock && bowlBlock.overNumber === currentOverNumber && String(bowlBlock.player) === String(bowlerId)) {
+    if (bowlBlock && bowlBlock.overNumber === overNumber && String(bowlBlock.player) === String(bowlerId)) {
       return res.status(400).json({
         message: "The 12th Man cannot bowl the rest of this over.",
         code: "TWELFTH_MAN_CANNOT_BOWL_OVER",
       });
+    }
+
+    // A bowler replaced mid-over (injury/removal) may not return in that over.
+    const replacedBlock = innings.replacedBowlerBlock;
+    if (inProgress && replacedBlock && Number(replacedBlock.overNumber) === Number(overNumber)
+      && String(replacedBlock.player) === String(bowlerId)) {
+      return res.status(400).json({
+        message: "The replaced bowler cannot bowl again in this over.",
+        code: "REPLACED_BOWLER_IN_OVER",
+      });
+    }
+
+    const quota = getBowlerQuota(match);
+    const bowlerBalls = getBowlerBalls(innings, bowlerId);
+    if (bowlerBalls >= quota * 6) {
+      return res.status(400).json({
+        message: `This bowler has reached the ${quota}-over quota for this match.`,
+        code: "BOWLER_QUOTA_REACHED",
+      });
+    }
+
+    const currentBowlerId = innings.currentBowler?._id || innings.currentBowler;
+    const isBowlerChange = String(currentBowlerId || "") !== String(bowlerId);
+    const previousOver = previousCompletedOver(innings);
+    if ((!inProgress || isBowlerChange) && overBowlerMatches(previousOver, bowlerId)) {
+      return res.status(400).json({
+        message: "Same bowler cannot bowl consecutive overs.",
+        code: "SAME_BOWLER_CONSECUTIVE",
+      });
+    }
+
+    if (inProgress && isBowlerChange && !completeOverReplacement) {
+      return res.status(400).json({
+        message: "A bowler can only be changed between overs. Set completeOverReplacement when the bowler is injured or has been removed mid-over.",
+        code: "MID_OVER_BOWLER_CHANGE",
+      });
+    }
+
+    if (inProgress && isBowlerChange && completeOverReplacement) {
+      // The replacement finishes this over; the old bowler is barred from it.
+      innings.replacedBowlerBlock = { overNumber, player: currentBowlerId };
     }
 
     innings.currentBowler = bowlerId;
