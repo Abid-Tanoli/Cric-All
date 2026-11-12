@@ -272,6 +272,11 @@ export async function createTournamentFixture({
     // keep startAt null rather than inventing "now" so the schedule is honest.
     startAt: startTime ? new Date(startTime) : (stage ? null : new Date()),
     status: "upcoming",
+    // Phase 2: a fixture created inside a tournament inherits the tournament's
+    // tenant. Guest teams registered in the tournament therefore play in the
+    // host organization's match, and the host controls scoring — the guest's
+    // own organization cannot reach it.
+    organizationRef: tournament.organizationRef || null,
   });
 
   if (dryRun) {

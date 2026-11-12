@@ -12,7 +12,13 @@ const seriesSchema = new mongoose.Schema({
   venue: String,
   description: String,
   logo: String,
-  winner: { type: mongoose.Schema.Types.ObjectId, ref: 'Team' }
+  winner: { type: mongoose.Schema.Types.ObjectId, ref: 'Team' },
+  // Phase 2 (org-owned competitions): the organization that owns this series.
+  // null means a platform series (Admin-only), and documents written before the
+  // field existed stay platform-owned, so no migration is required.
+  organizationRef: { type: mongoose.Schema.Types.ObjectId, ref: 'TeamOrganization', default: null }
 }, { timestamps: true });
+
+seriesSchema.index({ organizationRef: 1, startDate: -1 });
 
 export default mongoose.model('Series', seriesSchema);

@@ -470,6 +470,9 @@ export const getSeriesSquadsById = async (req, res) => {
 export const createSeries = async (req, res) => {
   try {
     const series = new Series(req.body);
+    // Phase 2: the tenant key comes from the authorised `req.org`, never the
+    // body. Absent on the Admin route, so platform series stay null.
+    series.organizationRef = req.org?._id || null;
     await series.save();
     res.status(201).json(series);
   } catch (error) {
@@ -479,7 +482,12 @@ export const createSeries = async (req, res) => {
 
 export const updateSeries = async (req, res) => {
   try {
-    const series = await Series.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    // `organizationRef` is a tenant key, not an editable field: strip it so a
+    // body can never move a series to another organization.
+    const updates = { ...(req.body || {}) };
+    delete updates.organizationRef;
+    const series = await Series.findByIdAndUpdate(req.params.id, updates, { new: true });
+    if (!series) return res.status(404).json({ message: "Series not found" });
     res.json(series);
   } catch (error) {
     res.status(400).json({ message: error.message });
@@ -488,7 +496,8 @@ export const updateSeries = async (req, res) => {
 
 export const deleteSeries = async (req, res) => {
   try {
-    await Series.findByIdAndDelete(req.params.id);
+    const series = await Series.findByIdAndDelete(req.params.id);
+    if (!series) return res.status(404).json({ message: "Series not found" });
     res.json({ message: 'Series deleted' });
   } catch (error) {
     res.status(500).json({ message: error.message });

@@ -383,7 +383,13 @@ export const createTournament = async (req, res) => {
       rules: { twelfthManEnabled: req.body?.rules?.twelfthManEnabled === true },
       pointsTable: teamIds.map(pointsRow),
       status: status || "upcoming",
-      createdByAdmin: req.user?._id || null,
+      // `createdByAdmin` is an Admin-collection ref, so an org-created
+      // tournament (a User principal) leaves it null and is owned through
+      // `organizationRef` instead. The Admin route is unchanged.
+      createdByAdmin: req.principalType === "admin" ? req.user?._id || null : null,
+      // Phase 2: the tenant key comes from the authorised `req.org`, never the
+      // body. Absent on the Admin route, so platform tournaments stay null.
+      organizationRef: req.org?._id || null,
     });
 
     await tournament.save();
@@ -463,6 +469,21 @@ export const updateTournament = async (req, res) => {
     if (req.body.pointsConfig !== undefined) tournament.pointsConfig = parsePointsConfig(req.body);
     if (req.body.rules && "twelfthManEnabled" in req.body.rules) {
       tournament.rules = { twelfthManEnabled: req.body.rules.twelfthManEnabled === true };
+    }
+    // Phase 2: tournament-hub content is editable through the same update path,
+    // so an organization can manage its own hub. Merged field-by-field so a
+    // partial payload never wipes the other settings.
+    if (req.body.content && typeof req.body.content === "object") {
+      const current = tournament.content
+        ? (tournament.content.toObject ? tournament.content.toObject() : tournament.content)
+        : {};
+      const incoming = req.body.content;
+      tournament.content = {
+        ...current,
+        ...incoming,
+        visibility: { ...(current.visibility || {}), ...(incoming.visibility || {}) },
+        stats: { ...(current.stats || {}), ...(incoming.stats || {}) },
+      };
     }
 
     await tournament.save();
@@ -1237,6 +1258,9 @@ export const applyTournamentFixtures = async (req, res) => {
         innings: buildMatchInnings([planned.team1, planned.team2]),
         startAt: planned.startAt,
         status: "upcoming",
+        // Phase 2: a generated fixture inherits its tournament's tenant, so the
+        // host organization (not the guest, not the platform) controls scoring.
+        organizationRef: tournament.organizationRef || null,
       });
       await match.save();
       existingPairs.add(key);
