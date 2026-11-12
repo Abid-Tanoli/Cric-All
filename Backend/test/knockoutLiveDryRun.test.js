@@ -206,7 +206,7 @@ test("a 20-over knockout fixture runs end-to-end through the scoring API", async
   let freeHitConsumed = false;
 
   for (let over = 0; over < 20; over += 1) {
-    const bowlerId = bowl[over % 3]; // rotate three bowlers: never consecutive
+    const bowlerId = bowl[over % 5]; // rotate five bowlers: never consecutive, each stays within the T20 4-over quota
 
     if (over === 0) {
       const wide = await send({ runs: 0, isWide: true, bowlerId });
