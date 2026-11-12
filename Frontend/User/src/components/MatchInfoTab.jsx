@@ -1,4 +1,5 @@
-import { idOf, longTeamName, playerName, formatDate, getTossLine, getPlayingXI, statusLabel } from "../utils/matchHelpers";import InfoCard from "./InfoCard";
+import { idOf, longTeamName, playerName, formatDate, getTossLine, getPlayingXI, statusLabel } from "../utils/matchHelpers";
+import InfoCard from "./InfoCard";
 import InfoRow from "./InfoRow";
 import BattingPositionBadge from "@shared/components/BattingPositionBadge";
 

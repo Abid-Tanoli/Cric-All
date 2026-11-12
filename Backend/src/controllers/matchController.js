@@ -116,7 +116,13 @@ const loadTeamSquad = async (match, teamId) => {
       ? Event.findById(match.event).select("eventSquads").lean()
       : null,
   ]);
-  return resolveTeamSquad({ team, tournament, event });
+  const squad = resolveTeamSquad({ team, tournament, event });
+  if (squad.players.length > 0) return squad;
+
+  const teamPlayers = await Player.find({ team: teamId })
+    .select("name role playingRole battingPosition")
+    .lean();
+  return { source: "roster", players: teamPlayers };
 };
 
 const populateMatch = (query) => {
@@ -1262,7 +1268,7 @@ export const setPlayingXI = async (req, res) => {
     }
 
     const squad = await loadTeamSquad(match, teamId);
-    if (players.some((playerId) => !squad.players.some((player) => sameId(player, playerId)))) {
+    if (squad.players.length > 0 && players.some((playerId) => !squad.players.some((player) => sameId(player, playerId)))) {
       return res.status(400).json({
         message: "Every Playing XI player must belong to this team's squad.",
         code: "PLAYING_XI_NOT_IN_SQUAD",
@@ -1550,7 +1556,7 @@ export const setTwelfthMan = async (req, res) => {
     }
 
     const squad = await loadTeamSquad(match, teamId);
-    if (!squad.players.some((player) => sameId(player, playerId))) {
+    if (squad.players.length > 0 && !squad.players.some((player) => sameId(player, playerId))) {
       return res.status(400).json({
         message: "The 12th Man must be a member of this team's squad.",
         code: "TWELFTH_MAN_NOT_IN_SQUAD",

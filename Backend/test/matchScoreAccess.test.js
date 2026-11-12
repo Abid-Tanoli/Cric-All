@@ -234,15 +234,16 @@ test("a role without score_match is still refused", async () => {
 const makeSquadClub = async (name) => {
   const owner = await makeUser();
   const org = await makeOrg(owner, name);
-  const teams = [
-    await Team.create({ name: "XI A", organizationRef: org._id }),
-    await Team.create({ name: "XI B", organizationRef: org._id }),
-  ];
   const players = await Promise.all(
     Array.from({ length: 12 }, () => makeUser())
   );
+  const playerIds = players.map((p) => p._id.toString());
+  const teams = [
+    await Team.create({ name: "XI A", organizationRef: org._id, players: playerIds }),
+    await Team.create({ name: "XI B", organizationRef: org._id, players: playerIds }),
+  ];
   const match = await makeOrgMatch(org, teams);
-  return { owner, org, teams, match, playerIds: players.map((p) => p._id.toString()) };
+  return { owner, org, teams, match, playerIds };
 };
 
 test("a score_handler can score but cannot set the squads", async () => {
