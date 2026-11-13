@@ -1,7 +1,7 @@
 import React, { useState } from "react";
+import RequestDeletionButton from "../../components/RequestDeletionButton";
 import {
   createOrgEvent,
-  deleteOrgEvent,
   updateOrgEvent,
 } from "../../services/organizationApi";
 import { formatDate } from "../../lib/orgUi";
@@ -10,7 +10,6 @@ import {
   Field,
   card,
   cardSubtle,
-  dangerButton,
   eyebrow,
   input,
   primaryButton,
@@ -174,20 +173,6 @@ export default function OrgEvents({ orgId, events = [], loading, error, onChange
     }
   };
 
-  const remove = async (event) => {
-    setBusyId(event._id);
-    setErr("");
-    try {
-      await deleteOrgEvent(orgId, event._id);
-      setNotice({ kind: "success", text: `${event.name} deleted.` });
-      refresh();
-    } catch (error) {
-      setErr(error.message || "Could not delete the event");
-    } finally {
-      setBusyId(null);
-    }
-  };
-
   return (
     <div className="space-y-4">
       <div className={card}>
@@ -277,15 +262,7 @@ export default function OrgEvents({ orgId, events = [], loading, error, onChange
                   <button type="button" onClick={() => setEditing(event)} className={secondaryButton}>
                     Edit
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => remove(event)}
-                    disabled={busyId === event._id}
-                    className={dangerButton}
-                    title={event.matchCount ? "Delete the fixtures inside it first" : undefined}
-                  >
-                    Delete
-                  </button>
+                  <RequestDeletionButton label="Request event deletion" />
                 </div>
               </div>
               {editing?._id === event._id ? (

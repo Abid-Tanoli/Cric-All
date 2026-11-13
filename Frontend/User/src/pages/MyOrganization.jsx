@@ -17,6 +17,7 @@ import OrgInvitations from "./organization/OrgInvitations";
 import OrgSettings from "./organization/OrgSettings";
 import OrgTeams from "./organization/OrgTeams";
 import OrgMatches from "./organization/OrgMatches";
+import OrgCompetitions from "./organization/OrgCompetitions";
 import OrgEvents from "./organization/OrgEvents";
 
 const TABS = [
@@ -25,6 +26,7 @@ const TABS = [
   { id: "invitations", label: "Invitations" },
   { id: "teams", label: "Teams", permission: PERMISSIONS.MANAGE_TEAMS },
   { id: "matches", label: "Matches", permission: PERMISSIONS.CREATE_MATCH },
+  { id: "competitions", label: "Competitions" },
   { id: "events", label: "Events", permission: PERMISSIONS.CREATE_MATCH },
   { id: "settings", label: "Settings", permission: PERMISSIONS.MANAGE_ORG },
 ];
@@ -351,6 +353,9 @@ export default function MyOrganization() {
                         events={events}
                         onChanged={() => loadEvents(active._id)}
                       />
+                    )}
+                    {activeTab === "competitions" && (
+                      <OrgCompetitions orgId={active._id} access={access} />
                     )}
                     {activeTab === "events" && (
                       <OrgEvents
