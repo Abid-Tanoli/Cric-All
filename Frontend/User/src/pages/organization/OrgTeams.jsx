@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import RequestDeletionButton from "../../components/RequestDeletionButton";
 import {
   createOrgTeam,
-  deleteOrgTeam,
   listOrgTeamsManaged,
   listOrganizationTypes,
   toggleTeamVisibility,
@@ -14,7 +14,6 @@ import {
   Field,
   card,
   cardSubtle,
-  dangerButton,
   eyebrow,
   input,
   primaryButton,
@@ -126,7 +125,6 @@ export default function OrgTeams({ orgId, access, onChanged }) {
   const [notice, setNotice] = useState("");
   const [creating, setCreating] = useState(false);
   const [editingId, setEditingId] = useState(null);
-  const [confirmDelete, setConfirmDelete] = useState(null);
 
   const permissions = access?.permissions || [];
   const canManageTeams = can(permissions, PERMISSIONS.MANAGE_TEAMS);
@@ -152,23 +150,6 @@ export default function OrgTeams({ orgId, access, onChanged }) {
       .then((res) => setCategories(Array.isArray(res) ? res : []))
       .catch(() => setCategories([]));
   }, []);
-
-  const remove = async (team) => {
-    setBusy(true);
-    setErr("");
-    setNotice("");
-    try {
-      await deleteOrgTeam(orgId, team._id);
-      setNotice(`"${team.name}" deleted.`);
-      setConfirmDelete(null);
-      await load();
-      onChanged?.();
-    } catch (error) {
-      setErr(error.message || "Could not delete the team");
-    } finally {
-      setBusy(false);
-    }
-  };
 
   const toggleVisibility = async (team) => {
     setBusy(true);
@@ -331,43 +312,18 @@ export default function OrgTeams({ orgId, access, onChanged }) {
                             >
                               Edit
                             </button>
-                            <button
-                              type="button"
-                              onClick={() => setConfirmDelete(team)}
-                              className={dangerButton}
-                            >
-                              Delete
-                            </button>
+                            <RequestDeletionButton
+                              orgId={orgId}
+                              targetType="team"
+                              targetId={team._id}
+                              subject={`Delete team: ${team.name}`}
+                              label="Request deletion"
+                            />
                           </>
                         )}
                       </div>
                     </div>
 
-                    {confirmDelete?._id === team._id && (
-                      <div className="mt-3 rounded-xl border border-red-300 bg-red-50 p-4">
-                        <p className="text-sm font-bold text-red-700">
-                          Delete “{team.name}”? Its players are detached and the team is removed for
-                          everyone.
-                        </p>
-                        <div className="mt-3 flex flex-wrap gap-3">
-                          <button
-                            type="button"
-                            onClick={() => remove(team)}
-                            disabled={busy}
-                            className="rounded-lg bg-red-600 px-5 py-2 text-xs font-black uppercase tracking-widest text-white disabled:opacity-60"
-                          >
-                            Yes, delete
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setConfirmDelete(null)}
-                            className="rounded-lg border border-cric-border bg-white px-5 py-2 text-xs font-black uppercase tracking-widest text-cric-muted"
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      </div>
-                    )}
                   </>
                 )}
               </div>

@@ -1172,4 +1172,134 @@ describe("Phase 11 - cross-tenant authorization matrix", () => {
       }
     });
   });
+
+  describe("issue reports", () => {
+    test("members can report only their organization, and admins can reply and resolve", async () => {
+      const { orgId, otherOrgId, teamId, otherTeamId } = v();
+      const created = await assertPermitted({
+        api: world.actors.owner.api,
+        method: "post",
+        path: `/organizations/${orgId}/issues`,
+        body: {
+          type: "issue",
+          subject: `Fixture issue ${world.runId}`,
+          description: "The organization fixture needs review.",
+          targetType: "team",
+          targetId: teamId,
+        },
+        label: "issue report create as owner",
+      });
+      const reportId = String(created.body?.report?._id || "");
+      assert.ok(reportId, `issue report returned no id: ${JSON.stringify(created.body)}`);
+
+      const ownList = await world.actors.owner.api.get(`/organizations/${orgId}/issues`);
+      assert.ok((ownList.body?.items || []).some((report) => String(report._id) === reportId));
+
+      const crossRead = await ctx.outsider.api.get(`/organizations/${otherOrgId}/issues/${reportId}`);
+      assert.strictEqual(crossRead.status, 404, "another tenant cannot read this report");
+
+      const crossTarget = await world.actors.owner.api.post(
+        `/organizations/${orgId}/issues`,
+        {
+          type: "issue",
+          subject: `Foreign target ${world.runId}`,
+          description: "This target belongs to another organization.",
+          targetType: "team",
+          targetId: otherTeamId,
+        },
+      );
+      assert.strictEqual(crossTarget.status, 404, "foreign target ownership is hidden");
+
+      await assertPermitted({
+        api: world.actors.admin.api,
+        method: "post",
+        path: `/admin/issues/${reportId}/reply`,
+        body: { adminReply: "We are reviewing this report." },
+        label: "admin reply to issue",
+      });
+      await assertPermitted({
+        api: world.actors.admin.api,
+        method: "patch",
+        path: `/admin/issues/${reportId}/status`,
+        body: { status: "resolved" },
+        label: "admin resolve issue",
+      });
+      const ownerDetail = await world.actors.owner.api.get(`/organizations/${orgId}/issues/${reportId}`);
+      assert.strictEqual(ownerDetail.body?.report?.status, "resolved");
+      assert.strictEqual(ownerDetail.body?.report?.adminReply, "We are reviewing this report.");
+    });
+
+    test("admins approve deletion through the existing match delete flow and resolve the request", async () => {
+      const fixture = await createMatch({ ctx, title: `IssueDelete_${world.runId}` });
+      const created = await assertPermitted({
+        api: world.actors.owner.api,
+        method: "post",
+        path: `/organizations/${v().orgId}/issues`,
+        body: {
+          type: "deletion_request",
+          subject: `Delete fixture ${world.runId}`,
+          description: "This duplicate fixture should be removed.",
+          targetType: "match",
+          targetId: fixture.matchId,
+        },
+        label: "deletion request create as owner",
+      });
+      const reportId = String(created.body?.report?._id || "");
+      assert.ok(reportId, `deletion request returned no id: ${JSON.stringify(created.body)}`);
+
+      await assertPermitted({
+        api: world.actors.admin.api,
+        method: "post",
+        path: `/admin/issues/${reportId}/approve-delete`,
+        body: {},
+        label: "admin approve and delete",
+      });
+      const deletedMatch = await world.actors.admin.api.get(`/matches/${fixture.matchId}`);
+      assert.strictEqual(deletedMatch.status, 404, "the linked match was deleted");
+      const resolved = await world.actors.admin.api.get(`/admin/issues/${reportId}`);
+      assert.strictEqual(resolved.body?.report?.status, "resolved");
+      assert.strictEqual(String(resolved.body?.report?.resolvedBy?._id || resolved.body?.report?.resolvedBy), world.actors.admin.userId);
+    });
+  });
+
+  describe("non-destructive organization actions", () => {
+    test("owner hard deletes are admin-only while unlink, leave, and revoke remain available", async () => {
+      const { orgId, teamId, memberUserId } = v();
+      const ownerApi = world.actors.owner.api;
+      const adminOnlyDeletes = [
+        `/organizations/${orgId}`,
+        `/organizations/${orgId}/teams/${teamId}`,
+        `/organizations/${orgId}/members/${memberUserId}`,
+      ];
+      for (const path of adminOnlyDeletes) {
+        const response = await ownerApi.del(path);
+        assert.strictEqual(response.status, 403, `DELETE ${path} should be refused`);
+        assert.strictEqual(response.body?.code, "ADMIN_ONLY_DELETE");
+      }
+
+      const invite = await ownerApi.post(`/organizations/${orgId}/invitations`, {
+        email: `opencode.test.issue-revoke.${world.runId}@example.test`,
+        roles: ["player"],
+      });
+      assert.ok(invite.status >= 200 && invite.status < 300, `invitation create returned ${invite.status}`);
+      const invitationId = String(invite.body?.invitation?._id || invite.body?._id || "");
+      assert.ok(invitationId, "invitation create returned an id");
+      const deleteInvitation = await ownerApi.del(`/organizations/${orgId}/invitations/${invitationId}`);
+      assert.strictEqual(deleteInvitation.status, 403);
+      assert.strictEqual(deleteInvitation.body?.code, "ADMIN_ONLY_DELETE");
+      const revoked = await ownerApi.post(`/organizations/${orgId}/invitations/${invitationId}/revoke`, {});
+      assert.ok(revoked.status >= 200 && revoked.status < 300, `invitation revoke returned ${revoked.status}`);
+
+      const added = await ownerApi.post(`/organizations/${orgId}/members`, {
+        email: world.actors.verified.email,
+        roles: ["player"],
+      });
+      assert.ok(added.status >= 200 && added.status < 300, `member add returned ${added.status}`);
+      const left = await world.actors.verified.api.post(`/organizations/${orgId}/leave`, {});
+      assert.ok(left.status >= 200 && left.status < 300, `member leave returned ${left.status}`);
+
+      const unlinked = await ownerApi.post(`/organizations/${orgId}/members/${memberUserId}/unlink`, {});
+      assert.ok(unlinked.status >= 200 && unlinked.status < 300, `member unlink returned ${unlinked.status}`);
+    });
+  });
 });

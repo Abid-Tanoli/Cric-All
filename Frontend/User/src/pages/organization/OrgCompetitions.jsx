@@ -27,7 +27,7 @@ const itemsOf = (response) =>
 
 const teamCount = (competition) => (competition.teams || []).length;
 
-function CompetitionCard({ competition, kind, canManage, onOpen, onEdit }) {
+function CompetitionCard({ orgId, competition, kind, canManage, onOpen, onEdit }) {
   const label = kind === "tournament" ? "Tournament" : "Series";
   return (
     <div className={cardSubtle}>
@@ -55,7 +55,13 @@ function CompetitionCard({ competition, kind, canManage, onOpen, onEdit }) {
               <button type="button" onClick={onEdit} className={secondaryButton}>
                 Edit
               </button>
-              <RequestDeletionButton label={`Request ${kind} deletion`} />
+              <RequestDeletionButton
+                orgId={orgId}
+                targetType={kind}
+                targetId={competition._id}
+                subject={`Delete ${kind}: ${competition.name}`}
+                label={`Request ${kind} deletion`}
+              />
             </>
           ) : null}
         </div>
@@ -251,6 +257,7 @@ export default function OrgCompetitions({ orgId, access, onChanged }) {
               <div className="mt-3 space-y-2">
                 {tournaments.map((tournament) => (
                   <CompetitionCard
+                    orgId={orgId}
                     key={tournament._id}
                     competition={tournament}
                     kind="tournament"
@@ -291,6 +298,7 @@ export default function OrgCompetitions({ orgId, access, onChanged }) {
               <div className="mt-3 space-y-2">
                 {series.map((entry) => (
                   <CompetitionCard
+                    orgId={orgId}
                     key={entry._id}
                     competition={entry}
                     kind="series"

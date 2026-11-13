@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import RequestDeletionButton from "../../components/RequestDeletionButton";
+import IssueReportButton from "../../components/IssueReportButton";
 import {
   addOrgTeamPlayer,
   createOrgMatch,
@@ -885,9 +886,21 @@ export default function OrgMatches({ orgId, events = [], canManage = true, canSc
                             Call off
                           </button>
                         ) : null}
-                        <RequestDeletionButton label="Request match deletion" />
+                        <RequestDeletionButton
+                          orgId={orgId}
+                          targetType="match"
+                          targetId={match._id}
+                          subject={`Delete match: ${teamName(first)} v ${teamName(second)}`}
+                          label="Request match deletion"
+                        />
                       </>
                     ) : null}
+                    <IssueReportButton
+                      orgId={orgId}
+                      targetType="match"
+                      targetId={match._id}
+                      initialSubject={`Issue with ${teamName(first)} v ${teamName(second)}`}
+                    />
                   </div>
                 </div>
 
