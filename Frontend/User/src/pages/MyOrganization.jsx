@@ -25,7 +25,7 @@ const TABS = [
   { id: "members", label: "Members" },
   { id: "invitations", label: "Invitations" },
   { id: "teams", label: "Teams", permission: PERMISSIONS.MANAGE_TEAMS },
-  { id: "matches", label: "Matches", permission: PERMISSIONS.CREATE_MATCH },
+  { id: "matches", label: "Matches", permission: PERMISSIONS.SCORE_MATCH },
   { id: "competitions", label: "Competitions" },
   { id: "events", label: "Events", permission: PERMISSIONS.CREATE_MATCH },
   { id: "settings", label: "Settings", permission: PERMISSIONS.MANAGE_ORG },
@@ -198,18 +198,17 @@ export default function MyOrganization() {
     }
   }, []);
 
-  // Events are read for the Matches and Events tabs, so they are fetched with
-  // the organization rather than when a tab happens to be open. A member without
-  // create_match never sees either tab, and a 403 there would be noise.
-  const canViewFixtures = can(access?.permissions || [], PERMISSIONS.CREATE_MATCH);
+  // Events and fixture setup need create_match; score handlers can still open
+  // the Matches tab and score fixtures belonging to this organization.
+  const canManageFixtures = can(access?.permissions || [], PERMISSIONS.CREATE_MATCH);
   useEffect(() => {
     if (!activeId) return;
-    if (!canViewFixtures) {
+    if (!canManageFixtures) {
       setEvents([]);
       return;
     }
     loadEvents(activeId);
-  }, [activeId, canViewFixtures, loadEvents]);
+  }, [activeId, canManageFixtures, loadEvents]);
 
   if (!storedUser) return <Navigate to="/login?next=/organization" replace />;
 
@@ -351,6 +350,8 @@ export default function MyOrganization() {
                       <OrgMatches
                         orgId={active._id}
                         events={events}
+                        canManage={canManageFixtures}
+                        canScore={can(permissions, PERMISSIONS.SCORE_MATCH)}
                         onChanged={() => loadEvents(active._id)}
                       />
                     )}

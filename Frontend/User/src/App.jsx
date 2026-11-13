@@ -49,6 +49,7 @@ const MyPlayers = lazy(() => import("./pages/MyPlayers"));
 const Account = lazy(() => import("./pages/Account"));
 const CreateOrganization = lazy(() => import("./pages/organization/CreateOrganization"));
 const InvitationAccept = lazy(() => import("./pages/organization/InvitationAccept"));
+const OrgMatchScoring = lazy(() => import("./pages/organization/OrgMatchScoring"));
 const CommunityIndex = lazy(() => import("./community/CommunityIndex"));
 const CommunityPost = lazy(() => import("./community/CommunityPost"));
 const CommunityCreate = lazy(() => import("./community/CommunityCreate"));
@@ -176,6 +177,7 @@ function App() {
               path, so the bare path stays the entry point. */}
           <Route path="/organization/new" element={<ErrorBoundary><CreateOrganization /></ErrorBoundary>} />
           <Route path="/organization/invitations/:token" element={<ErrorBoundary><InvitationAccept /></ErrorBoundary>} />
+          <Route path="/organization/:orgId/matches/:matchId/score/:tab" element={<ErrorBoundary><OrgMatchScoring /></ErrorBoundary>} />
           <Route path="/organization" element={<ErrorBoundary><MyOrganization /></ErrorBoundary>} />
           {/* Community routes stay mounted; CommunityIndex/CommunityPost render the
               "coming soon" placeholder while the runtime switch is off. */}

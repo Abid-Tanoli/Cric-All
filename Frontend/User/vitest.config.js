@@ -18,6 +18,7 @@ export default defineConfig({
       // is covered because Vite matches this prefix before the subpath.
       react: path.resolve(currentDir, 'node_modules/react'),
       'react-dom': path.resolve(currentDir, 'node_modules/react-dom'),
+      axios: path.resolve(currentDir, 'node_modules/axios'),
       'socket.io-client': path.resolve(currentDir, 'node_modules/socket.io-client'),
     },
   },
