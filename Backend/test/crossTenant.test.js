@@ -1290,12 +1290,18 @@ describe("Phase 11 - cross-tenant authorization matrix", () => {
       const revoked = await ownerApi.post(`/organizations/${orgId}/invitations/${invitationId}/revoke`, {});
       assert.ok(revoked.status >= 200 && revoked.status < 300, `invitation revoke returned ${revoked.status}`);
 
+      const leaveActor = await registerVerifiedUser(ctx.makeClient, {
+        name: `P11_LeaveActor_${world.runId}`,
+        email: `opencode.test.leave.${world.runId}@example.test`,
+        password: FIXTURE_PASSWORD,
+        accountType: "player",
+      });
       const added = await ownerApi.post(`/organizations/${orgId}/members`, {
-        email: world.actors.verified.email,
+        email: leaveActor.email,
         roles: ["player"],
       });
       assert.ok(added.status >= 200 && added.status < 300, `member add returned ${added.status}`);
-      const left = await world.actors.verified.api.post(`/organizations/${orgId}/leave`, {});
+      const left = await leaveActor.api.post(`/organizations/${orgId}/leave`, {});
       assert.ok(left.status >= 200 && left.status < 300, `member leave returned ${left.status}`);
 
       const unlinked = await ownerApi.post(`/organizations/${orgId}/members/${memberUserId}/unlink`, {});
