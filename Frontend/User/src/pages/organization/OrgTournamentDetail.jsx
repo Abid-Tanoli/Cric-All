@@ -139,7 +139,14 @@ export default function OrgTournamentDetail({ orgId, tournamentId, access, ownTe
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            {canManage ? <RequestDeletionButton /> : null}
+            {canManage ? (
+              <RequestDeletionButton
+                orgId={orgId}
+                targetType="tournament"
+                targetId={detail._id}
+                subject={`Delete tournament: ${detail.name}`}
+              />
+            ) : null}
             <button type="button" onClick={onClose} className={secondaryButton}>
               Close
             </button>
@@ -948,7 +955,15 @@ function FixturesTab({ orgId, tournamentId, detail, fixtures, canManage, canFixt
                               Setup XI
                             </button>
                           ) : null}
-                          {canManage ? <RequestDeletionButton label="Request match deletion" /> : null}
+                          {canManage ? (
+                            <RequestDeletionButton
+                              orgId={orgId}
+                              targetType="match"
+                              targetId={fixture._id}
+                              subject={`Delete match: ${teamName(fixture.teams?.[0])} v ${teamName(fixture.teams?.[1])}`}
+                              label="Request match deletion"
+                            />
+                          ) : null}
                         </div>
                       </div>
                       {setupFor?._id === fixture._id ? (

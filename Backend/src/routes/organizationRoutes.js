@@ -106,6 +106,15 @@ import {
   transferOwnership,
   updateOrgMemberRoles,
 } from '../controllers/membershipController.js';
+import issueReportRateLimit from '../middleware/issueReportRateLimit.js';
+import {
+  createOrganizationIssue,
+  deleteOrgInvitation,
+  deleteOrgMembership,
+  getOrganizationIssue,
+  listOrganizationIssues,
+  requireIssueReportMember,
+} from '../controllers/issueReportController.js';
 
 const router = express.Router();
 // Self-service: verified platform admins OR verified User accounts. Which one
@@ -125,7 +134,7 @@ router.get('/roots', optionalProtect, getRootOrganizations);
 
 router.post('/', ...manage, requireOrgAdminType, validate(createOrganizationSchema), createOrganization);
 router.put('/:id', ...manage, validateObjectId('id'), requireOrgPermission(PERMISSIONS.MANAGE_ORG), validate(updateOrganizationSchema), updateOrganization);
-router.delete('/:id', ...manage, validateObjectId('id'), requireOrgPermission(PERMISSIONS.MANAGE_ORG), deleteOrganization);
+router.delete('/:id', ...manage, validateObjectId('id'), requirePlatformAdminDelete, requireOrgPermission(PERMISSIONS.MANAGE_ORG), deleteOrganization);
 
 router.get('/:id', optionalProtect, validateObjectId('id'), getOrganization);
 router.get('/:id/children', optionalProtect, validateObjectId('id'), getOrganizationChildren);
@@ -141,7 +150,12 @@ router.get('/:id/teams', optionalProtect, validateObjectId('id'), getOrganizatio
 router.get('/:id/members', ...manage, validateObjectId('id'), requireOrgMembership, listOrgMembers);
 router.post('/:id/members', ...manage, validateObjectId('id'), requireOrgPermission(PERMISSIONS.INVITE_MEMBERS), validate(addMemberSchema), addOrgMember);
 router.patch('/:id/members/:userId', ...manage, validateObjectId('id'), validateObjectId('userId'), requireOrgPermission(PERMISSIONS.MANAGE_MEMBERS), validate(updateMemberSchema), updateOrgMemberRoles);
-router.delete('/:id/members/:userId', ...manage, validateObjectId('id'), validateObjectId('userId'), requireOrgPermission(PERMISSIONS.MANAGE_MEMBERS), removeOrgMember);
+router.delete('/:id/members/:userId', ...manage, validateObjectId('id'), requirePlatformAdminDelete, requireOrgPermission(PERMISSIONS.MANAGE_MEMBERS), validateObjectId('userId'), deleteOrgMembership);
+router.post('/:id/members/:userId/unlink', ...manage, validateObjectId('id'), validateObjectId('userId'), requireOrgPermission(PERMISSIONS.MANAGE_MEMBERS), removeOrgMember);
+router.post('/:id/leave', ...manage, validateObjectId('id'), requireOrgMembership, (req, res, next) => {
+  req.params.userId = String(req.user._id);
+  return removeOrgMember(req, res, next);
+});
 
 // Ownership transfer is a distinct, owner-only operation: it can neither be
 // self-granted nor handed out by invitation.
@@ -152,7 +166,8 @@ import { invitationCreateRateLimit } from '../middleware/invitationRateLimit.js'
 // --- invitations -------------------------------------------------------------
 router.get('/:id/invitations', ...manage, validateObjectId('id'), requireOrgPermission(PERMISSIONS.INVITE_MEMBERS), listOrgInvitations);
 router.post('/:id/invitations', ...manage, validateObjectId('id'), requireOrgPermission(PERMISSIONS.INVITE_MEMBERS), invitationCreateRateLimit(), validate(createInvitationSchema), createOrgInvitation);
-router.delete('/:id/invitations/:invitationId', ...manage, validateObjectId('id'), requireOrgPermission(PERMISSIONS.INVITE_MEMBERS), validateObjectId('invitationId'), revokeOrgInvitation);
+router.delete('/:id/invitations/:invitationId', ...manage, validateObjectId('id'), requirePlatformAdminDelete, requireOrgPermission(PERMISSIONS.INVITE_MEMBERS), validateObjectId('invitationId'), deleteOrgInvitation);
+router.post('/:id/invitations/:invitationId/revoke', ...manage, validateObjectId('id'), requireOrgPermission(PERMISSIONS.INVITE_MEMBERS), validateObjectId('invitationId'), revokeOrgInvitation);
 
 // --- teams owned by this organization (Phase 4) ------------------------------
 // GET /:id/teams above stays public (organization profile pages read it); the
@@ -185,7 +200,15 @@ const squadWrite = [
 router.get('/:id/teams/manage', ...teamRead, listOrgTeams);
 router.post('/:id/teams', ...teamWrite, validate(createOrgTeamSchema), createOrgTeam);
 router.patch('/:id/teams/:teamId', ...teamWrite, validateObjectId('teamId'), validate(updateOrgTeamSchema), updateOrgTeam);
-router.delete('/:id/teams/:teamId', ...teamWrite, validateObjectId('teamId'), deleteOrgTeam);
+router.delete(
+  '/:id/teams/:teamId',
+  ...manage,
+  validateObjectId('id'),
+  requirePlatformAdminDelete,
+  requireOrgPermission(PERMISSIONS.MANAGE_TEAMS),
+  validateObjectId('teamId'),
+  deleteOrgTeam
+);
 
 router.post('/:id/teams/:teamId/players', ...squadWrite, validate(orgTeamAddPlayersSchema), addOrgTeamPlayers);
 router.delete('/:id/teams/:teamId/players', ...squadWrite, validate(orgTeamPlayersSchema), removeOrgTeamPlayers);
@@ -212,9 +235,28 @@ const eventWrite = [...orgScoped, validateObjectId('eventId'), requireOrgPermiss
 // tournament or series. The guard runs before the permission check so *every*
 // org role (owner included) gets the same ADMIN_ONLY_DELETE refusal and is told
 // to request the deletion instead. Cancelling/abandoning a match through status
-// and unlinking a team or player stay allowed and are untouched below.
+// and removing a player from a team roster stay allowed and are untouched below.
 const matchDelete = [...orgScoped, requirePlatformAdminDelete, validateObjectId('matchId'), requireOrgPermission(PERMISSIONS.CREATE_MATCH)];
 const eventDelete = [...orgScoped, requirePlatformAdminDelete, validateObjectId('eventId'), requireOrgPermission(PERMISSIONS.CREATE_MATCH)];
+
+// Issue reports are available to active members who manage matches or
+// competitions, or who hold the dedicated score-handler role.
+const issueReportAccess = requireAnyOrgPermission(
+  PERMISSIONS.CREATE_MATCH,
+  PERMISSIONS.MANAGE_COMPETITIONS,
+  PERMISSIONS.SCORE_MATCH
+);
+router.post(
+  '/:id/issues',
+  ...manage,
+  validateObjectId('id'),
+  issueReportAccess,
+  requireIssueReportMember,
+  issueReportRateLimit,
+  createOrganizationIssue
+);
+router.get('/:id/issues', ...manage, validateObjectId('id'), issueReportAccess, requireIssueReportMember, listOrganizationIssues);
+router.get('/:id/issues/:issueId', ...manage, validateObjectId('id'), validateObjectId('issueId'), issueReportAccess, requireIssueReportMember, getOrganizationIssue);
 
 router.get('/:id/matches', ...matchRead, listOrgMatches);
 router.post('/:id/matches', ...orgScoped, requireOrgPermission(PERMISSIONS.CREATE_MATCH), validate(createOrgMatchSchema), createOrgMatch);

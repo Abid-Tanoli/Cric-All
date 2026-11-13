@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { deleteOrganization, listOrganizationTypes, updateOrganization } from "../../services/organizationApi";
+import { listOrganizationTypes, updateOrganization } from "../../services/organizationApi";
+import RequestDeletionButton from "../../components/RequestDeletionButton";
 import { PERMISSIONS, can } from "../../lib/orgUi";
 import {
   Banner,
@@ -42,13 +43,12 @@ const emptyForm = (org) => ({
   },
 });
 
-export default function OrgSettings({ org, access, onSaved, onDeleted }) {
+export default function OrgSettings({ org, access, onSaved }) {
   const [form, setForm] = useState(() => emptyForm(org));
   const [types, setTypes] = useState([]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [notice, setNotice] = useState("");
-  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const permissions = access?.permissions || [];
   const editable = can(permissions, PERMISSIONS.MANAGE_ORG);
@@ -125,20 +125,6 @@ export default function OrgSettings({ org, access, onSaved, onDeleted }) {
       setErr(error.message || "Could not save the organization");
     } finally {
       setBusy(false);
-    }
-  };
-
-  const destroy = async () => {
-    setBusy(true);
-    setErr("");
-    try {
-      await deleteOrganization(org._id);
-      onDeleted?.(org);
-    } catch (error) {
-      setErr(error.message || "Could not delete the organization");
-    } finally {
-      setBusy(false);
-      setConfirmDelete(false);
     }
   };
 
@@ -312,39 +298,17 @@ export default function OrgSettings({ org, access, onSaved, onDeleted }) {
             <div>
               <h2 className={sectionTitle}>Danger zone</h2>
               <p className="mt-1 text-xs font-semibold text-cric-muted">
-                Deleting removes the organization and its membership rows. It is only possible when the
-                organization has no teams and no sub-organizations.
+                Organization deletion is handled by the platform administrator. Send a request with your reason.
               </p>
             </div>
-            <button type="button" onClick={() => setConfirmDelete(true)} disabled={busy} className={dangerButton}>
-              Delete organization
-            </button>
+            <RequestDeletionButton
+              orgId={org._id}
+              targetType="other"
+              targetId={org._id}
+              subject={`Delete organization: ${org.name}`}
+              label="Request organization deletion"
+            />
           </div>
-
-          {confirmDelete && (
-            <div className="mt-4 rounded-xl border border-red-300 bg-red-50 p-4">
-              <p className="text-sm font-bold text-red-700">
-                Delete “{org.name}”? This cannot be undone.
-              </p>
-              <div className="mt-3 flex flex-wrap gap-3">
-                <button
-                  type="button"
-                  onClick={destroy}
-                  disabled={busy}
-                  className="rounded-lg bg-red-600 px-5 py-2 text-xs font-black uppercase tracking-widest text-white disabled:opacity-60"
-                >
-                  Yes, delete
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setConfirmDelete(false)}
-                  className="rounded-lg border border-cric-border bg-white px-5 py-2 text-xs font-black uppercase tracking-widest text-cric-muted"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          )}
         </div>
       )}
 

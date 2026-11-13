@@ -160,10 +160,9 @@ export const requireOrgMembership = requireOrgPermission(null);
 export const requireOrgWrite = requireOrgPermission(PERMISSIONS.MANAGE_ORG);
 
 /**
- * Product rule: hard-deleting a match, event, tournament or series is a
- * platform-admin action only. Club/organization roles cannot delete records at
- * all — they ask the platform admin for a deletion instead (the request workflow
- * lands in the issue-reporting phase). Mounted *after* `protect` so
+ * Product rule: hard deletes are platform-admin-only. Club/organization roles
+ * cannot permanently delete records; they must request deletion instead.
+ * Mounted *after* `protect` so
  * `req.user`/`req.principalType` are set: a platform admin passes, every org
  * role gets the same clear refusal, and the refusal does not depend on whether
  * the target exists (so it leaks nothing).

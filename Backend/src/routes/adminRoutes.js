@@ -23,6 +23,14 @@ import {
 } from "../controllers/handlerController.js";
 import { handoverOrganization } from "../controllers/orgHandoverController.js";
 import { handoverOrganizationSchema } from "../validators/orgValidators.js";
+import {
+  approveAndDeleteAdminIssue,
+  getAdminIssue,
+  getOpenIssueCount,
+  listAdminIssues,
+  replyToAdminIssue,
+  updateAdminIssueStatus,
+} from "../controllers/issueReportController.js";
 
 const router = express.Router();
 
@@ -113,5 +121,13 @@ router.post(
 router.get("/handler-requests", auth.protect, auth.requireAdmin, listHandlerRequests);
 router.post("/handler-requests/:id/approve", auth.protect, auth.requireAdmin, approveHandlerRequest);
 router.post("/handler-requests/:id/reject", auth.protect, auth.requireAdmin, rejectHandlerRequest);
+
+// Platform-admin issue inbox.
+router.get("/issues/open-count", auth.protect, auth.requireAdmin, getOpenIssueCount);
+router.get("/issues", auth.protect, auth.requireAdmin, listAdminIssues);
+router.get("/issues/:issueId", auth.protect, auth.requireAdmin, validateObjectId("issueId"), getAdminIssue);
+router.post("/issues/:issueId/reply", auth.protect, auth.requireAdmin, validateObjectId("issueId"), replyToAdminIssue);
+router.patch("/issues/:issueId/status", auth.protect, auth.requireAdmin, validateObjectId("issueId"), updateAdminIssueStatus);
+router.post("/issues/:issueId/approve-delete", auth.protect, auth.requireAdmin, validateObjectId("issueId"), approveAndDeleteAdminIssue);
 
 export default router;

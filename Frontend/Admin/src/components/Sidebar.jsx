@@ -2,6 +2,7 @@ import React from "react";
 import { NavLink } from "react-router-dom";
 import { useSelector } from "react-redux";
 import { adminFeatureFlags } from "../config/features";
+import { getOpenIssueCount } from "../services/issuesApi";
 
 const menuItems = [
   { to: "/admin", label: "Dashboard", icon: "DB" },
@@ -14,6 +15,7 @@ const menuItems = [
   { to: "/admin/tournaments", label: "Tournaments", icon: "TR" },
   { to: "/admin/teams", label: "Manage Teams", icon: "TM" },
   { to: "/admin/organizations", label: "Organizations", icon: "OR" },
+  { to: "/admin/issues", label: "Issues", icon: "IS" },
   { to: "/admin/players", label: "Manage Players", icon: "PL" },
   { to: "/admin/handler-requests", label: "Handler Requests", icon: "HR", flag: "handlerRequests" },
   { to: "/admin/bulk-import", label: "Bulk Import", icon: "BI" },
@@ -26,6 +28,8 @@ const menuItems = [
 
 export default function Sidebar({ open, onClose }) {
   const user = useSelector((state) => state.auth.user);
+  const [openIssueCount, setOpenIssueCount] = React.useState(null);
+  const [issueCountFailed, setIssueCountFailed] = React.useState(false);
   const isSuperAdmin = user?.role === "superadmin";
   const flags = adminFeatureFlags();
   const visibleItems = menuItems.filter(
@@ -33,6 +37,31 @@ export default function Sidebar({ open, onClose }) {
       (!item.superAdminOnly || isSuperAdmin) &&
       (!item.flag || flags[item.flag])
   );
+
+  React.useEffect(() => {
+    let active = true;
+    const loadCount = () => {
+      getOpenIssueCount()
+        .then((response) => {
+          if (!active) return;
+          setOpenIssueCount(Number(response?.count) || 0);
+          setIssueCountFailed(false);
+        })
+        .catch((error) => {
+          if (!active) return;
+          console.error("Could not load the open issue count", error);
+          setIssueCountFailed(true);
+        });
+    };
+    loadCount();
+    const timer = window.setInterval(loadCount, 30_000);
+    window.addEventListener("bq-issues-changed", loadCount);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+      window.removeEventListener("bq-issues-changed", loadCount);
+    };
+  }, []);
 
   return (
     <aside
@@ -71,11 +100,20 @@ export default function Sidebar({ open, onClose }) {
                       : "text-cric-muted hover:bg-cric-bg hover:text-cric-text"
                   }`
                 }
+                title={item.to === "/admin/issues" && issueCountFailed ? "Open issue count unavailable" : undefined}
               >
                 <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-current/10 text-[10px] font-black">
                   {item.icon}
                 </span>
                 {item.label}
+                {item.to === "/admin/issues" && openIssueCount > 0 ? (
+                  <span className="ml-auto rounded-full bg-red-600 px-2 py-0.5 text-[10px] font-black text-white">
+                    {openIssueCount}
+                  </span>
+                ) : null}
+                {item.to === "/admin/issues" && issueCountFailed ? (
+                  <span className="ml-auto rounded-full bg-amber-500 px-2 py-0.5 text-[10px] font-black text-white">!</span>
+                ) : null}
               </NavLink>
             </li>
           ))}

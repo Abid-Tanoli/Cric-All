@@ -262,7 +262,13 @@ export default function OrgEvents({ orgId, events = [], loading, error, onChange
                   <button type="button" onClick={() => setEditing(event)} className={secondaryButton}>
                     Edit
                   </button>
-                  <RequestDeletionButton label="Request event deletion" />
+                  <RequestDeletionButton
+                    orgId={orgId}
+                    targetType="event"
+                    targetId={event._id}
+                    subject={`Delete event: ${event.name}`}
+                    label="Request event deletion"
+                  />
                 </div>
               </div>
               {editing?._id === event._id ? (

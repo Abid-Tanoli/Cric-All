@@ -39,7 +39,10 @@ export const updateOrgMemberRoles = (orgId, userId, roles) =>
   unwrap(api.patch(`/organizations/${orgId}/members/${userId}`, { roles }));
 
 export const removeOrgMember = (orgId, userId) =>
-  unwrap(api.delete(`/organizations/${orgId}/members/${userId}`));
+  unwrap(api.post(`/organizations/${orgId}/members/${userId}/unlink`));
+
+export const leaveOrganization = (orgId) =>
+  unwrap(api.post(`/organizations/${orgId}/leave`));
 
 export const transferOwnership = (orgId, userId) =>
   unwrap(api.post(`/organizations/${orgId}/members/${userId}/owner`, {}));
@@ -54,7 +57,16 @@ export const createOrgInvitation = (orgId, { email, phone, roles, message }) =>
   unwrap(api.post(`/organizations/${orgId}/invitations`, { email, phone, roles, message }));
 
 export const revokeOrgInvitation = (orgId, invitationId) =>
-  unwrap(api.delete(`/organizations/${orgId}/invitations/${invitationId}`));
+  unwrap(api.post(`/organizations/${orgId}/invitations/${invitationId}/revoke`));
+
+export const createOrganizationIssue = (orgId, payload) =>
+  unwrap(api.post(`/organizations/${orgId}/issues`, payload));
+
+export const listOrganizationIssues = (orgId) =>
+  unwrap(api.get(`/organizations/${orgId}/issues`));
+
+export const getOrganizationIssue = (orgId, issueId) =>
+  unwrap(api.get(`/organizations/${orgId}/issues/${issueId}`));
 
 export const listMyInvitations = () => unwrap(api.get("/invitations"));
 

@@ -7,6 +7,7 @@ import ScoringConfirmModal from "../../../../Shared/scoring/components/ScoringCo
 import { TAB_ROUTE_BY_ID } from "../../../../Shared/scoring/components/ScoreManagement/constants";
 import { getMyOrgAccess, getMatchDetail, listOrgMatches } from "../../services/organizationApi";
 import { api } from "../../services/api";
+import IssueReportButton from "../../components/IssueReportButton";
 import { initSocket, joinMatchRoom, leaveMatchRoom } from "../../services/socket";
 import { PERMISSIONS, can } from "../../lib/orgUi";
 
@@ -173,6 +174,14 @@ export default function OrgMatchScoring() {
   return (
     <ScoringAdaptersProvider value={adapters}>
       <div className="min-h-screen max-w-full overflow-x-hidden bg-cric-bg">
+        <div className="flex justify-end px-3 pt-3">
+          <IssueReportButton
+            orgId={orgId}
+            targetType="match"
+            targetId={matchId}
+            initialSubject={`Issue with ${selected?.title || "this match"}`}
+          />
+        </div>
         <SharedManageScore matchId={matchId} tabId={tab || "live"} />
         <div className="fixed right-3 top-3 z-[10000] flex max-w-sm flex-col gap-2" aria-live="polite">
           {toasts.map((toast) => (

@@ -11,6 +11,7 @@ import {
 import { useStoredUser, notifyMembershipChanged } from "./auth/auth";
 import { PERMISSIONS, can, formatDate, roleLabel } from "../lib/orgUi";
 import { Banner, card, eyebrow, primaryButton, secondaryButton } from "./organization/orgStyles";
+import IssueReportButton from "../components/IssueReportButton";
 import OrgOverview from "./organization/OrgOverview";
 import OrgMembers from "./organization/OrgMembers";
 import OrgInvitations from "./organization/OrgInvitations";
@@ -19,6 +20,7 @@ import OrgTeams from "./organization/OrgTeams";
 import OrgMatches from "./organization/OrgMatches";
 import OrgCompetitions from "./organization/OrgCompetitions";
 import OrgEvents from "./organization/OrgEvents";
+import OrgIssueReports from "./organization/OrgIssueReports";
 
 const TABS = [
   { id: "overview", label: "Overview" },
@@ -28,6 +30,7 @@ const TABS = [
   { id: "matches", label: "Matches", permission: PERMISSIONS.SCORE_MATCH },
   { id: "competitions", label: "Competitions" },
   { id: "events", label: "Events", permission: PERMISSIONS.CREATE_MATCH },
+  { id: "issues", label: "My reports", permission: PERMISSIONS.SCORE_MATCH },
   { id: "settings", label: "Settings", permission: PERMISSIONS.MANAGE_ORG },
 ];
 
@@ -237,6 +240,9 @@ export default function MyOrganization() {
             <Link to="/organization/new" className={primaryButton}>
               + New organization
             </Link>
+            {active && can(access?.permissions || [], PERMISSIONS.SCORE_MATCH) ? (
+              <IssueReportButton orgId={active._id} />
+            ) : null}
           </div>
 
           {inbox.length > 0 && (
@@ -367,6 +373,7 @@ export default function MyOrganization() {
                         onChanged={() => loadEvents(active._id)}
                       />
                     )}
+                    {activeTab === "issues" && <OrgIssueReports orgId={active._id} />}
                     {activeTab === "settings" && (
                       <OrgSettings
                         key={`${active._id}:${active.updatedAt || ""}`}
@@ -375,10 +382,6 @@ export default function MyOrganization() {
                         onSaved={(updated) =>
                           setOrgs((prev) => prev.map((o) => (o._id === updated._id ? { ...o, ...updated } : o)))
                         }
-                        onDeleted={() => {
-                          setActiveId(null);
-                          loadOrgs();
-                        }}
                       />
                     )}
                   </>
