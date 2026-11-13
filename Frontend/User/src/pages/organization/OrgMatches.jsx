@@ -700,7 +700,7 @@ function MatchForm({ orgId, teams, events, initial, onDone, onCancel }) {
   );
 }
 
-export default function OrgMatches({ orgId, events = [], onChanged }) {
+export default function OrgMatches({ orgId, events = [], canManage = true, canScore = true, onChanged }) {
   const [matches, setMatches] = useState([]);
   const [teams, setTeams] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -729,10 +729,14 @@ export default function OrgMatches({ orgId, events = [], onChanged }) {
     // The team list is needed for the create form, and it changes when a team
     // or a player is added, so it is re-read with the fixtures rather than
     // cached for the life of the tab.
-    listOrgTeamsManaged(orgId)
-      .then((res) => setTeams(Array.isArray(res?.items) ? res.items : Array.isArray(res) ? res : []))
-      .catch(() => setTeams([]));
-  }, [orgId, load]);
+    if (canManage) {
+      listOrgTeamsManaged(orgId)
+        .then((res) => setTeams(Array.isArray(res?.items) ? res.items : Array.isArray(res) ? res : []))
+        .catch((error) => setErr(error.message || "Failed to load your teams"));
+    } else {
+      setTeams([]);
+    }
+  }, [orgId, load, canManage]);
 
   const refresh = () => {
     load();
@@ -761,19 +765,20 @@ export default function OrgMatches({ orgId, events = [], onChanged }) {
             <p className={eyebrow}>Fixtures</p>
             <h2 className={sectionTitle}>Matches</h2>
             <p className="mt-1 text-xs font-semibold text-cric-muted">
-              Schedule a game between two of your own teams, record the toss and pick the Playing XI
-              straight from the club roster. No 15-player squad step is needed.
+              {canManage
+                ? "Schedule a game between your teams, record the toss and pick the Playing XI from the club roster."
+                : "View your organization's fixtures and open a match to score it."}
             </p>
           </div>
-          {teams.length < 2 ? (
+          {canManage && teams.length < 2 ? (
             <p className="max-w-xs text-[10px] font-bold uppercase tracking-widest text-cric-muted">
               A fixture needs two teams. Create them under Teams first.
             </p>
-          ) : (
+          ) : canManage ? (
             <button type="button" onClick={() => setCreating((v) => !v)} className={primaryButton}>
               {creating ? "Close" : "+ New fixture"}
             </button>
-          )}
+          ) : null}
         </div>
 
         {creating ? (
@@ -794,7 +799,19 @@ export default function OrgMatches({ orgId, events = [], onChanged }) {
       </div>
 
       {err ? <Banner kind="error">{err}</Banner> : null}
-      {notice ? <Banner kind={notice.kind}>{notice.text}</Banner> : null}
+      {notice ? (
+        <div className="space-y-2">
+          <Banner kind={notice.kind}>{notice.text}</Banner>
+          {notice.matchId && canScore ? (
+            <Link
+              to={`/organization/${orgId}/matches/${notice.matchId}/score/live`}
+              className={`${primaryButton} inline-flex min-h-11 items-center justify-center`}
+            >
+              Start scoring
+            </Link>
+          ) : null}
+        </div>
+      ) : null}
 
       {loading ? (
         <div className={card}>
@@ -804,7 +821,9 @@ export default function OrgMatches({ orgId, events = [], onChanged }) {
         <div className="rounded-2xl border border-dashed border-cric-border bg-cric-card p-10 text-center">
           <p className="text-sm font-black">No fixtures yet</p>
           <p className="mt-2 text-xs font-semibold text-cric-muted">
-            {teams.length < 2 ? (
+            {!canManage ? (
+              "No fixtures have been added to this organization yet."
+            ) : teams.length < 2 ? (
               <>
                 You need two teams before you can schedule a match.{" "}
                 <Link to="/organization" className="font-black text-cric-accent underline">
@@ -840,23 +859,35 @@ export default function OrgMatches({ orgId, events = [], onChanged }) {
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    <button type="button" onClick={() => setSetupFor(setupFor?._id === match._id ? null : match)} className={secondaryButton}>
-                      Setup XI
-                    </button>
-                    <button type="button" onClick={() => setEditing(editing?._id === match._id ? null : match)} className={secondaryButton}>
-                      Edit
-                    </button>
-                    {match.status !== "abandoned" ? (
-                      <button
-                        type="button"
-                        onClick={() => abandon(match)}
-                        disabled={busyId === match._id}
-                        className={secondaryButton}
+                    {canScore ? (
+                      <Link
+                        to={`/organization/${orgId}/matches/${match._id}/score/live`}
+                        className={`${primaryButton} inline-flex min-h-11 items-center justify-center`}
                       >
-                        Call off
-                      </button>
+                        {match.status === "live" ? "Resume scoring" : "Start scoring"}
+                      </Link>
                     ) : null}
-                    <RequestDeletionButton label="Request match deletion" />
+                    {canManage ? (
+                      <>
+                        <button type="button" onClick={() => setSetupFor(setupFor?._id === match._id ? null : match)} className={secondaryButton}>
+                          Setup XI
+                        </button>
+                        <button type="button" onClick={() => setEditing(editing?._id === match._id ? null : match)} className={secondaryButton}>
+                          Edit
+                        </button>
+                        {match.status !== "abandoned" ? (
+                          <button
+                            type="button"
+                            onClick={() => abandon(match)}
+                            disabled={busyId === match._id}
+                            className={secondaryButton}
+                          >
+                            Call off
+                          </button>
+                        ) : null}
+                        <RequestDeletionButton label="Request match deletion" />
+                      </>
+                    ) : null}
                   </div>
                 </div>
 
@@ -884,7 +915,7 @@ export default function OrgMatches({ orgId, events = [], onChanged }) {
                     onClose={() => setSetupFor(null)}
                     onSaved={(message) => {
                       setSetupFor(null);
-                      setNotice({ kind: "success", text: message });
+                      setNotice({ kind: "success", text: message, matchId: match._id });
                       refresh();
                     }}
                   />
