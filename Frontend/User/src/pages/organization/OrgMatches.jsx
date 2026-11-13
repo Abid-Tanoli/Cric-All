@@ -1,9 +1,9 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import RequestDeletionButton from "../../components/RequestDeletionButton";
 import {
   addOrgTeamPlayer,
   createOrgMatch,
-  deleteOrgMatch,
   getMatchDetail,
   getMatchSquads,
   listOrgMatches,
@@ -20,7 +20,6 @@ import {
   Field,
   card,
   cardSubtle,
-  dangerButton,
   eyebrow,
   input,
   primaryButton,
@@ -56,7 +55,7 @@ const playerName = (player) => player?.name || "Unknown player";
  * GET /matches/:id/squads resolves (tournament squad -> event squad -> the
  * club's whole roster). A new player can be created without leaving the picker.
  */
-function MatchSetup({ orgId, match, onClose, onSaved }) {
+export function MatchSetup({ orgId, match, onClose, onSaved }) {
   const [detail, setDetail] = useState(null);
   const [squadsById, setSquadsById] = useState({});
   const [selection, setSelection] = useState({});
@@ -754,20 +753,6 @@ export default function OrgMatches({ orgId, events = [], onChanged }) {
     }
   };
 
-  const remove = async (match) => {
-    setBusyId(match._id);
-    setErr("");
-    try {
-      await deleteOrgMatch(orgId, match._id);
-      setNotice({ kind: "success", text: `${match.title} deleted.` });
-      refresh();
-    } catch (error) {
-      setErr(error.message || "Could not delete the fixture");
-    } finally {
-      setBusyId(null);
-    }
-  };
-
   return (
     <div className="space-y-4">
       <div className={card}>
@@ -871,15 +856,7 @@ export default function OrgMatches({ orgId, events = [], onChanged }) {
                         Call off
                       </button>
                     ) : null}
-                    <button
-                      type="button"
-                      onClick={() => remove(match)}
-                      disabled={busyId === match._id}
-                      className={dangerButton}
-                      title={match.hasScore ? "A fixture with a score cannot be deleted" : undefined}
-                    >
-                      Delete
-                    </button>
+                    <RequestDeletionButton label="Request match deletion" />
                   </div>
                 </div>
 

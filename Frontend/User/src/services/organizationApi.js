@@ -155,6 +155,96 @@ export const updateOrgEvent = (orgId, eventId, payload) =>
 
 export const deleteOrgEvent = (orgId, eventId) => unwrap(api.delete(`/organizations/${orgId}/events/${eventId}`));
 
+// --- competitions this organization owns (Phase 2) --------------------------
+// Tournaments and series used to be platform-Admin-only. Every route below is
+// nested under the organization and is tenant-scoped by the server, so an id
+// from another organization is a 404 rather than a cross-tenant hit.
+//
+// The delete wrappers exist for completeness, but the User app deliberately
+// never calls them: hard deletes are platform-admin only (ADMIN_ONLY_DELETE),
+// and owners request them through RequestDeletionButton instead.
+export const listOrgTournaments = (orgId) => unwrap(api.get(`/organizations/${orgId}/tournaments`));
+
+export const createOrgTournament = (orgId, payload) =>
+  unwrap(api.post(`/organizations/${orgId}/tournaments`, payload));
+
+export const getOrgTournament = (orgId, tournamentId) =>
+  unwrap(api.get(`/organizations/${orgId}/tournaments/${tournamentId}`));
+
+export const updateOrgTournament = (orgId, tournamentId, payload) =>
+  unwrap(api.put(`/organizations/${orgId}/tournaments/${tournamentId}`, payload));
+
+export const deleteOrgTournament = (orgId, tournamentId) =>
+  unwrap(api.delete(`/organizations/${orgId}/tournaments/${tournamentId}`));
+
+export const addOrgTournamentTeams = (orgId, tournamentId, teamIds) =>
+  unwrap(api.post(`/organizations/${orgId}/tournaments/${tournamentId}/teams`, { teamIds }));
+
+export const removeOrgTournamentTeam = (orgId, tournamentId, teamId) =>
+  unwrap(api.delete(`/organizations/${orgId}/tournaments/${tournamentId}/teams/${teamId}`));
+
+export const setOrgTournamentGroups = (orgId, tournamentId, groups) =>
+  unwrap(api.put(`/organizations/${orgId}/tournaments/${tournamentId}/groups`, { groups }));
+
+export const getOrgTournamentPointsTable = (orgId, tournamentId) =>
+  unwrap(api.get(`/organizations/${orgId}/tournaments/${tournamentId}/points-table`));
+
+export const recomputeOrgTournamentPoints = (orgId, tournamentId) =>
+  unwrap(api.post(`/organizations/${orgId}/tournaments/${tournamentId}/points-table/recompute`, {}));
+
+export const getOrgTournamentFixtures = (orgId, tournamentId) =>
+  unwrap(api.get(`/organizations/${orgId}/tournaments/${tournamentId}/fixtures`));
+
+export const previewOrgTournamentFixtures = (orgId, tournamentId, options) =>
+  unwrap(api.post(`/organizations/${orgId}/tournaments/${tournamentId}/fixtures/preview`, options));
+
+export const applyOrgTournamentFixtures = (orgId, tournamentId, options) =>
+  unwrap(api.post(`/organizations/${orgId}/tournaments/${tournamentId}/fixtures/apply`, options));
+
+export const createOrgTournamentMatch = (orgId, tournamentId, payload) =>
+  unwrap(api.post(`/organizations/${orgId}/tournaments/${tournamentId}/matches`, payload));
+
+export const getOrgTournamentSquad = (orgId, tournamentId, teamId) =>
+  unwrap(
+    api.get(
+      `/organizations/${orgId}/tournaments/${tournamentId}/squad${teamId ? `/${teamId}` : ""}`
+    )
+  );
+
+export const setOrgTournamentSquad = (orgId, tournamentId, payload) =>
+  unwrap(api.post(`/organizations/${orgId}/tournaments/${tournamentId}/squad`, payload));
+
+export const deleteOrgTournamentSquad = (orgId, tournamentId, teamId) =>
+  unwrap(api.delete(`/organizations/${orgId}/tournaments/${tournamentId}/squad/${teamId}`));
+
+export const setOrgTournamentAwards = (orgId, tournamentId, payload) =>
+  unwrap(api.put(`/organizations/${orgId}/tournaments/${tournamentId}/awards`, payload));
+
+export const setOrgTournamentOfficialAwards = (orgId, tournamentId, payload) =>
+  unwrap(api.put(`/organizations/${orgId}/tournaments/${tournamentId}/official-awards`, payload));
+
+export const listOrgSeries = (orgId) => unwrap(api.get(`/organizations/${orgId}/series`));
+
+export const createOrgSeries = (orgId, payload) =>
+  unwrap(api.post(`/organizations/${orgId}/series`, payload));
+
+export const getOrgSeries = (orgId, seriesId) =>
+  unwrap(api.get(`/organizations/${orgId}/series/${seriesId}`));
+
+export const updateOrgSeries = (orgId, seriesId, payload) =>
+  unwrap(api.put(`/organizations/${orgId}/series/${seriesId}`, payload));
+
+export const deleteOrgSeries = (orgId, seriesId) =>
+  unwrap(api.delete(`/organizations/${orgId}/series/${seriesId}`));
+
+// --- helpers used by the competition screens --------------------------------
+// Guest teams are registered by the host, so the picker needs the public team
+// catalogue and a roster for whichever side was chosen. Neither is a new org
+// route: they are the existing public team endpoints.
+export const listPublicTeams = (params = {}) => unwrap(api.get("/teams", { params }));
+
+export const getTeamRoster = (teamId) => unwrap(api.get(`/teams/${teamId}/players`));
+
 export default {
   listMyOrganizations,
   getOrganization,
@@ -203,4 +293,30 @@ export default {
   createOrgEvent,
   updateOrgEvent,
   deleteOrgEvent,
+  listOrgTournaments,
+  createOrgTournament,
+  getOrgTournament,
+  updateOrgTournament,
+  deleteOrgTournament,
+  addOrgTournamentTeams,
+  removeOrgTournamentTeam,
+  setOrgTournamentGroups,
+  getOrgTournamentPointsTable,
+  recomputeOrgTournamentPoints,
+  getOrgTournamentFixtures,
+  previewOrgTournamentFixtures,
+  applyOrgTournamentFixtures,
+  createOrgTournamentMatch,
+  getOrgTournamentSquad,
+  setOrgTournamentSquad,
+  deleteOrgTournamentSquad,
+  setOrgTournamentAwards,
+  setOrgTournamentOfficialAwards,
+  listOrgSeries,
+  createOrgSeries,
+  getOrgSeries,
+  updateOrgSeries,
+  deleteOrgSeries,
+  listPublicTeams,
+  getTeamRoster,
 };
