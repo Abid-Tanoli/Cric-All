@@ -32,6 +32,7 @@ export default function Organizations() {
   const [handoverForm, setHandoverForm] = useState(null);
   const [handoverResult, setHandoverResult] = useState(null);
   const [handingOver, setHandingOver] = useState(false);
+  const [confirmingHandover, setConfirmingHandover] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -137,6 +138,7 @@ export default function Organizations() {
       resetExistingPassword: false,
     });
     setHandoverResult(null);
+    setConfirmingHandover(false);
     setErr(null);
     setNotice("");
   };
@@ -145,11 +147,19 @@ export default function Organizations() {
     setHandover(null);
     setHandoverForm(null);
     setHandoverResult(null);
+    setConfirmingHandover(false);
   };
 
-  const submitHandover = async (e) => {
+  const reviewHandover = (e) => {
     e.preventDefault();
     if (!handover || !handoverForm) return;
+    setErr(null);
+    setConfirmingHandover(true);
+  };
+
+  const submitHandover = async () => {
+    if (!handover || !handoverForm) return;
+    setConfirmingHandover(false);
     setHandingOver(true);
     setErr(null);
     try {
@@ -334,14 +344,14 @@ export default function Organizations() {
         <div className="fixed inset-0 z-[9998] flex items-center justify-center bg-black/60 backdrop-blur-sm">
           <div className="bg-cric-card rounded-2xl border border-cric-border shadow-2xl max-w-lg w-full mx-4 p-6 space-y-4 max-h-[90vh] overflow-y-auto">
             {!handoverResult ? (
-              <form onSubmit={submitHandover} className="space-y-4">
+              <form onSubmit={reviewHandover} className="space-y-4">
                 <div>
                   <h3 className="text-lg font-black text-cric-text">
                     {handover.owner ? "Transfer" : "Hand over"} “{handover.name}”
                   </h3>
                   <p className="text-xs text-cric-muted mt-1">
                     {handover.owner
-                      ? `Current owner: ${handover.owner.name}. They will stay on as an admin after the handover.`
+                      ? `Current owner: ${handover.owner.name}. Their manage rights will be removed after the handover.`
                       : "This organization is platform-managed. The person below becomes its owner."}
                   </p>
                 </div>
@@ -424,7 +434,7 @@ export default function Organizations() {
                     }
                     className={btnCls}
                   >
-                    {handingOver ? "Handing over..." : "Hand over"}
+                    {handingOver ? "Handing over..." : "Review handover"}
                   </button>
                 </div>
               </form>
@@ -491,6 +501,23 @@ export default function Organizations() {
           </div>
         </div>
       )}
+
+      <ConfirmModal
+        open={confirmingHandover}
+        title={handover?.owner ? "Transfer organization" : "Hand over organization"}
+        message={
+          handover && handoverForm
+            ? `Give "${handover.name}" to ${handoverForm.name.trim()}${
+                handoverForm.email.trim() || handoverForm.phone.trim()
+                  ? ` (${handoverForm.email.trim() || handoverForm.phone.trim()})`
+                  : ""
+              }? Their account becomes the sole owner; any current owner or admin loses manage rights.`
+            : ""
+        }
+        confirmLabel="Yes, hand over"
+        onConfirm={submitHandover}
+        onCancel={() => setConfirmingHandover(false)}
+      />
 
       {/* Edit modal */}
       {editing && form && (

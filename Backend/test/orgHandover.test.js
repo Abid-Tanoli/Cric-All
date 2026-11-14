@@ -7,11 +7,17 @@ process.env.FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:5173";
 import mongoose from "mongoose";
 import { startTestDb, stopTestDb, mockReq, mockRes } from "./helpers/testDb.js";
 import User from "../src/models/User.js";
+import Team from "../src/models/Team.js";
+import Match from "../src/models/Match.js";
 import TeamOrganization from "../src/models/TeamOrganization.js";
 import Membership from "../src/models/Membership.js";
 import AuditLog from "../src/models/AuditLog.js";
 import { changePassword, loginUser } from "../src/controllers/authController.js";
 import { handoverOrganization } from "../src/controllers/orgHandoverController.js";
+import { createOrgMatch } from "../src/controllers/orgMatchesController.js";
+import { createOrgMatchSchema } from "../src/validators/matchValidators.js";
+import { requireOrgPermission } from "../src/middleware/orgAccess.js";
+import { PERMISSIONS } from "../src/permissions/orgPermissions.js";
 import { listOrganizations } from "../src/controllers/organizationController.js";
 
 let mongod;
@@ -29,6 +35,8 @@ after(async () => {
 beforeEach(async () => {
   await Promise.all([
     User.deleteMany({}),
+    Team.deleteMany({}),
+    Match.deleteMany({}),
     TeamOrganization.deleteMany({}),
     Membership.deleteMany({}),
     AuditLog.deleteMany({}),
@@ -78,6 +86,50 @@ async function handover(org, body) {
   const res = mockRes();
   await handoverOrganization(platformAdminReq(org._id, body), res);
   return res;
+}
+
+let teamCounter = 0;
+async function makeOrgTeam(org, name = "XI") {
+  teamCounter += 1;
+  return Team.create({
+    name: `${name} ${teamCounter}`,
+    organizationRef: org._id,
+    organization: org.name,
+    isPublic: false,
+  });
+}
+
+async function attemptCreateMatch(actor, org, teamIds) {
+  const req = mockReq({
+    user: actor,
+    principalType: "user",
+    params: { id: String(org._id) },
+    body: createOrgMatchSchema.parse({ teams: teamIds }),
+    ip: "127.0.0.1",
+  });
+  const res = mockRes();
+  let allowed = false;
+  await requireOrgPermission(PERMISSIONS.CREATE_MATCH)(req, res, () => {
+    allowed = true;
+  });
+  if (!allowed) return res;
+  await createOrgMatch(req, res);
+  return res;
+}
+
+function withFailingOrgSave(org, work) {
+  const originalSave = TeamOrganization.prototype.save;
+  TeamOrganization.prototype.save = async function saveWithFailure(...args) {
+    if (String(this._id) === String(org._id)) {
+      throw new Error("simulated handover write failure");
+    }
+    return originalSave.apply(this, args);
+  };
+  return Promise.resolve()
+    .then(work)
+    .finally(() => {
+      TeamOrganization.prototype.save = originalSave;
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -212,7 +264,7 @@ test("handover can create a phone-only owner who signs in without an email", asy
   assert.strictEqual(loginRes.body.user.mustChangePassword, true);
 });
 
-test("handover promotes the new owner before demoting the previous owner to admin", async () => {
+test("handover promotes the new owner and removes the previous owner's manage rights", async () => {
   const previousOwner = await makeUser({ email: "previous-owner@openctest.dev" });
   const org = await makeOrg({ owner: previousOwner._id });
   await Membership.create({
@@ -240,13 +292,13 @@ test("handover promotes the new owner before demoting the previous owner to admi
     organization: org._id,
     user: previousOwner._id,
   });
-  assert.deepEqual(previousMembership.roles, ["admin"], "the previous owner stays on as admin");
+  assert.deepEqual(previousMembership.roles, ["player"], "the previous owner keeps no manage rights");
 
   const legacyMember = savedOrg.members.find(
     (member) => String(member.user) === String(previousOwner._id)
   );
   assert.ok(legacyMember, "the deprecated org.members[] view includes the demoted owner");
-  assert.strictEqual(legacyMember.role, "admin");
+  assert.strictEqual(legacyMember.role, "member");
 
   const audit = await AuditLog.findOne({ action: "org.handover_completed" });
   assert.strictEqual(audit.metadata.previousOwnerDemoted, true);
@@ -302,6 +354,174 @@ test("handover rejects identifiers that belong to two different accounts", async
 
   const emailUser = await User.findById(emailOwner._id);
   assert.strictEqual(emailUser.mustChangePassword, false);
+});
+
+test("handover removes a platform-admin placeholder membership and leaves exactly one active owner", async () => {
+  const org = await makeOrg();
+  // What a platform-created organization leaves behind: a Membership whose
+  // "user" is the Admin-collection principal, not a real User.
+  const phantomAdminId = new mongoose.Types.ObjectId();
+  await Membership.create({
+    organization: org._id,
+    user: phantomAdminId,
+    roles: ["owner"],
+    source: "admin",
+  });
+
+  const res = await handover(org, {
+    name: "Real Club Owner",
+    email: "real-club-owner@openctest.dev",
+  });
+
+  assert.strictEqual(res.statusCode, 200, JSON.stringify(res.body));
+  const owner = await User.findOne({ email: "real-club-owner@openctest.dev" });
+
+  const owners = await Membership.find({
+    organization: org._id,
+    status: "active",
+    roles: "owner",
+  });
+  assert.strictEqual(owners.length, 1, "exactly one active owner remains");
+  assert.strictEqual(String(owners[0].user), String(owner._id));
+
+  assert.strictEqual(
+    await Membership.countDocuments({ organization: org._id, user: phantomAdminId }),
+    0,
+    "the platform-admin placeholder membership is gone, not merely demoted"
+  );
+});
+
+test("handover is idempotent when it is run twice for the same owner", async () => {
+  const org = await makeOrg();
+  const body = { name: "Repeat Owner", email: "repeat-owner@openctest.dev" };
+
+  const first = await handover(org, body);
+  assert.strictEqual(first.statusCode, 200, JSON.stringify(first.body));
+  const owner = await User.findOne({ email: body.email }).select("+password");
+  const beforeMembership = await Membership.findOne({
+    organization: org._id,
+    user: owner._id,
+  }).lean();
+
+  const second = await handover(org, body);
+  assert.strictEqual(second.statusCode, 200, JSON.stringify(second.body));
+  assert.strictEqual(second.body.accountCreated, false);
+  assert.strictEqual(second.body.temporaryPassword, null);
+  assert.strictEqual(second.body.unchanged, true);
+
+  const afterMembership = await Membership.findOne({
+    organization: org._id,
+    user: owner._id,
+  }).lean();
+  assert.deepEqual(afterMembership.roles, beforeMembership.roles);
+  assert.strictEqual(afterMembership.status, beforeMembership.status);
+  assert.strictEqual(
+    new Date(afterMembership.joinedAt).getTime(),
+    new Date(beforeMembership.joinedAt).getTime(),
+    "a repeat handover does not touch the membership"
+  );
+
+  const afterUser = await User.findById(owner._id).select("+password");
+  assert.strictEqual(afterUser.password, owner.password, "the temporary password was not reissued");
+  assert.strictEqual(afterUser.tokenVersion, owner.tokenVersion);
+  assert.strictEqual(
+    await AuditLog.countDocuments({ action: "org.handover_completed" }),
+    1,
+    "a no-op repeat is not logged as a second handover"
+  );
+});
+
+test("handover rolls back every write when a later step fails", async () => {
+  const org = await makeOrg();
+  const body = { name: "Rollback Owner", email: "rollback-owner@openctest.dev" };
+
+  const res = await withFailingOrgSave(org, () => handover(org, body));
+
+  assert.strictEqual(res.statusCode, 500);
+  assert.strictEqual(
+    await User.countDocuments({ email: body.email }),
+    0,
+    "the newly created owner account is rolled back"
+  );
+  assert.strictEqual(
+    await Membership.countDocuments({ organization: org._id }),
+    0,
+    "the owner membership is rolled back"
+  );
+  const savedOrg = await TeamOrganization.findById(org._id);
+  assert.strictEqual(savedOrg.owner, null, "the owner pointer is unchanged");
+  assert.strictEqual(savedOrg.members.length, 0, "the legacy member array is unchanged");
+  assert.strictEqual(
+    await AuditLog.countDocuments({ action: "org.handover_completed" }),
+    0,
+    "a failed handover writes no completion audit"
+  );
+});
+
+test("a failed handover restores an existing account's verification and password", async () => {
+  const existing = await makeUser({
+    email: "rollback-existing@openctest.dev",
+    emailVerified: false,
+    phoneVerified: false,
+  });
+  const org = await makeOrg();
+
+  const res = await withFailingOrgSave(org, () =>
+    handover(org, {
+      name: "Existing Rollback",
+      email: existing.email,
+      resetExistingPassword: true,
+    })
+  );
+
+  assert.strictEqual(res.statusCode, 500);
+  const restored = await User.findById(existing._id).select("+password");
+  assert.strictEqual(restored.emailVerified, false, "admin-vouched verification was rolled back");
+  assert.strictEqual(restored.mustChangePassword, false);
+  assert.strictEqual(restored.tokenVersion, 0);
+  assert.strictEqual(await restored.comparePassword("existing-pass-123"), true, "the old password still works");
+  assert.strictEqual(await Membership.countDocuments({ organization: org._id }), 0);
+  assert.strictEqual((await TeamOrganization.findById(org._id)).owner, null);
+});
+
+test("the new owner can create a match while the previous owner and a stranger cannot", async () => {
+  const previousOwner = await makeUser({ email: "match-previous@openctest.dev" });
+  const org = await makeOrg({ owner: previousOwner._id });
+  await Membership.create({
+    organization: org._id,
+    user: previousOwner._id,
+    roles: ["owner"],
+    source: "signup",
+  });
+
+  const handoverRes = await handover(org, {
+    name: "Match Owner",
+    email: "match-owner@openctest.dev",
+  });
+  assert.strictEqual(handoverRes.statusCode, 200, JSON.stringify(handoverRes.body));
+
+  const newOwner = await User.findOne({ email: "match-owner@openctest.dev" });
+  const stranger = await makeUser({ email: "match-stranger@openctest.dev" });
+  const teamA = await makeOrgTeam(org, "Alpha");
+  const teamB = await makeOrgTeam(org, "Beta");
+  const teams = [String(teamA._id), String(teamB._id)];
+
+  const ownerRes = await attemptCreateMatch(newOwner, org, teams);
+  assert.strictEqual(ownerRes.statusCode, 201, JSON.stringify(ownerRes.body));
+
+  const previousRes = await attemptCreateMatch(previousOwner, org, teams);
+  assert.strictEqual(previousRes.statusCode, 403, JSON.stringify(previousRes.body));
+  assert.strictEqual(previousRes.body.code, "ORG_PERMISSION_DENIED");
+
+  const strangerRes = await attemptCreateMatch(stranger, org, teams);
+  assert.strictEqual(strangerRes.statusCode, 403, JSON.stringify(strangerRes.body));
+  assert.strictEqual(strangerRes.body.code, "ORG_MEMBERSHIP_REQUIRED");
+
+  assert.strictEqual(
+    await Match.countDocuments({ organizationRef: org._id }),
+    1,
+    "only the new owner's fixture was written"
+  );
 });
 
 test("only a platform admin can hand an organization over", async () => {
