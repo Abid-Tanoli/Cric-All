@@ -2,6 +2,7 @@ import Event from "../models/Event.js";
 import Match from "../models/Match.js";
 import Team from "../models/Team.js";
 import { getIO } from "../socket/socket.js";
+import { buildMatchInnings } from "../utils/matchInnings.js";
 import { hiddenTeamIds, reservedNamesMongoClause } from "../utils/publicProjection.js";
 
 const isTransientDbError = (error) => (
@@ -138,6 +139,39 @@ export const getEvent = async (req, res) => {
   }
 };
 
+// A single-match event owns exactly one fixture. Creating it here keeps every
+// caller (Admin, handlers, scripts) consistent with createOrgMatch's defaults.
+const ensureSingleMatchFixture = async (event) => {
+  if (event.eventType !== "single-match") return null;
+
+  const teams = event.teams || [];
+  if (teams.length !== 2) return null;
+  if ((event.matches || []).length > 0) return null;
+
+  let match;
+  try {
+    match = await Match.create({
+      title: event.name,
+      venue: event.venue || "",
+      matchType: event.format || "T20",
+      startAt: event.startDate,
+      teams,
+      event: event._id,
+      organizationRef: event.organization || null,
+      status: "upcoming",
+      innings: buildMatchInnings(teams),
+    });
+
+    event.matches.push(match._id);
+    event.totalMatches = event.matches.length;
+    await event.save();
+    return match;
+  } catch (error) {
+    if (match?._id) await Match.deleteOne({ _id: match._id }).catch(() => {});
+    throw error;
+  }
+};
+
 export const createEvent = async (req, res) => {
   try {
     const { 
@@ -189,9 +223,21 @@ export const createEvent = async (req, res) => {
     await event.save();
     await event.populate("teams", "name shortName logo");
 
-    try { getIO().emit("event:created", event); } catch { }
+    let match = null;
+    try {
+      match = await ensureSingleMatchFixture(event);
+    } catch (error) {
+      // The event alone is not a usable single match, so do not leave it behind.
+      await Event.deleteOne({ _id: event._id }).catch(() => {});
+      throw error;
+    }
 
-    res.status(201).json({ event, message: "Event created successfully" });
+    try {
+      getIO().emit("event:created", event);
+      if (match) getIO().emit("match:created", match);
+    } catch { }
+
+    res.status(201).json({ event, match, message: "Event created successfully" });
   } catch (error) {
     res.status(400).json({ message: "Failed to create event", error: error.message });
   }
