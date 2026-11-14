@@ -38,13 +38,14 @@ export async function recordAudit({
   targetLabel = "",
   metadata = {},
   actor: actorOverride = undefined,
+  session = null,
 } = {}) {
   try {
     const base = actorOverride
       ? { actorType: actorOverride.actorType, actor: actorOverride.actor, actorLabel: actorOverride.actorLabel }
       : actorLabelFromReq(req);
 
-    return await AuditLog.create({
+    const doc = {
       organization: organization || null,
       ...base,
       action,
@@ -53,7 +54,12 @@ export async function recordAudit({
       targetLabel: targetLabel ? String(targetLabel).slice(0, 200) : "",
       metadata,
       ip: req?.ip || "",
-    });
+    };
+    if (session) {
+      const [created] = await AuditLog.create([doc], { session });
+      return created;
+    }
+    return await AuditLog.create(doc);
   } catch (error) {
     log.error({ event: "audit.write_failed", action, err: error.message }, "failed to write audit entry");
     return null;

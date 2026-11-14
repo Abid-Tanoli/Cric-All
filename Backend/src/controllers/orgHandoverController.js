@@ -4,7 +4,6 @@ import User from "../models/User.js";
 import TeamOrganization from "../models/TeamOrganization.js";
 import Membership from "../models/Membership.js";
 import {
-  normalizeRoles,
   syncLegacyMembersArray,
   upsertMembership,
 } from "../services/membershipService.js";
@@ -44,6 +43,228 @@ function ownerSummary(user) {
 
 function conflict(res, message, code) {
   return res.status(409).json({ message, code });
+}
+
+function withSession(query, session) {
+  return session ? query.session(session) : query;
+}
+
+async function realUserExists(userId, session) {
+  const query = User.findOne({ _id: userId }).select("_id").lean();
+  return Boolean(await withSession(query, session));
+}
+
+/**
+ * True only when a previous run already produced the clean end state: this
+ * user owns the organization, holds the only active owner/admin membership, and
+ * no platform-admin placeholder membership is left behind.
+ */
+async function handoverAlreadyApplied(org, user) {
+  if (!org.owner || String(org.owner) !== String(user._id)) return false;
+
+  const target = await Membership.findOne({
+    organization: org._id,
+    user: user._id,
+    status: "active",
+  });
+  if (!target || !(target.roles || []).includes("owner")) return false;
+
+  const otherPrivileged = await Membership.countDocuments({
+    organization: org._id,
+    status: "active",
+    user: { $ne: user._id },
+    roles: { $in: ["owner", "admin"] },
+  });
+  return otherPrivileged === 0;
+}
+
+async function transactionsSupported() {
+  try {
+    const hello = await mongoose.connection.db.admin().command({ hello: 1 });
+    return Boolean(hello?.setName || hello?.msg === "isdbgrid");
+  } catch {
+    return false;
+  }
+}
+
+const USER_ROLLBACK_FIELDS = [
+  "name",
+  "email",
+  "phone",
+  "password",
+  "passwordSet",
+  "emailVerified",
+  "emailVerifiedAt",
+  "phoneVerified",
+  "phoneVerifiedAt",
+  "mustChangePassword",
+  "tokenVersion",
+  "authProviders",
+  "role",
+  "accountType",
+  "status",
+];
+
+async function captureRollbackState({ org, user }) {
+  const [memberships, savedUser] = await Promise.all([
+    Membership.find({ organization: org._id }).lean(),
+    user ? User.findById(user._id).select("+password").lean() : null,
+  ]);
+
+  return {
+    organizationId: org._id,
+    owner: org.owner || null,
+    legacyMembers: (org.members || []).map((member) => ({
+      user: member.user,
+      role: member.role,
+      joinedAt: member.joinedAt,
+    })),
+    memberships,
+    user: savedUser,
+  };
+}
+
+async function restoreRollbackState(state, journal) {
+  if (state.user) {
+    const $set = {};
+    const $unset = {};
+    for (const field of USER_ROLLBACK_FIELDS) {
+      if (state.user[field] === undefined) $unset[field] = "";
+      else $set[field] = state.user[field];
+    }
+    const update = {};
+    if (Object.keys($set).length) update.$set = $set;
+    if (Object.keys($unset).length) update.$unset = $unset;
+    if (Object.keys(update).length) {
+      await User.collection.updateOne({ _id: state.user._id }, update);
+    }
+  } else if (journal.createdUserId) {
+    await User.deleteOne({ _id: journal.createdUserId });
+  }
+
+  await Membership.deleteMany({ organization: state.organizationId });
+  if (state.memberships.length > 0) {
+    await Membership.collection.insertMany(state.memberships);
+  }
+  await TeamOrganization.collection.updateOne(
+    { _id: state.organizationId },
+    { $set: { owner: state.owner, members: state.legacyMembers } }
+  );
+}
+
+/**
+ * All handover writes. Called inside a transaction when the deployment supports
+ * one, otherwise the caller compensates by restoring the captured snapshot.
+ */
+async function applyHandover({
+  req,
+  org,
+  user,
+  accountCreated,
+  newUserPayload,
+  temporaryPassword,
+  session,
+  journal,
+}) {
+  let ownerUser = user;
+  const previousOwnerId = org.owner ? String(org.owner) : null;
+
+  if (accountCreated) {
+    const [created] = await User.create([newUserPayload], { session: session || undefined });
+    ownerUser = created;
+    journal.createdUserId = created._id;
+  } else {
+    await ownerUser.save(session ? { session } : undefined);
+  }
+
+  // Promote first: the organization is never left without an owner, not even
+  // between two writes.
+  await upsertMembership({
+    organization: org._id,
+    user: ownerUser._id,
+    roles: ["owner"],
+    source: "admin",
+    req,
+    session,
+  });
+
+  // A handover replaces the management team. Any other active owner/admin
+  // membership is either a platform-admin placeholder (there is no User behind
+  // it) or an outgoing manager. Both must lose privileged access, otherwise the
+  // old owner could keep creating matches and a second owner would remain.
+  const otherPrivileged = await withSession(
+    Membership.find({
+      organization: org._id,
+      status: "active",
+      user: { $ne: ownerUser._id },
+      roles: { $in: ["owner", "admin"] },
+    }),
+    session
+  );
+
+  let previousOwnerDemoted = false;
+  let phantomMembershipsRemoved = 0;
+  let privilegedMembershipsDemoted = 0;
+
+  for (const membership of otherPrivileged) {
+    if (!(await realUserExists(membership.user, session))) {
+      await Membership.deleteOne(
+        { _id: membership._id },
+        session ? { session } : undefined
+      );
+      phantomMembershipsRemoved += 1;
+      continue;
+    }
+
+    membership.roles = ["player"];
+    membership.status = "active";
+    membership.removedAt = null;
+    await membership.save(session ? { session } : undefined);
+    privilegedMembershipsDemoted += 1;
+    if (previousOwnerId && String(membership.user) === previousOwnerId) {
+      previousOwnerDemoted = true;
+    }
+  }
+
+  if (!org.owner || String(org.owner) !== String(ownerUser._id)) {
+    org.owner = ownerUser._id;
+    await org.save(session ? { session } : undefined);
+  }
+
+  // upsertMembership() synced the legacy array while the outgoing managers were
+  // still privileged. Re-sync after demoting them so the deprecated
+  // org.members[] view matches the authoritative Membership rows.
+  await syncLegacyMembersArray(org._id, session);
+
+  await recordAudit({
+    req,
+    organization: org._id,
+    action: "org.handover_completed",
+    targetType: "user",
+    targetId: ownerUser._id,
+    targetLabel: ownerUser.email || ownerUser.phone || String(ownerUser._id),
+    metadata: {
+      previousOwner: previousOwnerId,
+      previousOwnerDemoted,
+      accountCreated,
+      temporaryPasswordIssued: Boolean(temporaryPassword),
+      phantomMembershipsRemoved,
+      privilegedMembershipsDemoted,
+      identifiers: { email: ownerUser.email || "", phone: ownerUser.phone || "" },
+      // Deliberately records that verification was admin-vouched. The value
+      // of the temporary password is never written to the audit log.
+      identityVerifiedBy: "admin_handover",
+    },
+    session,
+  });
+
+  return {
+    ownerUser,
+    previousOwnerId,
+    previousOwnerDemoted,
+    phantomMembershipsRemoved,
+    privilegedMembershipsDemoted,
+  };
 }
 
 /**
@@ -112,34 +333,24 @@ export const handoverOrganization = async (req, res) => {
     let user = byEmail || byPhone;
     const accountCreated = !user;
     let temporaryPassword = null;
+    let newUserPayload = null;
 
     if (!user) {
       temporaryPassword = generateTemporaryPassword();
-      try {
-        user = await User.create({
-          name,
-          ...(email ? { email } : {}),
-          ...(phone ? { phone } : {}),
-          password: temporaryPassword,
-          role: "scorer",
-          accountType: "organization_admin",
-          emailVerified: Boolean(email),
-          ...(email ? { emailVerifiedAt: new Date() } : {}),
-          phoneVerified: Boolean(phone),
-          ...(phone ? { phoneVerifiedAt: new Date() } : {}),
-          mustChangePassword: true,
-          authProviders: [{ provider: "password" }],
-        });
-      } catch (error) {
-        if (error?.code === 11000) {
-          return conflict(
-            res,
-            "An account with that email or phone number was created in the meantime. Try again.",
-            "OWNER_ACCOUNT_TAKEN"
-          );
-        }
-        throw error;
-      }
+      newUserPayload = {
+        name,
+        ...(email ? { email } : {}),
+        ...(phone ? { phone } : {}),
+        password: temporaryPassword,
+        role: "scorer",
+        accountType: "organization_admin",
+        emailVerified: Boolean(email),
+        ...(email ? { emailVerifiedAt: new Date() } : {}),
+        phoneVerified: Boolean(phone),
+        ...(phone ? { phoneVerifiedAt: new Date() } : {}),
+        mustChangePassword: true,
+        authProviders: [{ provider: "password" }],
+      };
     } else {
       if (user.status === "suspended") {
         return res.status(403).json({
@@ -163,6 +374,24 @@ export const handoverOrganization = async (req, res) => {
           "That account already uses a different phone number.",
           "OWNER_PHONE_MISMATCH"
         );
+      }
+
+      // Running the same handover twice for the same person must change
+      // nothing. A requested password reset is an explicit exception.
+      if (req.body.resetExistingPassword !== true && (await handoverAlreadyApplied(org, user))) {
+        return res.status(200).json({
+          message: "That person already owns this organization.",
+          organization: { _id: org._id, name: org.name },
+          owner: ownerSummary(user),
+          accountCreated: false,
+          temporaryPassword: null,
+          mustChangePassword: Boolean(user.mustChangePassword),
+          loginIdentifiers: {
+            email: user.email || "",
+            phone: user.phone || "",
+          },
+          unchanged: true,
+        });
       }
 
       if (email && !user.email) user.email = email;
@@ -189,97 +418,75 @@ export const handoverOrganization = async (req, res) => {
         // the change-password screen.
         user.tokenVersion = (user.tokenVersion || 0) + 1;
       }
+    }
 
+    const journal = { createdUserId: null };
+    const rollbackState = await captureRollbackState({
+      org,
+      user: accountCreated ? null : user,
+    });
+
+    const run = (session) =>
+      applyHandover({
+        req,
+        org,
+        user,
+        accountCreated,
+        newUserPayload,
+        temporaryPassword,
+        session,
+        journal,
+      });
+
+    let result;
+    if (await transactionsSupported()) {
+      const session = await mongoose.startSession();
       try {
-        await user.save();
+        await session.withTransaction(async () => {
+          result = await run(session);
+        });
+      } finally {
+        await session.endSession();
+      }
+    } else {
+      try {
+        result = await run(null);
       } catch (error) {
-        if (error?.code === 11000) {
-          return conflict(
-            res,
-            "An account with that email or phone number was created in the meantime. Try again.",
-            "OWNER_ACCOUNT_TAKEN"
+        try {
+          await restoreRollbackState(rollbackState, journal);
+        } catch (rollbackError) {
+          log.error(
+            { event: "org.handover_rollback_failed", err: rollbackError.message },
+            "organization handover rollback failed"
           );
         }
         throw error;
       }
     }
 
-    // Promote first, demote second: the organization must never be left without
-    // an active owner, not even for the duration of two writes.
-    await upsertMembership({
-      organization: org._id,
-      user: user._id,
-      roles: ["owner"],
-      source: "admin",
-      req,
-    });
-
-    const previousOwnerId = org.owner ? String(org.owner) : null;
-    let previousOwnerDemoted = false;
-    if (previousOwnerId && previousOwnerId !== String(user._id)) {
-      const previous = await Membership.findOne({
-        organization: org._id,
-        user: previousOwnerId,
-      });
-      // Only a real, active owner is demoted. A stale `org.owner` pointer must
-      // not quietly promote an ordinary member to admin during a handover.
-      if (
-        previous &&
-        previous.status === "active" &&
-        (previous.roles || []).includes("owner")
-      ) {
-        previous.roles = normalizeRoles([
-          ...(previous.roles || []).filter((role) => role !== "owner"),
-          "admin",
-        ]);
-        await previous.save();
-        previousOwnerDemoted = true;
-        // upsertMembership() synced the legacy array while the previous owner
-        // was still an owner, so it excluded them. Re-sync after the demotion
-        // so the deprecated org.members[] view includes the new admin.
-        await syncLegacyMembersArray(org._id);
-      }
-    }
-
-    if (!org.owner || String(org.owner) !== String(user._id)) {
-      org.owner = user._id;
-      await org.save();
-    }
-
-    await recordAudit({
-      req,
-      organization: org._id,
-      action: "org.handover_completed",
-      targetType: "user",
-      targetId: user._id,
-      targetLabel: user.email || user.phone || String(user._id),
-      metadata: {
-        previousOwner: previousOwnerId,
-        previousOwnerDemoted,
-        accountCreated,
-        temporaryPasswordIssued: Boolean(temporaryPassword),
-        identifiers: { email: user.email || "", phone: user.phone || "" },
-        // Deliberately records that verification was admin-vouched. The value
-        // of the temporary password is never written to the audit log.
-        identityVerifiedBy: "admin_handover",
-      },
-    });
-
+    const { ownerUser } = result;
     res.status(200).json({
       message: accountCreated
         ? "Organization handed over. Share the temporary password with the new owner."
         : "Organization handed over.",
       organization: { _id: org._id, name: org.name },
-      owner: ownerSummary(user),
+      owner: ownerSummary(ownerUser),
       accountCreated,
       temporaryPassword,
-      mustChangePassword: Boolean(user.mustChangePassword),
+      mustChangePassword: Boolean(ownerUser.mustChangePassword),
       loginIdentifiers: {
-        email: user.email || "",
-        phone: user.phone || "",
+        email: ownerUser.email || "",
+        phone: ownerUser.phone || "",
       },
     });
   } catch (error) {
+    if (error?.code === 11000) {
+      return conflict(
+        res,
+        "An account with that email or phone number was created in the meantime. Try again.",
+        "OWNER_ACCOUNT_TAKEN"
+      );
+    }
     log.error({ event: "org.handover_failed", err: error.message }, "organization handover failed");
     res.status(500).json({ message: "Could not hand over the organization" });
   }

@@ -93,11 +93,13 @@ export async function upsertMembership({
   invitedBy = null,
   source = "direct",
   req = null,
+  session = null,
 }) {
   const finalRoles = normalizeRoles(roles);
   if (finalRoles.length === 0) finalRoles.push("player");
 
-  const existing = await Membership.findOne({ organization: OID(organization), user });
+  const existingQuery = Membership.findOne({ organization: OID(organization), user });
+  const existing = await (session ? existingQuery.session(session) : existingQuery);
   let membership;
 
   if (existing) {
@@ -111,7 +113,7 @@ export async function upsertMembership({
     if (invitedBy) existing.invitedBy = invitedBy;
     existing.source = source;
     existing.joinedAt = new Date();
-    await existing.save();
+    await existing.save(session ? { session } : undefined);
     membership = existing;
     await recordAudit({
       req,
@@ -121,17 +123,24 @@ export async function upsertMembership({
       targetId: membership._id,
       targetLabel: String(user),
       metadata: { from: before, to: finalRoles },
+      session,
     });
   } else {
-    membership = await Membership.create({
-      organization: OID(organization),
-      user,
-      roles: finalRoles,
-      invitedBy,
-      source,
-      status: "active",
-      joinedAt: new Date(),
-    });
+    const [created] = await Membership.create(
+      [
+        {
+          organization: OID(organization),
+          user,
+          roles: finalRoles,
+          invitedBy,
+          source,
+          status: "active",
+          joinedAt: new Date(),
+        },
+      ],
+      { session: session || undefined }
+    );
+    membership = created;
     await recordAudit({
       req,
       organization: OID(organization),
@@ -140,12 +149,13 @@ export async function upsertMembership({
       targetId: membership._id,
       targetLabel: String(user),
       metadata: { roles: finalRoles, source },
+      session,
     });
   }
 
   // Keep the deprecated org.members[] array in step so the Admin app's older
   // read path keeps rendering. Membership stays the source of truth.
-  await syncLegacyMembersArray(membership.organization);
+  await syncLegacyMembersArray(membership.organization, session);
   return membership;
 }
 
@@ -170,13 +180,14 @@ export async function removeMembership({ membership, req = null, actor = null })
 }
 
 /** Recomputes TeamOrganization.members[] from the authoritative Membership rows. */
-export async function syncLegacyMembersArray(organizationId) {
-  const memberships = await Membership.find({
+export async function syncLegacyMembersArray(organizationId, session = null) {
+  const query = Membership.find({
     organization: OID(organizationId),
     status: "active",
   })
     .select("user roles")
     .lean();
+  const memberships = await (session ? query.session(session) : query);
 
   const members = memberships
     .filter((m) => !(m.roles || []).includes("owner"))
@@ -188,7 +199,8 @@ export async function syncLegacyMembersArray(organizationId) {
 
   await TeamOrganization.updateOne(
     { _id: OID(organizationId) },
-    { $set: { members } }
+    { $set: { members } },
+    session ? { session } : undefined
   );
 }
 
