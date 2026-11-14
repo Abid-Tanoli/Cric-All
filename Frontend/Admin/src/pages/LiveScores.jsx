@@ -20,14 +20,14 @@ export default function LiveScores() {
     const yesterday = new Date(today);
     yesterday.setDate(yesterday.getDate() - 1);
 
+    const matchStart = (match) => {
+        const time = new Date(match.startAt).getTime();
+        return Number.isNaN(time) ? 0 : time;
+    };
+
     const todayMatches = matches.filter(m => {
         const matchDate = new Date(m.startAt);
         return matchDate >= today && matchDate < tomorrow;
-    });
-
-    const yesterdayMatches = matches.filter(m => {
-        const matchDate = new Date(m.startAt);
-        return matchDate >= yesterday && matchDate < today;
     });
 
     const tomorrowMatches = matches.filter(m => {
@@ -35,13 +35,32 @@ export default function LiveScores() {
         return matchDate >= tomorrow && matchDate < new Date(tomorrow.getTime() + 86400000);
     });
 
-    // Anything still upcoming that is not covered by "today" or "tomorrow" stays
-    // reachable here. This includes an overdue fixture whose date has passed but
-    // which has not been started yet.
-    const otherUpcomingMatches = matches.filter(m => {
-        const isUpcoming = m.status === 'upcoming' || m.status === 'scheduled';
-        return isUpcoming && !todayMatches.includes(m) && !tomorrowMatches.includes(m);
-    });
+    // Completed results are not limited to yesterday: "All" and "Results"
+    // must still show older scorecards after the live board moves on.
+    const completedMatches = matches
+        .filter(m => m.status === 'completed')
+        .slice()
+        .sort((a, b) => matchStart(b) - matchStart(a));
+    const recentCompletedMatches = completedMatches.filter(m => new Date(m.startAt) >= yesterday);
+    const earlierCompletedMatches = completedMatches.filter(m => !(new Date(m.startAt) >= yesterday));
+
+    // Every upcoming fixture, regardless of date, soonest first. This includes
+    // an overdue fixture whose date has passed but which has not started yet.
+    const allUpcomingMatches = matches
+        .filter(m => m.status === 'upcoming' || m.status === 'scheduled')
+        .slice()
+        .sort((a, b) => {
+            const aTime = matchStart(a);
+            const bTime = matchStart(b);
+            if (!aTime && !bTime) return 0;
+            if (!aTime) return 1;
+            if (!bTime) return -1;
+            return aTime - bTime;
+        });
+
+    // Anything still upcoming that is not covered by "today" or "tomorrow"
+    // stays reachable in the All Matches tab.
+    const otherUpcomingMatches = allUpcomingMatches.filter(m => !todayMatches.includes(m) && !tomorrowMatches.includes(m));
 
     useEffect(() => {
         dispatch(fetchMatches());
@@ -62,6 +81,90 @@ export default function LiveScores() {
     const formatDate = (date) => formatMatchDate(date);
 
     const formatTime = (date) => formatMatchTime(date);
+
+    const renderCompletedCard = (match) => (
+        <div
+            key={match._id}
+            className="bg-white rounded-xl shadow-md border border-slate-200 hover:shadow-lg transition-all cursor-pointer"
+            onClick={() => handleSelectMatch(match)}
+        >
+            <div className="p-4">
+                <div className="flex items-center justify-between mb-3">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                        {match.matchSubcategory || match.series} &bull; {formatDate(match.startAt)}
+                    </span>
+                    <span className="px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-[9px] font-bold uppercase">
+                        Complete
+                    </span>
+                </div>
+                <div className="space-y-2">
+                    {match.innings?.map((inn, idx) => {
+                        const team = match.teams?.[idx] || {};
+                        return (
+                            <div key={idx} className="flex items-center justify-between">
+                                <div className="flex items-center gap-3">
+                                    {team.logo && <img src={team.logo} alt={team.name} className="w-6 h-6 rounded-full object-cover" />}
+                                    <span className="font-bold text-sm text-slate-800 uppercase">{teamShortName(team)}</span>
+                                </div>
+                                <span className="font-black text-sm text-slate-800">
+                                    {inn.runs || 0}/{inn.wickets || 0} <span className="text-xs text-slate-500 font-bold">({inn.overs || 0}.{(inn.balls || 0) % 6})</span>
+                                </span>
+                            </div>
+                        );
+                    })}
+                </div>
+                {match.result?.description && (
+                    <div className="mt-3 pt-3 border-t border-slate-100">
+                        <p className="text-sm font-bold text-green-700">{match.result.description}</p>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+
+    const renderUpcomingCard = (match) => (
+        <div
+            key={match._id}
+            className="bg-white rounded-xl shadow-md border border-slate-200 hover:shadow-lg transition-all"
+        >
+            <div className="p-4">
+                <div className="flex items-center justify-between mb-3">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                        {match.matchSubcategory || match.series}
+                    </span>
+                    <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-[9px] font-bold uppercase">
+                        {formatTime(match.startAt)}
+                    </span>
+                </div>
+                <div className="flex items-center justify-center gap-6 py-3">
+                    {match.teams?.map((team, idx) => (
+                        <div key={idx} className="flex flex-col items-center flex-1">
+                            {team.logo && <img src={team.logo} alt={team.name} className="w-12 h-12 rounded-full object-cover mb-2" />}
+                            <span className="font-bold text-sm text-slate-800 uppercase text-center">{teamShortName(team)}</span>
+                        </div>
+                    ))}
+                    <span className="text-2xl font-black text-slate-300">VS</span>
+                </div>
+                <p className="text-center text-[10px] text-slate-500 font-bold mt-1">
+                    {match.venue || 'Venue TBA'} &bull; {match.matchType}
+                </p>
+                <div className="mt-3 flex gap-2">
+                    <button
+                        onClick={() => navigate(`/admin/score/${match._id}`)}
+                        className="flex-1 bg-[#031d44] hover:bg-slate-800 text-white py-2 rounded-lg font-black text-xs uppercase tracking-widest"
+                    >
+                        Manage Match
+                    </button>
+                    <button
+                        onClick={() => navigate(`/admin/score/${match._id}`)}
+                        className="px-4 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg font-black text-xs uppercase tracking-widest"
+                    >
+                        Setup
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
 
     // MAIN LIVE SCORES DASHBOARD (professional match-center layout)
     return (
@@ -102,53 +205,28 @@ export default function LiveScores() {
                     </div>
                 ) : (
                     <>
-                        {/* YESTERDAY - RESULTS */}
-                        {(view === 'all' || view === 'result') && yesterdayMatches.filter(m => m.status === 'completed').length > 0 && (
+                        {/* RECENT - RESULTS (today and yesterday) */}
+                        {(view === 'all' || view === 'result') && recentCompletedMatches.length > 0 && (
                             <div className="mb-10">
                                 <h2 className="text-xl font-black text-[#031d44] uppercase tracking-tight mb-4 flex items-center gap-2">
                                     <span className="w-2 h-6 bg-green-600 rounded-full"></span>
-                                    Yesterday's Results
+                                    Recent Results
                                 </h2>
                                 <div className="space-y-3">
-                                    {yesterdayMatches.filter(m => m.status === 'completed').map(match => (
-                                        <div
-                                            key={match._id}
-                                            className="bg-white rounded-xl shadow-md border border-slate-200 hover:shadow-lg transition-all cursor-pointer"
-                                            onClick={() => handleSelectMatch(match)}
-                                        >
-                                            <div className="p-4">
-                                                <div className="flex items-center justify-between mb-3">
-                                                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                                                        {match.matchSubcategory || match.series} &bull; {formatDate(match.startAt)}
-                                                    </span>
-                                                    <span className="px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-[9px] font-bold uppercase">
-                                                        Complete
-                                                    </span>
-                                                </div>
-                                                <div className="space-y-2">
-                                                    {match.innings?.map((inn, idx) => {
-                                                        const team = match.teams?.[idx] || {};
-                                                        return (
-                                                            <div key={idx} className="flex items-center justify-between">
-                                                                <div className="flex items-center gap-3">
-                                                                    {team.logo && <img src={team.logo} alt={team.name} className="w-6 h-6 rounded-full object-cover" />}
-                                                                    <span className="font-bold text-sm text-slate-800 uppercase">{teamShortName(team)}</span>
-                                                                </div>
-                                                                <span className="font-black text-sm text-slate-800">
-                                                                    {inn.runs || 0}/{inn.wickets || 0} <span className="text-xs text-slate-500 font-bold">({inn.overs || 0}.{(inn.balls || 0) % 6})</span>
-                                                                </span>
-                                                            </div>
-                                                        );
-                                                    })}
-                                                </div>
-                                                {match.result?.description && (
-                                                    <div className="mt-3 pt-3 border-t border-slate-100">
-                                                        <p className="text-sm font-bold text-green-700">{match.result.description}</p>
-                                                    </div>
-                                                )}
-                                            </div>
-                                        </div>
-                                    ))}
+                                    {recentCompletedMatches.map(renderCompletedCard)}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* EARLIER - RESULTS */}
+                        {(view === 'all' || view === 'result') && earlierCompletedMatches.length > 0 && (
+                            <div className="mb-10">
+                                <h2 className="text-xl font-black text-[#031d44] uppercase tracking-tight mb-4 flex items-center gap-2">
+                                    <span className="w-2 h-6 bg-slate-400 rounded-full"></span>
+                                    Earlier results
+                                </h2>
+                                <div className="space-y-3">
+                                    {earlierCompletedMatches.map(renderCompletedCard)}
                                 </div>
                             </div>
                         )}
@@ -228,62 +306,20 @@ export default function LiveScores() {
                         )}
 
                         {/* TODAY - UPCOMING */}
-                        {(view === 'all' || view === 'upcoming') && todayMatches.filter(m => m.status === 'upcoming' || m.status === 'scheduled').length > 0 && (
+                        {view === 'all' && todayMatches.filter(m => m.status === 'upcoming' || m.status === 'scheduled').length > 0 && (
                             <div className="mb-10">
                                 <h2 className="text-xl font-black text-[#031d44] uppercase tracking-tight mb-4 flex items-center gap-2">
                                     <span className="w-2 h-6 bg-blue-600 rounded-full"></span>
                                     Today's Upcoming
                                 </h2>
                                 <div className="space-y-3">
-                                    {todayMatches.filter(m => m.status === 'upcoming' || m.status === 'scheduled').map(match => (
-                                        <div
-                                            key={match._id}
-                                            className="bg-white rounded-xl shadow-md border border-slate-200 hover:shadow-lg transition-all"
-                                        >
-                                            <div className="p-4">
-                                                <div className="flex items-center justify-between mb-3">
-                                                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                                                        {match.matchSubcategory || match.series}
-                                                    </span>
-                                                    <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-[9px] font-bold uppercase">
-                                                        {formatTime(match.startAt)}
-                                                    </span>
-                                                </div>
-                                                <div className="flex items-center justify-center gap-6 py-3">
-                                                    {match.teams?.map((team, idx) => (
-                                                        <div key={idx} className="flex flex-col items-center flex-1">
-                                                            {team.logo && <img src={team.logo} alt={team.name} className="w-12 h-12 rounded-full object-cover mb-2" />}
-                                                            <span className="font-bold text-sm text-slate-800 uppercase text-center">{teamShortName(team)}</span>
-                                                        </div>
-                                                    ))}
-                                                    <span className="text-2xl font-black text-slate-300">VS</span>
-                                                </div>
-                                                <p className="text-center text-[10px] text-slate-500 font-bold mt-1">
-                                                    {match.venue || 'Venue TBA'} &bull; {match.matchType}
-                                                </p>
-                                                <div className="mt-3 flex gap-2">
-                                                    <button
-                                                        onClick={() => navigate(`/admin/score/${match._id}`)}
-                                                        className="flex-1 bg-[#031d44] hover:bg-slate-800 text-white py-2 rounded-lg font-black text-xs uppercase tracking-widest"
-                                                    >
-                                                        Manage Match
-                                                    </button>
-                                                    <button
-                                                        onClick={() => navigate(`/admin/score/${match._id}`)}
-                                                        className="px-4 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg font-black text-xs uppercase tracking-widest"
-                                                    >
-                                                        Setup
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    ))}
+                                    {todayMatches.filter(m => m.status === 'upcoming' || m.status === 'scheduled').map(renderUpcomingCard)}
                                 </div>
                             </div>
                         )}
 
                         {/* TOMORROW */}
-                        {(view === 'all' || view === 'upcoming') && tomorrowMatches.length > 0 && (
+                        {view === 'all' && tomorrowMatches.length > 0 && (
                             <div className="mb-10">
                                 <h2 className="text-xl font-black text-[#031d44] uppercase tracking-tight mb-4 flex items-center gap-2">
                                     <span className="w-2 h-6 bg-slate-400 rounded-full"></span>
@@ -325,7 +361,7 @@ export default function LiveScores() {
                         )}
 
                         {/* OTHER UPCOMING (past-date or further out) */}
-                        {(view === 'all' || view === 'upcoming') && otherUpcomingMatches.length > 0 && (
+                        {view === 'all' && otherUpcomingMatches.length > 0 && (
                             <div className="mb-10">
                                 <h2 className="text-xl font-black text-[#031d44] uppercase tracking-tight mb-4 flex items-center gap-2">
                                     <span className="w-2 h-6 bg-amber-500 rounded-full"></span>
@@ -364,6 +400,19 @@ export default function LiveScores() {
                                             </div>
                                         </div>
                                     ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* UPCOMING - EVERY FIXTURE, SOONEST FIRST */}
+                        {view === 'upcoming' && allUpcomingMatches.length > 0 && (
+                            <div className="mb-10">
+                                <h2 className="text-xl font-black text-[#031d44] uppercase tracking-tight mb-4 flex items-center gap-2">
+                                    <span className="w-2 h-6 bg-blue-600 rounded-full"></span>
+                                    Upcoming Matches
+                                </h2>
+                                <div className="space-y-3">
+                                    {allUpcomingMatches.map(renderUpcomingCard)}
                                 </div>
                             </div>
                         )}
