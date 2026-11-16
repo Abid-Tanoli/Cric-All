@@ -42,6 +42,11 @@ export default function ManageScore() {
       const response = await api.get("/matches");
       return response.data?.matches || response.data || [];
     },
+    createTeamPlayer: async ({ teamId, name, role }) => {
+      if (!teamId) throw new Error("No bowling team selected.");
+      const response = await api.post("/players", { name, role, team: teamId });
+      return response.data?.player || response.data;
+    },
   };
 
   return (

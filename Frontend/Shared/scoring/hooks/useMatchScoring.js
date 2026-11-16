@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { getTabIdFromRoute, FIELD_POSITIONS, WICKET_TYPES } from '../components/ScoreManagement/constants';
 import { useScoringAdapters } from '../ScoringAdapters';
 import { createScoringApi } from '../createScoringApi';
+import { isNextBowlerRequired } from '../utils/nextBowler';
 
 const isIllegalDelivery = (ball) => !!(ball?.isWide || ball?.isNoBall);
 
@@ -111,9 +112,10 @@ export default function useMatchScoring({ matchId, tabId }) {
     const [drsData, setDrsData] = useState({ result: 'upheld', type: 'lbw' });
 
     const [showSelectionModal, setShowSelectionModal] = useState('');
+    const [showNextBowlerModal, setShowNextBowlerModal] = useState(false);
     const [useAICommentary, setUseAICommentary] = useState(() => {
-        if (typeof window === 'undefined') return true;
-        return window.localStorage.getItem('bq_use_ai_commentary') !== 'false';
+        if (typeof window === 'undefined') return false;
+        return window.localStorage.getItem('bq_use_ai_commentary') === 'true';
     });
     const [activeGroundZone, setActiveGroundZone] = useState(null);
 
@@ -391,20 +393,19 @@ export default function useMatchScoring({ matchId, tabId }) {
         } else {
             setIsPreMatchComplete(true);
             setWizardStep(5);
-            const ballsTossed = curInn.balls % 6;
-            const overNum = curInn.overs;
-            const overHist = curInn.oversHistory.find(o => o.overNumber === overNum);
-            if (overHist?.balls?.length > 0 && ballsTossed === 0) {
-                setShowSelectionModal('bowler');
-            } else {
-                setShowSelectionModal('');
-            }
+            setShowNextBowlerModal(isNextBowlerRequired(curInn));
+            setShowSelectionModal('');
         }
     };
 
     const submitBall = async () => {
         if (!selectedMatch) return;
         const curInn = selectedMatch.innings[selectedMatch.currentInnings];
+        if (isNextBowlerRequired(curInn)) {
+            setShowNextBowlerModal(true);
+            showToast("Select the next bowler to continue.", "warning");
+            return;
+        }
         if (!curInn.onStrikeBatsman || !curInn.currentBowler) {
             showToast("Ensure players are selected", "warning");
             return;
@@ -535,6 +536,7 @@ export default function useMatchScoring({ matchId, tabId }) {
             }, { headers: { Authorization: `Bearer ${token}` } });
             setSelectedMatch(res.data.match);
             setToast("Innings Ended");
+            setShowNextBowlerModal(false);
         } catch (err) {
             showToast(err.response?.data?.message || err.message, 'error');
         }
@@ -566,6 +568,7 @@ export default function useMatchScoring({ matchId, tabId }) {
                 { headers: { Authorization: `Bearer ${token}` } });
             setSelectedMatch(res.data.match);
             setToast("Reverted successfully");
+            checkRoles(res.data.match);
         } catch (e) {
             showToast(e.response?.data?.message || e.message, 'error');
         } finally {
@@ -972,6 +975,8 @@ export default function useMatchScoring({ matchId, tabId }) {
         setDrsData,
         showSelectionModal,
         setShowSelectionModal,
+        showNextBowlerModal,
+        setShowNextBowlerModal,
         useAICommentary,
         setUseAICommentary,
         activeGroundZone,

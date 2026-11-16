@@ -186,12 +186,13 @@ export default function CricketGround({ onShotSelect, activeZone }) {
                 ))}
             </div>
 
-            <div className="relative w-full" style={{ maxWidth: 360, aspectRatio: "1" }}>
+            <div className="relative w-full" style={{ width: '100%', maxWidth: 'min(100%, 40vh)', aspectRatio: '1', marginInline: 'auto' }}>
                 <svg
                     ref={svgRef}
                     viewBox={`0 0 ${GW} ${GH}`}
                     width="100%"
                     height="100%"
+                    preserveAspectRatio="xMidYMid meet"
                     className="cursor-crosshair select-none"
                     onClick={handleClick}
                     onMouseMove={handleMouseMove}

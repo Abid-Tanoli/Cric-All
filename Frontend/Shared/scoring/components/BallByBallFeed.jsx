@@ -1,5 +1,6 @@
 import React, { useRef, useEffect, useState } from "react";
 import { orderedBallsForDisplay } from "../../../Shared/components/RecentBallsStrip.jsx";
+import { describeBall } from "../utils/scoringVisibility";
 
 // Ball notation badge
 function BallBadge({ ball, small = false }) {
@@ -117,7 +118,7 @@ function CommentaryLine({ text, loading }) {
 }
 
 // Over block - CricAll style
-function OverBlock({ over, balls, onEdit, showReadMore, onReadMore, allPlayers }) {
+function OverBlock({ over, balls, onEdit, showReadMore, onReadMore, allPlayers, basicCommentary = false }) {
     const overRuns = over.runsScored ?? balls.reduce((s, b) => s + (b.runs || 0) + (b.isWide ? 1 : 0) + (b.isNoBall ? 1 : 0), 0);
     const overWickets = over.wickets ?? balls.filter(b => b.isWicket).length;
     const bowlerName = over.bowlerName || balls[0]?.bowlerName || "Bowler";
@@ -173,7 +174,9 @@ function OverBlock({ over, balls, onEdit, showReadMore, onReadMore, allPlayers }
                                 <span className="inline-flex items-center px-2 py-0.5 rounded text-[9px] font-black bg-purple-500/20 text-purple-400 uppercase tracking-wider">Free Hit next</span>
                             </div>
                         )}
-                        {(ball.vividCommentary || ball.commentary) && (
+                        {basicCommentary ? (
+                            <CommentaryLine text={describeBall(ball)} />
+                        ) : (ball.vividCommentary || ball.commentary) && (
                             <div className="ml-12 mt-2">
                                 <p className="text-[12px] text-slate-600 italic leading-relaxed">
                                     {ball.vividCommentary || ball.commentary}
@@ -306,7 +309,7 @@ function EditBallModal({ ball, overNum, ballNum, displayBallNum, onSave, onClose
 
 // ─── MAIN COMPONENT ───────────────────────────────────────────────────────────
 
-const BallByBallFeed = React.memo(function BallByBallFeed({ history = [], overs = [], onEdit, onSwitchTab, compact = false }) {
+const BallByBallFeed = React.memo(function BallByBallFeed({ history = [], overs = [], onEdit, onSwitchTab, compact = false, basicCommentary = false }) {
     const scrollRef = useRef(null);
     const [editingBall, setEditingBall] = useState(null);
 
@@ -364,6 +367,7 @@ const BallByBallFeed = React.memo(function BallByBallFeed({ history = [], overs 
                     onEdit={onEdit ? handleEdit : null}
                     showReadMore={!compact && idx === 2}
                     onReadMore={() => onSwitchTab && onSwitchTab("commentary")}
+                    basicCommentary={basicCommentary}
                 />
             ))}
 
