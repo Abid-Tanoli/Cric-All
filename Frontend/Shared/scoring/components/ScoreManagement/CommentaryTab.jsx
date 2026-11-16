@@ -5,7 +5,8 @@ export default React.memo(function CommentaryTab({
     formattedHistory,
     oversHistory,
     handleEditBall,
-    setActiveTab
+    setActiveTab,
+    useAICommentary = false,
 }) {
     return (
         <div className="space-y-6 animate-fadeIn">
@@ -22,6 +23,7 @@ export default React.memo(function CommentaryTab({
                 onEdit={handleEditBall}
                 onSwitchTab={setActiveTab}
                 compact={false}
+                basicCommentary={!useAICommentary}
             />
         </div>
     );

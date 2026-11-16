@@ -18,6 +18,7 @@ export default function WicketDetailsForm({
     showToast,
 }) {
     const isCrossingWicket = CROSSING_WICKET_TYPES.includes(selectedWicket);
+    const showFielder = ['caught', 'run out', 'stumped'].includes(selectedWicket);
     const strikerName = battingXI.find(p => String(p._id || p) === String(strikerId))?.name || 'Striker';
     const nonStrikerName = battingXI.find(p => String(p._id || p) === String(nonStrikerId))?.name || 'Non-Striker';
 
@@ -48,7 +49,7 @@ export default function WicketDetailsForm({
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-8">
-                <div className="space-y-2">
+                <div className={`space-y-2 ${showFielder ? '' : 'md:col-span-2'}`}>
                     <label htmlFor="wicket-next-batter" className={labelClass}>Next Batsman</label>
                     <select id="wicket-next-batter" value={setupState.wicketNewBatter} onChange={(e) => setSetupState(s => ({ ...s, wicketNewBatter: e.target.value }))} className={inputClass}>
                         <option value="">Select Next In...</option>
@@ -57,15 +58,17 @@ export default function WicketDetailsForm({
                         ))}
                     </select>
                 </div>
-                <div className="space-y-2">
-                    <label htmlFor="wicket-fielder" className={labelClass}>Fielder Involved</label>
-                    <select id="wicket-fielder" value={setupState.wicketFielder} onChange={(e) => setSetupState(s => ({ ...s, wicketFielder: e.target.value }))} className={inputClass}>
-                        <option value="">Select Fielder...</option>
-                        {bowlingXI.map(p => (
-                            <option key={p._id || p} value={p._id || p}>{p.name}</option>
-                        ))}
-                    </select>
-                </div>
+                {showFielder && (
+                    <div className="space-y-2">
+                        <label htmlFor="wicket-fielder" className={labelClass}>Fielder Involved</label>
+                        <select id="wicket-fielder" value={setupState.wicketFielder} onChange={(e) => setSetupState(s => ({ ...s, wicketFielder: e.target.value }))} className={inputClass}>
+                            <option value="">Select Fielder...</option>
+                            {bowlingXI.map(p => (
+                                <option key={p._id || p} value={p._id || p}>{p.name}</option>
+                            ))}
+                        </select>
+                    </div>
+                )}
             </div>
 
             {isCrossingWicket && (

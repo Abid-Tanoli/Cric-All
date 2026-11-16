@@ -18,7 +18,8 @@ export default React.memo(function LiveTab({
     curInn,
     onRetire,
     handleEditBall,
-    setActiveTab
+    setActiveTab,
+    basicCommentary = false,
 }) {
     return (
         <div className="space-y-12 animate-fadeIn">
@@ -52,6 +53,7 @@ export default React.memo(function LiveTab({
                     onEdit={handleEditBall}
                     onSwitchTab={setActiveTab}
                     compact={true}
+                    basicCommentary={basicCommentary}
                 />
             </div>
         </div>

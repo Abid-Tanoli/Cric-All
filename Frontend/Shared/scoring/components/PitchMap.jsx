@@ -177,17 +177,19 @@ export default React.memo(function PitchMap({
     const hoverLengthLabel = hoverPos ? LENGTH_ZONES.find(z => z.id === hoverPos.length)?.label : "";
 
     return (
-        <div className="flex flex-col gap-2.5 max-w-[160px] w-full">
+        <div className="flex w-full min-w-0 flex-col items-center gap-1.5">
             <div className="flex items-baseline gap-2 px-0.5">
                 <h4 className="text-[10px] font-black tracking-[0.25em] uppercase text-[#ff6b35] m-0">Pitch Map</h4>
-                <span className="text-[9px] font-bold tracking-[0.15em] uppercase text-slate-500">{bowlerName && batsmanName ? `${bowlerName} to ${batsmanName}` : "Bowling Length Map"}</span>
+                <span className="truncate text-[9px] font-bold tracking-[0.15em] uppercase text-slate-500">{bowlerName && batsmanName ? `${bowlerName} to ${batsmanName}` : "Bowling Length Map"}</span>
             </div>
 
-            <div className="relative flex items-stretch w-full justify-center">
+            <div className="relative flex w-full justify-center">
                 <svg
                     ref={svgRef}
                     viewBox={`0 0 ${SVG_W} ${SVG_H}`}
-                    className="flex-1 cursor-crosshair select-none rounded-xl overflow-hidden max-h-[380px] min-h-[260px] w-full aspect-[16/32]"
+                    preserveAspectRatio="xMidYMid meet"
+                    style={{ height: 'min(40vh, 320px)', maxWidth: '100%', width: 'auto' }}
+                    className="cursor-crosshair select-none rounded-xl overflow-hidden"
                     onClick={handlePitchClick}
                     onMouseMove={handleMouseMove}
                     onMouseLeave={() => setHoverPos(null)}

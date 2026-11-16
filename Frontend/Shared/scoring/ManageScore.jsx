@@ -12,9 +12,12 @@ import StatsTab from './components/ScoreManagement/StatsTab';
 import { TABS, formatOvers, FIELD_POSITIONS } from './components/ScoreManagement/constants';
 import WicketDetailsForm from './components/ScoreManagement/WicketDetailsForm';
 import ScoringMobileBar from './components/ScoringMobileBar';
+import ScoringScoreHeader from './components/ScoreManagement/ScoringScoreHeader';
+import NextBowlerModal from './components/ScoreManagement/NextBowlerModal';
 import PlayerOfMatchCard from './components/ScoreManagement/PlayerOfMatchCard';
 import { formatMatchDate, formatMatchTime, teamShortName } from './utils/teamDisplay';
-import { getBowlerQuota, hasReachedBowlerQuota } from './utils/bowlerQuota';
+import { getBowlerQuota } from './utils/bowlerQuota';
+import { getLastOverBowlerId, isNextBowlerRequired } from './utils/nextBowler';
 import { useScoringAdapters } from './ScoringAdapters';
 import ShareButton from '@shared/components/ShareButton';
 
@@ -52,6 +55,8 @@ export default function ManageScore({ matchId, tabId }) {
         setDrsData,
         showSelectionModal,
         setShowSelectionModal,
+        showNextBowlerModal,
+        setShowNextBowlerModal,
         useAICommentary,
         setUseAICommentary,
         activeGroundZone,
@@ -129,9 +134,12 @@ export default function ManageScore({ matchId, tabId }) {
     const buildScorePath = adapters.buildScorePath;
 
     const [loadTimeout, setLoadTimeout] = useState(false);
-    const [activeScorePanel, setActiveScorePanel] = useState(() =>
-        typeof window !== 'undefined' && window.matchMedia('(max-width: 1279px)').matches ? 'management' : 'main'
-    );
+    const [view, setView] = useState(() => (tabId && tabId !== 'live' ? 'live' : 'score'));
+    const [addedBowlers, setAddedBowlers] = useState([]);
+
+    React.useEffect(() => {
+        if (tabId && tabId !== 'live') setView('live');
+    }, [tabId]);
 
     React.useEffect(() => {
         setLoadTimeout(false);
@@ -417,8 +425,30 @@ export default function ManageScore({ matchId, tabId }) {
         );
     }
 
-    const responsivePanelClass = (panel) =>
-        `${activeScorePanel === panel ? 'block' : 'hidden'} xl:block min-w-0`;
+    const quota = getBowlerQuota(selectedMatch);
+    const lastOverBowlerId = getLastOverBowlerId(curInn);
+    const nextBowlerRequired = isNextBowlerRequired(curInn);
+    const bowlerPool = [...bowlingXI, ...addedBowlers].reduce((list, player) => {
+        const id = String(player?._id || player || '');
+        if (!id || list.some((item) => String(item?._id || item) === id)) return list;
+        list.push(player);
+        return list;
+    }, []);
+
+    const openNextBowler = () => setShowNextBowlerModal(true);
+    const handleNextBowlerSelect = async (playerId) => {
+        if (!playerId) return;
+        await setRole(playerId, 'bowler');
+        setShowNextBowlerModal(false);
+    };
+    const handlePlayerCreated = (player) => {
+        if (!player?._id) return;
+        setAddedBowlers((current) => (
+            current.some((item) => String(item?._id || item) === String(player._id))
+                ? current
+                : [...current, { ...player, playingRole: player.playingRole || player.role || 'Bowler' }]
+        ));
+    };
 
     return (
         <div className="min-h-[60vh] bg-cric-bg text-cric-text transition-colors duration-300 max-w-full overflow-x-hidden">
@@ -428,129 +458,140 @@ export default function ManageScore({ matchId, tabId }) {
                 </div>
             )}
             <ScoringMobileBar
-                activePanel={activeScorePanel}
-                onPanelChange={setActiveScorePanel}
+                view={view}
+                onViewChange={setView}
             />
 
-            <div className="grid grid-cols-1 gap-3 xl:gap-6 xl:grid-cols-[280px_minmax(0,1fr)_460px]">
-                <aside className={responsivePanelClass('sidebar')}>
-                    <div className="xl:sticky xl:top-4 rounded-[2rem] border border-cric-border bg-cric-card p-5 shadow-xl">
-                        <div className="mb-5">
-                            <p className="text-[10px] font-black uppercase tracking-[0.3em] text-cric-accent">Match Control</p>
-                            <h2 className="mt-2 text-2xl font-black font-raj italic uppercase leading-none text-cric-text">
-                                {teamShortName(battingTeamTeam) || 'Batting'} vs {teamShortName(bowlingTeamTeam) || 'Bowling'}
-                            </h2>
-                            <p className="mt-2 text-xs font-semibold text-cric-muted break-words">{selectedMatch.venue || 'Venue TBC'}</p>
-                        </div>
+            <div className="grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,430px)_minmax(0,1fr)] xl:gap-6">
+                <div className={`${view === 'score' ? 'block' : 'hidden'} min-w-0 space-y-3 xl:block`}>
+                    <ScoringScoreHeader
+                        curInn={curInn}
+                        battingXI={battingXI}
+                        bowlingXI={bowlerPool}
+                        strikerId={strikerId}
+                        nonStrikerId={nonStrikerId}
+                        bowlerId={bowlerId}
+                        strikerStats={strikerStats}
+                        nonStrikerStats={nonStrikerStats}
+                        activeBowlerStats={activeBowlerStats}
+                        isInnings2={isInnings2}
+                        target={target}
+                        totalOvers={selectedMatch.totalOvers}
+                        nextBowlerRequired={nextBowlerRequired}
+                        onOpenBowler={openNextBowler}
+                    />
 
-                        <div className="grid grid-cols-2 gap-3 text-center">
-                            <div className="rounded-xl bg-cric-bg p-3 ring-1 ring-cric-border">
-                                <p className="text-[9px] font-black uppercase tracking-widest text-cric-muted">Score</p>
-                                <p className="mt-1 text-xl font-black text-cric-text">{curInn?.runs}/{curInn?.wickets}</p>
-                            </div>
-                            <div className="rounded-xl bg-cric-bg p-3 ring-1 ring-cric-border">
-                                <p className="text-[9px] font-black uppercase tracking-widest text-cric-muted">Overs</p>
-                                <p className="mt-1 text-xl font-black text-cric-text">{formatOvers(curInn?.balls)}</p>
-                            </div>
-                        </div>
-
-                        <div className="mt-5 space-y-2">
-                            {TABS.map(tab => (
-                                <RouteLink
-                                    key={tab.id}
-                                    to={buildScorePath(selectedMatch._id, tab.id)}
-                                    end={tab.id === 'live'}
-                                    onClick={() => setActiveScorePanel('main')}
-                                    className={() => `flex items-center justify-between rounded-xl px-3 py-3 text-xs font-black uppercase tracking-widest transition-all ${activeTab === tab.id ? 'bg-cric-accent text-white' : 'bg-cric-bg text-cric-muted hover:text-cric-text'}`}
-                                >
-                                    <span>{tab.label}</span>
-                                    <span aria-hidden="true">&gt;</span>
-                                </RouteLink>
-                            ))}
-                        </div>
-                    </div>
-                </aside>
-
-                {/* MAIN CONTENT */}
-                <main className={`${responsivePanelClass('main')} flex flex-col min-w-0`}>
-                <div className="bg-cric-card rounded-2xl lg:rounded-[2.5rem] p-3 sm:p-6 md:p-8 border border-cric-border shadow-xl mb-4 xl:mb-6">
-                    <div className="flex flex-wrap justify-between items-start gap-3 mb-4 sm:mb-6">
-                        <div className="flex items-center gap-3 min-w-0">
-                            <div className="w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse shrink-0"></div>
-                            <span className="text-[10px] font-black tracking-[0.3em] uppercase text-cric-muted">Live Match</span>
-                        </div>
-                        <div className="flex items-center gap-2 shrink-0">
-                            <div className="text-[9px] font-black tracking-widest uppercase text-cric-accent hidden sm:block">ID: {selectedMatch._id.slice(-6)}</div>
-                            <button
-                                onClick={() => setShowSettings(true)}
-                                hidden={!adapters.allowSettings}
-                                className="score-touch-btn p-2 rounded-xl bg-cric-bg hover:bg-cric-border transition-all text-cric-muted hover:text-cric-text border border-cric-border"
-                                title="Match Settings"
-                            >
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                </svg>
-                            </button>
-                        </div>
-                    </div>
-
-                    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-end gap-2 sm:gap-4">
-                        <div className="space-y-1 sm:space-y-2 min-w-0 flex-1">
-                            <h1 className="text-base sm:text-xl md:text-3xl lg:text-4xl font-black font-raj italic tracking-tighter uppercase leading-tight break-words">
-                                {teamShortName(battingTeamTeam)} <span className="text-cric-accent">VS</span> {teamShortName(bowlingTeamTeam)}
-                            </h1>
-                            <div className="text-cric-muted font-medium flex flex-wrap items-center gap-1.5 sm:gap-2 text-[10px] sm:text-xs lg:text-sm">
-                                <span className="break-words max-w-[160px] sm:max-w-none truncate">{selectedMatch.venue}</span>
-                                <span className="px-2 py-0.5 rounded-full bg-cric-bg border border-cric-border text-[9px] sm:text-[10px] font-black uppercase">{selectedMatch.matchType || 'T20'}</span>
-                                {(() => {
-                                    const pp = selectedMatch.powerplayConfig || curInn?.powerplayConfig;
-                                    if (pp?.enabled && curInn) {
-                                        const completedOvers = Math.floor((curInn.balls || 0) / 6);
-                                        const ppActive = completedOvers < (pp.overs || 0);
-                                        return ppActive ? (
-                                            <span className="px-2 py-0.5 rounded-full bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 text-[10px] font-black uppercase tracking-wider flex items-center gap-1">
-                                                <span className="w-1.5 h-1.5 rounded-full bg-orange-500 animate-pulse" />
-                                                Powerplay {completedOvers + 1}/{pp.overs}
-                                            </span>
-                                        ) : (
-                                            <span className="px-2 py-0.5 rounded-full bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 text-[10px] font-black uppercase tracking-wider">
-                                                PP done
-                                            </span>
-                                        );
-                                    }
-                                    return null;
-                                })()}
-                            </div>
-                            {isInnings2 && firstInn && (
-                                <div className="mt-2 flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-4">
-                                    <div className="bg-slate-100 dark:bg-slate-800 rounded-lg px-3 py-1.5">
-                                        <span className="text-xs font-bold text-slate-500">1st Innings:</span>
-                                        <span className="text-sm font-black text-[#031d44] dark:text-white ml-2">
-                                            {teamShortName(selectedMatch.teams?.find(t => String(t._id) === String(firstInn.team?._id || firstInn.team)))} {firstInn.runs}/{firstInn.wickets} ({formatOvers(firstInn.balls)})
-                                        </span>
-                                    </div>
-                                    <div className="bg-[#ff6b35]/10 rounded-lg px-3 py-1.5">
-                                        <span className="text-xs font-bold text-[#ff6b35]">Target:</span>
-                                        <span className="text-sm font-black text-[#ff6b35] ml-2">{target}</span>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                        <div className="text-left sm:text-right shrink-0">
-                            <div className="text-3xl sm:text-4xl md:text-5xl font-black font-raj italic text-cric-text leading-none tabular-nums">
-                                {curInn?.runs}/{curInn?.wickets}
-                            </div>
-                            <div className="text-sm md:text-lg font-bold text-cric-muted mt-1">OVERS {formatOvers(curInn?.balls)}</div>
-                            {isInnings2 && target > 0 && (
-                                <div className="text-sm font-bold text-[#ff6b35] mt-1">
-                                    Need {target - (curInn?.runs || 0)} runs from {selectedMatch.totalOvers * 6 - (curInn?.balls || 0)} balls
-                                </div>
-                            )}
-                        </div>
-                    </div>
+                    <RightSidebarControls
+                        setShowSelectionModal={setShowSelectionModal}
+                        battingXI={battingXI}
+                        bowlingXI={bowlerPool}
+                        strikerId={strikerId}
+                        nonStrikerId={nonStrikerId}
+                        bowlerId={bowlerId}
+                        selectedRuns={selectedRuns}
+                        setSelectedRuns={setSelectedRuns}
+                        handleRevert={handleRevert}
+                        reverting={reverting}
+                        selectedExtra={selectedExtra}
+                        setSelectedExtra={setSelectedExtra}
+                        selectedWicket={selectedWicket}
+                        submitBall={submitBall}
+                        onSelectBowler={openNextBowler}
+                        activeGroundZone={activeGroundZone}
+                        handleGroundClick={handleGroundClick}
+                        pitchMapBalls={pitchMapBalls}
+                        pitchMapCurrentOver={curInn?.overs || 0}
+                        pitchMapLine={pitchMapLine}
+                        setPitchMapLine={setPitchMapLine}
+                        pitchMapLength={pitchMapLength}
+                        setPitchMapLength={setPitchMapLength}
+                        pitchMapShot={pitchMapShot}
+                        setPitchMapShot={setPitchMapShot}
+                        pitchMapClickPos={pitchMapClickPos}
+                        setPitchMapClickPos={setPitchMapClickPos}
+                        pitchMapViewMode={pitchMapViewMode}
+                        setPitchMapViewMode={setPitchMapViewMode}
+                        ballMovement={ballMovement}
+                        setBallMovement={setBallMovement}
+                        useAICommentary={useAICommentary}
+                        setUseAICommentary={setUseAICommentary}
+                        manualCommentary={manualCommentary}
+                        setManualCommentary={setManualCommentary}
+                        fieldedById={fieldedById}
+                        setFieldedById={setFieldedById}
+                        fieldedByPosition={fieldedByPosition}
+                        setFieldedByPosition={setFieldedByPosition}
+                    />
                 </div>
 
+                <div className={`${view === 'score' ? 'hidden' : 'block'} min-w-0 space-y-3 xl:block`}>
+                    {view === 'menu' ? (
+                        <div className="space-y-3">
+                            <div className="rounded-2xl border border-cric-border bg-cric-card p-4 shadow-sm">
+                                <p className="text-[10px] font-black uppercase tracking-[0.3em] text-cric-accent">Match menu</p>
+                                <h2 className="mt-1 text-xl font-black uppercase leading-tight text-cric-text">
+                                    {teamShortName(battingTeamTeam) || 'Batting'} vs {teamShortName(bowlingTeamTeam) || 'Bowling'}
+                                </h2>
+                                <p className="mt-1 text-xs font-semibold text-cric-muted break-words">
+                                    {selectedMatch.venue || 'Venue TBC'} · {formatOvers(curInn?.balls)} overs · {curInn?.runs || 0}/{curInn?.wickets || 0}
+                                </p>
+                                <button
+                                    type="button"
+                                    onClick={() => setView('score')}
+                                    className="score-touch-btn mt-3 w-full rounded-xl bg-cric-accent px-3 py-3 text-xs font-black uppercase tracking-widest text-white"
+                                >
+                                    Back to scoring controls
+                                </button>
+                            </div>
+
+                            <div className="rounded-2xl border border-cric-border bg-cric-card p-3 shadow-sm">
+                                <h3 className="mb-2 px-1 text-[10px] font-black uppercase tracking-[0.3em] text-cric-muted">Sections</h3>
+                                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                                    {TABS.map(tab => (
+                                        <RouteLink
+                                            key={tab.id}
+                                            to={buildScorePath(selectedMatch._id, tab.id)}
+                                            end={tab.id === 'live'}
+                                            onClick={() => setView('live')}
+                                            className={() => `score-touch-btn flex items-center justify-between rounded-xl border px-3 py-3 text-xs font-black uppercase tracking-widest transition-all ${activeTab === tab.id ? 'border-cric-accent bg-cric-accent text-white' : 'border-cric-border bg-cric-bg text-cric-muted hover:text-cric-text'}`}
+                                        >
+                                            <span>{tab.label}</span>
+                                            <span aria-hidden="true">&gt;</span>
+                                        </RouteLink>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div className="rounded-2xl border border-cric-border bg-cric-card p-3 shadow-sm">
+                                <h3 className="mb-2 px-1 text-[10px] font-black uppercase tracking-[0.3em] text-cric-muted">Match actions</h3>
+                                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                                    {adapters.allowSettings && (
+                                        <button type="button" onClick={() => setShowSettings(true)} className="score-touch-btn rounded-xl border border-cric-border bg-cric-bg px-3 py-3 text-xs font-black uppercase tracking-widest text-cric-text hover:border-cric-accent">
+                                            Match settings
+                                        </button>
+                                    )}
+                                    <button type="button" onClick={() => navigate(adapters.buildScoreListPath())} className="score-touch-btn rounded-xl border border-cric-border bg-cric-bg px-3 py-3 text-xs font-black uppercase tracking-widest text-cric-text hover:border-cric-accent">
+                                        Match list
+                                    </button>
+                                    {curInn?.target > 0 && (
+                                        <button type="button" onClick={handleStartNext} className="score-touch-btn rounded-xl border border-green-500/30 bg-green-500/10 px-3 py-3 text-xs font-black uppercase tracking-widest text-green-600 hover:bg-green-500 hover:text-white">
+                                            Start next innings
+                                        </button>
+                                    )}
+                                    <button type="button" onClick={handleEndInnings} className="score-touch-btn rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-3 text-xs font-black uppercase tracking-widest text-red-500 hover:bg-red-500 hover:text-white">
+                                        End innings
+                                    </button>
+                                    <button type="button" onClick={handleResetInnings} className="score-touch-btn rounded-xl border border-cric-border bg-cric-bg px-3 py-3 text-xs font-black uppercase tracking-widest text-cric-muted hover:border-cric-accent">
+                                        Reset innings
+                                    </button>
+                                    <button type="button" onClick={handleResetMatch} className="score-touch-btn rounded-xl border border-red-500/30 bg-red-600 px-3 py-3 text-xs font-black uppercase tracking-widest text-white hover:bg-red-700">
+                                        Reset match
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    ) : (
+                        <>
                 {/* Tab Navigation */}
                 <div className="flex bg-cric-card rounded-full p-1 border border-cric-border mb-6 overflow-x-auto no-scrollbar">
                     {TABS.map(tab => (
@@ -558,6 +599,7 @@ export default function ManageScore({ matchId, tabId }) {
                             key={tab.id}
                             to={buildScorePath(selectedMatch._id, tab.id)}
                             end={tab.id === 'live'}
+                            onClick={() => setView('live')}
                             className={() => `flex-1 flex items-center justify-center gap-1 sm:gap-2 py-2.5 sm:py-4 px-2 sm:px-6 rounded-full transition-all whitespace-nowrap ${activeTab === tab.id ? 'bg-cric-accent text-white shadow-lg shadow-cric-accent/20' : 'text-cric-muted hover:text-cric-text hover:bg-black/5 dark:hover:bg-white/5'}`}
                         >
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -587,6 +629,7 @@ export default function ManageScore({ matchId, tabId }) {
                             onRetire={handleRetire}
                             handleEditBall={handleEditBall}
                             setActiveTab={setActiveTab}
+                            basicCommentary={!useAICommentary}
                         />
                     )}
 
@@ -609,6 +652,7 @@ export default function ManageScore({ matchId, tabId }) {
                             oversHistory={curInn?.oversHistory || []}
                             handleEditBall={handleEditBall}
                             setActiveTab={setActiveTab}
+                            useAICommentary={useAICommentary}
                         />
                     )}
 
@@ -758,56 +802,9 @@ export default function ManageScore({ matchId, tabId }) {
                         </div>
                     )}
                 </div>
-                </main>
-
-                <section className={responsivePanelClass('management')}>
-            <RightSidebarControls
-                curInn={curInn}
-                handleResetInnings={handleResetInnings}
-                handleResetMatch={handleResetMatch}
-                handleEndInnings={handleEndInnings}
-                handleStartNext={handleStartNext}
-                setShowSelectionModal={setShowSelectionModal}
-                battingXI={battingXI}
-                bowlingXI={bowlingXI}
-                strikerId={strikerId}
-                nonStrikerId={nonStrikerId}
-                bowlerId={bowlerId}
-                selectedRuns={selectedRuns}
-                setSelectedRuns={setSelectedRuns}
-                handleRevert={handleRevert}
-                selectedExtra={selectedExtra}
-                setSelectedExtra={setSelectedExtra}
-                selectedWicket={selectedWicket}
-                submitBall={submitBall}
-                activeGroundZone={activeGroundZone}
-                handleGroundClick={handleGroundClick}
-                pitchMapBalls={pitchMapBalls}
-                pitchMapCurrentOver={curInn?.overs || 0}
-                pitchMapLine={pitchMapLine}
-                setPitchMapLine={setPitchMapLine}
-                pitchMapLength={pitchMapLength}
-                setPitchMapLength={setPitchMapLength}
-                pitchMapShot={pitchMapShot}
-                setPitchMapShot={setPitchMapShot}
-                pitchMapClickPos={pitchMapClickPos}
-                setPitchMapClickPos={setPitchMapClickPos}
-                pitchMapViewMode={pitchMapViewMode}
-                setPitchMapViewMode={setPitchMapViewMode}
-                ballMovement={ballMovement}
-                setBallMovement={setBallMovement}
-                useAICommentary={useAICommentary}
-                setUseAICommentary={setUseAICommentary}
-                manualCommentary={manualCommentary}
-                setManualCommentary={setManualCommentary}
-                fieldedById={fieldedById}
-                setFieldedById={setFieldedById}
-                fieldedByPosition={fieldedByPosition}
-                setFieldedByPosition={setFieldedByPosition}
-                formattedHistory={formattedHistory}
-                matchId={matchId}
-            />
-                </section>
+                        </>
+                    )}
+                </div>
             </div>
 
             {/* MODALS */}
@@ -840,6 +837,22 @@ export default function ManageScore({ matchId, tabId }) {
                         : (selectedMatch.teams[1]?._id || selectedMatch.teams[1])
                 )}
                 onStart={handleStartSuperOver}
+            />
+
+            <NextBowlerModal
+                open={showNextBowlerModal}
+                required={nextBowlerRequired}
+                curInn={curInn}
+                bowlers={bowlerPool}
+                quota={quota}
+                totalOvers={selectedMatch.totalOvers}
+                lastOverBowlerId={lastOverBowlerId}
+                onSelect={handleNextBowlerSelect}
+                onClose={() => setShowNextBowlerModal(false)}
+                onPlayerCreated={handlePlayerCreated}
+                createTeamPlayer={adapters.createTeamPlayer}
+                teamId={bowlingTeamTeam?._id}
+                showToast={showToast}
             />
 
             {/* Selection Modals */}
@@ -893,70 +906,6 @@ export default function ManageScore({ matchId, tabId }) {
                                 </div>
                             )}
 
-                            {showSelectionModal === 'bowler' && (
-                                <div className="space-y-8">
-                                    {(() => {
-                                        const mainBowlers = bowlingXI.filter(p =>
-                                            ['Bowler', 'All-Rounder', 'Bowling-All-Rounder'].includes(p.playingRole)
-                                        );
-                                        const partTimers = bowlingXI.filter(p =>
-                                            !['Bowler', 'All-Rounder', 'Bowling-All-Rounder'].includes(p.playingRole)
-                                        );
-                                        const quota = getBowlerQuota(selectedMatch);
-                                        const bowlerStats = (p) => curInn?.bowling?.find(
-                                            b => String(b.player?._id || b.player) === String(p._id)
-                                        );
-                                        const bowlerButton = (p, roleLabel) => {
-                                            const reached = hasReachedBowlerQuota(bowlerStats(p), quota);
-                                            return (
-                                                <button
-                                                    key={p._id}
-                                                    onClick={() => setRole(p._id, 'bowler')}
-                                                    disabled={reached}
-                                                    aria-disabled={reached}
-                                                    title={reached ? `Quota reached (${quota} overs)` : undefined}
-                                                    className={`score-touch-btn p-4 sm:p-6 rounded-2xl sm:rounded-[2rem] border text-left min-w-0 transition-all ${reached
-                                                        ? 'bg-black/5 dark:bg-white/5 border-cric-border opacity-50 cursor-not-allowed'
-                                                        : 'bg-black/5 dark:bg-white/5 border-cric-border hover:border-blue-500 hover:bg-blue-500/5'}`}
-                                                >
-                                                    <div className="text-sm sm:text-lg font-black text-cric-text">{p.name}</div>
-                                                    <div className="text-[9px] font-black text-slate-500 uppercase tracking-widest mt-2 select-none">
-                                                        {reached ? `Quota reached (${quota} overs)` : roleLabel}
-                                                    </div>
-                                                </button>
-                                            );
-                                        };
-
-                                        return (
-                                            <>
-                                                {mainBowlers.length > 0 && (
-                                                    <div>
-                                                        <h4 className="text-[10px] font-black uppercase text-slate-500 tracking-widest mb-4 pl-2">Main Bowlers</h4>
-                                                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4">
-                                                            {mainBowlers.map(p => bowlerButton(
-                                                                p,
-                                                                p.bowlingStyle && p.bowlingStyle !== 'Not Applicable' ? p.bowlingStyle : 'BOWLER'
-                                                            ))}
-                                                        </div>
-                                                    </div>
-                                                )}
-
-                                                {partTimers.length > 0 && (
-                                                    <div className="pt-4 border-t border-cric-border/30">
-                                                        <h4 className="text-[10px] font-black uppercase text-slate-500 tracking-widest mb-4 pl-2">Part-timer Bowlers</h4>
-                                                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4">
-                                                            {partTimers.map(p => bowlerButton(
-                                                                p,
-                                                                p.bowlingStyle && p.bowlingStyle !== 'Not Applicable' ? p.bowlingStyle : 'PART-TIMER'
-                                                            ))}
-                                                        </div>
-                                                    </div>
-                                                )}
-                                            </>
-                                        );
-                                    })()}
-                                </div>
-                            )}
                         </div>
                     </div>
                 </div>

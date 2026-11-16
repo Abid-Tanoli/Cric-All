@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from "react";
 
-export default React.memo(function ScoringMobileBar({
-  activePanel,
-  onPanelChange,
-  onMidSession,
-  onToggleMenu,
-}) {
+const VIEWS = [
+  { id: "score", label: "Score" },
+  { id: "live", label: "Live" },
+  { id: "menu", label: "Menu" },
+];
 
+export default React.memo(function ScoringMobileBar({ view = "score", onViewChange }) {
   const [isDark, setIsDark] = useState(() => {
+    if (typeof window === "undefined") return false;
     return localStorage.getItem('theme') === 'dark' ||
       (!localStorage.getItem('theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
   });
@@ -22,39 +23,18 @@ export default React.memo(function ScoringMobileBar({
     }
   }, [isDark]);
 
-  const panels = [
-    { id: "management", label: "Score" },
-    { id: "main", label: "Live" },
-    { id: "sidebar", label: "Menu" },
-  ];
-
   return (
-    <div className="xl:hidden sticky top-0 z-50 mb-3 border-b border-cric-border bg-cric-card shadow-md">
-      <div className="flex items-center gap-2 px-3 py-2">
-        <button
-          type="button"
-          onClick={onToggleMenu}
-          className="score-touch-btn flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-cric-border bg-cric-bg text-cric-text text-2xl font-black leading-none"
-          aria-label="Open menu"
-          title="Menu"
-        >
-          =
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            onPanelChange(activePanel === "management" ? "main" : "management");
-            onMidSession?.();
-          }}
-          className="score-touch-btn flex-1 rounded-xl bg-cric-accent px-3 py-2.5 text-center text-[10px] font-black uppercase tracking-widest text-white shadow-md"
-        >
-          {activePanel === "management" ? "Live Feed" : "Score Now"}
-        </button>
+    <div className="sticky top-0 z-50 mb-3 border-b border-cric-border bg-cric-card shadow-md">
+      <div className="flex items-center justify-between gap-2 px-2 pt-2">
+        <p className="px-1 text-[9px] font-black uppercase tracking-[0.35em] text-cric-muted">
+          Scoring
+        </p>
         <button
           type="button"
           onClick={() => setIsDark(!isDark)}
           className="score-touch-btn flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-cric-border bg-cric-bg text-cric-muted hover:text-cric-accent"
           title={isDark ? "Switch to Light Mode" : "Switch to Dark Mode"}
+          aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
         >
           {isDark ? (
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -67,24 +47,20 @@ export default React.memo(function ScoringMobileBar({
           )}
         </button>
       </div>
-      <div className="px-3 pb-2 text-center">
-        <p className="text-[10px] font-black uppercase tracking-[0.35em] text-cric-muted">
-          {panels.find(p => p.id === activePanel)?.label || 'Scoring'} Panel
-        </p>
-      </div>
       <div className="grid grid-cols-3 gap-1 border-t border-cric-border p-1.5">
-        {panels.map((panel) => (
+        {VIEWS.map((item) => (
           <button
-            key={panel.id}
+            key={item.id}
             type="button"
-            onClick={() => onPanelChange(panel.id)}
+            onClick={() => onViewChange?.(item.id)}
+            aria-pressed={view === item.id}
             className={`score-touch-btn rounded-lg py-2.5 text-[10px] font-black uppercase tracking-wider transition-all ${
-              activePanel === panel.id
+              view === item.id
                 ? "bg-cric-accent text-white shadow-sm"
                 : "text-cric-muted hover:bg-cric-bg hover:text-cric-text"
             }`}
           >
-            {panel.label}
+            {item.label}
           </button>
         ))}
       </div>

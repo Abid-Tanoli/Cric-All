@@ -5,7 +5,7 @@ import { ScoringAdaptersProvider } from "../../../../Shared/scoring/ScoringAdapt
 import SharedManageScore from "../../../../Shared/scoring/ManageScore";
 import ScoringConfirmModal from "../../../../Shared/scoring/components/ScoringConfirmModal";
 import { TAB_ROUTE_BY_ID } from "../../../../Shared/scoring/components/ScoreManagement/constants";
-import { getMyOrgAccess, getMatchDetail, listOrgMatches } from "../../services/organizationApi";
+import { addOrgTeamPlayer, getMyOrgAccess, getMatchDetail, listOrgMatches } from "../../services/organizationApi";
 import { api } from "../../services/api";
 import IssueReportButton from "../../components/IssueReportButton";
 import { initSocket, joinMatchRoom, leaveMatchRoom } from "../../services/socket";
@@ -125,6 +125,10 @@ export default function OrgMatchScoring() {
     buildPublicMatchPath: (id) => `/match/${id}`,
     fetchMatches: async () => orgMatches,
     isMatchAllowed: matchAllowed,
+    createTeamPlayer: async ({ teamId, name, role }) => {
+      if (!teamId) throw new Error("No bowling team selected.");
+      return addOrgTeamPlayer(orgId, teamId, { name, ...(role ? { role } : {}) });
+    },
     allowSettings: false,
     allowDeleteMatch: false,
     allowFormatEdit: false,

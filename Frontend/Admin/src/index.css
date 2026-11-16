@@ -2,6 +2,8 @@
 @import "tailwindcss";
 @import "../../Shared/styles/theme.css";
 
+@source "../../Shared";
+
 /* ─── ANIMATIONS ─── */
 @keyframes pulse-red {
   0% { opacity: 1; transform: scale(1); }
