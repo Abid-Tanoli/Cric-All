@@ -45,6 +45,9 @@ services:
         VITE_ADSENSE_SLOT_TEAM: ${VITE_ADSENSE_SLOT_TEAM:-}
         VITE_ADSENSE_SLOT_LIST: ${VITE_ADSENSE_SLOT_LIST:-}
         VITE_ADSENSE_TEST: ${VITE_ADSENSE_TEST:-false}
+        # Public contact address for the User /contact page. Empty shows the
+        # in-app "Report an issue" fallback instead of a broken mailto link.
+        VITE_CONTACT_EMAIL: ${VITE_CONTACT_EMAIL:-}
     container_name: cricall-user-frontend
     restart: unless-stopped
     ports:

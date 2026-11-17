@@ -7,6 +7,13 @@
     <!-- Static AdSense site-verification tag: no script is loaded by this meta tag. -->
     <meta name="google-adsense-account" content="%VITE_ADSENSE_CLIENT%" />
     <meta name="theme-color" content="#0a0e14" />
+    <link rel="canonical" href="https://cricall.online/" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="CricAll" />
+    <meta property="og:title" content="CricAll | Live Cricket Scores & Local Tournaments" />
+    <meta property="og:description" content="Follow live cricket scores, scorecards and local club tournaments across Pakistan on CricAll." />
+    <meta property="og:url" content="https://cricall.online/" />
+    <meta property="og:image" content="https://cricall.online/icons/cricall-logo.svg" />
     <link rel="icon" href="/favicon.ico" sizes="32x32" />
     <link rel="icon" type="image/svg+xml" href="/icons/cricall-logo.svg" />
     <link rel="apple-touch-icon" href="/icons/apple-touch-icon-180.png" />
@@ -15,9 +22,35 @@
     <meta name="apple-mobile-web-app-title" content="CricAll" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>CricAll</title>
+    <style>
+      /* Present from the first paint, so the crawler fallback never shifts layout. */
+      #seo-fallback {
+        position: absolute !important;
+        width: 1px !important;
+        height: 1px !important;
+        padding: 0 !important;
+        margin: -1px !important;
+        overflow: hidden !important;
+        clip: rect(0, 0, 0, 0) !important;
+        white-space: nowrap !important;
+        border: 0 !important;
+      }
+    </style>
   </head>
   <body>
     <div id="root"></div>
+    <noscript>
+      <div style="max-width:48rem;margin:0 auto;padding:2rem 1rem;background:#0a0e14;color:#e8edf5;font-family:system-ui,sans-serif;line-height:1.6">
+        <h1 style="font-size:1.5rem">CricAll - Live cricket scores and local tournaments</h1>
+        <p>CricAll is a live scoring and match-tracking platform for local cricket clubs and tournaments in Pakistan. Clubs and organizers record their own matches, tournaments and scores; visitors can read public scorecards and tournament pages. CricAll is for clubs, players, scorers and fans. Use the links below to learn more or contact us.</p>
+        <p><a href="/about" style="color:#ff7a2f">About</a> · <a href="/contact" style="color:#ff7a2f">Contact</a> · <a href="/privacy" style="color:#ff7a2f">Privacy</a> · <a href="/terms" style="color:#ff7a2f">Terms</a> · <a href="/teams" style="color:#ff7a2f">Teams</a> · <a href="/tournaments" style="color:#ff7a2f">Tournaments</a> · <a href="/live" style="color:#ff7a2f">Live scores</a></p>
+      </div>
+    </noscript>
+    <div id="seo-fallback" aria-label="CricAll site links">
+      <h2>CricAll - Live cricket scores and local tournaments</h2>
+      <p>CricAll is a live scoring and match-tracking platform for local cricket clubs and tournaments in Pakistan. Clubs and organizers record their own matches, tournaments and scores; visitors can read public scorecards and tournament pages. CricAll is for clubs, players, scorers and fans. Use the links below to learn more or contact us.</p>
+      <p><a href="/about">About</a> · <a href="/contact">Contact</a> · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a> · <a href="/teams">Teams</a> · <a href="/tournaments">Tournaments</a> · <a href="/live">Live scores</a></p>
+    </div>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

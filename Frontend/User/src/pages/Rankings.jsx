@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../services/api";
+import LoadingWithTimeout from "../components/LoadingWithTimeout";
 
 const SECTIONS = [
   { key: "teams", label: "Team Rankings" },
@@ -221,7 +222,7 @@ export default function Rankings() {
             </div>
 
             {teamLoading ? (
-              <RankingsLoading />
+              <RankingsLoading label="Loading team rankings..." />
             ) : teamItems.length === 0 ? (
               <EmptyState message="No team rankings match these filters." />
             ) : (
@@ -325,7 +326,7 @@ export default function Rankings() {
             </div>
 
             {playerLoading ? (
-              <RankingsLoading />
+              <RankingsLoading label="Loading player rankings..." />
             ) : playerItems.length === 0 ? (
               <EmptyState message="No player rankings match these filters." />
             ) : (
@@ -376,11 +377,10 @@ export default function Rankings() {
   );
 }
 
-function RankingsLoading() {
+function RankingsLoading({ label }) {
   return (
-    <div className="flex flex-col items-center justify-center rounded-2xl border border-cric-border bg-cric-card py-20">
-      <div className="mb-4 h-12 w-12 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
-      <p className="text-xs font-black uppercase tracking-widest text-cric-muted">Loading rankings...</p>
+    <div className="rounded-2xl border border-cric-border bg-cric-card">
+      <LoadingWithTimeout label={label} className="py-12" />
     </div>
   );
 }

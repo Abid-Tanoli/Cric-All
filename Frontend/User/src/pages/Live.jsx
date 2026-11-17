@@ -4,20 +4,25 @@ import { Link } from "react-router-dom";
 import LiveNavbar from "../components/LiveNavbar";
 import { initSocket } from "../services/socket";
 import LiveMatchesSection from "../components/cricapi/LiveMatchesSection";
+import LoadingWithTimeout from "../components/LoadingWithTimeout";
 
 export default function Live() {
   const [matches, setMatches] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState("all"); // all, results, live, upcoming
 
   const loadMatches = useCallback(async () => {
     try {
-      const res = await api.get("/matches");
+      const res = await api.get("/matches", { timeout: 8000 });
       // Handle different response formats
       const data = res.data?.matches || res.data || [];
       setMatches(Array.isArray(data) ? data : []);
+      setError(null);
     } catch (err) {
-      console.error("Failed to load matches", err);
+      console.error("Failed to load matches", err.message);
+      setError("Scores could not be loaded right now. Please try again soon.");
+      setMatches([]);
     } finally {
       setLoading(false);
     }
@@ -95,9 +100,7 @@ export default function Live() {
     return (
       <div className="min-h-screen bg-cric-bg">
         <LiveNavbar />
-        <div className="flex items-center justify-center py-20">
-          <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-cric-accent border-t-transparent"></div>
-        </div>
+        <LoadingWithTimeout label="Loading live scores..." />
       </div>
     );
   }
@@ -130,6 +133,11 @@ export default function Live() {
       {/* Content */}
       <div className="max-w-7xl mx-auto px-4 py-8">
         <LiveMatchesSection />
+        {error && matches.length === 0 && (
+          <p role="status" className="mb-8 rounded-xl bg-cric-card p-4 text-center text-sm font-bold text-cric-muted">
+            {error}
+          </p>
+        )}
 
         {/* YESTERDAY - RESULTS */}
         {(activeTab === 'all' || activeTab === 'results') && yesterdayMatches.filter(m => m.status === 'completed').length > 0 && (

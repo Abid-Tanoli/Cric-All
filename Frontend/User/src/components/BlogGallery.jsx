@@ -4,6 +4,12 @@ import { api } from "../services/api";
 export default function BlogGallery({ category, relatedId }) {
   const [blogs, setBlogs] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [slow, setSlow] = useState(false);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setSlow(true), 8000);
+    return () => window.clearTimeout(timer);
+  }, [category, relatedId]);
 
   useEffect(() => {
     const fetchBlogs = async () => {
@@ -27,19 +33,32 @@ export default function BlogGallery({ category, relatedId }) {
 
   if (loading) {
     return (
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 animate-pulse">
-        {[1, 2, 3].map(i => (
-          <div key={i} className="space-y-4">
-            <div className="aspect-video bg-cric-border rounded-2xl" />
-            <div className="h-4 bg-cric-border rounded w-3/4" />
-            <div className="h-3 bg-cric-border rounded w-1/2" />
-          </div>
-        ))}
+      <div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 animate-pulse">
+          {[1, 2, 3].map(i => (
+            <div key={i} className="space-y-4">
+              <div className="aspect-video bg-cric-border rounded-2xl" />
+              <div className="h-4 bg-cric-border rounded w-3/4" />
+              <div className="h-3 bg-cric-border rounded w-1/2" />
+            </div>
+          ))}
+        </div>
+        {slow && (
+          <p role="status" className="mt-6 text-center text-sm font-semibold text-cric-muted">
+            Stories are taking longer than expected. Please try again soon.
+          </p>
+        )}
       </div>
     );
   }
 
-  if (blogs.length === 0) return null;
+  if (blogs.length === 0) {
+    return (
+      <p role="status" className="text-center text-sm font-bold text-cric-muted">
+        {slow ? "Stories are taking longer than expected. Please try again soon." : "No stories yet."}
+      </p>
+    );
+  }
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
