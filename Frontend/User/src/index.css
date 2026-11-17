@@ -422,3 +422,30 @@ table { min-width: 0; }
   .px-4 { padding-left: 8px; padding-right: 8px; }
   .gap-2 { gap: 4px; }
 }
+
+/* ─── INSTALLED APP (PWA) SAFE AREAS ──────────────────────────────────────────
+   When CricAll runs standalone on a phone the OS draws over the screen edges
+   (notch, home indicator, status bar). These classes keep the sticky header,
+   the mobile drawer, the bottom install banner and the footer inside the safe
+   area without changing the normal browser layout (env() resolves to 0px). */
+.pwa-safe-top {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+.pwa-safe-bottom {
+  padding-bottom: max(12px, env(safe-area-inset-bottom, 0px));
+}
+
+.pwa-safe-footer {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.pwa-drawer {
+  top: calc(73px + env(safe-area-inset-top, 0px));
+  max-height: calc(100dvh - 73px - env(safe-area-inset-top, 0px));
+}
+
+/* The offline alert sits at the very top, above the header. */
+.pwa-offline-alert {
+  top: env(safe-area-inset-top, 0px);
+}

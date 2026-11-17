@@ -12,45 +12,64 @@ export default defineConfig({
     react(),
     tailwindcss(),
     VitePWA({
-      registerType: 'autoUpdate',
-      includeAssets: ['icons/icon-192.png', 'icons/icon-512.png'],
+      // Custom service worker (src/sw.js): navigations are NetworkFirst and
+      // nothing under /api or /socket.io is ever cached, which is what fixes
+      // the "users kept seeing the previous deploy" problem.
+      strategies: 'injectManifest',
+      srcDir: 'src',
+      filename: 'sw.js',
+      // A new deploy installs a waiting worker; the app shows
+      // "New version available. Reload" and activates it on demand.
+      registerType: 'prompt',
+      // Registration lives in src/pwa/registerPwa.js so the UI can react to it
+      // (update toast, update() on focus) instead of the injected script.
+      injectRegister: false,
       manifest: {
+        id: '/',
         name: 'CricAll',
         short_name: 'CricAll',
-        description: 'CricAll — live cricket scores, series and rankings',
-        theme_color: '#0f172a',
-        background_color: '#0f172a',
-        display: 'standalone',
+        description:
+          'CricAll — live cricket scores, scorecards, series, teams and rankings.',
+        lang: 'en',
+        dir: 'auto',
         start_url: '/',
+        scope: '/',
+        display: 'standalone',
+        orientation: 'any',
+        // Dark navy with the orange CricAll accent (Frontend/Shared/styles/theme.css).
+        theme_color: '#0a0e14',
+        background_color: '#0a0e14',
+        categories: ['sports', 'news'],
         icons: [
-          { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' },
-          { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png' },
-        ],
-      },
-      workbox: {
-        navigateFallback: '/index.html',
-        runtimeCaching: [
+          { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+          { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
           {
-            // Cache GET API responses with a NetworkFirst strategy so the last
-            // successful response is shown when offline. Auth/login endpoints
-            // are excluded — login data must never be written to the cache.
-            urlPattern: ({ url, request }) =>
-              url.pathname.startsWith('/api') &&
-              !url.pathname.startsWith('/api/auth') &&
-              !url.pathname.endsWith('/login') &&
-              request.method === 'GET',
-            handler: 'NetworkFirst',
-            method: 'GET',
-            options: {
-              cacheName: 'cricall-api-get',
-              networkTimeoutSeconds: 10,
-              expiration: {
-                maxEntries: 200,
-                maxAgeSeconds: 60 * 60 * 24 * 7,
-              },
-            },
+            src: '/icons/icon-maskable-512.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'maskable',
           },
         ],
+        shortcuts: [
+          {
+            name: 'Live Scores',
+            short_name: 'Live',
+            url: '/live',
+            icons: [{ src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' }],
+          },
+          {
+            name: 'Matches',
+            short_name: 'Matches',
+            url: '/',
+            icons: [{ src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' }],
+          },
+        ],
+      },
+      injectManifest: {
+        // index.html is deliberately NOT precached: the page shell always comes
+        // from the network first, so a deploy is visible immediately.
+        globPatterns: ['**/*.{js,css,svg,png,ico,webmanifest}', 'offline.html'],
+        globIgnores: ['**/*.map'],
       },
     }),
   ],

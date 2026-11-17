@@ -1,6 +1,7 @@
 import React from "react";
 import { Link } from "react-router-dom";
 import { useCricketProviderStatus, isProviderConfigured } from "../hooks/useCricketProviderStatus";
+import InstallAppButton from "./InstallAppButton";
 
 export default function Footer() {
   const year = new Date().getFullYear();
@@ -8,7 +9,7 @@ export default function Footer() {
   const showInternational = isProviderConfigured(useCricketProviderStatus());
 
   return (
-    <footer className="border-t border-cric-border bg-cric-card mt-12">
+    <footer className="pwa-safe-footer border-t border-cric-border bg-cric-card mt-12">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-6 sm:gap-8">
           <div className="col-span-2 sm:col-span-1">
@@ -45,6 +46,7 @@ export default function Footer() {
               <li><Link to="/players" className="text-xs sm:text-sm text-cric-text hover:text-cric-accent transition-colors">Players</Link></li>
               <li><Link to="/rankings" className="text-xs sm:text-sm text-cric-text hover:text-cric-accent transition-colors">Rankings</Link></li>
               <li><Link to="/highlights" className="text-xs sm:text-sm text-cric-text hover:text-cric-accent transition-colors">Highlights</Link></li>
+              <li><InstallAppButton variant="footer" /></li>
             </ul>
           </div>
         </div>
