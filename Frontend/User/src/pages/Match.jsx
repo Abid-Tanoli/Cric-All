@@ -7,6 +7,7 @@ import ThemeToggle from "../components/ThemeToggle";
 import ShareButton from "../components/ShareButton";
 import PDFReport from "../components/PDFReport";
 import { initSocket, joinMatchRoom, leaveMatchRoom } from "../services/socket";
+import AdSlot from "../components/ads/AdSlot";
 
 const Match = () => {
   const { matchId } = useParams();
@@ -309,6 +310,8 @@ const Match = () => {
       </div>
       <ToastNotifications events={events} />
       <EnhancedMatchTabs matchId={matchId} match={match} />
+      {/* Below the scorecard summary, never above the score. */}
+      <AdSlot />
     </div>
   );
 };

@@ -36,6 +36,15 @@ services:
         # Unset/empty falls through to the frontend default (verification
         # requirement ON). Set the literal "false" to hide the banner.
         VITE_REQUIRE_VERIFIED_ACCOUNT: ${VITE_REQUIRE_VERIFIED_ACCOUNT:-}
+        # AdSense: defaults keep ads OFF and emit no ad script. Set the client id
+        # for the static verification meta tag; slots/test only matter when ON.
+        VITE_ADS_ENABLED: ${VITE_ADS_ENABLED:-false}
+        VITE_ADSENSE_CLIENT: ${VITE_ADSENSE_CLIENT:-}
+        VITE_ADSENSE_SLOT_HOME: ${VITE_ADSENSE_SLOT_HOME:-}
+        VITE_ADSENSE_SLOT_MATCH: ${VITE_ADSENSE_SLOT_MATCH:-}
+        VITE_ADSENSE_SLOT_TEAM: ${VITE_ADSENSE_SLOT_TEAM:-}
+        VITE_ADSENSE_SLOT_LIST: ${VITE_ADSENSE_SLOT_LIST:-}
+        VITE_ADSENSE_TEST: ${VITE_ADSENSE_TEST:-false}
     container_name: cricall-user-frontend
     restart: unless-stopped
     ports:

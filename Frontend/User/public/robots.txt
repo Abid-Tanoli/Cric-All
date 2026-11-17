@@ -1,0 +1,6 @@
+# Allow Google's AdSense crawler and regular search crawlers.
+User-agent: Mediapartners-Google
+Allow: /
+
+User-agent: *
+Allow: /

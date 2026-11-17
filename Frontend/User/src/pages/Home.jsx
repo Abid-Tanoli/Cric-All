@@ -12,6 +12,7 @@ import CreatePlayerProfile from "../components/CreatePlayerProfile";
 import { featureFlags } from "../config/features";
 import { useCricketProviderStatus, isProviderConfigured } from "../hooks/useCricketProviderStatus";
 import { teamShortName } from "../utils/teamDisplay";
+import AdSlot from "../components/ads/AdSlot";
 
 const statusBadge = (match) => {
   const s = match.status;
@@ -273,6 +274,9 @@ export function Home() {
                   </div>
                 </section>
               )}
+
+              {/* AdSense unit between content sections (never above the fold). */}
+              <AdSlot />
 
               {/* Today's / Upcoming Matches */}
               {upcomingGroups.length > 0 && (
