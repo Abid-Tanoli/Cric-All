@@ -4,3 +4,5 @@ Allow: /
 
 User-agent: *
 Allow: /
+
+Sitemap: https://cricall.online/sitemap.xml

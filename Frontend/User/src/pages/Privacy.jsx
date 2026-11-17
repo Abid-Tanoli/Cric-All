@@ -1,4 +1,5 @@
 import React from "react";
+import { Link } from "react-router-dom";
 
 /** Simple-English privacy/terms page required by Google AdSense. */
 export default function Privacy() {
@@ -62,14 +63,11 @@ export default function Privacy() {
           <section id="contact">
             <h2 className="mb-2 text-lg font-black">Contact</h2>
             <p className="text-cric-muted">
-              Questions about this page or your data? Email us at{" "}
-              <a
-                className="font-bold text-cric-accent underline"
-                href="mailto:support@cricall.online"
-              >
-                support@cricall.online
-              </a>
-              .
+              Questions about this page or your data? Please use our{" "}
+              <Link className="font-bold text-cric-accent underline" to="/contact">
+                Contact page
+              </Link>{" "}
+              for the current email address and contact topics.
             </p>
           </section>
         </div>

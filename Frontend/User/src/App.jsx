@@ -14,6 +14,7 @@ import SocketStatusIndicator from "../../Shared/components/SocketStatusIndicator
 import { getSocket } from "./services/socket";
 import { listMyOrganizations } from "./services/organizationApi";
 import { getStoredUser, logout as clearStoredUser } from "./pages/auth/auth";
+import usePageMeta, { metaKeyForPath } from "./hooks/usePageMeta";
 
 const Home = lazy(() => import("./pages/Home").then(m => ({ default: m.Home })));
 const Match = lazy(() => import("./pages/Match"));
@@ -47,6 +48,10 @@ const VerifyEmail = lazy(() => import("./pages/auth/VerifyEmail"));
 const VerifyPhone = lazy(() => import("./pages/auth/VerifyPhone"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 const Privacy = lazy(() => import("./pages/Privacy"));
+const About = lazy(() => import("./pages/About"));
+const Contact = lazy(() => import("./pages/Contact"));
+const Terms = lazy(() => import("./pages/Terms"));
+const Blogs = lazy(() => import("./pages/Blogs"));
 const PlayerComparison = lazy(() => import("./pages/PlayerComparison"));
 const HandlerDashboard = lazy(() => import("./pages/HandlerDashboard"));
 const MyOrganization = lazy(() => import("./pages/MyOrganization"));
@@ -132,11 +137,18 @@ function RouteAds() {
   return <AdSlot slot={placement.slot} />;
 }
 
+function RouteMeta() {
+  const { pathname } = useLocation();
+  usePageMeta(metaKeyForPath(pathname));
+  return null;
+}
+
 function App() {
   return (
     <ThemeProvider>
       <CommunityConfigProvider>
       <Router>
+        <RouteMeta />
         <div className="flex flex-col min-h-screen">
         <OfflineBanner />
         <SocketStatusIndicator getSocket={getSocket} />        <AppHeader />
@@ -155,6 +167,7 @@ function App() {
           <Route path="/reset-password" element={<ErrorBoundary><NotFound /></ErrorBoundary>} />
           <Route path="/live" element={<ErrorBoundary><Live /></ErrorBoundary>} />
           <Route path="/series" element={<ErrorBoundary><SeriesList /></ErrorBoundary>} />
+          <Route path="/tournaments" element={<ErrorBoundary><SeriesList /></ErrorBoundary>} />
           <Route path="/series/:seriesId" element={<ErrorBoundary><TournamentHub /></ErrorBoundary>} />
           <Route path="/series/:seriesId/articles/:slug" element={<ErrorBoundary><TournamentHub /></ErrorBoundary>} />
           <Route path="/series/:seriesId/:tab" element={<ErrorBoundary><TournamentHub /></ErrorBoundary>} />
@@ -175,6 +188,7 @@ function App() {
           <Route path="/teams/:id" element={<ErrorBoundary><TeamProfile /></ErrorBoundary>} />
           <Route path="/rankings" element={<ErrorBoundary><Rankings /></ErrorBoundary>} />
           <Route path="/news" element={<ErrorBoundary><News /></ErrorBoundary>} />
+          <Route path="/blogs" element={<ErrorBoundary><Blogs /></ErrorBoundary>} />
           <Route path="/videos" element={<ErrorBoundary><Videos /></ErrorBoundary>} />
           <Route path="/intl" element={<ErrorBoundary><International /></ErrorBoundary>} />
           <Route path="/international" element={<ErrorBoundary><International /></ErrorBoundary>} />
@@ -198,6 +212,9 @@ function App() {
           <Route path="/community/new" element={<ErrorBoundary><CommunityCreate /></ErrorBoundary>} />
           <Route path="/community/post/:id" element={<ErrorBoundary><CommunityPost /></ErrorBoundary>} />
           <Route path="/privacy" element={<ErrorBoundary><Privacy /></ErrorBoundary>} />
+          <Route path="/about" element={<ErrorBoundary><About /></ErrorBoundary>} />
+          <Route path="/contact" element={<ErrorBoundary><Contact /></ErrorBoundary>} />
+          <Route path="/terms" element={<ErrorBoundary><Terms /></ErrorBoundary>} />
           <Route path="*" element={<ErrorBoundary><NotFound /></ErrorBoundary>} />
         </Routes>
         </Suspense>

@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../services/api";
+import LoadingWithTimeout from "../components/LoadingWithTimeout";
 
 // Task 3: browse teams by the type of the organization that owns them
 // (club, school, college, academy, league, …). The type lives on
@@ -166,15 +167,14 @@ export default function Teams() {
         </div>
 
         {loading ? (
-          <div className="flex flex-col items-center justify-center py-20">
-            <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-4" />
-            <p className="text-cric-muted font-black uppercase tracking-widest text-xs">Loading Teams...</p>
-          </div>
+          <LoadingWithTimeout label="Loading Teams..." />
         ) : error ? (
           <div className="flex flex-col items-center justify-center py-20">
             <div className="text-5xl mb-4">⚠️</div>
-            <h2 className="text-2xl font-black text-cric-text mb-2">Failed to Load Teams</h2>
-            <p className="text-cric-muted text-sm mb-4">{error}</p>
+            <h2 className="text-2xl font-black text-cric-text mb-2">Teams unavailable</h2>
+            <p className="text-cric-muted text-sm mb-4">
+              Teams could not be loaded right now. Please try again soon.
+            </p>
             <button onClick={fetchTeams} className="px-6 py-3 bg-blue-600 text-white rounded-xl font-black text-xs uppercase tracking-widest hover:bg-blue-700 transition-all">
               Try Again
             </button>

@@ -8,6 +8,7 @@ import ShareButton from "../components/ShareButton";
 import PDFReport from "../components/PDFReport";
 import { initSocket, joinMatchRoom, leaveMatchRoom } from "../services/socket";
 import AdSlot from "../components/ads/AdSlot";
+import LoadingWithTimeout from "../components/LoadingWithTimeout";
 
 const Match = () => {
   const { matchId } = useParams();
@@ -277,15 +278,21 @@ const Match = () => {
   if (loading) {
     return (
       <div className="min-h-screen bg-cric-bg flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-4 border-cric-accent border-t-transparent"></div>
+        <LoadingWithTimeout label="Loading match scorecard..." />
       </div>
     );
   }
 
   if (!match) {
     return (
-      <div className="min-h-screen bg-cric-bg flex items-center justify-center text-cric-text font-black uppercase tracking-widest">
-        Match Signal Lost
+      <div className="min-h-screen bg-cric-bg flex flex-col items-center justify-center gap-3 px-4 text-center text-cric-text">
+        <h1 className="text-xl font-black">Match unavailable</h1>
+        <p className="text-sm text-cric-muted">
+          This scorecard is not available right now. Please check back later.
+        </p>
+        <Link className="text-sm font-bold text-cric-accent underline" to="/live">
+          Back to live scores
+        </Link>
       </div>
     );
   }
