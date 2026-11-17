@@ -31,12 +31,21 @@ const isApiOrRealtime = ({ url }) =>
   url.pathname.startsWith('/socket.io') ||
   url.pathname.includes('/socket.io/')
 
+// AdSense / Doubleclick traffic is cross-origin and must never be cached or
+// answered by a route below. It is neither precached nor served offline.
+const isAdHost = ({ url }) =>
+  url.hostname.endsWith('.googlesyndication.com') ||
+  url.hostname.endsWith('.doubleclick.net') ||
+  url.hostname.endsWith('.googleadservices.com') ||
+  url.hostname === 'fundingchoicesmessages.google.com'
+
 // NetworkOnly as an explicit first route: it also stops the routes below from
-// ever matching API or Socket.IO traffic.
+// ever matching API, Socket.IO or ad traffic.
+registerRoute(isAdHost, new NetworkOnly())
 registerRoute(isApiOrRealtime, new NetworkOnly())
 
 const isPageNavigation = ({ request, url }) =>
-  request.mode === 'navigate' && !isApiOrRealtime({ url })
+  request.mode === 'navigate' && !isApiOrRealtime({ url }) && !isAdHost({ url })
 
 registerRoute(
   isPageNavigation,

@@ -7,6 +7,8 @@ import Footer from "./components/Footer";
 import OfflineBanner from "./components/OfflineBanner";
 import InstallAppBanner from "./components/InstallAppBanner";
 import PwaUpdateToast from "./components/PwaUpdateToast";
+import AdSlot from "./components/ads/AdSlot";
+import { getPlacement } from "./components/ads/placements";
 import ErrorBoundary from "../../Shared/components/ErrorBoundary";
 import SocketStatusIndicator from "../../Shared/components/SocketStatusIndicator";
 import { getSocket } from "./services/socket";
@@ -44,6 +46,7 @@ const ChangePassword = lazy(() => import("./pages/auth/ChangePassword"));
 const VerifyEmail = lazy(() => import("./pages/auth/VerifyEmail"));
 const VerifyPhone = lazy(() => import("./pages/auth/VerifyPhone"));
 const NotFound = lazy(() => import("./pages/NotFound"));
+const Privacy = lazy(() => import("./pages/Privacy"));
 const PlayerComparison = lazy(() => import("./pages/PlayerComparison"));
 const HandlerDashboard = lazy(() => import("./pages/HandlerDashboard"));
 const MyOrganization = lazy(() => import("./pages/MyOrganization"));
@@ -120,6 +123,15 @@ function AppHeader() {
   return <Header user={user} hasOrg={hasOrg} onLogout={handleLogout} />;
 }
 
+// Pages that need an ad between sections/under the scorecard mount their own
+// AdSlot. Everything else gets one conservative, below-content route-level unit.
+function RouteAds() {
+  const { pathname } = useLocation();
+  const placement = getPlacement(pathname, "route");
+  if (!placement) return null;
+  return <AdSlot slot={placement.slot} />;
+}
+
 function App() {
   return (
     <ThemeProvider>
@@ -185,9 +197,11 @@ function App() {
           <Route path="/community" element={<ErrorBoundary><CommunityIndex /></ErrorBoundary>} />
           <Route path="/community/new" element={<ErrorBoundary><CommunityCreate /></ErrorBoundary>} />
           <Route path="/community/post/:id" element={<ErrorBoundary><CommunityPost /></ErrorBoundary>} />
+          <Route path="/privacy" element={<ErrorBoundary><Privacy /></ErrorBoundary>} />
           <Route path="*" element={<ErrorBoundary><NotFound /></ErrorBoundary>} />
         </Routes>
         </Suspense>
+        <RouteAds />
         </main>
         <Footer />
         <InstallAppBanner />

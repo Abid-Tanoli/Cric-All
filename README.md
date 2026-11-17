@@ -307,6 +307,10 @@ See [DEPLOYMENT_DOCKER_RENDER.md](./DEPLOYMENT_DOCKER_RENDER.md) for the Docker 
 - Ball scoring events: `ball:recorded`, `score:update`, `strike:changed`, `over:completed`, `innings:end`, `match:end`
 - Legacy events maintained for backward compatibility
 
+## Ads (AdSense)
+
+The User app has opt-in Google AdSense support (off by default). Env variables, VPS enable steps, test mode, placements, privacy/consent and AdSense site verification are documented in [Frontend/User/README.md](./Frontend/User/README.md#ads-adsense).
+
 ## Security
 
 - **Helmet** is enabled on the backend: `app.use(helmet())` sets secure HTTP headers (CSP, X-Frame-Options, HSTS, etc.) on every response. Applied after CORS, before route registration.

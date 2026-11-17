@@ -54,9 +54,12 @@ export default function Footer() {
           <p className="text-[10px] sm:text-xs font-bold text-cric-muted">
             &copy; {year} CricAll. All rights reserved.
           </p>
-          <p className="text-[9px] sm:text-[10px] font-bold text-cric-muted">
-            Powered by the CricAll Scoring Engine
-          </p>
+          <nav className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-[9px] sm:text-[10px] font-bold text-cric-muted" aria-label="Legal">
+            <Link to="/privacy" className="hover:text-cric-accent transition-colors">Privacy</Link>
+            <Link to="/privacy#terms" className="hover:text-cric-accent transition-colors">Terms</Link>
+            <Link to="/privacy#contact" className="hover:text-cric-accent transition-colors">Contact</Link>
+            <span>Powered by the CricAll Scoring Engine</span>
+          </nav>
         </div>
       </div>
     </footer>

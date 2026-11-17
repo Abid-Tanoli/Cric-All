@@ -1,0 +1,2 @@
+# Google AdSense authorisation file. Keep this exact format; one line per entry.
+google.com, pub-8501048347195882, DIRECT, f08c47fec0942fa0
