@@ -554,17 +554,17 @@ export default function useMatchScoring({ matchId, tabId }) {
         }
     }
 
-    const handleRevert = () => {
+    const handleRevert = (inningsIndex = selectedMatch?.currentInnings) => {
         if (!selectedMatch) return;
-        setConfirmModal({ open: true, title: 'Undo Last Ball', message: 'Are you sure you want to undo the last ball? All associated stats will be reversed.', confirmLabel: 'Undo', variant: 'danger', onConfirm: async () => { setConfirmModal({ open: false }); doRevert(); } });
+        setConfirmModal({ open: true, title: 'Undo Last Ball', message: 'Are you sure you want to undo the last ball? All associated stats will be reversed.', confirmLabel: 'Undo', variant: 'danger', onConfirm: async () => { setConfirmModal({ open: false }); doRevert(inningsIndex); } });
     };
 
-    const doRevert = async () => {
+    const doRevert = async (inningsIndex = selectedMatch?.currentInnings) => {
         if (reverting) return;
         setReverting(true);
         try {
             const res = await axios.post(`${API_BASE_URL}/matches/${selectedMatch._id}/revert-ball`,
-                { inningsIndex: selectedMatch.currentInnings },
+                { inningsIndex },
                 { headers: { Authorization: `Bearer ${token}` } });
             setSelectedMatch(res.data.match);
             setToast("Reverted successfully");
@@ -829,6 +829,7 @@ export default function useMatchScoring({ matchId, tabId }) {
             return;
         }
         try {
+            const startedFromBreak = ["innings_break", "innings-break"].includes(selectedMatch.status);
             await axios.put(`${API_BASE_URL}/matches/${selectedMatch._id}/openers`, {
                 inningsIndex: selectedMatch.currentInnings,
                 batsman1Id: setupState.strikerId,
@@ -839,6 +840,14 @@ export default function useMatchScoring({ matchId, tabId }) {
                 inningsIndex: selectedMatch.currentInnings,
                 bowlerId: setupState.bowlerId
             }, { headers: { Authorization: `Bearer ${token}` } });
+
+            // Keep the match status in step with the scoreboard: the break screen
+            // hands over to this wizard before the chase is officially running.
+            if (startedFromBreak) {
+                await axios.post(`${API_BASE_URL}/matches/${selectedMatch._id}/start-next-innings`, {
+                    previousInningsIndex: selectedMatch.currentInnings
+                }, { headers: { Authorization: `Bearer ${token}` } });
+            }
 
             setIsPreMatchComplete(true);
             const res = await axios.get(`${API_BASE_URL}/matches/${selectedMatch._id}`);

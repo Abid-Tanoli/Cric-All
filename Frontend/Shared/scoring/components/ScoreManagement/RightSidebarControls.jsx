@@ -218,7 +218,7 @@ const RightSidebarControls = React.memo(({
                             {num === 0 ? 'DOT' : num}
                         </button>
                     ))}
-                    <button onClick={handleRevert} disabled={reverting} className={`score-run-btn min-h-[52px] rounded-xl border transition-all ${reverting ? 'cursor-not-allowed border-slate-400/20 bg-slate-400/20 text-slate-400' : 'border-orange-500/20 bg-orange-500/10 text-orange-600 hover:bg-orange-500 hover:text-white'}`} title="Undo last ball">
+                    <button onClick={() => handleRevert()} disabled={reverting} className={`score-run-btn min-h-[52px] rounded-xl border transition-all ${reverting ? 'cursor-not-allowed border-slate-400/20 bg-slate-400/20 text-slate-400' : 'border-orange-500/20 bg-orange-500/10 text-orange-600 hover:bg-orange-500 hover:text-white'}`} title="Undo last ball">
                         {reverting ? (
                             <svg className="mx-auto animate-spin" width="18" height="18" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeDasharray="50" strokeLinecap="round" /></svg>
                         ) : (
