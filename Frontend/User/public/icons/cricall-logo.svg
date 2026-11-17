@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="CricAll">
+  <defs>
+    <linearGradient id="ca-bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#16202e" />
+      <stop offset="100%" stop-color="#0a0e14" />
+    </linearGradient>
+    <linearGradient id="ca-ball" x1="0.2" y1="0" x2="0.8" y2="1">
+      <stop offset="0%" stop-color="#ff8a4c" />
+      <stop offset="100%" stop-color="#f2540f" />
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" fill="url(#ca-bg)" />
+  <g id="mark">
+    <circle cx="256" cy="166" r="86" fill="url(#ca-ball)" />
+    <path d="M204 108c22 38 22 78 0 116" fill="none" stroke="#ffffff" stroke-opacity="0.85" stroke-width="9" stroke-linecap="round" stroke-dasharray="13 13" />
+    <path d="M308 108c-22 38-22 78 0 116" fill="none" stroke="#ffffff" stroke-opacity="0.85" stroke-width="9" stroke-linecap="round" stroke-dasharray="13 13" />
+    <text x="256" y="398" text-anchor="middle" font-family="'Segoe UI', Inter, Arial, Helvetica, sans-serif" font-size="104" font-weight="800" font-style="italic" letter-spacing="-3" fill="#e7edf6">CricAll<tspan fill="#ff6b35">.</tspan></text>
+  </g>
+</svg>

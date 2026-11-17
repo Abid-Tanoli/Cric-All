@@ -5,6 +5,8 @@ import { CommunityConfigProvider } from "./community/CommunityConfigContext";
 import Header from "./components/Header";
 import Footer from "./components/Footer";
 import OfflineBanner from "./components/OfflineBanner";
+import InstallAppBanner from "./components/InstallAppBanner";
+import PwaUpdateToast from "./components/PwaUpdateToast";
 import ErrorBoundary from "../../Shared/components/ErrorBoundary";
 import SocketStatusIndicator from "../../Shared/components/SocketStatusIndicator";
 import { getSocket } from "./services/socket";
@@ -125,8 +127,7 @@ function App() {
       <Router>
         <div className="flex flex-col min-h-screen">
         <OfflineBanner />
-        <SocketStatusIndicator getSocket={getSocket} />
-        <AppHeader />
+        <SocketStatusIndicator getSocket={getSocket} />        <AppHeader />
         <main className="flex-1">
         <Suspense fallback={<div className="flex items-center justify-center min-h-screen bg-cric-bg"><div className="w-10 h-10 border-4 border-cric-accent border-t-transparent rounded-full animate-spin" /></div>}>
         <Routes>
@@ -189,6 +190,8 @@ function App() {
         </Suspense>
         </main>
         <Footer />
+        <InstallAppBanner />
+        <PwaUpdateToast />
         </div>
       </Router>
       </CommunityConfigProvider>

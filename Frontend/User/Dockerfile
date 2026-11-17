@@ -45,6 +45,9 @@ RUN npm install --global serve@14.2.4
 
 WORKDIR /app
 COPY --from=build /workspace/User/dist ./dist
+# dist/serve.json (source: public/serve.json) is picked up automatically by
+# `serve`: no-cache for sw.js / index.html / the manifest and immutable caching
+# for hashed assets, so a deploy is picked up on the next visit.
 RUN test -s dist/index.html
 
 ENV PORT=3000

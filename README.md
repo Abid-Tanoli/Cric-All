@@ -274,6 +274,27 @@ npm run build
 
 The root build script installs Backend, User, and Admin dependencies, then builds all frontend dist folders.
 
+## Installing the app
+
+The User app (https://cricall.online) is an installable PWA. Where the install entry point appears:
+
+- **Android (Chrome)** — tap **Install app** in the menu or the bottom banner, then confirm.
+- **iPhone / iPad (Safari)** — tap **Install app**, then **Share icon → Add to Home Screen → Add** (iOS has no install prompt, so the app shows the steps).
+- **Windows / macOS (Chrome, Edge)** — click **Install app** in the navbar or footer, or use the install icon in the address bar.
+- Firefox desktop and other browsers that cannot install show no button.
+
+Installed app icons and branding come from `Frontend/User/public/icons/cricall-logo.svg`; replace that SVG with the production logo and run `npm run pwa:icons` inside `Frontend/User` to regenerate the 192/512/maskable/apple-touch/favicon files.
+
+Service worker updates: a new deploy installs a waiting worker, the app shows **"New version available. Reload"**, and it also re-checks on window focus. `sw.js`, `index.html` and the manifest are served with `Cache-Control: no-cache` (see `Frontend/User/public/serve.json`), so a deploy is picked up on the next visit instead of after the old precache expires.
+
+Verify the PWA on a production build:
+
+```bash
+cd Frontend/User
+npm run build
+node scripts/pwa-verify.mjs   # starts serve on :4180, checks manifest/SW/offline/install UI
+```
+
 ## Deployment
 
 See [DEPLOYMENT_DOCKER_RENDER.md](./DEPLOYMENT_DOCKER_RENDER.md) for the Docker Hub and Render deployment guide. The existing [DEPLOYMENT.md](./DEPLOYMENT.md) covers the legacy Vercel deployment option.

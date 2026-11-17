@@ -21,7 +21,7 @@ export default function OfflineBanner({
   return (
     <div
       role="alert"
-      className="fixed top-0 left-0 right-0 z-[100] bg-amber-500 text-white text-center text-xs sm:text-sm font-bold px-4 py-2 shadow-lg"
+      className="pwa-offline-alert fixed top-0 left-0 right-0 z-[100] bg-amber-500 text-white text-center text-xs sm:text-sm font-bold px-4 py-2 shadow-lg"
     >
       ⚠ {message}
     </div>

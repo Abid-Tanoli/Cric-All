@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import ThemeToggle from "./ThemeToggle";
+import InstallAppButton from "./InstallAppButton";
 import { resendVerification } from "../pages/auth/auth";
 import { featureFlags } from "../config/features";
 import { useCommunityConfig } from "../community/CommunityConfigContext";
@@ -87,7 +88,7 @@ export default function Header({ user, hasOrg, onShowLogin, onShowRegister, onLo
   };
 
   return (
-    <header className="bg-cric-card border-b border-cric-border sticky top-0 z-50 shadow-xl">
+    <header className="pwa-safe-top bg-cric-card border-b border-cric-border sticky top-0 z-50 shadow-xl">
       {needsVerification && (
         <div className="bg-cric-accent/15 border-b border-cric-accent/40 px-4 py-2 flex flex-wrap items-center justify-center gap-3 text-center">
           <p className="text-[10px] font-black uppercase tracking-widest text-cric-text">
@@ -144,6 +145,8 @@ export default function Header({ user, hasOrg, onShowLogin, onShowRegister, onLo
         </nav>
 
         <div className="flex items-center gap-2 sm:gap-4">
+          {/* Install entry point: hidden unless the browser can install the app. */}
+          <InstallAppButton variant="nav" className="hidden lg:inline-flex" />
           <ThemeToggle />
           {user ? (
             <div className="hidden sm:flex items-center gap-4">
@@ -233,7 +236,7 @@ export default function Header({ user, hasOrg, onShowLogin, onShowRegister, onLo
       {mobileMenuOpen && (
         <>
           <div className="fixed inset-0 bg-black/30 z-40 lg:hidden" onClick={closeMobile} />
-          <div className="lg:hidden fixed top-[73px] left-0 right-0 z-50 bg-cric-card border-b border-cric-border shadow-xl max-h-[calc(100vh-73px)] overflow-y-auto">
+          <div className="pwa-drawer lg:hidden fixed left-0 right-0 z-50 bg-cric-card border-b border-cric-border shadow-xl overflow-y-auto">
             <nav className="flex flex-col p-4 gap-1">
               {navItems.map(item => (
                 <Link
@@ -251,6 +254,7 @@ export default function Header({ user, hasOrg, onShowLogin, onShowRegister, onLo
               ))}
             </nav>
             <div className="border-t border-cric-border p-4">
+              <InstallAppButton variant="menu" />
               {user ? (
                 <div className="space-y-3">
                   <div className="text-center">
