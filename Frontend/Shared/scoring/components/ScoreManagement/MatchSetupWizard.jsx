@@ -25,6 +25,7 @@ const MatchSetupWizard = ({
     handleSaveToss,
     handleSaveOpeners,
     handleSaveFormat,
+    onBackToBreak,
     matchSquads,
     matchSquadsLoading = false,
     matchSquadsError = '',
@@ -519,6 +520,15 @@ const MatchSetupWizard = ({
                             </div>
                         </div>
                         <button onClick={handleSaveOpeners} className="score-touch-btn w-full py-4 sm:py-6 lg:py-8 rounded-2xl sm:rounded-[2rem] lg:rounded-[2.5rem] bg-cric-accent text-white font-black font-raj text-lg sm:text-2xl italic tracking-tighter uppercase shadow-xl hover:scale-105 transition-all">Start Live Scoring</button>
+                        {onBackToBreak && (
+                            <button
+                                type="button"
+                                onClick={onBackToBreak}
+                                className="score-touch-btn w-full py-3 rounded-2xl border border-cric-border text-[10px] font-black uppercase tracking-widest text-cric-muted hover:text-cric-text"
+                            >
+                                Back to innings break
+                            </button>
+                        )}
                     </div>
                 )}
             </div>

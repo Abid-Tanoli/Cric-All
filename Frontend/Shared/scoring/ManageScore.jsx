@@ -14,9 +14,11 @@ import WicketDetailsForm from './components/ScoreManagement/WicketDetailsForm';
 import ScoringMobileBar from './components/ScoringMobileBar';
 import ScoringScoreHeader from './components/ScoreManagement/ScoringScoreHeader';
 import NextBowlerModal from './components/ScoreManagement/NextBowlerModal';
+import InningsBreakScreen from './components/ScoreManagement/InningsBreakScreen';
 import PlayerOfMatchCard from './components/ScoreManagement/PlayerOfMatchCard';
 import { formatMatchDate, formatMatchTime, teamShortName } from './utils/teamDisplay';
 import { getBowlerQuota } from './utils/bowlerQuota';
+import { getInningsBreakData } from './utils/inningsBreak';
 import { getLastOverBowlerId, isNextBowlerRequired } from './utils/nextBowler';
 import { useScoringAdapters } from './ScoringAdapters';
 import ShareButton from '@shared/components/ShareButton';
@@ -136,6 +138,13 @@ export default function ManageScore({ matchId, tabId }) {
     const [loadTimeout, setLoadTimeout] = useState(false);
     const [view, setView] = useState(() => (tabId && tabId !== 'live' ? 'live' : 'score'));
     const [addedBowlers, setAddedBowlers] = useState([]);
+    const [showSecondInningsSetup, setShowSecondInningsSetup] = useState(false);
+    const inningsBreakData = getInningsBreakData(selectedMatch);
+    const inningsBreakActive = Boolean(inningsBreakData);
+
+    React.useEffect(() => {
+        if (!inningsBreakActive) setShowSecondInningsSetup(false);
+    }, [inningsBreakActive]);
 
     React.useEffect(() => {
         if (tabId && tabId !== 'live') setView('live');
@@ -394,6 +403,67 @@ export default function ManageScore({ matchId, tabId }) {
                     </div>
                 </div>
             </div>
+        );
+    }
+
+    if (inningsBreakActive) {
+        const finishedBattingXI = getPlayingXI(inningsBreakData.finishedTeam?._id || inningsBreakData.finished.team);
+        const finishedBowlingXI = getPlayingXI(inningsBreakData.chasingTeam?._id || inningsBreakData.current.team);
+
+        if (showSecondInningsSetup) {
+            return (
+                <MatchSetupWizard
+                    wizardStep={4}
+                    selectedMatch={selectedMatch}
+                    setSelectedMatch={setSelectedMatch}
+                    setupState={setupState}
+                    setSetupState={setSetupState}
+                    setWizardStep={setWizardStep}
+                    handleSaveFormat={handleSaveFormat}
+                    handleSavePlayingXI={handleSavePlayingXI}
+                    handleContinueToToss={handleContinueToToss}
+                    handleSaveToss={handleSaveToss}
+                    handleSaveOpeners={handleSaveOpeners}
+                    matchSquads={matchSquads}
+                    matchSquadsLoading={matchSquadsLoading}
+                    matchSquadsError={matchSquadsError}
+                    onRetryLoadSquads={() => loadMatchSquads(selectedMatch._id)}
+                    twelfthManRule={twelfthManRule}
+                    battingXI={battingPlayingXI}
+                    bowlingXI={bowlingPlayingXI}
+                    allowFormatEdit={adapters.allowFormatEdit}
+                    allowRuleEdit={adapters.allowRuleEdit}
+                    allowSquadSetup={adapters.allowSquadSetup}
+                    onBackToBreak={() => setShowSecondInningsSetup(false)}
+                />
+            );
+        }
+
+        return (
+            <>
+                <InningsBreakScreen
+                    match={selectedMatch}
+                    data={inningsBreakData}
+                    finishedBattingXI={finishedBattingXI}
+                    finishedBowlingXI={finishedBowlingXI}
+                    useAICommentary={useAICommentary}
+                    onStartNext={() => {
+                        setWizardStep(4);
+                        setShowSecondInningsSetup(true);
+                    }}
+                    onUndo={() => handleRevert(inningsBreakData.currentIndex - 1)}
+                    reverting={reverting}
+                />
+                {adapters.ConfirmModal && <adapters.ConfirmModal
+                    open={confirmModal.open}
+                    title={confirmModal.title}
+                    message={confirmModal.message}
+                    confirmLabel={confirmModal.confirmLabel}
+                    variant={confirmModal.variant}
+                    onConfirm={confirmModal.onConfirm}
+                    onCancel={() => setConfirmModal({ open: false })}
+                />}
+            </>
         );
     }
 
