@@ -254,6 +254,17 @@ export const updateOrgSeries = (orgId, seriesId, payload) =>
 export const deleteOrgSeries = (orgId, seriesId) =>
   unwrap(api.delete(`/organizations/${orgId}/series/${seriesId}`));
 
+// A fixture is linked/unlinked without deleting it. Both calls return the whole
+// series detail (matches + score), so the screen refreshes from one response.
+export const linkOrgSeriesMatch = (orgId, seriesId, matchId) =>
+  unwrap(api.post(`/organizations/${orgId}/series/${seriesId}/matches/${matchId}`));
+
+export const unlinkOrgSeriesMatch = (orgId, seriesId, matchId) =>
+  unwrap(api.delete(`/organizations/${orgId}/series/${seriesId}/matches/${matchId}`));
+
+export const completeOrgSeries = (orgId, seriesId) =>
+  unwrap(api.post(`/organizations/${orgId}/series/${seriesId}/complete`));
+
 // --- helpers used by the competition screens --------------------------------
 // Guest teams are registered by the host, so the picker needs the public team
 // catalogue and a roster for whichever side was chosen. Neither is a new org
@@ -335,6 +346,9 @@ export default {
   getOrgSeries,
   updateOrgSeries,
   deleteOrgSeries,
+  linkOrgSeriesMatch,
+  unlinkOrgSeriesMatch,
+  completeOrgSeries,
   listPublicTeams,
   getTeamRoster,
 };

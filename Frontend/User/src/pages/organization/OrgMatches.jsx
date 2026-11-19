@@ -653,8 +653,8 @@ export function MatchSetup({ orgId, match, onClose, onSaved }) {
   );
 }
 
-function MatchForm({ orgId, teams, events, initial, onDone, onCancel }) {
-  const [form, setForm] = useState(() => ({ ...emptyMatch, ...(initial || {}) }));
+export function MatchForm({ orgId, teams, events = [], initial, seriesId, defaults, onDone, onCancel }) {
+  const [form, setForm] = useState(() => ({ ...emptyMatch, ...(defaults || {}), ...(initial || {}) }));
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
 
@@ -678,17 +678,20 @@ function MatchForm({ orgId, teams, events, initial, onDone, onCancel }) {
           useAiCommentary: form.useAiCommentary === true,
         };
         await updateOrgMatch(orgId, initial._id, Object.fromEntries(Object.entries(payload).filter(([, v]) => v !== undefined)));
+        onDone();
       } else {
-        await createOrgMatch(orgId, {
+        const response = await createOrgMatch(orgId, {
           teams: [form.teamA, form.teamB],
           matchType: form.matchType,
           useAiCommentary: form.useAiCommentary === true,
+          ...(seriesId ? { series: seriesId } : {}),
           ...(form.venue.trim() ? { venue: form.venue.trim() } : {}),
           ...(form.startAt ? { startAt: new Date(form.startAt).toISOString() } : {}),
           ...(form.eventId ? { eventId: form.eventId } : {}),
         });
+        // Callers that immediately open the XI picker need the created match.
+        onDone(response?.match || null);
       }
-      onDone();
     } catch (error) {
       setErr(error.message || "Could not save the fixture");
     } finally {
