@@ -273,7 +273,52 @@ unset MONGO_ROOT_PASSWORD MONGO_ROOT_USERNAME
 If the restore fails, keep the archive and the pre-sync backup directory; do not
 attempt to "fix" the live database in place.
 
-## 8. Rollback (only if the new deployment is unhealthy)
+## 8. Email delivery (SMTP, optional)
+
+Mail defaults to `MAIL_DRIVER=console`: messages are written to the backend log
+only. Compose passes the following backend runtime values from the **root**
+`.env` (they are not `VITE_*` build values):
+
+```dotenv
+MAIL_DRIVER=smtp
+MAIL_HOST=smtp-relay.brevo.com
+MAIL_PORT=587
+MAIL_SECURE=false
+MAIL_USER=<smtp login>
+MAIL_PASS=<smtp key or app password>
+MAIL_FROM=CricAll <no-reply@your-domain.example>
+MAIL_REPLY_TO=
+MAIL_ISSUE_NOTIFY_MAX_PER_HOUR=10
+```
+
+- Brevo: host `smtp-relay.brevo.com`, port 587, `MAIL_SECURE=false`,
+  `MAIL_USER` = Brevo login email, `MAIL_PASS` = SMTP key.
+- Gmail: host `smtp.gmail.com`, port 587, `MAIL_SECURE=false`,
+  `MAIL_USER` = Gmail address, `MAIL_PASS` = 16-character App Password
+  (enable 2FA first; never the account password).
+- `MAIL_SECURE=true` is for implicit TLS (usually port 465); leave it `false`
+  with port 587 (STARTTLS).
+- If any of `MAIL_HOST`, `MAIL_USER`, `MAIL_PASS`, `MAIL_FROM` is missing, the
+  backend logs a warning naming only the missing variables and keeps using the
+  console driver. It never crashes on mail configuration.
+- For a custom From domain, publish **SPF** and **DKIM** DNS records for that
+  domain; without them, providers may reject or flag the mail.
+- `ADMIN_NOTIFICATION_EMAIL` (issue-report notices) still lives in
+  `Backend/.env`. Those notices are throttled per recipient per rolling hour.
+
+Verify delivery with the test command (it refuses to run unless
+`MAIL_DRIVER=smtp` and all required values are set):
+
+```bash
+docker compose --profile local-mongo exec backend npm run mail:test -- someone@example.com
+```
+
+Expected output is `OK`; an error line is printed on failure. Keep real SMTP
+credentials out of shell history, tickets and git. To roll back mail only, set
+`MAIL_DRIVER=console` in the root `.env` and recreate the backend container;
+no code change or redeploy is needed.
+
+## 9. Rollback (only if the new deployment is unhealthy)
 
 1. Stop the stack: `docker compose --profile local-mongo down`
 2. Restore the saved `docker-compose.yml`, `backupDb.js`, and env files from
