@@ -42,6 +42,7 @@ const MatchSetupWizard = ({
     const ppEnabled = setupState.powerplayEnabled ?? selectedFormat.powerplayDefault;
     const ppOvers = setupState.powerplayOvers ?? selectedFormat.powerplayOvers;
     const [search, setSearch] = React.useState({ 0: '', 1: '' });
+    const [roleNotice, setRoleNotice] = React.useState('');
 
     // Per-match "12th Man" override (rules.twelfthManEnabled). null means inherit
     // from the tournament; here we set an explicit per-match value.
@@ -71,6 +72,7 @@ const MatchSetupWizard = ({
     const teamIds = [selectedMatch?.teams?.[0]?._id, selectedMatch?.teams?.[1]?._id];
     const selectedByTeam = [setupState.team1XI || [], setupState.team2XI || []];
     const twelfthByTeam = [setupState.team1TwelfthMan || '', setupState.team2TwelfthMan || ''];
+    const superSubByTeam = [setupState.team1SuperSub || '', setupState.team2SuperSub || ''];
     const squadsForMatch = matchSquads?.matchId === idOf(selectedMatch?._id) ? matchSquads : null;
     const squadsReady = Boolean(
         squadsForMatch?.teams?.length &&
@@ -100,11 +102,25 @@ const MatchSetupWizard = ({
         }));
     };
 
+    const setTeamSuperSub = (index, playerId) => {
+        setSetupState((state) => ({
+            ...state,
+            [index === 0 ? 'team1SuperSub' : 'team2SuperSub']: playerId,
+        }));
+    };
+
     const setTeamTwelfthMan = (index, playerId) => {
+        // Roles are exclusive: taking a player in one role clears the other.
+        if (playerId && idOf(superSubByTeam[index]) === idOf(playerId)) setTeamSuperSub(index, '');
         setSetupState((state) => ({
             ...state,
             [index === 0 ? 'team1TwelfthMan' : 'team2TwelfthMan']: playerId,
         }));
+    };
+
+    const chooseSuperSub = (index, playerId) => {
+        if (playerId && idOf(twelfthByTeam[index]) === idOf(playerId)) setTeamTwelfthMan(index, '');
+        setTeamSuperSub(index, playerId);
     };
 
     const togglePlayer = (index, playerId) => {
@@ -115,9 +131,24 @@ const MatchSetupWizard = ({
             ? current.filter((id) => idOf(id) !== idOf(playerId))
             : [...current, playerId];
         setTeamXI(index, nextXI);
-        // A player can only be the 12th Man while they are outside the XI.
-        if (!isSelected && idOf(twelfthByTeam[index]) === idOf(playerId)) {
+        if (isSelected) return;
+
+        // The XI wins: a player moved into it cannot also hold a reserve role.
+        const removedRoles = [];
+        if (idOf(twelfthByTeam[index]) === idOf(playerId)) {
             setTeamTwelfthMan(index, '');
+            removedRoles.push('12th Man');
+        }
+        if (idOf(superSubByTeam[index]) === idOf(playerId)) {
+            setTeamSuperSub(index, '');
+            removedRoles.push('Super Sub');
+        }
+        if (removedRoles.length) {
+            const squad = squadsForMatch?.teams?.find((row) => idOf(row.team) === idOf(teamIds[index]))?.squad || [];
+            const name = squad.find((player) => idOf(player) === idOf(playerId))?.name || 'This player';
+            setRoleNotice(removedRoles.map((role) =>
+                `${name} was removed as ${role} because they are now in the Playing XI.`
+            ).join(' '));
         }
     };
 
@@ -261,8 +292,8 @@ const MatchSetupWizard = ({
                         <div className="rounded-2xl border border-cric-border bg-cric-bg p-4 sm:p-5">
                             <p className="text-[10px] font-black uppercase tracking-[0.25em] text-cric-accent">Full squad selection</p>
                             <p className="mt-2 text-xs sm:text-sm text-cric-muted font-semibold">
-                                Pick exactly 11 players per team, then nominate a 12th Man from the remaining squad.
-                                The list below is the complete competition squad for this match.
+                                Pick exactly 11 players per team, then nominate a 12th Man and a Super Sub
+                                from the remaining squad. The list below is the complete competition squad for this match.
                             </p>
                         </div>
 
@@ -301,7 +332,10 @@ const MatchSetupWizard = ({
                                     ? squad.filter((player) => String(player?.name || '').toLowerCase().includes(query))
                                     : squad;
                                 const twelfthId = idOf(twelfthByTeam[idx]);
+                                const superSubId = idOf(superSubByTeam[idx]);
                                 const remaining = squad.filter((player) => !selectedIds.has(idOf(player)));
+                                const twelfthOptions = remaining.filter((player) => idOf(player) !== superSubId);
+                                const superSubOptions = remaining.filter((player) => idOf(player) !== twelfthId);
                                 const canNominateTwelfth = selected.length === 11;
                                 const sourceLabel = squadMeta?.squadSource === 'tournament'
                                     ? 'tournament'
@@ -387,9 +421,7 @@ const MatchSetupWizard = ({
 
                                         <div className="rounded-2xl border border-cric-border bg-cric-bg p-4 space-y-2">
                                             <div className="flex flex-wrap items-center justify-between gap-2">
-                                                <label htmlFor={`twelfth-man-${idx}`} className="text-[10px] font-black uppercase tracking-widest text-cric-text">
-                                                    12th Man {superSubEnabled ? '· Super Sub' : ''}
-                                                </label>
+                                                <p className="text-[10px] font-black uppercase tracking-widest text-cric-text">Reserve roles</p>
                                                 {superSubEnabled ? (
                                                     <span className="rounded-full bg-green-100 px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-green-700">
                                                         Super Sub enabled
@@ -400,32 +432,58 @@ const MatchSetupWizard = ({
                                                     </span>
                                                 )}
                                             </div>
-                                            <select
-                                                id={`twelfth-man-${idx}`}
-                                                value={twelfthId}
-                                                disabled={!canNominateTwelfth}
-                                                onChange={(e) => setTeamTwelfthMan(idx, e.target.value)}
-                                                className="w-full rounded-xl border border-cric-border bg-cric-card px-3 py-2 text-sm font-bold text-cric-text outline-none focus:border-cric-accent disabled:opacity-50"
-                                            >
-                                                <option value="">No 12th Man</option>
-                                                {remaining.map((player) => (
-                                                    <option key={idOf(player)} value={idOf(player)}>
-                                                        {player?.name || `Player ${idOf(player)}`}
-                                                    </option>
-                                                ))}
-                                            </select>
+                                            <label htmlFor={`twelfth-man-${idx}`} className="block text-[10px] font-black uppercase tracking-widest text-cric-muted">
+                                                12th Man
+                                                <select
+                                                    id={`twelfth-man-${idx}`}
+                                                    aria-label={`${team?.name} 12th Man`}
+                                                    value={twelfthId}
+                                                    disabled={!canNominateTwelfth}
+                                                    onChange={(e) => setTeamTwelfthMan(idx, e.target.value)}
+                                                    className="mt-1 w-full rounded-xl border border-cric-border bg-cric-card px-3 py-2 text-sm font-bold text-cric-text outline-none focus:border-cric-accent disabled:opacity-50"
+                                                >
+                                                    <option value="">No 12th Man</option>
+                                                    {twelfthOptions.map((player) => (
+                                                        <option key={idOf(player)} value={idOf(player)}>
+                                                            {player?.name || `Player ${idOf(player)}`}
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                            </label>
+                                            <label htmlFor={`super-sub-${idx}`} className="block text-[10px] font-black uppercase tracking-widest text-cric-muted">
+                                                Super Sub
+                                                <select
+                                                    id={`super-sub-${idx}`}
+                                                    aria-label={`${team?.name} Super Sub`}
+                                                    value={superSubId}
+                                                    disabled={!canNominateTwelfth}
+                                                    onChange={(e) => chooseSuperSub(idx, e.target.value)}
+                                                    className="mt-1 w-full rounded-xl border border-cric-border bg-cric-card px-3 py-2 text-sm font-bold text-cric-text outline-none focus:border-cric-accent disabled:opacity-50"
+                                                >
+                                                    <option value="">No Super Sub</option>
+                                                    {superSubOptions.map((player) => (
+                                                        <option key={idOf(player)} value={idOf(player)}>
+                                                            {player?.name || `Player ${idOf(player)}`}
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                            </label>
                                             <p className="text-[10px] font-bold text-cric-muted">
                                                 {canNominateTwelfth
-                                                    ? superSubEnabled
-                                                        ? 'The 12th Man can replace one XI player once, when the rule allows it.'
-                                                        : 'The 12th Man is a reserve; the Super Sub replacement rule is off for this match.'
-                                                    : 'Select exactly 11 players first — the 12th Man must be outside the XI.'}
+                                                    ? 'Both roles must be outside the XI and cannot be the same player. The 12th Man is the one used by the swap rule.'
+                                                    : 'Select exactly 11 players first — reserve roles must be outside the XI.'}
                                             </p>
                                         </div>
                                     </div>
                                 );
                             })}
                         </div>}
+
+                        {roleNotice && (
+                            <p role="status" aria-live="polite" className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs font-bold text-amber-800">
+                                {roleNotice}
+                            </p>
+                        )}
 
                         <div className="space-y-3">
                             <button
@@ -437,7 +495,7 @@ const MatchSetupWizard = ({
                                         : 'bg-black/10 text-cric-muted cursor-not-allowed'
                                 }`}
                             >
-                                Save Playing XIs & 12th Man
+                                Save Playing XIs & reserve roles
                             </button>
                             {!canSavePlayingXIs && (
                                 <p className="text-center text-[10px] font-black uppercase tracking-widest text-amber-600">
