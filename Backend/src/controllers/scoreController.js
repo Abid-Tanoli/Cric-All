@@ -21,6 +21,10 @@ import { getBowlerQuota, getBowlerBalls, isOverInProgress, currentOverNumber, pr
 import { ensureMatchInnings } from "../utils/matchInnings.js";
 import { computeBallAccounting } from "../services/scoring/ballAccounting.js";
 
+// Match-level AI commentary is opt-in. Documents saved before the field existed
+// read as false and keep the deterministic commentary path.
+const matchAllowsAiCommentary = (match) => match?.useAiCommentary === true;
+
 // ─── Per-match scoring lock ──────────────────────────────────────────────
 // updateScore and revertLastBall are read-modify-write cycles on the whole
 // Match document. Two concurrent requests for the same match (a double tap, a
@@ -264,8 +268,8 @@ export const updateScore = async (req, res) => {
 
     let commentaryIsAi = false;
 
-    // AI commentary generation (only when AI is enabled)
-    if (!customCommentary) {
+    // AI commentary generation (only when enabled for this match)
+    if (!customCommentary && matchAllowsAiCommentary(match)) {
       const zone = (fieldingZone || (shotPlacement && shotPlacement.position))
         ? fieldPositionMapper.getZoneFromCoordinates(shotPlacement?.x || 50, shotPlacement?.y || 50)
         : { name: "an open area" };
@@ -506,7 +510,7 @@ export const updateScore = async (req, res) => {
       // ─── OVER COMPLETED ─────────────────────────────────────
       if (isOverComplete) {
         const overExtras = currentOver.balls.filter(b => b.isWide || b.isNoBall).length;
-        const overSummary = aiCommentary
+        const overSummary = aiCommentary && matchAllowsAiCommentary(match)
           ? await aiCommentary.generateOverSummary({
               overNumber: currentOverNumber,
               bowlerName: bowlerPlayer?.name || "Bowler",
@@ -1148,31 +1152,44 @@ export const handleFieldClick = async (req, res) => {
       innings.currentBatsman1?.name ||
       "Batsman";
 
-    // Generate AI commentary
-    const commentary = await aiCommentary.generateBallCommentary({
-      runs: runs || 0,
-      isWide: false,
-      isNoBall: false,
-      isBye: false,
-      isLegBye: false,
-      isFreeHit: false,
-      isWicket: isWicket || false,
-      wicketType: wicketType || "",
-      batsmanName,
-      bowlerName,
-      isAppeal,
-      zone: zone.name,
-      distanceCategory,
-      overNumber: overNumber || Math.floor(innings.balls / 6) + 1,
-      ballNumber: ballNumber || (innings.balls % 6) + 1,
-      currentScore: innings.runs,
-      currentWickets: innings.wickets,
-      matchContext: {
-        totalOvers: match.totalOvers,
-        target: innings.target,
-        requiredRunRate: innings.requiredRunRate
-      }
-    });
+    // Skip generation entirely when this match has AI commentary off.
+    const commentary = matchAllowsAiCommentary(match)
+      ? await aiCommentary.generateBallCommentary({
+          runs: runs || 0,
+          isWide: false,
+          isNoBall: false,
+          isBye: false,
+          isLegBye: false,
+          isFreeHit: false,
+          isWicket: isWicket || false,
+          wicketType: wicketType || "",
+          batsmanName,
+          bowlerName,
+          isAppeal,
+          zone: zone.name,
+          distanceCategory,
+          overNumber: overNumber || Math.floor(innings.balls / 6) + 1,
+          ballNumber: ballNumber || (innings.balls % 6) + 1,
+          currentScore: innings.runs,
+          currentWickets: innings.wickets,
+          matchContext: {
+            totalOvers: match.totalOvers,
+            target: innings.target,
+            requiredRunRate: innings.requiredRunRate
+          }
+        })
+      : generateDetailedCommentary({
+          runs: runs || 0,
+          isWicket: isWicket || false,
+          wicketType: wicketType || "",
+          batsmanName,
+          bowlerName,
+          currentScore: innings.runs,
+          currentWickets: innings.wickets,
+          overNumber: overNumber || Math.floor(innings.balls / 6) + 1,
+          ballNumber: ballNumber || (innings.balls % 6) + 1,
+          isAppeal
+        });
 
     // Emit field click event with generated commentary
     const io = getIO();
@@ -1631,6 +1648,7 @@ export const generateAICommentary = async (req, res) => {
   try {
     const { matchId } = req.params;
     const { batsman, bowler, runs, extras, wicket, fieldPosition, ballNotation } = req.body;
+    const match = await Match.findById(matchId).select("useAiCommentary");
 
     const prompt = `You are an expert cricket commentator. Generate ONE line of short cricket commentary (like TV/radio broadcast). Format: '[runs] [batsman] to [bowler], [description]'. Then on a new line, generate a longer vivid commentary sentence (1-2 sentences) describing where the ball went based on the field position '${fieldPosition}'. Be dramatic and engaging. Respond in this exact format:
 LINE1: [short summary line]
@@ -1638,9 +1656,9 @@ LINE2: [vivid detailed commentary]
 
 Context: Batsman: ${batsman}, Bowler: ${bowler}, Runs: ${runs}, Extras: ${extras}, Wicket: ${wicket}, Field Position: ${fieldPosition}, Ball info: ${ballNotation}`;
 
-    if (!process.env.ANTHROPIC_API_KEY || !(await isAiCommentaryEnabled())) {
-      // Terminal A: the platform AI kill switch also covers this on-demand
-      // endpoint. It degrades to the deterministic line rather than erroring.
+    if (!matchAllowsAiCommentary(match) || !process.env.ANTHROPIC_API_KEY || !(await isAiCommentaryEnabled())) {
+      // Per-match opt-in and Terminal A's platform kill switch both cover this
+      // on-demand endpoint. It degrades to the deterministic line, never a paid call.
       return res.status(200).json({
         line1: `${ballNotation} ${batsman} to ${bowler}, ${runs} runs`,
         line2: `The ball was played towards ${fieldPosition}.`
@@ -1948,8 +1966,9 @@ export const editBall = async (req, res) => {
     try { const io = getIO(); io.to(`match-${matchId}`).emit('match:ballEdited', { matchId, inningsIndex, overNumber, ballNumber }); io.emit('match:updated', match); } catch (err) { console.error("Socket emit error (ballEdited):", err.message); }
     res.status(200).json({ match, message: 'Ball updated successfully' });
 
-    // Fire off async task to regenerate commentary for the edited ball ONLY if not manually provided
-    if (manualSummary === undefined) {
+    // Fire off async task to regenerate commentary for the edited ball only when
+    // this match has AI commentary on and no manual summary was provided.
+    if (manualSummary === undefined && matchAllowsAiCommentary(match)) {
       setImmediate(async () => {
         try {
           const m = await Match.findById(matchId).populate("innings.batting.player innings.bowling.player");

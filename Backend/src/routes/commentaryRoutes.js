@@ -1,4 +1,6 @@
 import express from "express";
+import mongoose from "mongoose";
+import Match from "../models/Match.js";
 import { generateCommentaryForBall } from "../services/commentaryService.js";
 import { protect, requireAdmin } from "../middleware/authMiddleware.js";
 
@@ -6,7 +8,14 @@ const router = express.Router();
 
 router.post("/generate", protect, requireAdmin, async (req, res) => {
   try {
-    const commentary = await generateCommentaryForBall(req.body);
+    // This admin on-demand path has no match in its URL. When the caller names a
+    // match, respect that match's AI commentary flag and make no provider call.
+    let skipAi = false;
+    if (mongoose.Types.ObjectId.isValid(req.body?.matchId)) {
+      const match = await Match.findById(req.body.matchId).select("useAiCommentary");
+      skipAi = !match || match.useAiCommentary !== true;
+    }
+    const commentary = await generateCommentaryForBall(req.body, { skipAi });
     res.json({ commentary });
   } catch (error) {
     console.error("Commentary generation error:", error);

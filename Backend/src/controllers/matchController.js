@@ -353,8 +353,12 @@ export const createMatch = async (req, res) => {
     const { 
       title, venue, matchType, matchCategory, matchSubcategory, startAt, teams, 
       powerplayConfig, series, seriesMatchNumber,
-      category, subCategory, ageGroup, organization, address
+      category, subCategory, ageGroup, organization, address, useAiCommentary
     } = req.body;
+
+    if (useAiCommentary !== undefined && typeof useAiCommentary !== "boolean") {
+      return res.status(400).json({ message: "useAiCommentary must be a boolean" });
+    }
 
     if (!teams || teams.length !== 2) {
       return res.status(400).json({
@@ -397,6 +401,7 @@ export const createMatch = async (req, res) => {
       powerplayConfig: powerplayConfig || { enabled: false, overs: 0 },
       series: series || "",
       seriesMatchNumber: seriesMatchNumber || null,
+      useAiCommentary: useAiCommentary === true,
       // Per-match "12th Man" override. Omitted -> null (inherit from tournament).
       rules: req.body.rules && "twelfthManEnabled" in req.body.rules
         ? { twelfthManEnabled: req.body.rules.twelfthManEnabled === true }
@@ -440,6 +445,10 @@ export const updateMatch = async (req, res) => {
   try {
     const { title, venue, matchType, totalOvers, startAt, teams, status, powerplayConfig, series, seriesMatchNumber } = req.body;
 
+    if (req.body.useAiCommentary !== undefined && typeof req.body.useAiCommentary !== "boolean") {
+      return res.status(400).json({ message: "useAiCommentary must be a boolean" });
+    }
+
     const match = await Match.findById(req.params.id);
     if (!match) {
       return res.status(404).json({ message: "Match not found" });
@@ -479,6 +488,7 @@ export const updateMatch = async (req, res) => {
     if (powerplayConfig !== undefined) match.powerplayConfig = powerplayConfig;
     if (series !== undefined) match.series = series;
     if (seriesMatchNumber !== undefined) match.seriesMatchNumber = seriesMatchNumber;
+    if (req.body.useAiCommentary !== undefined) match.useAiCommentary = req.body.useAiCommentary;
     if (req.body.rules && "twelfthManEnabled" in req.body.rules) {
       match.rules = { twelfthManEnabled: req.body.rules.twelfthManEnabled === true };
     }
@@ -516,6 +526,39 @@ export const updateMatch = async (req, res) => {
       message: "Failed to update match",
       error: error.message
     });
+  }
+};
+
+/**
+ * Scoring-screen toggle. The route is guarded by requireMatchScoreAccess, so
+ * the people who can score this fixture (platform admin, org owner/admin/
+ * manager and that match's score_handler) can change it; viewers and players
+ * cannot. `match:updated` is the event every scoring screen already listens to,
+ * so other scorers pick up the new value on the next refresh from that event.
+ */
+export const setMatchAiCommentary = async (req, res) => {
+  try {
+    const match = await Match.findById(req.params.matchId);
+    if (!match) return res.status(404).json({ message: "Match not found" });
+
+    match.useAiCommentary = req.body.useAiCommentary;
+    await match.save({ validateModifiedOnly: true });
+
+    try {
+      const io = getIO();
+      io.emit("match:updated", match);
+      io.emit("match:updateList");
+    } catch (socketError) {
+      console.log("Socket not available:", socketError.message);
+    }
+
+    res.status(200).json({
+      match,
+      message: "AI commentary updated for this match"
+    });
+  } catch (error) {
+    console.error("Error updating AI commentary:", error);
+    res.status(400).json({ message: "Failed to update AI commentary", error: error.message });
   }
 };
 

@@ -114,9 +114,9 @@ async function callAI(prompt) {
   return null;
 }
 
-export async function generateCommentaryForBall(ballData) {
+export async function generateCommentaryForBall(ballData, { skipAi = false } = {}) {
   const prompt = buildCommentaryPrompt(ballData);
-  const aiResult = await callAI(prompt);
+  const aiResult = skipAi ? null : await callAI(prompt);
   return aiResult || generateFallbackCommentary(ballData);
 }
 

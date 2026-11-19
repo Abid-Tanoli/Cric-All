@@ -112,7 +112,7 @@ function sendError(res, error, fallback) {
 const escapeRegex = (value) => String(value).trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 const MATCH_SUMMARY_FIELDS =
-  "title venue matchType status startAt teams event organizationRef series resultText statusText";
+  "title venue matchType status startAt teams event organizationRef series resultText statusText useAiCommentary";
 
 const matchSummary = (match) => ({
   _id: match._id,
@@ -129,6 +129,7 @@ const matchSummary = (match) => ({
   })),
   event: match.event ? { _id: match.event._id || match.event, name: match.event.name } : null,
   series: match.series || "",
+  useAiCommentary: match.useAiCommentary === true,
   hasScore: (match.innings || []).some((innings) => (innings?.balls || 0) > 0),
 });
 
@@ -167,7 +168,7 @@ export const listOrgMatches = async (req, res) => {
 
 export const createOrgMatch = async (req, res) => {
   try {
-    const { title, venue, matchType, startAt, teams, eventId, series, seriesMatchNumber, tournamentId } = req.body;
+    const { title, venue, matchType, startAt, teams, eventId, series, seriesMatchNumber, tournamentId, useAiCommentary } = req.body;
     // A standalone fixture needs two teams this organization owns; a fixture
     // filed under one of the org's tournaments may instead use guest teams the
     // host registered in that tournament.
@@ -188,6 +189,7 @@ export const createOrgMatch = async (req, res) => {
       tournament: tournamentId || null,
       series: series || "",
       seriesMatchNumber: seriesMatchNumber ?? null,
+      useAiCommentary: useAiCommentary === true,
       // The tenant key is stamped here, from the authorized organization. A
       // guest team playing in the host's tournament still gets the host's ref.
       organizationRef: req.org._id,
