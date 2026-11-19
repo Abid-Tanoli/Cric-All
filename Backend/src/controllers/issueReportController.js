@@ -6,12 +6,16 @@ import Event from "../models/Event.js";
 import Tournament from "../models/Tournament.js";
 import Series from "../models/Series.js";
 import Team from "../models/Team.js";
+import Player from "../models/Player.js";
+import User from "../models/User.js";
 import Invitation from "../models/Invitation.js";
 import Membership from "../models/Membership.js";
 import { deleteMatch } from "./matchController.js";
 import { deleteEvent } from "./eventController.js";
 import { deleteTournament } from "./TournamentController.js";
 import { deleteSeries } from "./seriesController.js";
+import { deleteTeam } from "./teamsController.js";
+import { deleteOrganization } from "./organizationController.js";
 import { sendIssueNotificationMail } from "../utils/mailer.js";
 import { recordAudit } from "../utils/audit.js";
 import { syncLegacyMembersArray } from "../services/membershipService.js";
@@ -82,6 +86,104 @@ function sendAdminNotification(report, organizationName) {
       `Description: ${report.description}`,
     ].join("\n"),
   });
+}
+
+// Team and organization targets already have delete services with their own
+// cascades. These helpers only *describe/validate* what those services will do;
+// they never delete anything themselves.
+const isOrganizationTarget = (targetType) => targetType === "other";
+
+async function getDeletionTarget(report) {
+  if (report.targetType === "team") {
+    const team = await Team.findById(report.targetId).select("name");
+    return team ? { entityType: "team", name: team.name } : null;
+  }
+  if (isOrganizationTarget(report.targetType)) {
+    const organization = await TeamOrganization.findById(report.targetId).select("name");
+    return organization ? { entityType: "organization", name: organization.name } : null;
+  }
+  return null;
+}
+
+const describeCount = (count, label) => `${count} linked ${label}${count === 1 ? "" : "s"}`;
+
+async function getDeletionImpact(report) {
+  if (report.targetType === "team") {
+    const [players, memberships, matches, tournaments, series, events] = await Promise.all([
+      Player.countDocuments({ team: report.targetId }),
+      Membership.countDocuments({ organization: report.organization, status: "active" }),
+      Match.countDocuments({ teams: report.targetId }),
+      Tournament.countDocuments({ teams: report.targetId }),
+      Series.countDocuments({ teams: report.targetId }),
+      Event.countDocuments({ teams: report.targetId }),
+    ]);
+    const blockers = [
+      [matches, "match"],
+      [tournaments, "tournament"],
+      [series, "series"],
+      [events, "event"],
+    ].filter(([count]) => count > 0).map(([count, label]) => describeCount(count, label));
+    return { players, memberships, matches, tournaments, series, events, teams: 0, subOrganizations: 0, blockers };
+  }
+
+  const teamIds = (await Team.find({ organizationRef: report.targetId }).select("_id").lean())
+    .map((team) => team._id);
+  const [players, memberships, matches, tournaments, series, events, teams, subOrganizations] = await Promise.all([
+    teamIds.length ? Player.countDocuments({ team: { $in: teamIds } }) : 0,
+    Membership.countDocuments({ organization: report.targetId, status: "active" }),
+    Match.countDocuments({ organizationRef: report.targetId }),
+    Tournament.countDocuments({ organizationRef: report.targetId }),
+    Series.countDocuments({ organizationRef: report.targetId }),
+    Event.countDocuments({ organization: report.targetId }),
+    teamIds.length,
+    TeamOrganization.countDocuments({ parent: report.targetId }),
+  ]);
+  const blockers = [
+    [teams, "branch"],
+    [subOrganizations, "sub-organization"],
+    [matches, "match"],
+    [tournaments, "tournament"],
+    [series, "series"],
+    [events, "event"],
+    [memberships > 1 ? memberships - 1 : 0, "additional member"],
+  ].filter(([count]) => count > 0).map(([count, label]) => describeCount(count, label));
+  return { players, memberships, matches, tournaments, series, events, teams, subOrganizations, blockers };
+}
+
+function confirmNameError(body, target) {
+  const value = typeof body?.confirmName === "string" ? body.confirmName.trim() : "";
+  if (!value) {
+    return {
+      message: `Type the exact ${target.entityType} name to confirm the deletion.`,
+      code: "ISSUE_DELETE_CONFIRMATION_REQUIRED",
+    };
+  }
+  if (value !== target.name) {
+    return {
+      message: `Confirmation name does not match "${target.name}".`,
+      code: "ISSUE_DELETE_CONFIRMATION_MISMATCH",
+    };
+  }
+  return null;
+}
+
+// Fire-and-forget: a throttled/failed mail must never block the approve call.
+function sendApprovalMail(report, target, approvedBy) {
+  User.findById(report.reporter).select("name email").lean()
+    .then((reporter) => {
+      if (!reporter?.email) return;
+      sendIssueNotificationMail({
+        to: reporter.email,
+        subject: `Your deletion request was approved: ${report.subject}`,
+        text: [
+          `Hello ${reporter.name || "there"},`,
+          `Your ${report.type.replace("_", " ")} for ${target.entityType} "${target.name}" was approved by ${approvedBy}.`,
+          `The ${target.entityType} and its managed data have been removed.`,
+          `Subject: ${report.subject}`,
+        ].join("\n"),
+      });
+    })
+    .catch(() => {});
 }
 
 export const createOrganizationIssue = async (req, res) => {
@@ -218,6 +320,21 @@ const deletionHandlers = {
   event: deleteEvent,
   tournament: deleteTournament,
   series: deleteSeries,
+  team: deleteTeam,
+  other: deleteOrganization,
+};
+
+export const getAdminIssueDeletionImpact = async (req, res) => {
+  const report = await IssueReport.findById(req.params.issueId);
+  if (!report) return res.status(404).json({ message: "Report not found" });
+  if (report.type !== "deletion_request" || !report.targetId) {
+    return badRequest(res, "This report is not a deletion request.", "ISSUE_DELETE_UNSUPPORTED");
+  }
+
+  const target = await getDeletionTarget(report);
+  if (!target) return res.status(404).json({ message: "Target not found", code: "ISSUE_TARGET_NOT_FOUND" });
+  const impact = await getDeletionImpact(report);
+  return res.status(200).json({ target, impact });
 };
 
 function captureResponse() {
@@ -248,6 +365,24 @@ export const approveAndDeleteAdminIssue = async (req, res) => {
     return res.status(404).json({ message: "Target not found", code: "ISSUE_TARGET_NOT_FOUND" });
   }
 
+  // Team/organization approvals require an explicit, typed confirmation and a
+  // blocker check. The actual removal still goes through the existing delete
+  // service, so no new cascade rules are introduced here.
+  const target = await getDeletionTarget(report);
+  let impact = null;
+  if (target) {
+    const nameError = confirmNameError(req.body, target);
+    if (nameError) return res.status(400).json(nameError);
+    impact = await getDeletionImpact(report);
+    if (impact.blockers.length) {
+      return res.status(409).json({
+        message: `Cannot delete this ${target.entityType}: ${impact.blockers.join(", ")}. Remove or reassign them before approving.`,
+        code: "ISSUE_DELETE_LINKED_DATA",
+        impact,
+      });
+    }
+  }
+
   const deleteRes = captureResponse();
   await deletionHandlers[report.targetType](
     {
@@ -265,6 +400,25 @@ export const approveAndDeleteAdminIssue = async (req, res) => {
   report.resolvedBy = req.user._id;
   addStatusHistory(report, req, "resolved", `Approved and deleted ${report.targetType}`);
   await report.save();
+
+  const approvedBy = req.user?.username || req.user?.email || String(req.user?._id || "admin");
+  const auditTarget = target || { entityType: report.targetType, name: report.subject };
+  await recordAudit({
+    req,
+    organization: report.organization,
+    action: "issue.deletion_approved",
+    targetType: auditTarget.entityType,
+    targetId: report.targetId,
+    targetLabel: auditTarget.name,
+    metadata: {
+      issueReportId: String(report._id),
+      issueSubject: report.subject,
+      requester: String(report.reporter),
+      approvedBy,
+      ...(impact ? { impact } : {}),
+    },
+  });
+  sendApprovalMail(report, auditTarget, approvedBy);
   return res.status(200).json({ report, deletion: deleteRes.body });
 };
 

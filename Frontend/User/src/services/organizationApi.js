@@ -158,6 +158,11 @@ export const setMatchToss = (matchId, tossWinnerId, decision) =>
 export const setMatchTwelfthMan = (matchId, teamId, playerId) =>
   unwrap(api.put(`/matches/${matchId}/twelfth-man`, { teamId, playerId: playerId || null }));
 
+// Super Sub is a separate nomination from the 12th Man. Scoring still swaps the
+// nominated 12th Man, so this only stores a second reserve role for the setup UI.
+export const setMatchSuperSub = (matchId, teamId, playerId) =>
+  unwrap(api.put(`/matches/${matchId}/super-sub`, { teamId, playerId: playerId || null }));
+
 export const listOrgEvents = (orgId) => unwrap(api.get(`/organizations/${orgId}/events`));
 
 export const createOrgEvent = (orgId, payload) => unwrap(api.post(`/organizations/${orgId}/events`, payload));
@@ -301,6 +306,7 @@ export default {
   setMatchTeamRoles,
   setMatchToss,
   setMatchTwelfthMan,
+  setMatchSuperSub,
   listOrgEvents,
   createOrgEvent,
   updateOrgEvent,

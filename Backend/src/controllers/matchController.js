@@ -48,6 +48,41 @@ const sameId = (a, b) => idOf(a) && idOf(a) === idOf(b);
 const displayName = (entity, fallback = "Unknown") => entity?.name || entity?.shortName || entity?.fullName || fallback;
 
 /**
+ * Setup-time invariant: the XI, the 12th Man and the Super Sub are disjoint.
+ * Deliberately NOT a schema hook — the impact-player swap moves the nominated
+ * 12th Man into the XI and keeps the historical record, so a global validator
+ * would break live scoring. Setup controllers call this before saving instead.
+ */
+function validateRoleSelections(match) {
+  const xiByTeam = new Map((match.playingXI || []).map((entry) => [
+    idOf(entry.team),
+    new Set((entry.players || []).map(idOf)),
+  ]));
+  const twelfthByTeam = new Map((match.twelfthMan || []).map((entry) => [idOf(entry.team), idOf(entry.player)]));
+  const superSubByTeam = new Map((match.superSub || []).map((entry) => [idOf(entry.team), idOf(entry.player)]));
+
+  for (const [teamId, playerId] of twelfthByTeam) {
+    if (xiByTeam.get(teamId)?.has(playerId)) {
+      return { message: "The nominated 12th Man must be outside the Playing XI.", code: "TWELFTH_MAN_IN_XI" };
+    }
+    if (superSubByTeam.get(teamId) === playerId) {
+      return { message: "A player cannot be both 12th Man and Super Sub.", code: "MATCH_ROLE_OVERLAP" };
+    }
+  }
+  for (const [teamId, playerId] of superSubByTeam) {
+    if (xiByTeam.get(teamId)?.has(playerId)) {
+      return { message: "The nominated Super Sub must be outside the Playing XI.", code: "SUPER_SUB_IN_XI" };
+    }
+  }
+  // The same person may not hold a role for two different teams either.
+  const roles = [...twelfthByTeam.values(), ...superSubByTeam.values()].filter(Boolean);
+  if (new Set(roles).size !== roles.length) {
+    return { message: "A player may hold only one 12th Man or Super Sub role.", code: "MATCH_ROLE_OVERLAP" };
+  }
+  return null;
+}
+
+/**
  * P4: every player id the match itself names — a named XI, the squad15, the
  * bowling XI, the twelfth man, the impact players, and everyone who batted,
  * bowled or was dismissed. A paper match has no Player.team links, so this is
@@ -1318,6 +1353,13 @@ export const setPlayingXI = async (req, res) => {
         code: "TWELFTH_MAN_IN_XI",
       });
     }
+    const nominatedSuperSub = (match.superSub || []).find((entry) => sameId(entry.team, teamId));
+    if (nominatedSuperSub && players.some((player) => sameId(player, nominatedSuperSub.player))) {
+      return res.status(400).json({
+        message: "The nominated Super Sub must be outside the Playing XI.",
+        code: "SUPER_SUB_IN_XI",
+      });
+    }
     const configuredBowlers = (match.bowlingXI || []).find((entry) => sameId(entry.team, teamId));
     if (configuredBowlers && configuredBowlers.players.some((player) =>
       !players.some((xiPlayer) => sameId(xiPlayer, player)))) {
@@ -1337,6 +1379,9 @@ export const setPlayingXI = async (req, res) => {
     } else {
       match.playingXI.push({ team: teamId, players });
     }
+
+    const roleError = validateRoleSelections(match);
+    if (roleError) return res.status(400).json(roleError);
 
     await match.save({ validateModifiedOnly: true });
     const updatedMatch = await populateMatch(Match.findById(matchId));
@@ -1679,6 +1724,9 @@ export const setTwelfthMan = async (req, res) => {
       match.twelfthMan.push({ team: teamId, player: playerId });
     }
 
+    const roleError = validateRoleSelections(match);
+    if (roleError) return res.status(400).json(roleError);
+
     await match.save({ validateModifiedOnly: true });
     await match.populate("twelfthMan.team", "name shortName logo");
     await match.populate("twelfthMan.player", "name role playingRole battingPosition");
@@ -1700,6 +1748,80 @@ export const setTwelfthMan = async (req, res) => {
       message: "Failed to set 12th man",
       error: error.message
     });
+  }
+};
+
+/**
+ * Separate Super Sub nomination. Mirrors setTwelfthMan: same squad/ XI rules,
+ * stored in its own field, and never used by the scoring swap (which keeps
+ * using the nominated 12th Man). This keeps scoring behaviour unchanged.
+ */
+export const setSuperSub = async (req, res) => {
+  try {
+    const { matchId } = req.params;
+    const { teamId, playerId } = req.body;
+
+    if (!teamId) {
+      return res.status(400).json({ message: "Team is required" });
+    }
+
+    const match = await Match.findById(matchId);
+    if (!match) {
+      return res.status(404).json({ message: "Match not found" });
+    }
+    if (!match.teams.some((team) => sameId(team, teamId))) {
+      return res.status(400).json({ message: "Team is not part of this match" });
+    }
+
+    if (!playerId) {
+      match.superSub = (match.superSub || []).filter((entry) => !sameId(entry.team, teamId));
+      await match.save({ validateModifiedOnly: true });
+      await match.populate("superSub.team", "name shortName logo");
+      await match.populate("superSub.player", "name role playingRole battingPosition");
+      return res.status(200).json({ match, message: "Super Sub cleared" });
+    }
+
+    if ((match.playingXI || []).some((entry) =>
+      (entry.players || []).some((player) => sameId(player, playerId)))) {
+      return res.status(400).json({
+        message: "The Super Sub must be outside the Playing XI.",
+        code: "SUPER_SUB_IN_XI",
+      });
+    }
+
+    const squad = await loadTeamSquad(match, teamId);
+    if (!isInMatchSquad(match, teamId, squad, playerId)) {
+      return res.status(400).json({
+        message: "The Super Sub must be a member of this team's squad.",
+        code: "SUPER_SUB_NOT_IN_SQUAD",
+      });
+    }
+
+    const existingEntry = (match.superSub || []).find((entry) => sameId(entry.team, teamId));
+    if (existingEntry) {
+      existingEntry.player = playerId;
+    } else {
+      match.superSub.push({ team: teamId, player: playerId });
+    }
+
+    const roleError = validateRoleSelections(match);
+    if (roleError) return res.status(400).json(roleError);
+
+    await match.save({ validateModifiedOnly: true });
+    await match.populate("superSub.team", "name shortName logo");
+    await match.populate("superSub.player", "name role playingRole battingPosition");
+
+    try {
+      const io = getIO();
+      io.to(matchRoom(matchId)).emit("match:superSubUpdated", match);
+    } catch (socketError) {
+      console.log("Socket not available:", socketError.message);
+    }
+
+    res.status(200).json({ match, message: "Super Sub set successfully" });
+  } catch (error) {
+    console.error("Error setting Super Sub:", error);
+    res.status(400).json({ message: "Failed to set Super Sub", error: error.message });
   }
 };
 

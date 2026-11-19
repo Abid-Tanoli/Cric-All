@@ -26,6 +26,7 @@ import { handoverOrganizationSchema } from "../validators/orgValidators.js";
 import {
   approveAndDeleteAdminIssue,
   getAdminIssue,
+  getAdminIssueDeletionImpact,
   getOpenIssueCount,
   listAdminIssues,
   replyToAdminIssue,
@@ -128,6 +129,7 @@ router.get("/issues", auth.protect, auth.requireAdmin, listAdminIssues);
 router.get("/issues/:issueId", auth.protect, auth.requireAdmin, validateObjectId("issueId"), getAdminIssue);
 router.post("/issues/:issueId/reply", auth.protect, auth.requireAdmin, validateObjectId("issueId"), replyToAdminIssue);
 router.patch("/issues/:issueId/status", auth.protect, auth.requireAdmin, validateObjectId("issueId"), updateAdminIssueStatus);
+router.get("/issues/:issueId/deletion-impact", auth.protect, auth.requireAdmin, validateObjectId("issueId"), getAdminIssueDeletionImpact);
 router.post("/issues/:issueId/approve-delete", auth.protect, auth.requireAdmin, validateObjectId("issueId"), approveAndDeleteAdminIssue);
 
 export default router;

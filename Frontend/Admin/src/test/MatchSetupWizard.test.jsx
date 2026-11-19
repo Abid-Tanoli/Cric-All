@@ -45,6 +45,8 @@ const initialSetup = {
   team2XI: [],
   team1TwelfthMan: "",
   team2TwelfthMan: "",
+  team1SuperSub: "",
+  team2SuperSub: "",
   matchFormat: "T20",
   totalOvers: 20,
   powerplayEnabled: true,
@@ -127,7 +129,7 @@ describe("MatchSetupWizard full squad picker", () => {
     expect(onSave).toHaveBeenCalledTimes(1);
   });
 
-  it("offers only players outside the XI as the 12th Man / Super Sub", () => {
+  it("offers separate, exclusive 12th Man and Super Sub pickers outside the XI", () => {
     render(<Harness />);
 
     pickFirst(squadGroup("Sky Sports"), 11);
@@ -135,12 +137,39 @@ describe("MatchSetupWizard full squad picker", () => {
 
     expect(screen.getAllByText("Super Sub enabled")).toHaveLength(2);
 
-    const select = screen.getAllByLabelText(/12th Man/i)[0];
-    const options = Array.from(select.querySelectorAll("option")).map((option) => option.textContent);
-    expect(options[0]).toBe("No 12th Man");
-    expect(options).toContain("Sky Player 12");
-    expect(options).not.toContain("Sky Player 1");
-    expect(options).not.toContain("Sky Player 11");
+    const twelfth = screen.getByLabelText("Sky Sports 12th Man");
+    const superSub = screen.getByLabelText("Sky Sports Super Sub");
+    const optionLabels = (select) =>
+      Array.from(select.querySelectorAll("option")).map((option) => option.textContent);
+
+    expect(optionLabels(twelfth)[0]).toBe("No 12th Man");
+    expect(optionLabels(superSub)[0]).toBe("No Super Sub");
+    expect(optionLabels(twelfth)).toContain("Sky Player 12");
+    expect(optionLabels(twelfth)).not.toContain("Sky Player 1");
+    expect(optionLabels(twelfth)).not.toContain("Sky Player 11");
+
+    fireEvent.change(twelfth, { target: { value: "a12" } });
+    expect(optionLabels(superSub)).not.toContain("Sky Player 12");
+    fireEvent.change(superSub, { target: { value: "a13" } });
+    expect(optionLabels(twelfth)).not.toContain("Sky Player 13");
+  });
+
+  it("clears a reserve role and explains it when that player is added to the XI", () => {
+    render(<Harness />);
+
+    pickFirst(squadGroup("Sky Sports"), 11);
+    fireEvent.change(screen.getByLabelText("Sky Sports 12th Man"), { target: { value: "a12" } });
+    fireEvent.change(screen.getByLabelText("Sky Sports Super Sub"), { target: { value: "a13" } });
+
+    const players = within(squadGroup("Sky Sports")).getAllByRole("button");
+    fireEvent.click(players[0]); // make room in the XI
+    fireEvent.click(within(squadGroup("Sky Sports")).getAllByRole("button")[11]); // Sky Player 12
+
+    expect(screen.getByLabelText("Sky Sports 12th Man")).toHaveValue("");
+    expect(screen.getByLabelText("Sky Sports Super Sub")).toHaveValue("a13");
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Sky Player 12 was removed as 12th Man because they are now in the Playing XI."
+    );
   });
 
   it("filters the picker with the search box", () => {
