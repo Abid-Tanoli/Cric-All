@@ -423,6 +423,13 @@ const matchSchema = new mongoose.Schema(
       team: { type: mongoose.Schema.Types.ObjectId, ref: "Team" },
       player: { type: mongoose.Schema.Types.ObjectId, ref: "Player" }
     }],
+    // Separate from the 12th Man: a reserve nominated for the Super Sub rule.
+    // Scoring keeps using `twelfthMan`/`impactPlayers`; this field only records
+    // the setup selection and is validated against the XI and the 12th Man.
+    superSub: [{
+      team: { type: mongoose.Schema.Types.ObjectId, ref: "Team" },
+      player: { type: mongoose.Schema.Types.ObjectId, ref: "Player" }
+    }],
     // Task 6 "Super Sub" / Impact Player: when the platform enables the rule, a
     // team may bring its 12th man on for one of its playing XI. We keep the trace
     // here (who came in, who they replaced) while the swap itself is applied to
