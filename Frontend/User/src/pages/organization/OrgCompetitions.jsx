@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import RequestDeletionButton from "../../components/RequestDeletionButton";
 import { PERMISSIONS, can, formatDate } from "../../lib/orgUi";
 import { competitionErrorMessage } from "../../lib/orgCompetitions";
@@ -49,7 +50,11 @@ function CompetitionCard({ orgId, competition, kind, canManage, onOpen, onEdit }
             <button type="button" onClick={onOpen} className={secondaryButton}>
               Manage
             </button>
-          ) : null}
+          ) : (
+            <Link to={`/organization/${orgId}/series/${competition._id}`} className={secondaryButton}>
+              Open
+            </Link>
+          )}
           {canManage ? (
             <>
               <button type="button" onClick={onEdit} className={secondaryButton}>
