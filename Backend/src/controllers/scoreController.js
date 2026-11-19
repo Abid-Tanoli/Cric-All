@@ -268,8 +268,10 @@ export const updateScore = async (req, res) => {
 
     let commentaryIsAi = false;
 
-    // AI commentary generation (only when enabled for this match)
-    if (!customCommentary && matchAllowsAiCommentary(match)) {
+    // Commentary generation. The match flag decides whether the provider may
+    // be called; the deterministic template always runs so undo/rescore stays
+    // byte-for-byte stable.
+    if (!customCommentary) {
       const zone = (fieldingZone || (shotPlacement && shotPlacement.position))
         ? fieldPositionMapper.getZoneFromCoordinates(shotPlacement?.x || 50, shotPlacement?.y || 50)
         : { name: "an open area" };
@@ -315,7 +317,7 @@ export const updateScore = async (req, res) => {
             target: innings.target,
             requiredRunRate: innings.requiredRunRate
           }
-        });
+        }, { skipAi: !matchAllowsAiCommentary(match) });
 
         if (aiGeneratedCommentary && aiGeneratedCommentary.short) {
           commentary = aiGeneratedCommentary.short;
@@ -1152,44 +1154,32 @@ export const handleFieldClick = async (req, res) => {
       innings.currentBatsman1?.name ||
       "Batsman";
 
-    // Skip generation entirely when this match has AI commentary off.
-    const commentary = matchAllowsAiCommentary(match)
-      ? await aiCommentary.generateBallCommentary({
-          runs: runs || 0,
-          isWide: false,
-          isNoBall: false,
-          isBye: false,
-          isLegBye: false,
-          isFreeHit: false,
-          isWicket: isWicket || false,
-          wicketType: wicketType || "",
-          batsmanName,
-          bowlerName,
-          isAppeal,
-          zone: zone.name,
-          distanceCategory,
-          overNumber: overNumber || Math.floor(innings.balls / 6) + 1,
-          ballNumber: ballNumber || (innings.balls % 6) + 1,
-          currentScore: innings.runs,
-          currentWickets: innings.wickets,
-          matchContext: {
-            totalOvers: match.totalOvers,
-            target: innings.target,
-            requiredRunRate: innings.requiredRunRate
-          }
-        })
-      : generateDetailedCommentary({
-          runs: runs || 0,
-          isWicket: isWicket || false,
-          wicketType: wicketType || "",
-          batsmanName,
-          bowlerName,
-          currentScore: innings.runs,
-          currentWickets: innings.wickets,
-          overNumber: overNumber || Math.floor(innings.balls / 6) + 1,
-          ballNumber: ballNumber || (innings.balls % 6) + 1,
-          isAppeal
-        });
+    // The match flag decides whether the provider may be called. The
+    // deterministic template still runs, so the payload shape is unchanged.
+    const commentary = await aiCommentary.generateBallCommentary({
+      runs: runs || 0,
+      isWide: false,
+      isNoBall: false,
+      isBye: false,
+      isLegBye: false,
+      isFreeHit: false,
+      isWicket: isWicket || false,
+      wicketType: wicketType || "",
+      batsmanName,
+      bowlerName,
+      isAppeal,
+      zone: zone.name,
+      distanceCategory,
+      overNumber: overNumber || Math.floor(innings.balls / 6) + 1,
+      ballNumber: ballNumber || (innings.balls % 6) + 1,
+      currentScore: innings.runs,
+      currentWickets: innings.wickets,
+      matchContext: {
+        totalOvers: match.totalOvers,
+        target: innings.target,
+        requiredRunRate: innings.requiredRunRate
+      }
+    }, { skipAi: !matchAllowsAiCommentary(match) });
 
     // Emit field click event with generated commentary
     const io = getIO();

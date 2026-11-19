@@ -388,15 +388,18 @@ class AICommentaryService {
     this.model = "claude-sonnet-4-20250514";
   }
 
-  // Main entry: always returns structured commentary first, optionally enhances with AI
-  async generateBallCommentary(data) {
+  // Main entry: always returns structured commentary first, optionally enhances with AI.
+  // `skipAi` is used by matches with AI commentary off: the deterministic
+  // template still runs (so scoring snapshots stay stable), but no provider is
+  // ever called.
+  async generateBallCommentary(data, { skipAi = false } = {}) {
     // 1. Always generate structured template commentary
     const structured = buildStructuredCommentary(data);
     let result = { ...structured };
 
     // 2. If AI is enabled and a key is available, enhance VIVID with AI flair
     //    (keep SHORT as is).
-    if (this.apiKey && (await isAiCommentaryEnabled())) {
+    if (!skipAi && this.apiKey && (await isAiCommentaryEnabled())) {
       try {
         const vividEnriched = await this._aiEnrichVivid(data, structured.vivid);
         if (vividEnriched) result.vivid = vividEnriched;

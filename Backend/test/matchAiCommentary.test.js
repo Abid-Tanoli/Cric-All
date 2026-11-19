@@ -312,9 +312,9 @@ test("AI commentary generation is skipped for a match with the flag off", async 
   const org = await makeOrg(await makeUser());
   const match = await makeOrgMatch(org);
 
-  let calls = 0;
-  mock.method(aiCommentary, "generateBallCommentary", async () => {
-    calls += 1;
+  const calls = [];
+  mock.method(aiCommentary, "generateBallCommentary", async (_data, options) => {
+    calls.push(options);
     return { short: "AI line", vivid: "AI vivid" };
   });
 
@@ -324,7 +324,8 @@ test("AI commentary generation is skipped for a match with the flag off", async 
     off,
   );
   assert.strictEqual(off.statusCode, 200, JSON.stringify(off.body));
-  assert.strictEqual(calls, 0, "a paid generation path was called while the match flag was off");
+  assert.strictEqual(calls.length, 1, "the deterministic template still runs");
+  assert.strictEqual(calls[0]?.skipAi, true, "no provider call while the match flag is off");
 
   await Match.updateOne({ _id: match._id }, { $set: { useAiCommentary: true } });
   const on = mockRes();
@@ -333,5 +334,6 @@ test("AI commentary generation is skipped for a match with the flag off", async 
     on,
   );
   assert.strictEqual(on.statusCode, 200, JSON.stringify(on.body));
-  assert.strictEqual(calls, 1, "the match opted in, so generation should run");
+  assert.strictEqual(calls.length, 2, "the match opted in, so generation should run");
+  assert.strictEqual(calls[1]?.skipAi, false, "the opted-in match allows the provider call");
 });
