@@ -2,7 +2,9 @@ import React, { useCallback, useEffect, useState } from "react";
 import * as issuesApi from "../services/issuesApi";
 
 const STATUSES = ["open", "in_review", "resolved", "rejected"];
-const DELETABLE_TARGETS = new Set(["match", "event", "tournament", "series"]);
+const DELETABLE_TARGETS = new Set(["match", "event", "tournament", "series", "team", "other"]);
+// Organizations are reported with targetType "other" by the owner app.
+const NAMED_DELETION_TARGETS = new Set(["team", "other"]);
 
 const statusClass = {
   open: "border-amber-300 bg-amber-100 text-amber-900",
@@ -29,6 +31,9 @@ export default function Issues() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [impact, setImpact] = useState(null);
+  const [impactLoading, setImpactLoading] = useState(false);
+  const [confirmName, setConfirmName] = useState("");
 
   const loadList = useCallback(async () => {
     setLoading(true);
@@ -62,6 +67,9 @@ export default function Issues() {
     setSelectedId(issueId);
     setDetail(null);
     setError("");
+    setConfirmDelete(false);
+    setImpact(null);
+    setConfirmName("");
     try {
       const response = await issuesApi.getIssue(issueId);
       setDetail(response.report);
@@ -115,16 +123,52 @@ export default function Issues() {
     }
   };
 
+  const openConfirmDelete = async () => {
+    setConfirmDelete(true);
+    setImpact(null);
+    setConfirmName("");
+    if (!selectedId || !NAMED_DELETION_TARGETS.has(detail?.targetType)) return;
+    setImpactLoading(true);
+    try {
+      const response = await issuesApi.getDeletionImpact(selectedId);
+      setImpact(response);
+    } catch (requestError) {
+      setError(requestError.response?.data?.message || requestError.message || "Could not load deletion impact.");
+    } finally {
+      setImpactLoading(false);
+    }
+  };
+
   const approveDelete = async () => {
     if (!selectedId) return;
     setBusy(true);
     setError("");
     try {
-      await issuesApi.approveAndDeleteIssue(selectedId);
+      const payload = NAMED_DELETION_TARGETS.has(detail?.targetType)
+        ? { confirmName: confirmName.trim() }
+        : {};
+      await issuesApi.approveAndDeleteIssue(selectedId, payload);
       setConfirmDelete(false);
       await refreshSelected();
     } catch (requestError) {
       setError(requestError.response?.data?.message || requestError.message || "Could not approve deletion.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const closeWithoutDeleting = async (nextStatus) => {
+    if (!selectedId) return;
+    setBusy(true);
+    setError("");
+    try {
+      await issuesApi.updateIssueStatus(selectedId, {
+        status: nextStatus,
+        ...(nextStatus === "rejected" ? { adminReply: reply } : {}),
+      });
+      await refreshSelected();
+    } catch (requestError) {
+      setError(requestError.response?.data?.message || requestError.message || "Could not update status.");
     } finally {
       setBusy(false);
     }
@@ -135,6 +179,11 @@ export default function Issues() {
     DELETABLE_TARGETS.has(detail.targetType) &&
     Boolean(detail.targetId) &&
     !["resolved", "rejected"].includes(detail.status);
+  const namedDeletion = NAMED_DELETION_TARGETS.has(detail?.targetType);
+  const hasBlockers = Boolean(impact?.impact?.blockers?.length);
+  const nameMatches = Boolean(impact?.target?.name && confirmName.trim() === impact.target.name);
+  const confirmDisabled = busy || impactLoading ||
+    (namedDeletion && (!nameMatches || hasBlockers));
 
   return (
     <div className="space-y-5">
@@ -233,10 +282,20 @@ export default function Issues() {
                   </select>
                 </label>
                 <button type="button" onClick={saveStatus} disabled={busy} className={buttonClass}>Update status</button>
+                {detail.type === "deletion_request" && !["resolved", "rejected"].includes(detail.status) ? (
+                  <>
+                    <button type="button" onClick={() => closeWithoutDeleting("resolved")} disabled={busy} className={buttonClass}>
+                      Resolve without deleting
+                    </button>
+                    <button type="button" onClick={() => closeWithoutDeleting("rejected")} disabled={busy || !reply.trim()} className={buttonClass}>
+                      Reject
+                    </button>
+                  </>
+                ) : null}
                 {canApproveDelete ? (
                   <button
                     type="button"
-                    onClick={() => setConfirmDelete(true)}
+                    onClick={openConfirmDelete}
                     disabled={busy}
                     className="min-h-11 rounded-lg bg-red-600 px-4 py-2 text-xs font-black uppercase tracking-widest text-white disabled:opacity-50"
                   >
@@ -269,14 +328,50 @@ export default function Issues() {
 
       {confirmDelete ? (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4">
-          <section role="dialog" aria-modal="true" className="w-full max-w-md rounded-2xl border border-red-300 bg-cric-card p-5 shadow-2xl">
+          <section role="dialog" aria-modal="true" className="w-full max-w-lg rounded-2xl border border-red-300 bg-cric-card p-5 shadow-2xl">
             <h2 className="text-lg font-black text-cric-text">Confirm deletion</h2>
             <p className="mt-2 text-sm font-semibold text-cric-muted">
-              Delete the linked {detail?.targetType} for “{detail?.subject}”? This cannot be undone.
+              Delete the linked {namedDeletion ? impact?.target?.entityType || detail?.targetType : detail?.targetType} for “{detail?.subject}”? This cannot be undone.
             </p>
+            {namedDeletion ? (
+              <div className="mt-4 space-y-3">
+                {impactLoading ? (
+                  <p className="text-xs font-bold text-cric-muted">Loading deletion impact…</p>
+                ) : impact?.impact ? (
+                  <>
+                    <div className="rounded-xl border border-cric-border bg-cric-bg p-3">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-cric-muted">What will be removed or affected</p>
+                      <ul className="mt-2 grid grid-cols-2 gap-1 text-xs font-semibold text-cric-text">
+                        <li>Players: {impact.impact.players}</li>
+                        <li>Memberships: {impact.impact.memberships}</li>
+                        <li>Matches: {impact.impact.matches}</li>
+                        <li>Tournaments: {impact.impact.tournaments}</li>
+                        <li>Series: {impact.impact.series}</li>
+                        {impact.impact.teams ? <li>Branches: {impact.impact.teams}</li> : null}
+                        {impact.impact.subOrganizations ? <li>Sub-organizations: {impact.impact.subOrganizations}</li> : null}
+                      </ul>
+                    </div>
+                    {hasBlockers ? (
+                      <div role="alert" className="rounded-xl border border-red-300 bg-red-50 p-3 text-xs font-bold text-red-800">
+                        Cannot delete: {impact.impact.blockers.join(", ")}. Remove or reassign them before approving.
+                      </div>
+                    ) : null}
+                    <label className="block text-xs font-black text-cric-text">
+                      Type “{impact.target.name}” to confirm
+                      <input
+                        value={confirmName}
+                        onChange={(event) => setConfirmName(event.target.value)}
+                        autoComplete="off"
+                        className={`${fieldClass} mt-1 w-full`}
+                      />
+                    </label>
+                  </>
+                ) : null}
+              </div>
+            ) : null}
             <div className="mt-4 flex justify-end gap-2">
               <button type="button" onClick={() => setConfirmDelete(false)} className={buttonClass}>Cancel</button>
-              <button type="button" onClick={approveDelete} disabled={busy} className="min-h-11 rounded-lg bg-red-600 px-4 py-2 text-xs font-black uppercase tracking-widest text-white disabled:opacity-50">
+              <button type="button" onClick={approveDelete} disabled={confirmDisabled} className="min-h-11 rounded-lg bg-red-600 px-4 py-2 text-xs font-black uppercase tracking-widest text-white disabled:opacity-50">
                 {busy ? "Deleting…" : "Confirm delete"}
               </button>
             </div>

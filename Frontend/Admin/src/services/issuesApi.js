@@ -9,5 +9,7 @@ export const replyToIssue = (issueId, adminReply) =>
   unwrap(api.post(`/admin/issues/${issueId}/reply`, { adminReply }));
 export const updateIssueStatus = (issueId, payload) =>
   unwrap(api.patch(`/admin/issues/${issueId}/status`, payload));
-export const approveAndDeleteIssue = (issueId) =>
-  unwrap(api.post(`/admin/issues/${issueId}/approve-delete`));
+export const getDeletionImpact = (issueId) =>
+  unwrap(api.get(`/admin/issues/${issueId}/deletion-impact`));
+export const approveAndDeleteIssue = (issueId, payload = {}) =>
+  unwrap(api.post(`/admin/issues/${issueId}/approve-delete`, payload));
