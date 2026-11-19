@@ -470,6 +470,9 @@ const matchSchema = new mongoose.Schema(
     seedSource: { type: String, default: "" },
     seedVersion: { type: String, default: "" },
     commentary: { type: mongoose.Schema.Types.Mixed },
+  // Match-level AI commentary capture. Opt-in: matches saved before this field
+  // existed read as false, so no existing match starts generating AI commentary.
+  useAiCommentary: { type: Boolean, default: false },
     seriesMatchNumber: {
       type: Number,
       default: null

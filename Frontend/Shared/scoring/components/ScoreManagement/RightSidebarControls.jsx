@@ -93,7 +93,7 @@ const RightSidebarControls = React.memo(({
                     <div>
                         <h4 className="text-[10px] font-black uppercase tracking-[0.3em] text-cric-muted">AI commentary</h4>
                         <p className="mt-0.5 text-[10px] font-semibold text-cric-muted">
-                            {useAICommentary ? 'Analysis controls shown.' : 'Off — result commentary only.'}
+                            AI commentary: {useAICommentary ? 'ON' : 'OFF'} (applies to everyone scoring this match)
                         </p>
                     </div>
                     <button

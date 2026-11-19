@@ -31,7 +31,7 @@ import {
 
 const MATCH_TYPES = ["T10", "T20", "6 Overs", "8 Overs", "ODI", "Test", "Tape Ball", "Super Over"];
 
-const emptyMatch = { teamA: "", teamB: "", matchType: "T20", venue: "", startAt: "", eventId: "" };
+const emptyMatch = { teamA: "", teamB: "", matchType: "T20", venue: "", startAt: "", eventId: "", useAiCommentary: false };
 
 const toDateInput = (value) => (value ? new Date(value).toISOString().slice(0, 10) : "");
 
@@ -675,12 +675,14 @@ function MatchForm({ orgId, teams, events, initial, onDone, onCancel }) {
           venue: form.venue?.trim() || undefined,
           matchType: form.matchType,
           startAt: form.startAt || undefined,
+          useAiCommentary: form.useAiCommentary === true,
         };
         await updateOrgMatch(orgId, initial._id, Object.fromEntries(Object.entries(payload).filter(([, v]) => v !== undefined)));
       } else {
         await createOrgMatch(orgId, {
           teams: [form.teamA, form.teamB],
           matchType: form.matchType,
+          useAiCommentary: form.useAiCommentary === true,
           ...(form.venue.trim() ? { venue: form.venue.trim() } : {}),
           ...(form.startAt ? { startAt: new Date(form.startAt).toISOString() } : {}),
           ...(form.eventId ? { eventId: form.eventId } : {}),
@@ -767,6 +769,14 @@ function MatchForm({ orgId, teams, events, initial, onDone, onCancel }) {
           </Field>
         </div>
       )}
+      <label className="flex items-center gap-2 text-xs font-semibold text-slate-700">
+        <input
+          type="checkbox"
+          checked={form.useAiCommentary === true}
+          onChange={(event) => setForm((f) => ({ ...f, useAiCommentary: event.target.checked }))}
+        />
+        Enable AI commentary (default OFF; applies to everyone scoring this match)
+      </label>
       <div className="flex gap-2">
         <button type="submit" disabled={busy} className={primaryButton}>
           {busy ? "Saving…" : initial ? "Save fixture" : "Create fixture"}

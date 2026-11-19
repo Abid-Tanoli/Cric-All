@@ -6,6 +6,7 @@ import {
   getMatch,
   createMatch,
   updateMatch,
+  setMatchAiCommentary,
   deleteMatch,
   setMOM,
   setMatchScorers,
@@ -92,6 +93,7 @@ import {
   retireBatsmanSchema,
 } from "../validators/scoreValidators.js";
 import Match from "../models/Match.js";
+import { updateMatchAiCommentarySchema } from "../validators/matchValidators.js";
 
 const router = express.Router();
 const adminOnly = [protect, requireAdmin, requireVerifiedEmail];
@@ -159,6 +161,9 @@ router.put("/:matchId/officials/:userId", ...adminOnly, validateObjectId("matchI
 router.post("/:matchId/umpire-signal", ...adminOnly, validateObjectId("matchId"), triggerUmpireSignal);
 router.put("/:matchId/official-status", ...scoring("matchId"), updateMatchStatusOfficial);
 
+// Match-level AI commentary. Same score_match gate as /score so a score_handler
+// can flip it for their match; viewers/players have no score_match permission.
+router.patch("/:matchId/ai-commentary", ...scoring("matchId"), validate(updateMatchAiCommentarySchema), setMatchAiCommentary);
 router.patch("/:id/featured", ...adminOnly, validateObjectId("id"), toggleMatchFeatured);
 router.post("/:id/postpone", ...adminOnly, validateObjectId("id"), postponeMatch);
 router.post("/:id/reschedule", ...adminOnly, validateObjectId("id"), rescheduleMatch);

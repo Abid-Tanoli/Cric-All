@@ -80,6 +80,7 @@ export const createOrgMatchSchema = z
     tournamentId: objectId.optional(),
     series: z.string().trim().max(200).optional(),
     seriesMatchNumber: z.number().int().min(1).max(500).optional(),
+    useAiCommentary: z.boolean().optional(),
   })
   .strict();
 
@@ -98,9 +99,18 @@ export const updateOrgMatchSchema = z
       .optional(),
     series: z.string().trim().max(200).optional(),
     seriesMatchNumber: z.number().int().min(1).max(500).nullable().optional(),
+    useAiCommentary: z.boolean().optional(),
   })
   .strict()
   .refine((body) => Object.keys(body).length > 0, { message: 'Nothing to update' });
+
+// Scoring-screen toggle. Kept separate from the fixture schemas: a score_handler
+// may flip this for one match but still cannot edit the fixture itself.
+export const updateMatchAiCommentarySchema = z
+  .object({
+    useAiCommentary: z.boolean(),
+  })
+  .strict();
 
 const squadEntry = z
   .object({
