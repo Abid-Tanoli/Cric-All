@@ -69,6 +69,7 @@ import {
 import {
   addOrgTournamentTeams,
   applyOrgTournamentFixtures,
+  completeOrgSeries,
   createOrgSeries,
   createOrgTournament,
   createOrgTournamentMatch,
@@ -80,6 +81,7 @@ import {
   getOrgTournamentFixtures,
   getOrgTournamentPointsTable,
   getOrgTournamentSquad,
+  linkOrgSeriesMatch,
   listOrgSeries,
   listOrgTournaments,
   previewOrgTournamentFixtures,
@@ -89,6 +91,7 @@ import {
   setOrgTournamentGroups,
   setOrgTournamentOfficialAwards,
   setOrgTournamentSquad,
+  unlinkOrgSeriesMatch,
   updateOrgSeries,
   updateOrgTournament,
 } from '../controllers/orgCompetitionsController.js';
@@ -373,6 +376,7 @@ router.put(
 // Series
 const seriesRead = [...competitionRead, requireOrgSeries()];
 const seriesWrite = [...competitionWrite, requireOrgSeries()];
+const seriesFixture = [...competitionFixture, requireOrgSeries()];
 const seriesDelete = [
   ...orgScoped,
   requirePlatformAdminDelete,
@@ -385,6 +389,23 @@ router.post('/:id/series', ...competitionWrite, createOrgSeries);
 router.get('/:id/series/:seriesId', ...seriesRead, getOrgSeries);
 router.put('/:id/series/:seriesId', ...seriesWrite, updateOrgSeries);
 router.delete('/:id/series/:seriesId', ...seriesDelete, deleteOrgSeries);
+
+// Fixtures inside a series are match setup, not a competition edit: a manager
+// can create/link/unlink the games they run. Completion is the competition
+// edit, so it stays behind manage_competitions.
+router.post(
+  '/:id/series/:seriesId/matches/:matchId',
+  ...seriesFixture,
+  validateObjectId('matchId'),
+  linkOrgSeriesMatch
+);
+router.delete(
+  '/:id/series/:seriesId/matches/:matchId',
+  ...seriesFixture,
+  validateObjectId('matchId'),
+  unlinkOrgSeriesMatch
+);
+router.post('/:id/series/:seriesId/complete', ...seriesWrite, completeOrgSeries);
 
 // --- dashboard support -------------------------------------------------------
 router.get('/:id/access', ...manage, validateObjectId('id'), getMyOrgAccess);

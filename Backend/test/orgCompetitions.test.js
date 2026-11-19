@@ -287,6 +287,9 @@ function routeCases(w) {
     { name: "create series", method: "POST", path: `${o}/series`, allowed: COMP, body: () => ({ name: `Created Series ${uniq()}` }) },
     { name: "get series", method: "GET", path: s, allowed: READ },
     { name: "update series", method: "PUT", path: s, allowed: COMP, body: () => ({ venue: "Series Ground" }) },
+    { name: "link series match", method: "POST", path: `${s}/matches/${w.matchA._id}`, allowed: FIXTURE },
+    { name: "unlink series match", method: "DELETE", path: `${s}/matches/${w.matchA._id}`, allowed: FIXTURE },
+    { name: "complete series", method: "POST", path: `${s}/complete`, allowed: COMP },
     { name: "delete series", method: "DELETE", path: s, allowed: PLATFORM_DELETE },
     { name: "toggle 12th man", method: "PUT", path: `${o}/matches/${w.matchA._id}/twelfth-man`, allowed: COMP, body: () => ({ enabled: true }) },
   ];

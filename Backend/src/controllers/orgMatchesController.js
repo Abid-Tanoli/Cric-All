@@ -3,6 +3,7 @@ import Match from "../models/Match.js";
 import Event from "../models/Event.js";
 import Team from "../models/Team.js";
 import Tournament from "../models/Tournament.js";
+import Series from "../models/Series.js";
 import { recordAudit } from "../utils/audit.js";
 import { emitToAll } from "../socket/socket.js";
 import { buildMatchInnings } from "../utils/matchInnings.js";
@@ -96,6 +97,49 @@ async function assertFixtureTeams(orgId, teams, tournamentId) {
   return assertTeamsInOrg(orgId, teams);
 }
 
+/**
+ * A fixture may be filed under one of this organization's series. The series is
+ * resolved WITH the tenant key (another org's series is a 422 here because it is
+ * a body reference, not a path resource), must not be completed, and both sides
+ * must be among its registered teams. New writes store the series id, never the
+ * slug or name the fixture may have been imported with.
+ */
+async function resolveMatchSeries(orgId, seriesRef) {
+  if (!seriesRef) return null;
+  if (!mongoose.isValidObjectId(String(seriesRef))) {
+    const error = new Error("That series does not belong to this organization");
+    error.code = "SERIES_NOT_IN_ORG";
+    error.status = 422;
+    throw error;
+  }
+  const series = await Series.findOne({ _id: seriesRef, organizationRef: orgId })
+    .select("_id teams status")
+    .lean();
+  if (!series) {
+    const error = new Error("That series does not belong to this organization");
+    error.code = "SERIES_NOT_IN_ORG";
+    error.status = 422;
+    throw error;
+  }
+  if (series.status === "completed") {
+    const error = new Error("A completed series cannot take new matches");
+    error.code = "SERIES_COMPLETED";
+    error.status = 409;
+    throw error;
+  }
+  return series;
+}
+
+function assertTeamsInSeries(series, teamIds) {
+  const registered = new Set((series?.teams || []).map((id) => String(id?._id || id)));
+  if (!teamIds.every((id) => registered.has(String(id)))) {
+    const error = new Error("Both teams must be part of this series");
+    error.code = "MATCH_TEAM_NOT_IN_SERIES";
+    error.status = 422;
+    throw error;
+  }
+}
+
 function sendError(res, error, fallback) {
   if (error?.code && error?.status) {
     return res.status(error.status).json({ message: error.message, code: error.code });
@@ -112,7 +156,7 @@ function sendError(res, error, fallback) {
 const escapeRegex = (value) => String(value).trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 const MATCH_SUMMARY_FIELDS =
-  "title venue matchType status startAt teams event organizationRef series resultText statusText useAiCommentary";
+  "title venue matchType status startAt teams event organizationRef series seriesMatchNumber resultText statusText useAiCommentary";
 
 const matchSummary = (match) => ({
   _id: match._id,
@@ -129,6 +173,7 @@ const matchSummary = (match) => ({
   })),
   event: match.event ? { _id: match.event._id || match.event, name: match.event.name } : null,
   series: match.series || "",
+  seriesMatchNumber: match.seriesMatchNumber ?? null,
   useAiCommentary: match.useAiCommentary === true,
   hasScore: (match.innings || []).some((innings) => (innings?.balls || 0) > 0),
 });
@@ -175,6 +220,24 @@ export const createOrgMatch = async (req, res) => {
     const ownedTeams = await assertFixtureTeams(req.org._id, teams, tournamentId);
     if (eventId) await assertEventInOrg(req.org._id, eventId);
 
+    // A fixture filed under a series is both scoped to the tenant and limited to
+    // the teams entered in that series.
+    const targetSeries = await resolveMatchSeries(req.org._id, series);
+    if (targetSeries) assertTeamsInSeries(targetSeries, teams);
+
+    let nextSeriesNumber = seriesMatchNumber ?? null;
+    if (targetSeries && nextSeriesNumber == null) {
+      const last = await Match.findOne({
+        organizationRef: req.org._id,
+        series: String(targetSeries._id),
+      })
+        .sort({ seriesMatchNumber: -1 })
+        .select("seriesMatchNumber")
+        .lean();
+      const lastNumber = Number(last?.seriesMatchNumber);
+      nextSeriesNumber = Number.isFinite(lastNumber) && lastNumber > 0 ? lastNumber + 1 : 1;
+    }
+
     // Keep the order the caller chose: "A vs B" is not the same fixture as
     // "B vs A", and a $in lookup returns them in whatever order Mongo feels like.
     const nameOf = new Map(ownedTeams.map((team) => [String(team._id), team.name]));
@@ -187,8 +250,8 @@ export const createOrgMatch = async (req, res) => {
       teams,
       event: eventId || null,
       tournament: tournamentId || null,
-      series: series || "",
-      seriesMatchNumber: seriesMatchNumber ?? null,
+      series: targetSeries ? String(targetSeries._id) : "",
+      seriesMatchNumber: nextSeriesNumber,
       useAiCommentary: useAiCommentary === true,
       // The tenant key is stamped here, from the authorized organization. A
       // guest team playing in the host's tournament still gets the host's ref.
@@ -238,12 +301,19 @@ export const updateOrgMatch = async (req, res) => {
     const match = await Match.findOne({ _id: req.params.matchId, organizationRef: req.org._id });
     if (!match) return matchNotFound(res);
 
-    const { teams, status, ...rest } = req.body;
+    const { teams, status, series, seriesMatchNumber, ...rest } = req.body;
 
     // Changing the sides of a fixture is only sane before anybody has scored in
     // it: `innings` is seeded with the two team ids, so re-pointing the fixture
     // afterwards would leave the scorecard attributing runs to a team that is no
     // longer playing.
+    let targetSeries = null;
+    if (series !== undefined) {
+      targetSeries = await resolveMatchSeries(req.org._id, series);
+    } else if (teams && match.series) {
+      targetSeries = await resolveMatchSeries(req.org._id, match.series);
+    }
+
     if (teams) {
       if (hasRecordedScore(match)) {
         return res.status(409).json({
@@ -252,11 +322,24 @@ export const updateOrgMatch = async (req, res) => {
         });
       }
       await assertFixtureTeams(req.org._id, teams, match.tournament);
+      if (targetSeries) assertTeamsInSeries(targetSeries, teams);
       match.teams = teams;
       match.innings = [
         { team: teams[0], status: "upcoming" },
         { team: teams[1], status: "upcoming" },
       ];
+    } else if (targetSeries) {
+      // The teams are not changing, but the fixture is entering a series (or
+      // staying in one); it still has to be one of that series' sides.
+      assertTeamsInSeries(targetSeries, (match.teams || []).map(String));
+    }
+
+    if (series !== undefined) {
+      match.series = targetSeries ? String(targetSeries._id) : "";
+      if (!match.series) match.seriesMatchNumber = null;
+    }
+    if (seriesMatchNumber !== undefined && match.series) {
+      match.seriesMatchNumber = seriesMatchNumber;
     }
 
     if (status && status !== match.status) {
