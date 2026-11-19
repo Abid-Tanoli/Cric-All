@@ -134,6 +134,8 @@ export default function useMatchScoring({ matchId, tabId }) {
         team2XI: [],
         team1TwelfthMan: '',
         team2TwelfthMan: '',
+        team1SuperSub: '',
+        team2SuperSub: '',
         matchFormat: 'T20',
         totalOvers: 20,
         powerplayEnabled: true,
@@ -338,6 +340,10 @@ export default function useMatchScoring({ matchId, tabId }) {
                 const entry = (res.data.twelfthMan || []).find(t => String(t.team?._id || t.team) === String(teamId));
                 return String(entry?.player?._id || entry?.player || '');
             };
+            const superSubFor = (teamId) => {
+                const entry = (res.data.superSub || []).find(t => String(t.team?._id || t.team) === String(teamId));
+                return String(entry?.player?._id || entry?.player || '');
+            };
             const curInn = res.data.innings[res.data.currentInnings];
             const strikeId = curInn?.onStrikeBatsman?._id || curInn?.onStrikeBatsman || '';
             const bat1Id = curInn?.currentBatsman1?._id || curInn?.currentBatsman1 || '';
@@ -350,6 +356,8 @@ export default function useMatchScoring({ matchId, tabId }) {
                 team2XI: t2XI,
                 team1TwelfthMan: twelfthFor(res.data.teams[0]?._id),
                 team2TwelfthMan: twelfthFor(res.data.teams[1]?._id),
+                team1SuperSub: superSubFor(res.data.teams[0]?._id),
+                team2SuperSub: superSubFor(res.data.teams[1]?._id),
                 matchFormat: res.data.matchType || prev.matchFormat,
                 totalOvers: res.data.totalOvers || prev.totalOvers,
                 powerplayEnabled: res.data.powerplayConfig?.enabled ?? prev.powerplayEnabled,
@@ -741,44 +749,90 @@ export default function useMatchScoring({ matchId, tabId }) {
         }
 
         const teams = [
-            { id: selectedMatch.teams[0]._id, xi: setupState.team1XI, twelfth: setupState.team1TwelfthMan },
-            { id: selectedMatch.teams[1]._id, xi: setupState.team2XI, twelfth: setupState.team2TwelfthMan },
+            {
+                id: selectedMatch.teams[0]._id,
+                xi: setupState.team1XI,
+                twelfth: setupState.team1TwelfthMan,
+                superSub: setupState.team1SuperSub,
+            },
+            {
+                id: selectedMatch.teams[1]._id,
+                xi: setupState.team2XI,
+                twelfth: setupState.team2TwelfthMan,
+                superSub: setupState.team2SuperSub,
+            },
         ];
 
-        const twelfthInXI = teams.find((team) =>
-            team.twelfth && team.xi.some((id) => String(id?._id || id) === String(team.twelfth))
-        );
-        if (twelfthInXI) {
-            showToast("The 12th Man must be outside the Playing XI.", 'warning');
+        const allXI = new Set(teams.flatMap((team) => team.xi.map((id) => String(id?._id || id))));
+        const roles = teams.flatMap((team) => [
+            { team: team.id, role: '12th Man', playerId: team.twelfth },
+            { team: team.id, role: 'Super Sub', playerId: team.superSub },
+        ]).filter((entry) => entry.playerId);
+        if (roles.some((entry) => allXI.has(String(entry.playerId)))) {
+            showToast("The 12th Man and Super Sub must be outside the Playing XI.", 'warning');
+            return;
+        }
+        if (teams.some((team) => team.twelfth && team.superSub && String(team.twelfth) === String(team.superSub))) {
+            showToast("A player cannot be both 12th Man and Super Sub.", 'warning');
+            return;
+        }
+        const roleIds = roles.map((entry) => String(entry.playerId));
+        if (new Set(roleIds).size !== roleIds.length) {
+            showToast("A player may hold only one 12th Man or Super Sub role.", 'warning');
             return;
         }
 
+        const storedId = (field, teamId) => {
+            const entry = (selectedMatch[field] || []).find(
+                (row) => String(row.team?._id || row.team) === String(teamId)
+            );
+            return String(entry?.player?._id || entry?.player || '');
+        };
+
         try {
             const headers = { Authorization: `Bearer ${token}` };
+            const matchId = selectedMatch._id;
+            // Clear stale nominations before the XI so a player moving into it
+            // is never blocked by a role saved on an earlier visit.
             for (const team of teams) {
-                await axios.put(`${API_BASE_URL}/matches/${selectedMatch._id}/playing-xi`, { teamId: team.id, players: team.xi }, { headers });
+                const savedTwelfth = storedId('twelfthMan', team.id);
+                const savedSuperSub = storedId('superSub', team.id);
+                if (savedTwelfth && savedTwelfth !== String(team.twelfth || '')) {
+                    await axios.put(`${API_BASE_URL}/matches/${matchId}/twelfth-man`, {
+                        teamId: team.id, playerId: null,
+                    }, { headers });
+                }
+                if (savedSuperSub && savedSuperSub !== String(team.superSub || '')) {
+                    await axios.put(`${API_BASE_URL}/matches/${matchId}/super-sub`, {
+                        teamId: team.id, playerId: null,
+                    }, { headers });
+                }
             }
             for (const team of teams) {
-                const existing = (selectedMatch.twelfthMan || []).find(
-                    (entry) => String(entry.team?._id || entry.team) === String(team.id)
-                );
-                const existingId = String(existing?.player?._id || existing?.player || '');
-                // Save a new nomination, clear an old one, or leave it untouched.
-                if (team.twelfth || existingId) {
-                    await axios.put(`${API_BASE_URL}/matches/${selectedMatch._id}/twelfth-man`, {
-                        teamId: team.id,
-                        playerId: team.twelfth || null,
+                await axios.put(`${API_BASE_URL}/matches/${matchId}/playing-xi`, {
+                    teamId: team.id, players: team.xi,
+                }, { headers });
+            }
+            for (const team of teams) {
+                if (team.twelfth && storedId('twelfthMan', team.id) !== String(team.twelfth)) {
+                    await axios.put(`${API_BASE_URL}/matches/${matchId}/twelfth-man`, {
+                        teamId: team.id, playerId: team.twelfth,
+                    }, { headers });
+                }
+                if (team.superSub && storedId('superSub', team.id) !== String(team.superSub)) {
+                    await axios.put(`${API_BASE_URL}/matches/${matchId}/super-sub`, {
+                        teamId: team.id, playerId: team.superSub,
                     }, { headers });
                 }
             }
             const [res] = await Promise.all([
-                axios.get(`${API_BASE_URL}/matches/${selectedMatch._id}`),
-                loadMatchSquads(selectedMatch._id),
+                axios.get(`${API_BASE_URL}/matches/${matchId}`),
+                loadMatchSquads(matchId),
             ]);
             setSelectedMatch(res.data);
             checkRoles(res.data);
             setWizardStep(3);
-            setToast("Playing XI and 12th Man saved!");
+            setToast("Playing XI and reserve roles saved!");
         } catch (err) {
             showToast(err.response?.data?.message || err.message, 'error');
         }
