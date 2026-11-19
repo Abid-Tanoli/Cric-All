@@ -12,12 +12,10 @@ import { deleteMatch } from "./matchController.js";
 import { deleteEvent } from "./eventController.js";
 import { deleteTournament } from "./TournamentController.js";
 import { deleteSeries } from "./seriesController.js";
-import { sendMail } from "../utils/mailer.js";
-import logger from "../utils/logger.js";
+import { sendIssueNotificationMail } from "../utils/mailer.js";
 import { recordAudit } from "../utils/audit.js";
 import { syncLegacyMembersArray } from "../services/membershipService.js";
 
-const log = logger.child({ service: "issue-reports" });
 const MAX_SUBJECT_LENGTH = 150;
 const MAX_TEXT_LENGTH = 5000;
 const statusValues = new Set(["open", "in_review", "resolved", "rejected"]);
@@ -69,11 +67,12 @@ async function targetExistsInOrganization(organizationId, targetType, targetId) 
 }
 
 function sendAdminNotification(report, organizationName) {
-  if ((process.env.MAIL_DRIVER || "console").toLowerCase() !== "smtp") return;
   const to = process.env.ADMIN_NOTIFICATION_EMAIL;
   if (!to) return;
 
-  void sendMail({
+  // Fire-and-forget + per-recipient throttle live in the mailer; a bad SMTP
+  // server can never affect the report response.
+  sendIssueNotificationMail({
     to,
     subject: `New organization ${report.type.replace("_", " ")}: ${report.subject}`,
     text: [
@@ -82,8 +81,6 @@ function sendAdminNotification(report, organizationName) {
       `Subject: ${report.subject}`,
       `Description: ${report.description}`,
     ].join("\n"),
-  }).catch((error) => {
-    log.warn({ event: "issue_report.mail_failed", reportId: String(report._id), err: error.message });
   });
 }
 
