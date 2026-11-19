@@ -15,6 +15,7 @@ import {
   setBowlingXI,
   setPlayingXI,
   setSquad15,
+  setSuperSub,
   setTeamRoles,
   setTwelfthMan,
   updateToss,
@@ -502,4 +503,79 @@ test("setTwelfthMan can clear a nomination before the toss", async () => {
 
   assert.equal(res.statusCode, 200);
   assert.equal(res.body.match.twelfthMan.length, 0);
+});
+
+test("setSuperSub keeps a separate nomination and enforces XI, squad and role overlap rules", async () => {
+  const match = await makeMatch({
+    playingXI: [{ team: teamA._id, players: players.slice(0, 11).map((player) => player._id) }],
+    twelfthMan: [{ team: teamA._id, player: players[11]._id }],
+  });
+  const params = { matchId: String(match._id) };
+  const teamId = String(teamA._id);
+
+  const inXI = await call(setSuperSub, {
+    params,
+    body: { teamId, playerId: String(players[0]._id) },
+  });
+  assert.equal(inXI.statusCode, 400);
+  assert.equal(inXI.body.code, "SUPER_SUB_IN_XI");
+
+  const outsider = await Player.create({ name: "Super Sub Outsider" });
+  const notInSquad = await call(setSuperSub, {
+    params,
+    body: { teamId, playerId: String(outsider._id) },
+  });
+  assert.equal(notInSquad.statusCode, 400);
+  assert.equal(notInSquad.body.code, "SUPER_SUB_NOT_IN_SQUAD");
+
+  const alsoTwelfth = await call(setSuperSub, {
+    params,
+    body: { teamId, playerId: String(players[11]._id) },
+  });
+  assert.equal(alsoTwelfth.statusCode, 400);
+  assert.equal(alsoTwelfth.body.code, "MATCH_ROLE_OVERLAP");
+
+  const valid = await call(setSuperSub, {
+    params,
+    body: { teamId, playerId: String(players[12]._id) },
+  });
+  assert.equal(valid.statusCode, 200);
+  const saved = valid.body.match.superSub.find((entry) => idOf(entry.team) === teamId);
+  assert.equal(idOf(saved.player), String(players[12]._id));
+  assert.equal(valid.body.match.twelfthMan.length, 1, "the 12th Man nomination is untouched");
+
+  const cleared = await call(setSuperSub, { params, body: { teamId, playerId: null } });
+  assert.equal(cleared.statusCode, 200);
+  assert.equal(cleared.body.match.superSub.length, 0);
+});
+
+test("setPlayingXI and setTwelfthMan reject a nominated Super Sub with clear codes", async () => {
+  const match = await makeMatch({
+    superSub: [{ team: teamA._id, player: players[11]._id }],
+  });
+  const params = { matchId: String(match._id) };
+  const teamId = String(teamA._id);
+
+  const subInXI = await call(setPlayingXI, {
+    params,
+    body: {
+      teamId,
+      players: ids([...players.slice(0, 10), players[11]]),
+    },
+  });
+  assert.equal(subInXI.statusCode, 400);
+  assert.equal(subInXI.body.code, "SUPER_SUB_IN_XI");
+
+  const subAsTwelfth = await call(setTwelfthMan, {
+    params,
+    body: { teamId, playerId: String(players[11]._id) },
+  });
+  assert.equal(subAsTwelfth.statusCode, 400);
+  assert.equal(subAsTwelfth.body.code, "MATCH_ROLE_OVERLAP");
+
+  const xiWithoutSub = await call(setPlayingXI, {
+    params,
+    body: { teamId, players: ids(players.slice(0, 11)) },
+  });
+  assert.equal(xiWithoutSub.statusCode, 200, "a valid XI is still accepted");
 });
