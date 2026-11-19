@@ -10,6 +10,7 @@ import {
   listOrgMatches,
   listOrgTeamsManaged,
   setMatchPlayingXI,
+  setMatchSuperSub,
   setMatchTeamRoles,
   setMatchToss,
   setMatchTwelfthMan,
@@ -44,6 +45,7 @@ const EMPTY_SELECTION = {
   viceCaptain: "",
   wicketKeepers: [],
   twelfthMan: "",
+  superSub: "",
 };
 
 const playerName = (player) => player?.name || "Unknown player";
@@ -51,8 +53,8 @@ const playerName = (player) => player?.name || "Unknown player";
 /**
  * Single-match setup for the organization owner.
  *
- * The optional 15-player squad step is gone: the XI, the 12th Man / Super Sub
- * and the team roles all come from the full competition squad that
+ * The optional 15-player squad step is gone: the XI, the separate 12th Man and
+ * Super Sub nominations, and the team roles all come from the full competition squad that
  * GET /matches/:id/squads resolves (tournament squad -> event squad -> the
  * club's whole roster). A new player can be created without leaving the picker.
  */
@@ -89,12 +91,14 @@ export function MatchSetup({ orgId, match, onClose, onSaved }) {
           const xiEntry = (full.playingXI || []).find((entry) => idOf(entry.team) === teamId);
           const roles = (full.teamRoles || []).find((entry) => idOf(entry.team) === teamId);
           const twelfth = (full.twelfthMan || []).find((entry) => idOf(entry.team) === teamId);
+          const superSub = (full.superSub || []).find((entry) => idOf(entry.team) === teamId);
           nextSelection[teamId] = {
             xi: (xiEntry?.players || []).map(idOf),
             captain: idOf(roles?.captain),
             viceCaptain: idOf(roles?.viceCaptain),
             wicketKeepers: (roles?.wicketKeepers || []).map(idOf),
             twelfthMan: idOf(twelfth?.player),
+            superSub: idOf(superSub?.player),
           };
         }
 
@@ -130,30 +134,57 @@ export function MatchSetup({ orgId, match, onClose, onSaved }) {
   };
 
   const togglePlayer = (teamId, playerId) => {
+    const current = selectionFor(teamId);
+    const adding = !current.xi.includes(playerId);
+    if (adding) {
+      const cleared = [];
+      if (current.twelfthMan === playerId) cleared.push("12th Man");
+      if (current.superSub === playerId) cleared.push("Super Sub");
+      if (cleared.length) {
+        const player = squadFor(teamId).find((entry) => idOf(entry) === playerId);
+        setNotice(
+          `${playerName(player)} was removed as ${cleared.join(" and ")} because they are now in the Playing XI.`
+        );
+      }
+    }
     setSelection((prev) => {
-      const current = prev[teamId] || EMPTY_SELECTION;
-      if (current.xi.includes(playerId)) {
+      const selected = prev[teamId] || EMPTY_SELECTION;
+      if (selected.xi.includes(playerId)) {
         return {
           ...prev,
           [teamId]: {
-            ...current,
-            xi: current.xi.filter((id) => id !== playerId),
-            captain: current.captain === playerId ? "" : current.captain,
-            viceCaptain: current.viceCaptain === playerId ? "" : current.viceCaptain,
-            wicketKeepers: current.wicketKeepers.filter((id) => id !== playerId),
+            ...selected,
+            xi: selected.xi.filter((id) => id !== playerId),
+            captain: selected.captain === playerId ? "" : selected.captain,
+            viceCaptain: selected.viceCaptain === playerId ? "" : selected.viceCaptain,
+            wicketKeepers: selected.wicketKeepers.filter((id) => id !== playerId),
           },
         };
       }
-      if (current.xi.length >= 11) return prev;
+      if (selected.xi.length >= 11) return prev;
       return {
         ...prev,
         [teamId]: {
-          ...current,
-          xi: [...current.xi, playerId],
-          twelfthMan: current.twelfthMan === playerId ? "" : current.twelfthMan,
+          ...selected,
+          xi: [...selected.xi, playerId],
+          twelfthMan: selected.twelfthMan === playerId ? "" : selected.twelfthMan,
+          superSub: selected.superSub === playerId ? "" : selected.superSub,
         },
       };
     });
+  };
+
+  const chooseReserveRole = (teamId, role, playerId) => {
+    const current = selectionFor(teamId);
+    const otherRole = role === "twelfthMan" ? "superSub" : "twelfthMan";
+    const otherLabel = role === "twelfthMan" ? "Super Sub" : "12th Man";
+    const patch = { [role]: playerId };
+    if (playerId && current[otherRole] === playerId) {
+      patch[otherRole] = "";
+      const player = squadFor(teamId).find((entry) => idOf(entry) === playerId);
+      setNotice(`${playerName(player)} can hold only one reserve role, so their ${otherLabel} nomination was cleared.`);
+    }
+    setTeamSelection(teamId, patch);
   };
 
   const chooseCaptain = (teamId, playerId) => {
@@ -237,19 +268,42 @@ export function MatchSetup({ orgId, match, onClose, onSaved }) {
       return;
     }
 
+    const allXI = new Set(teamsToSave.flatMap((teamId) => selectionFor(teamId).xi));
+    const reserveIds = [];
+    for (const teamId of teamsToSave) {
+      const current = selectionFor(teamId);
+      if ([current.twelfthMan, current.superSub].some((id) => id && allXI.has(id))) {
+        setErr("The 12th Man and Super Sub must be outside the Playing XI.");
+        return;
+      }
+      if (current.twelfthMan && current.twelfthMan === current.superSub) {
+        setErr("A player cannot be both 12th Man and Super Sub.");
+        return;
+      }
+      reserveIds.push(current.twelfthMan, current.superSub);
+    }
+    const assignedReserves = reserveIds.filter(Boolean);
+    if (new Set(assignedReserves).size !== assignedReserves.length) {
+      setErr("A player may hold only one 12th Man or Super Sub role.");
+      return;
+    }
+
     setBusy(true);
     setErr("");
     setNotice("");
     try {
-      // Clear a stored 12th Man before the XI when the nomination changed, so a
-      // player moving into the XI is never blocked by the previous nomination.
+      // Clear stored reserve roles before the XI when a nomination changed, so
+      // a player moving into the XI is never blocked by the previous nomination.
       for (const team of matchTeams) {
         const teamId = idOf(team);
-        const stored = (detail?.twelfthMan || []).find((entry) => idOf(entry.team) === teamId);
-        const storedId = idOf(stored?.player);
         const current = selectionFor(teamId);
-        if (storedId && (storedId !== current.twelfthMan || current.xi.includes(storedId))) {
+        const storedTwelfth = (detail?.twelfthMan || []).find((entry) => idOf(entry.team) === teamId);
+        const storedSuperSub = (detail?.superSub || []).find((entry) => idOf(entry.team) === teamId);
+        if (idOf(storedTwelfth?.player) && idOf(storedTwelfth?.player) !== current.twelfthMan) {
           await setMatchTwelfthMan(match._id, teamId, null);
+        }
+        if (idOf(storedSuperSub?.player) && idOf(storedSuperSub?.player) !== current.superSub) {
+          await setMatchSuperSub(match._id, teamId, null);
         }
       }
 
@@ -271,8 +325,11 @@ export function MatchSetup({ orgId, match, onClose, onSaved }) {
         } else {
           rolesMissing = true;
         }
-        if (current.twelfthMan) {
+        if (current.twelfthMan && idOf((detail?.twelfthMan || []).find((entry) => idOf(entry.team) === teamId)?.player) !== current.twelfthMan) {
           await setMatchTwelfthMan(match._id, teamId, current.twelfthMan);
+        }
+        if (current.superSub && idOf((detail?.superSub || []).find((entry) => idOf(entry.team) === teamId)?.player) !== current.superSub) {
+          await setMatchSuperSub(match._id, teamId, current.superSub);
         }
       }
 
@@ -343,6 +400,8 @@ export function MatchSetup({ orgId, match, onClose, onSaved }) {
             : squad;
           const xiPlayers = squad.filter((player) => current.xi.includes(idOf(player)));
           const bench = squad.filter((player) => !current.xi.includes(idOf(player)));
+          const twelfthOptions = bench.filter((player) => idOf(player) !== current.superSub);
+          const superSubOptions = bench.filter((player) => idOf(player) !== current.twelfthMan);
           const isRosterSource = sourceFor(teamId) === "roster";
 
           return (
@@ -539,18 +598,37 @@ export function MatchSetup({ orgId, match, onClose, onSaved }) {
                 </Field>
               </div>
 
-              <div className="mt-3">
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
                 <Field
-                  label="12th Man / Super Sub (optional)"
-                  hint="Must be outside the Playing XI."
+                  label="12th Man (optional)"
+                  hint="Outside the XI; not the Super Sub. Used by the swap rule."
                 >
                   <select
+                    aria-label={`${teamName(team)} 12th Man`}
                     value={current.twelfthMan}
-                    onChange={(event) => setTeamSelection(teamId, { twelfthMan: event.target.value })}
+                    onChange={(event) => chooseReserveRole(teamId, "twelfthMan", event.target.value)}
                     className={input}
                   >
                     <option value="">— None —</option>
-                    {bench.map((player) => (
+                    {twelfthOptions.map((player) => (
+                      <option key={idOf(player)} value={idOf(player)}>
+                        {playerName(player)}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                <Field
+                  label="Super Sub (optional)"
+                  hint="Outside the XI; not the 12th Man. Stored separately; scoring is unchanged."
+                >
+                  <select
+                    aria-label={`${teamName(team)} Super Sub`}
+                    value={current.superSub}
+                    onChange={(event) => chooseReserveRole(teamId, "superSub", event.target.value)}
+                    className={input}
+                  >
+                    <option value="">— None —</option>
+                    {superSubOptions.map((player) => (
                       <option key={idOf(player)} value={idOf(player)}>
                         {playerName(player)}
                       </option>
