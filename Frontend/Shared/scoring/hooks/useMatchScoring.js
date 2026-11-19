@@ -51,6 +51,28 @@ export default function useMatchScoring({ matchId, tabId }) {
     const [loadingCommentary, setLoadingCommentary] = useState(false);
     const [toast, setToast] = useState('');
     const showToast = adapters.showToast;
+
+    // The match document is the single source of truth for AI commentary, so
+    // every scorer sees the same mode. The old browser-local key is ignored.
+    const useAICommentary = selectedMatch?.useAiCommentary === true;
+    const setUseAICommentary = useCallback(async (enabled) => {
+        const targetId = selectedMatch?._id || matchId;
+        if (!targetId) return;
+        try {
+            const res = await api.patch(`/matches/${targetId}/ai-commentary`, {
+                useAiCommentary: Boolean(enabled),
+            });
+            if (res?.data?.match) {
+                setSelectedMatch(res.data.match);
+            } else {
+                setSelectedMatch((prev) => prev ? { ...prev, useAiCommentary: Boolean(enabled) } : prev);
+            }
+        } catch (error) {
+            console.error("Failed to update AI commentary:", error);
+            showToast?.("Could not update AI commentary for this match");
+        }
+    }, [api, selectedMatch?._id, matchId, showToast]);
+
     const reloadMatch = useCallback(async (targetMatchId = matchId) => {
         if (!targetMatchId) return;
         try {
@@ -113,10 +135,6 @@ export default function useMatchScoring({ matchId, tabId }) {
 
     const [showSelectionModal, setShowSelectionModal] = useState('');
     const [showNextBowlerModal, setShowNextBowlerModal] = useState(false);
-    const [useAICommentary, setUseAICommentary] = useState(() => {
-        if (typeof window === 'undefined') return false;
-        return window.localStorage.getItem('bq_use_ai_commentary') === 'true';
-    });
     const [activeGroundZone, setActiveGroundZone] = useState(null);
 
     const [pitchMapLine, setPitchMapLine] = useState('');
@@ -273,11 +291,13 @@ export default function useMatchScoring({ matchId, tabId }) {
         fetchMatches();
     }, []);
 
+    // One-time migration: any stale browser value is removed, never read and
+    // never written again. The match flag always wins.
     useEffect(() => {
-        if (typeof window !== 'undefined') {
-            window.localStorage.setItem('bq_use_ai_commentary', useAICommentary ? 'true' : 'false');
+        if (typeof window !== 'undefined' && window.localStorage.getItem('bq_use_ai_commentary') !== null) {
+            window.localStorage.removeItem('bq_use_ai_commentary');
         }
-    }, [useAICommentary]);
+    }, []);
 
     useEffect(() => {
         if (matchesLoaded && matchId && (!selectedMatch || String(selectedMatch._id) !== String(matchId))) {

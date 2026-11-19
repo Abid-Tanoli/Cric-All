@@ -65,6 +65,7 @@ const ManageMatches = () => {
             startTime: data.startTime,
             powerplayOvers: data.powerplayOvers ? Number(data.powerplayOvers) : undefined,
             overs: data.overs ? Number(data.overs) : undefined,
+            useAiCommentary: data.useAiCommentary === true,
         };
         if (editMode) {
             await dispatch(updateMatch({ id: currentMatch._id, data: payload }));
@@ -87,6 +88,7 @@ const ManageMatches = () => {
         setValue('startTime', match.startTime);
         setValue('powerplayOvers', match.powerplayOvers);
         setValue('overs', match.overs);
+        setValue('useAiCommentary', match.useAiCommentary === true);
     };
 
     const handleDelete = (id) => {
@@ -198,6 +200,10 @@ const ManageMatches = () => {
                         placeholder="Powerplay Overs"
                         className="border border-slate-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-[#031d44]"
                     />
+                    <label className="flex items-center gap-2 text-xs font-bold text-slate-700 col-span-full">
+                        <input type="checkbox" {...register('useAiCommentary')} />
+                        Enable AI commentary (default OFF; applies to everyone scoring this match)
+                    </label>
                     <div className="flex gap-2 col-span-full">
                         <button
                             type="submit"

@@ -48,6 +48,19 @@ const MatchSetupWizard = ({
     // from the tournament; here we set an explicit per-match value.
     const [ruleSaving, setRuleSaving] = React.useState(false);
     const [ruleError, setRuleError] = React.useState('');
+    const aiCommentaryOn = selectedMatch?.useAiCommentary === true;
+    const toggleAiCommentary = async () => {
+        if (!selectedMatch?._id) return;
+        try {
+            const res = await api.patch(`/matches/${selectedMatch._id}/ai-commentary`, {
+                useAiCommentary: !aiCommentaryOn,
+            });
+            const updated = res.data?.match || res.data;
+            if (updated) setSelectedMatch((m) => ({ ...(m || {}), ...updated }));
+        } catch (error) {
+            setRuleError(error.response?.data?.message || error.message || 'Could not update AI commentary.');
+        }
+    };
     const matchRule = selectedMatch?.rules?.twelfthManEnabled;
     const twelfthManOn = matchRule === null || matchRule === undefined
         ? twelfthManRule?.scopedEnabled === true
@@ -242,6 +255,25 @@ const MatchSetupWizard = ({
                             </div>
                         )}
 
+                        {allowRuleEdit && (
+                        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between p-4 sm:p-8 rounded-2xl sm:rounded-3xl bg-black/5 dark:bg-white/5">
+                            <div>
+                                <h4 className="text-sm font-black uppercase tracking-widest">AI commentary (this match)</h4>
+                                <p className="text-[10px] font-bold text-cric-muted mt-1">
+                                    AI commentary: {aiCommentaryOn ? 'ON' : 'OFF'} (applies to everyone scoring this match)
+                                </p>
+                            </div>
+                            <label className="relative inline-flex items-center cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    checked={aiCommentaryOn}
+                                    onChange={toggleAiCommentary}
+                                    className="sr-only peer"
+                                />
+                                <div className="w-11 h-6 bg-black/10 rounded-full peer peer-checked:bg-cric-accent after:content-[''] after:absolute after:top-0.5 after:start-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full"></div>
+                            </label>
+                        </div>
+                        )}
                         {allowRuleEdit && (
                         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between p-4 sm:p-8 rounded-2xl sm:rounded-3xl bg-black/5 dark:bg-white/5">
                             <div>
