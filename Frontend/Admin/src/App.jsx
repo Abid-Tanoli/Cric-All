@@ -15,6 +15,7 @@ const LiveScores = lazy(() => import("./pages/LiveScores"));
 const ManageEvents = lazy(() => import("./pages/ManageEvents"));
 const Tournaments = lazy(() => import("./pages/Tournamentmanagement"));
 const ManagePlayers = lazy(() => import("./pages/ManagePlayers"));
+const MissingPlayerRoles = lazy(() => import("./pages/MissingPlayerRoles"));
 const Teams = lazy(() => import("./pages/Teams"));
 const ManageScore = lazy(() => import("./pages/ManageScore"));
 const ManualScorecard = lazy(() => import("./pages/ManualScorecard"));
@@ -72,6 +73,7 @@ export default function App() {
       <Route path="/admin/sponsors" element={<ProtectedRoute><ErrorBoundary><Layout><Sponsors /></Layout></ErrorBoundary></ProtectedRoute>} />
       <Route path="/admin/teams" element={<ProtectedRoute><ErrorBoundary><Layout><Teams /></Layout></ErrorBoundary></ProtectedRoute>} />
       <Route path="/admin/players" element={<ProtectedRoute><ErrorBoundary><Layout><ManagePlayers /></Layout></ErrorBoundary></ProtectedRoute>} />
+      <Route path="/admin/players/missing-role" element={<ProtectedRoute><ErrorBoundary><Layout><MissingPlayerRoles /></Layout></ErrorBoundary></ProtectedRoute>} />
       <Route path="/admin/score" element={<ProtectedRoute><ErrorBoundary><Layout><ManageScore /></Layout></ErrorBoundary></ProtectedRoute>} />
       <Route path="/admin/score/:matchId" element={<ProtectedRoute><ErrorBoundary><Layout><ManageScore /></Layout></ErrorBoundary></ProtectedRoute>} />
       <Route path="/admin/score/:matchId/:tabId" element={<ProtectedRoute><ErrorBoundary><Layout><ManageScore /></Layout></ErrorBoundary></ProtectedRoute>} />
