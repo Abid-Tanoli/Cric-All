@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildBowlerGroups,
   buildBowlerOptions,
   isNextBowlerRequired,
 } from "../utils/nextBowler";
@@ -36,6 +37,95 @@ describe("buildBowlerOptions", () => {
     );
     expect(eligible[0]).toMatchObject({ overs: "0.0", runs: 0, wickets: 0 });
     expect(eligible[0].oversRemaining).toBe(4);
+  });
+});
+
+const legalOver = (overNumber, bowler) => ({
+  overNumber,
+  bowler,
+  balls: [
+    { ballNumber: 1, runs: 1 },
+    { ballNumber: 2, runs: 0 },
+    { ballNumber: 3, runs: 0 },
+    { ballNumber: 4, runs: 0 },
+    { ballNumber: 5, runs: 0 },
+    { ballNumber: 6, runs: 0 },
+  ],
+});
+
+describe("buildBowlerGroups", () => {
+  const innings = {
+    balls: 18,
+    oversHistory: [legalOver(0, "a"), legalOver(1, "b"), legalOver(2, "a")],
+  };
+
+  it("splits already bowled from yet to bowl and lists their over numbers", () => {
+    const { bowled, yetToBowl } = buildBowlerGroups({
+      bowlers,
+      bowlingStats,
+      lastOverBowlerId: "b",
+      quota: 4,
+      innings,
+    });
+
+    expect(bowled.map((option) => option._id)).toEqual(["a", "b"]);
+    expect(bowled[0].overNumbers).toEqual([1, 3]);
+    expect(bowled[1].overNumbers).toEqual([2]);
+    expect(yetToBowl.map((option) => option._id)).toEqual(["c", "d"]);
+    expect(yetToBowl.every((option) => option.reasons.length === 0)).toBe(true);
+  });
+
+  it("orders already bowled by the first over they bowled", () => {
+    const reordered = buildBowlerGroups({
+      bowlers: [bowlers[2], bowlers[1], bowlers[0], bowlers[3]],
+      bowlingStats,
+      lastOverBowlerId: "a",
+      quota: 4,
+      innings,
+    });
+
+    expect(reordered.bowled.map((option) => option._id)).toEqual(["a", "b"]);
+  });
+
+  it("keeps the previous over's bowler blocked with the existing reason text", () => {
+    const { bowled } = buildBowlerGroups({
+      bowlers,
+      bowlingStats,
+      lastOverBowlerId: "a",
+      quota: 4,
+      innings,
+    });
+
+    const previous = bowled.find((option) => option._id === "a");
+    expect(previous.reasons).toContain("Bowled last over");
+  });
+
+  it("marks a bowler whose quota is finished as ineligible", () => {
+    const { bowled } = buildBowlerGroups({
+      bowlers,
+      bowlingStats,
+      lastOverBowlerId: "b",
+      quota: 4,
+      innings,
+    });
+
+    const finished = bowled.find((option) => option._id === "a");
+    expect(finished.oversRemaining).toBe(0);
+    expect(finished.reasons).toContain("Quota of 4 overs completed");
+  });
+
+  it("still offers a newly added player who has not bowled", () => {
+    const fresh = { _id: "e", name: "E Bowler" };
+    const { yetToBowl } = buildBowlerGroups({
+      bowlers: [...bowlers, fresh],
+      bowlingStats,
+      lastOverBowlerId: "a",
+      quota: 4,
+      innings,
+    });
+
+    expect(yetToBowl.map((option) => option._id)).toEqual(["c", "d", "e"]);
+    expect(yetToBowl.every((option) => option.reasons.length === 0)).toBe(true);
   });
 });
 

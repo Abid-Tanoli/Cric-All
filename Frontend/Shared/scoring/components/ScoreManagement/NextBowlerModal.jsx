@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { buildBowlerOptions, getOversSummary } from '../../utils/nextBowler';
+import { buildBowlerGroups, getOversSummary } from '../../utils/nextBowler';
+import { overByOverList } from '../../utils/plainCommentary';
 
 const ROLES = ['Bowler', 'All-Rounder', 'Batting All-Rounder', 'Wicket Keeper', 'Batter'];
 
@@ -18,14 +19,19 @@ function BowlerRow({ option, disabled, onSelect }) {
     >
       <div className="flex items-center justify-between gap-2">
         <span className="min-w-0 truncate text-sm font-black text-cric-text">{option.name}</span>
-        <span className="shrink-0 text-sm font-black tabular-nums text-cric-text">{option.overs}</span>
+        <span className="shrink-0 text-sm font-black tabular-nums text-cric-text">
+          {option.overs}-{option.maidens}-{option.runs}-{option.wickets}
+        </span>
       </div>
       <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] font-bold uppercase tracking-wider text-cric-muted">
-        <span>{option.runs} runs</span>
-        <span>{option.wickets} wkts</span>
-        {option.maidens > 0 && <span>{option.maidens} M</span>}
+        <span>O-M-R-W</span>
         {option.oversRemaining != null && <span>{option.oversRemaining} overs left</span>}
       </div>
+      {option.overNumbers?.length > 0 && (
+        <div className="mt-1 text-[10px] font-bold uppercase tracking-wider text-cric-muted">
+          Overs: {option.overNumbers.join(', ')}
+        </div>
+      )}
       {option.reasons?.length > 0 && (
         <div className="mt-1 text-[10px] font-bold text-red-500">{option.reasons.join(' • ')}</div>
       )}
@@ -56,13 +62,18 @@ export default function NextBowlerModal({
 
   if (!open) return null;
 
-  const { eligible, ineligible } = buildBowlerOptions({
+  const { bowled, yetToBowl } = buildBowlerGroups({
     bowlers,
     bowlingStats: curInn?.bowling || [],
     lastOverBowlerId,
     quota,
+    innings: curInn,
   });
   const summary = getOversSummary({ totalOvers, quota, innings: curInn });
+  const overList = overByOverList(curInn?.oversHistory || []);
+  const availableCount = [...bowled, ...yetToBowl].filter(
+    (option) => !(option.reasons?.length > 0)
+  ).length;
   const canCreate = typeof createTeamPlayer === 'function';
 
   const resetForm = () => {
@@ -129,7 +140,7 @@ export default function NextBowlerModal({
         <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl border border-cric-border bg-cric-bg px-3 py-2 text-[10px] font-black uppercase tracking-wider text-cric-muted">
           <span>Innings {summary.bowled}/{summary.totalOvers || '-'}</span>
           <span>Bowler quota {summary.quota || '-'} overs</span>
-          <span>{eligible.length} available</span>
+          <span>{availableCount} available</span>
         </div>
 
         {canCreate && (
@@ -170,27 +181,60 @@ export default function NextBowlerModal({
           </div>
         )}
 
+        {overList.length > 0 && (
+          <div className="mt-4 rounded-2xl border border-cric-border bg-cric-bg p-3">
+            <h4 className="text-[10px] font-black uppercase tracking-[0.3em] text-cric-muted">
+              Over by over
+            </h4>
+            <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] font-bold text-cric-text">
+              {overList.map((entry) => (
+                <span key={entry.overNumber} className="whitespace-nowrap">
+                  Over {entry.overNumber}: <span className="text-cric-muted">{entry.name || 'Bowler'}</span>
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
         <div className="mt-4 space-y-2">
-          <h4 className="text-[10px] font-black uppercase tracking-[0.3em] text-cric-muted">Eligible bowlers</h4>
-          {eligible.length === 0 ? (
+          <h4 className="text-[10px] font-black uppercase tracking-[0.3em] text-cric-muted">
+            Already bowled
+          </h4>
+          {bowled.length === 0 ? (
             <p className="rounded-xl border border-cric-border bg-cric-bg px-3 py-3 text-xs font-semibold text-cric-muted">
-              No eligible bowler. Add a player or undo the last ball.
+              No one has bowled yet.
             </p>
           ) : (
-            eligible.map((option) => (
-              <BowlerRow key={option._id} option={option} onSelect={onSelect} />
+            bowled.map((option) => (
+              <BowlerRow
+                key={option._id}
+                option={option}
+                disabled={option.reasons?.length > 0}
+                onSelect={onSelect}
+              />
             ))
           )}
         </div>
 
-        {ineligible.length > 0 && (
-          <div className="mt-4 space-y-2">
-            <h4 className="text-[10px] font-black uppercase tracking-[0.3em] text-cric-muted">Not available</h4>
-            {ineligible.map((option) => (
-              <BowlerRow key={option._id} option={option} disabled />
-            ))}
-          </div>
-        )}
+        <div className="mt-5 space-y-2 border-t border-cric-border pt-4">
+          <h4 className="text-[10px] font-black uppercase tracking-[0.3em] text-cric-muted">
+            Yet to bowl
+          </h4>
+          {yetToBowl.length === 0 ? (
+            <p className="rounded-xl border border-cric-border bg-cric-bg px-3 py-3 text-xs font-semibold text-cric-muted">
+              Everyone in the squad has bowled. Add a player or undo the last ball.
+            </p>
+          ) : (
+            yetToBowl.map((option) => (
+              <BowlerRow
+                key={option._id}
+                option={option}
+                disabled={option.reasons?.length > 0}
+                onSelect={onSelect}
+              />
+            ))
+          )}
+        </div>
       </div>
     </div>
   );
