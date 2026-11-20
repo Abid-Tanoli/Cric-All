@@ -1,11 +1,24 @@
 import { useMemo, useState } from "react";
-import { number, playerName, ballRuns, overRunsAndWickets } from "../utils/matchHelpers";
-import { buildPlainOverFeed } from "@shared/scoring/utils/plainCommentary";
-import { orderedBallsForDisplay } from "./RecentBallsStrip";
-import BallBadge from "./BallBadge";
+import { ballRuns } from "../utils/matchHelpers";
+import { buildPlainOverFeed, overNumberOf } from "@shared/scoring/utils/plainCommentary";
 import CommentaryBall from "./CommentaryBall";
+import CommentaryEventRow from "./CommentaryEventRow";
+import OverSummaryCard from "./OverSummaryCard";
 
-export default function CommentaryTab({ overs, players, visibleOvers, onLoadMore, useAiCommentary = false }) {
+const eventKey = (over, event, index) =>
+  event.kind === "ball"
+    ? `${over.overNumber}-${event.delivery.label}`
+    : `${over.overNumber}-${event.kind}-${index}`;
+
+export default function CommentaryTab({
+  overs,
+  players = [],
+  visibleOvers,
+  onLoadMore,
+  useAiCommentary = false,
+  target = 0,
+  totalOvers = 0,
+}) {
   const [filter, setFilter] = useState('all');
   const [compact, setCompact] = useState(false);
 
@@ -22,11 +35,13 @@ export default function CommentaryTab({ overs, players, visibleOvers, onLoadMore
   }, [overs, filter, visibleOvers]);
 
   const visible = filteredOvers;
-  const overSummaries = useMemo(() => {
+  const feedByOver = useMemo(() => {
     const map = new Map();
-    buildPlainOverFeed(overs).forEach((entry) => map.set(entry.overNumber, entry));
+    buildPlainOverFeed(overs, { players, target, totalOvers }).forEach((entry) =>
+      map.set(entry.overNumber, entry)
+    );
     return map;
-  }, [overs]);
+  }, [overs, players, target, totalOvers]);
 
   return (
     <section className="space-y-3 sm:space-y-4">
@@ -61,55 +76,34 @@ export default function CommentaryTab({ overs, players, visibleOvers, onLoadMore
         </button>
       </div>
 
-      {visible.length ? visible.map((over) => (
-        <div key={over._id || over.overNumber} className="overflow-hidden rounded-xl bg-cric-card shadow-sm ring-1 ring-cric-border">
-          <div className="p-3 sm:p-4">
-            <div className="bg-cric-bg rounded-xl p-3 sm:p-4 mb-2 sm:mb-3 border border-cric-border">
-              <div className="flex justify-between items-start flex-wrap gap-1.5 sm:gap-2">
-                <div>
-                  <span className="text-cric-accent font-black text-sm sm:text-base">Over {number(over.overNumber) + 1}</span>
-                  <span className="text-cric-muted text-[11px] sm:text-xs ml-2 sm:ml-3">
-                    {overRunsAndWickets(over).runs} run{overRunsAndWickets(over).runs !== 1 ? "s" : ""}
-                    {overRunsAndWickets(over).wickets > 0 && <span className="text-red-500"> | {overRunsAndWickets(over).wickets} wkt{overRunsAndWickets(over).wickets !== 1 ? "s" : ""}</span>}
-                  </span>
-                </div>
-                <div className="text-right text-[9px] sm:text-[10px] text-cric-muted font-bold uppercase tracking-widest">
-                  {playerName(over.bowler, players)}
-                </div>
-              </div>
-              {overSummaries.get(number(over.overNumber) + 1)?.complete && (
-                <p className="text-cric-muted text-[11px] sm:text-xs mt-1.5 sm:mt-2 leading-relaxed border-t border-cric-border pt-1.5 sm:pt-2">
-                  End of over {number(over.overNumber) + 1}: {overRunsAndWickets(over).runs} run
-                  {overRunsAndWickets(over).runs === 1 ? "" : "s"}, score{" "}
-                  {overSummaries.get(number(over.overNumber) + 1).score.runs}/
-                  {overSummaries.get(number(over.overNumber) + 1).score.wickets}
-                  {overSummaries.get(number(over.overNumber) + 1).bowlerLine
-                    ? ` · ${playerName(over.bowler, players)} ${overSummaries.get(number(over.overNumber) + 1).bowlerLine}`
-                    : ""}
-                </p>
-              )}
-              <div className="flex gap-1 sm:gap-1.5 mt-1.5 sm:mt-2 flex-wrap">
-                {orderedBallsForDisplay(over.balls || []).map((b, i) => (
-                  <BallBadge key={i} ball={b} small />
-                ))}
-              </div>
-            </div>
+      {visible.length ? visible.map((over) => {
+        const entry = feedByOver.get(overNumberOf(over));
+        if (!entry) return null;
+        return (
+          <div
+            key={over._id || over.overNumber}
+            className="overflow-hidden rounded-xl bg-cric-card p-2 shadow-sm ring-1 ring-cric-border sm:p-3"
+          >
+            <OverSummaryCard entry={entry} />
 
-            <div className="space-y-0.5 sm:space-y-1">
-              {orderedBallsForDisplay(over.balls || []).map((ball, index) => (
-                <CommentaryBall
-                  key={ball._id || index}
-                  over={over}
-                  ball={ball}
-                  players={players}
-                  compact={compact}
-                  useAiCommentary={useAiCommentary}
-                />
-              ))}
+            <div className="mt-1 sm:mt-2">
+              {[...entry.events].reverse().map((event, index) => {
+                const key = eventKey(entry, event, index);
+                return event.kind === "ball" ? (
+                  <CommentaryBall
+                    key={key}
+                    delivery={event.delivery}
+                    useAiCommentary={useAiCommentary}
+                    compact={compact}
+                  />
+                ) : (
+                  <CommentaryEventRow key={key} event={event} />
+                );
+              })}
             </div>
           </div>
-        </div>
-      )) : (
+        );
+      }) : (
         <div className="rounded-xl bg-cric-card p-6 sm:p-8 text-center shadow-sm ring-1 ring-cric-border">
           <p className="text-2xl sm:text-3xl mb-2 sm:mb-3">Commentary</p>
           <p className="text-xs sm:text-sm font-black text-cric-muted">
