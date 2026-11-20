@@ -1,4 +1,5 @@
 import React from "react";
+import { ballChipText, ballChipTone } from "@shared/scoring/utils/plainCommentary";
 
 export const number = (value, fallback = 0) => {
   const parsed = Number(value);
@@ -30,25 +31,18 @@ export const orderedBallsForDisplay = (balls = []) =>
     })
     .map((entry) => entry.ball);
 
-export const ballLabel = (ball) => {
-  if (ball?.wicketCancelled) return "Nb";
-  if (ball?.isWicket) return "W";
-  if (ball?.isWide) return "Wd";
-  if (ball?.isNoBall) return "Nb";
-  if (ball?.isLegBye) return "LB";
-  if (ball?.isBye) return "B";
-  if (ballRuns(ball) === 0) return "\u2022";
-  return String(ballRuns(ball));
-};
+export const ballLabel = (ball) => ballChipText(ball);
 
 export const ballClass = (ball) => {
   if (ball?.wicketCancelled) return "bg-orange-500 text-white ring-2 ring-red-500";
-  if (ball?.isWicket) return "bg-red-600 text-white";
-  if (ball?.isWide || ball?.isNoBall || ball?.isLegBye || ball?.isBye) {
+  const tone = ballChipTone(ball);
+  if (tone === "wicket") return "bg-red-600 text-white";
+  if (tone === "extra") {
     return "bg-orange-100 text-orange-700 ring-1 ring-orange-200 dark:bg-orange-900/30 dark:text-orange-300 dark:ring-orange-800";
   }
-  if (ballRuns(ball) === 4) return "bg-cric-accent text-white";
-  if (ballRuns(ball) === 6) return "bg-purple-600 text-white";
+  if (tone === "boundary") {
+    return ballRuns(ball) === 6 ? "bg-purple-600 text-white" : "bg-cric-accent text-white";
+  }
   if (ballRuns(ball) === 0) return "bg-cric-border text-cric-text";
   return "bg-cric-text text-cric-card";
 };

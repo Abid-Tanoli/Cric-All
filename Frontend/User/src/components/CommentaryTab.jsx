@@ -1,10 +1,11 @@
 import { useMemo, useState } from "react";
 import { number, playerName, ballRuns, overRunsAndWickets } from "../utils/matchHelpers";
+import { buildPlainOverFeed } from "@shared/scoring/utils/plainCommentary";
 import { orderedBallsForDisplay } from "./RecentBallsStrip";
 import BallBadge from "./BallBadge";
 import CommentaryBall from "./CommentaryBall";
 
-export default function CommentaryTab({ overs, players, visibleOvers, onLoadMore }) {
+export default function CommentaryTab({ overs, players, visibleOvers, onLoadMore, useAiCommentary = false }) {
   const [filter, setFilter] = useState('all');
   const [compact, setCompact] = useState(false);
 
@@ -21,6 +22,11 @@ export default function CommentaryTab({ overs, players, visibleOvers, onLoadMore
   }, [overs, filter, visibleOvers]);
 
   const visible = filteredOvers;
+  const overSummaries = useMemo(() => {
+    const map = new Map();
+    buildPlainOverFeed(overs).forEach((entry) => map.set(entry.overNumber, entry));
+    return map;
+  }, [overs]);
 
   return (
     <section className="space-y-3 sm:space-y-4">
@@ -71,9 +77,15 @@ export default function CommentaryTab({ overs, players, visibleOvers, onLoadMore
                   {playerName(over.bowler, players)}
                 </div>
               </div>
-              {over.summary && (
-                <p className="text-cric-muted text-[11px] sm:text-xs italic mt-1.5 sm:mt-2 leading-relaxed border-t border-cric-border pt-1.5 sm:pt-2">
-                  {over.summary}
+              {overSummaries.get(number(over.overNumber) + 1)?.complete && (
+                <p className="text-cric-muted text-[11px] sm:text-xs mt-1.5 sm:mt-2 leading-relaxed border-t border-cric-border pt-1.5 sm:pt-2">
+                  End of over {number(over.overNumber) + 1}: {overRunsAndWickets(over).runs} run
+                  {overRunsAndWickets(over).runs === 1 ? "" : "s"}, score{" "}
+                  {overSummaries.get(number(over.overNumber) + 1).score.runs}/
+                  {overSummaries.get(number(over.overNumber) + 1).score.wickets}
+                  {overSummaries.get(number(over.overNumber) + 1).bowlerLine
+                    ? ` · ${playerName(over.bowler, players)} ${overSummaries.get(number(over.overNumber) + 1).bowlerLine}`
+                    : ""}
                 </p>
               )}
               <div className="flex gap-1 sm:gap-1.5 mt-1.5 sm:mt-2 flex-wrap">
@@ -85,7 +97,14 @@ export default function CommentaryTab({ overs, players, visibleOvers, onLoadMore
 
             <div className="space-y-0.5 sm:space-y-1">
               {orderedBallsForDisplay(over.balls || []).map((ball, index) => (
-                <CommentaryBall key={ball._id || index} over={over} ball={ball} players={players} compact={compact} />
+                <CommentaryBall
+                  key={ball._id || index}
+                  over={over}
+                  ball={ball}
+                  players={players}
+                  compact={compact}
+                  useAiCommentary={useAiCommentary}
+                />
               ))}
             </div>
           </div>
