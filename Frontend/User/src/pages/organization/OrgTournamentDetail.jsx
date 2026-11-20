@@ -1306,7 +1306,7 @@ function PointsTab({ orgId, tournamentId, detail, canManage, onSaved, onError })
   );
 }
 
-function AwardsTab({ orgId, tournamentId, detail, squads, canManage, onSaved, onError }) {
+export function AwardsTab({ orgId, tournamentId, detail, squads, canManage, onSaved, onError }) {
   const [busy, setBusy] = useState(false);
   const [awards, setAwards] = useState({
     winner: idOf(detail.winner),
@@ -1316,15 +1316,32 @@ function AwardsTab({ orgId, tournamentId, detail, squads, canManage, onSaved, on
     bestBowler: idOf(detail.awards?.bestBowler),
   });
   const [official, setOfficial] = useState(() => {
-    const saved = uniqueIds(detail.officialAwards?.topPlayers || []);
-    if (!saved.length && detail.officialAwards?.playerOfTournament) {
-      saved.push(idOf(detail.officialAwards.playerOfTournament));
+    const source = detail.officialAwards || {};
+    const saved = uniqueIds(source.topPlayers || []);
+    if (!saved.length && source.playerOfTournament) {
+      saved.push(idOf(source.playerOfTournament));
     }
     return {
       topPlayers: [saved[0] || "", saved[1] || "", saved[2] || ""],
-      bestBatsman: idOf(detail.officialAwards?.bestBatsman),
-      bestBowler: idOf(detail.officialAwards?.bestBowler),
-      note: detail.officialAwards?.note || "",
+      bestBatsman: idOf(source.bestBatsman || source.bestBatter),
+      bestBowler: idOf(source.bestBowler),
+      bestFielder: idOf(source.bestFielder),
+      emergingPlayer: idOf(source.emergingPlayer),
+      citations: {
+        playerOfTournament: "",
+        bestBatsman: "",
+        bestBowler: "",
+        bestFielder: "",
+        emergingPlayer: "",
+        ...(source.citations || {}),
+      },
+      customAwards: (source.customAwards || []).map((award) => ({
+        title: award?.title || "",
+        player: idOf(award?.player),
+        citation: award?.citation || "",
+      })),
+      note: source.note || "",
+      published: source.published === true,
     };
   });
 
@@ -1383,6 +1400,29 @@ function AwardsTab({ orgId, tournamentId, detail, squads, canManage, onSaved, on
       }
       return { ...prev, topPlayers: next.slice(0, 3) };
     });
+
+  const setCitation = (key, value) =>
+    setOfficial((prev) => ({ ...prev, citations: { ...prev.citations, [key]: value } }));
+
+  const setCustomAward = (index, field, value) =>
+    setOfficial((prev) => {
+      const customAwards = [...prev.customAwards];
+      customAwards[index] = { ...customAwards[index], [field]: value };
+      return { ...prev, customAwards };
+    });
+
+  const addCustomAward = () =>
+    setOfficial((prev) =>
+      prev.customAwards.length >= 10
+        ? prev
+        : { ...prev, customAwards: [...prev.customAwards, { title: "", player: "", citation: "" }] },
+    );
+
+  const removeCustomAward = (index) =>
+    setOfficial((prev) => ({
+      ...prev,
+      customAwards: prev.customAwards.filter((_, i) => i !== index),
+    }));
 
   return (
     <div className="space-y-4">
@@ -1458,9 +1498,11 @@ function AwardsTab({ orgId, tournamentId, detail, squads, canManage, onSaved, on
         <p className={eyebrow}>Organiser-confirmed</p>
         <h3 className={`${sectionTitle} mt-1`}>Official awards</h3>
         <p className="mt-1 text-xs font-semibold text-cric-muted">
-          Shown at the top of the public Player of the Tournament page. They do not change the computed
-          points or ranking order.
+          Manually chosen honours with optional citations. Picks may be suggested by stats, but the final
+          choice is yours and is labelled “Official” on the public page. They never change points or
+          ranking order and stay private until published.
         </p>
+
         <div className="mt-4 grid gap-3 sm:grid-cols-3">
           {["1st", "2nd", "3rd"].map((place, index) => (
             <Field key={place} label={`${place} place`}>
@@ -1480,37 +1522,54 @@ function AwardsTab({ orgId, tournamentId, detail, squads, canManage, onSaved, on
             </Field>
           ))}
         </div>
+        <div className="mt-3">
+          <Field label="Player of the tournament citation">
+            <input
+              value={official.citations.playerOfTournament || ""}
+              onChange={(event) => setCitation("playerOfTournament", event.target.value)}
+              disabled={!canManage}
+              maxLength={200}
+              placeholder="e.g. 482 runs and 11 wickets"
+              className={input}
+            />
+          </Field>
+        </div>
+
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
-          <Field label="Official best batsman">
-            <select
-              value={official.bestBatsman}
-              onChange={(event) => setOfficial((prev) => ({ ...prev, bestBatsman: event.target.value }))}
-              disabled={!canManage}
-              className={input}
-            >
-              <option value="">Not awarded</option>
-              {playerOptions.map((player) => (
-                <option key={player.id} value={player.id}>
-                  {player.name} ({player.team})
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Official best bowler">
-            <select
-              value={official.bestBowler}
-              onChange={(event) => setOfficial((prev) => ({ ...prev, bestBowler: event.target.value }))}
-              disabled={!canManage}
-              className={input}
-            >
-              <option value="">Not awarded</option>
-              {playerOptions.map((player) => (
-                <option key={player.id} value={player.id}>
-                  {player.name} ({player.team})
-                </option>
-              ))}
-            </select>
-          </Field>
+          {[
+            ["bestBatsman", "Official best batter"],
+            ["bestBowler", "Official best bowler"],
+            ["bestFielder", "Official best fielder / wicketkeeper"],
+            ["emergingPlayer", "Official emerging player"],
+          ].map(([key, label]) => (
+            <div key={key} className="space-y-2">
+              <Field label={label}>
+                <select
+                  value={official[key]}
+                  onChange={(event) => setOfficial((prev) => ({ ...prev, [key]: event.target.value }))}
+                  disabled={!canManage}
+                  className={input}
+                >
+                  <option value="">Not awarded</option>
+                  {playerOptions.map((player) => (
+                    <option key={player.id} value={player.id}>
+                      {player.name} ({player.team})
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label={`${label} citation`}>
+                <input
+                  value={official.citations[key] || ""}
+                  onChange={(event) => setCitation(key, event.target.value)}
+                  disabled={!canManage}
+                  maxLength={200}
+                  placeholder="Short citation (optional)"
+                  className={input}
+                />
+              </Field>
+            </div>
+          ))}
           <Field label="Note">
             <textarea
               value={official.note}
@@ -1522,6 +1581,81 @@ function AwardsTab({ orgId, tournamentId, detail, squads, canManage, onSaved, on
             />
           </Field>
         </div>
+
+        <div className="mt-4 space-y-2">
+          <p className="text-[10px] font-black uppercase tracking-widest text-cric-muted">Custom awards</p>
+          {official.customAwards.map((award, index) => (
+            <div key={index} className="grid gap-2 sm:grid-cols-4">
+              <Field label={`Custom award ${index + 1} title`}>
+                <input
+                  value={award.title}
+                  onChange={(event) => setCustomAward(index, "title", event.target.value)}
+                  disabled={!canManage}
+                  maxLength={60}
+                  placeholder="Award title"
+                  className={input}
+                />
+              </Field>
+              <Field label={`Custom award ${index + 1} player`}>
+                <select
+                  value={award.player}
+                  onChange={(event) => setCustomAward(index, "player", event.target.value)}
+                  disabled={!canManage}
+                  className={input}
+                >
+                  <option value="">Select player</option>
+                  {playerOptions.map((player) => (
+                    <option key={player.id} value={player.id}>
+                      {player.name} ({player.team})
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label={`Custom award ${index + 1} citation`}>
+                <input
+                  value={award.citation}
+                  onChange={(event) => setCustomAward(index, "citation", event.target.value)}
+                  disabled={!canManage}
+                  maxLength={200}
+                  placeholder="Citation (optional)"
+                  className={input}
+                />
+              </Field>
+              <div className="flex items-end">
+                <button
+                  type="button"
+                  onClick={() => removeCustomAward(index)}
+                  disabled={!canManage}
+                  className={secondaryButton}
+                >
+                  Remove
+                </button>
+              </div>
+            </div>
+          ))}
+          {canManage ? (
+            <button
+              type="button"
+              onClick={addCustomAward}
+              disabled={busy || official.customAwards.length >= 10}
+              className={secondaryButton}
+            >
+              Add custom award
+            </button>
+          ) : null}
+        </div>
+
+        <label className="mt-4 flex items-start gap-2 text-xs font-semibold text-cric-muted">
+          <input
+            type="checkbox"
+            checked={official.published}
+            onChange={(event) => setOfficial((prev) => ({ ...prev, published: event.target.checked }))}
+            disabled={!canManage || detail.status !== "completed"}
+            className="mt-0.5"
+          />
+          <span>Publish on the public tournament page (completed tournaments only).</span>
+        </label>
+
         {canManage ? (
           <button type="button" onClick={saveOfficial} disabled={busy} className={`${primaryButton} mt-4`}>
             {busy ? "Saving…" : "Save official awards"}
