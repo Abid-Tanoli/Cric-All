@@ -5,6 +5,7 @@ import { resolveTabs } from "./registry";
 import TournamentSidebar from "./TournamentSidebar";
 import ShareButton from "../../components/ShareButton";
 import TournamentChampionHero from "../../components/TournamentChampionHero";
+import SponsorStrip from "../../components/SponsorStrip";
 import HomeTab from "./tabs/HomeTab";
 import FixturesTab from "./tabs/FixturesTab";
 import TableTab from "./tabs/TableTab";
@@ -72,7 +73,7 @@ function formatRange(start, end) {
 export default function TournamentHub() {
   const { seriesId, tab: tabParam, slug } = useParams();
   const hub = useTournamentHub(seriesId);
-  const { status, tournament, content, counts, matches, standings, bracket, stats, squads, teams } = hub;
+  const { status, tournament, content, counts, matches, standings, bracket, stats, squads, teams, sponsors } = hub;
 
   const basePath = `/series/${seriesId}`;
 
@@ -172,6 +173,7 @@ export default function TournamentHub() {
             </div>
 
             <TournamentChampionHero tournament={tournament} overview={overview} />
+            <SponsorStrip sponsors={sponsors} />
           </div>
         </div>
 

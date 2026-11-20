@@ -35,6 +35,7 @@ const baseState = {
   stats: { empty: true },
   squads: [],
   teams: [],
+  sponsors: [],
 };
 
 export default function useTournamentHub(seriesId) {
@@ -72,12 +73,13 @@ export default function useTournamentHub(seriesId) {
       }
 
       // ---- Load the rest in parallel ----------------------------------
-      const [docResult, contentResult, standingsResult, statsResult, squadResult] = await Promise.allSettled([
+      const [docResult, contentResult, standingsResult, statsResult, squadResult, sponsorResult] = await Promise.allSettled([
         get(`/tournaments/${id}`),
         content ? Promise.resolve(content) : get(`/tournaments/${id}/content`),
         get(`/tournaments/${id}/standings`),
         get(`/tournaments/${id}/stats`),
         get(`/tournaments/${id}/squad`),
+        get(`/tournaments/${id}/sponsors`),
       ]);
 
       const tournament = docResult.status === "fulfilled" ? docResult.value : null;
@@ -92,6 +94,9 @@ export default function useTournamentHub(seriesId) {
       const bracket = standingsPayload?.bracket || null;
       const stats = statsResult.status === "fulfilled" ? statsResult.value : { empty: true };
       const squads = squadResult.status === "fulfilled" ? squadResult.value || [] : [];
+      const sponsors = sponsorResult.status === "fulfilled" && Array.isArray(sponsorResult.value)
+        ? sponsorResult.value
+        : [];
 
       // Prefer the tournament document's own populated matches: the backend
       // already stripped hidden/test teams out of them. Only when the document
@@ -128,6 +133,7 @@ export default function useTournamentHub(seriesId) {
         stats: stats && typeof stats === "object" ? stats : { empty: true },
         squads: Array.isArray(squads) ? squads : [],
         teams: Array.isArray(tournament.teams) ? tournament.teams : [],
+        sponsors,
       });
     } catch (error) {
       if (stillCurrent()) {

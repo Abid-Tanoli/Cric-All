@@ -110,6 +110,20 @@ import {
   updateOrgMemberRoles,
 } from '../controllers/membershipController.js';
 import issueReportRateLimit from '../middleware/issueReportRateLimit.js';
+import { sponsorLogoUpload } from '../middleware/sponsorUpload.js';
+import {
+  listOrgSponsors,
+  createSponsor,
+  updateSponsor,
+  deleteSponsor,
+  reorderSponsors,
+  uploadSponsorLogo,
+} from '../controllers/sponsorController.js';
+import {
+  createOrgSponsorSchema,
+  updateOrgSponsorSchema,
+  reorderSponsorsSchema,
+} from '../validators/sponsorValidators.js';
 import {
   createOrganizationIssue,
   deleteOrgInvitation,
@@ -371,6 +385,58 @@ router.put(
   '/:id/tournaments/:tournamentId/official-awards',
   ...tournamentWrite,
   setOrgTournamentOfficialAwards
+);
+
+// Local sponsors: unlike competitions/matches/teams, an owner MAY delete a
+// sponsor. The controller writes an audit entry for every deletion. An
+// organization can only ever manage tournament-scoped sponsors of its own
+// verified tournament; the tenant/scope fields are pinned here, not trusted
+// from the request body.
+const sponsorWrite = [...tournamentWrite];
+const orgSponsorBody = (req, res, next) => {
+  if (req.body && typeof req.body === "object") {
+    const { scope, tournamentRef, organizationRef, ...rest } = req.body;
+    req.body = rest;
+  }
+  return next();
+};
+router.get(
+  '/:id/tournaments/:tournamentId/sponsors',
+  ...tournamentRead,
+  listOrgSponsors
+);
+router.post(
+  '/:id/tournaments/:tournamentId/sponsors',
+  ...sponsorWrite,
+  orgSponsorBody,
+  validate(createOrgSponsorSchema),
+  createSponsor
+);
+router.post(
+  '/:id/tournaments/:tournamentId/sponsors/logo',
+  ...sponsorWrite,
+  sponsorLogoUpload,
+  uploadSponsorLogo
+);
+router.put(
+  '/:id/tournaments/:tournamentId/sponsors/reorder',
+  ...sponsorWrite,
+  validate(reorderSponsorsSchema),
+  reorderSponsors
+);
+router.put(
+  '/:id/tournaments/:tournamentId/sponsors/:sponsorId',
+  ...sponsorWrite,
+  validateObjectId('sponsorId'),
+  orgSponsorBody,
+  validate(updateOrgSponsorSchema),
+  updateSponsor
+);
+router.delete(
+  '/:id/tournaments/:tournamentId/sponsors/:sponsorId',
+  ...sponsorWrite,
+  validateObjectId('sponsorId'),
+  deleteSponsor
 );
 
 // Series

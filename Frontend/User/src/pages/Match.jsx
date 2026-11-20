@@ -8,6 +8,7 @@ import ShareButton from "../components/ShareButton";
 import PDFReport from "../components/PDFReport";
 import { initSocket, joinMatchRoom, leaveMatchRoom } from "../services/socket";
 import AdSlot from "../components/ads/AdSlot";
+import SponsorStrip from "../components/SponsorStrip";
 import LoadingWithTimeout from "../components/LoadingWithTimeout";
 
 const Match = () => {
@@ -15,6 +16,7 @@ const Match = () => {
   const [match, setMatch] = useState(null);
   const [loading, setLoading] = useState(true);
   const [events, setEvents] = useState([]);
+  const [sponsors, setSponsors] = useState([]);
 
   const loadMatch = useCallback(async (retries = 2) => {
     let shouldRetry = false;
@@ -31,6 +33,28 @@ const Match = () => {
       if (!shouldRetry) setLoading(false);
     }
   }, [matchId]);
+
+  // Local sponsors belong to the competition, not to an ad placement. This
+  // read is independent of the score so a sponsor outage never blocks scoring.
+  const tournamentId = match?.tournament?._id || match?.tournament || null;
+  useEffect(() => {
+    let active = true;
+    if (!tournamentId) {
+      setSponsors([]);
+      return undefined;
+    }
+    api
+      .get(`/tournaments/${tournamentId}/sponsors`)
+      .then((res) => {
+        if (active) setSponsors(Array.isArray(res.data) ? res.data : []);
+      })
+      .catch(() => {
+        if (active) setSponsors([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, [tournamentId]);
 
   const addEvent = (event) => {
     setEvents(prev => [...prev, event]);
@@ -317,6 +341,9 @@ const Match = () => {
       </div>
       <ToastNotifications events={events} />
       <EnhancedMatchTabs matchId={matchId} match={match} />
+      <div className="mx-auto max-w-7xl px-3 sm:px-6">
+        <SponsorStrip sponsors={sponsors} compact />
+      </div>
       {/* Below the scorecard summary, never above the score. */}
       <AdSlot />
     </div>

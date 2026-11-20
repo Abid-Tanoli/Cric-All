@@ -24,6 +24,16 @@ import {
 import { handoverOrganization } from "../controllers/orgHandoverController.js";
 import { handoverOrganizationSchema } from "../validators/orgValidators.js";
 import {
+  listAdminSponsors,
+  createSponsor,
+  updateSponsor,
+  deleteSponsor,
+  reorderSponsors,
+  uploadSponsorLogo,
+} from "../controllers/sponsorController.js";
+import { sponsorLogoUpload } from "../middleware/sponsorUpload.js";
+import { createSponsorSchema, updateSponsorSchema, reorderSponsorsSchema } from "../validators/sponsorValidators.js";
+import {
   approveAndDeleteAdminIssue,
   getAdminIssue,
   getAdminIssueDeletionImpact,
@@ -63,6 +73,14 @@ router.get("/", auth.protect, auth.requireAdmin, listAdmins);
 router.post("/create", auth.protect, auth.requireSuperAdmin, createAdmin);
 router.put("/:id", auth.protect, auth.requireSuperAdmin, updateAdmin);
 router.delete("/:id", auth.protect, auth.requireSuperAdmin, deleteAdmin);
+
+// Admin: local sponsor catalog (kept separate from AdSense/AdSlot).
+router.get("/sponsors", auth.protect, auth.requireAdmin, listAdminSponsors);
+router.post("/sponsors", auth.protect, auth.requireAdmin, validate(createSponsorSchema), createSponsor);
+router.post("/sponsors/logo", auth.protect, auth.requireAdmin, sponsorLogoUpload, uploadSponsorLogo);
+router.put("/sponsors/reorder", auth.protect, auth.requireAdmin, validate(reorderSponsorsSchema), reorderSponsors);
+router.put("/sponsors/:sponsorId", auth.protect, auth.requireAdmin, validateObjectId("sponsorId"), validate(updateSponsorSchema), updateSponsor);
+router.delete("/sponsors/:sponsorId", auth.protect, auth.requireAdmin, validateObjectId("sponsorId"), deleteSponsor);
 
 // Admin: Cricket Shots
 router.post("/shots", auth.protect, auth.requireAdmin, async (req, res) => {

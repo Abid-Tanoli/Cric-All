@@ -13,6 +13,7 @@ const CORE_ITEMS = [
   "Live Scoring",
   "Manage Events",
   "Tournaments",
+  "Sponsors",
   "Manage Teams",
   "Organizations",
   "Manage Players",
