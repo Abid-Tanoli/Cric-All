@@ -240,6 +240,35 @@ export const setOrgTournamentAwards = (orgId, tournamentId, payload) =>
 export const setOrgTournamentOfficialAwards = (orgId, tournamentId, payload) =>
   unwrap(api.put(`/organizations/${orgId}/tournaments/${tournamentId}/official-awards`, payload));
 
+// --- local sponsors ----------------------------------------------------------
+// Sponsors are plain public content, not AdSlots/AdSense. The server pins the
+// organization and tournament from the verified competition, so these payloads
+// deliberately contain neither scope nor tenant fields.
+export const listOrgSponsors = (orgId, tournamentId) =>
+  unwrap(api.get(`/organizations/${orgId}/tournaments/${tournamentId}/sponsors`));
+
+export const createOrgSponsor = (orgId, tournamentId, payload) =>
+  unwrap(api.post(`/organizations/${orgId}/tournaments/${tournamentId}/sponsors`, payload));
+
+export const updateOrgSponsor = (orgId, tournamentId, sponsorId, payload) =>
+  unwrap(api.put(`/organizations/${orgId}/tournaments/${tournamentId}/sponsors/${sponsorId}`, payload));
+
+export const deleteOrgSponsor = (orgId, tournamentId, sponsorId) =>
+  unwrap(api.delete(`/organizations/${orgId}/tournaments/${tournamentId}/sponsors/${sponsorId}`));
+
+export const reorderOrgSponsors = (orgId, tournamentId, ids) =>
+  unwrap(api.put(`/organizations/${orgId}/tournaments/${tournamentId}/sponsors/reorder`, { ids }));
+
+export const uploadOrgSponsorLogo = (orgId, tournamentId, file) => {
+  const formData = new FormData();
+  formData.append("logo", file);
+  return unwrap(
+    api.post(`/organizations/${orgId}/tournaments/${tournamentId}/sponsors/logo`, formData, {
+      headers: { "Content-Type": "multipart/form-data" },
+    })
+  );
+};
+
 export const listOrgSeries = (orgId) => unwrap(api.get(`/organizations/${orgId}/series`));
 
 export const createOrgSeries = (orgId, payload) =>
@@ -341,6 +370,12 @@ export default {
   deleteOrgTournamentSquad,
   setOrgTournamentAwards,
   setOrgTournamentOfficialAwards,
+  listOrgSponsors,
+  createOrgSponsor,
+  updateOrgSponsor,
+  deleteOrgSponsor,
+  reorderOrgSponsors,
+  uploadOrgSponsorLogo,
   listOrgSeries,
   createOrgSeries,
   getOrgSeries,

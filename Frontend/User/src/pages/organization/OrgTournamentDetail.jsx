@@ -1,5 +1,6 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import RequestDeletionButton from "../../components/RequestDeletionButton";
+import SponsorStrip from "../../components/SponsorStrip";
 import {
   FIXTURE_FORMATS,
   FIXTURE_STAGES,
@@ -12,20 +13,26 @@ import { PERMISSIONS, can, formatDate, formatDateTime } from "../../lib/orgUi";
 import {
   addOrgTournamentTeams,
   applyOrgTournamentFixtures,
+  createOrgSponsor,
   createOrgTournamentMatch,
+  deleteOrgSponsor,
   getOrgTournament,
   getOrgTournamentFixtures,
   getOrgTournamentSquad,
   getTeamRoster,
+  listOrgSponsors,
   listPublicTeams,
   previewOrgTournamentFixtures,
   recomputeOrgTournamentPoints,
   removeOrgTournamentTeam,
+  reorderOrgSponsors,
   setOrgTournamentAwards,
   setOrgTournamentGroups,
   setOrgTournamentOfficialAwards,
   setOrgTournamentSquad,
+  updateOrgSponsor,
   updateOrgTournament,
+  uploadOrgSponsorLogo,
 } from "../../services/organizationApi";
 import { TeamPicker, TournamentForm } from "./CompetitionForms";
 import { MatchSetup } from "./OrgMatches";
@@ -34,6 +41,7 @@ import {
   Field,
   Stat,
   card,
+  dangerButton,
   cardSubtle,
   eyebrow,
   input,
@@ -49,6 +57,7 @@ const TABS = [
   ["fixtures", "Fixtures"],
   ["squads", "Squads"],
   ["points", "Points"],
+  ["sponsors", "Sponsors"],
   ["awards", "Awards"],
 ];
 
@@ -259,6 +268,18 @@ export default function OrgTournamentDetail({ orgId, tournamentId, access, ownTe
           onSaved={(message) => {
             setNotice({ kind: "success", text: message });
             refresh();
+          }}
+          onError={setErr}
+        />
+      ) : null}
+
+      {tab === "sponsors" ? (
+        <SponsorsTab
+          orgId={orgId}
+          tournamentId={tournamentId}
+          canManage={canManage}
+          onSaved={(message) => {
+            setNotice({ kind: "success", text: message });
           }}
           onError={setErr}
         />
@@ -1507,6 +1528,383 @@ function AwardsTab({ orgId, tournamentId, detail, squads, canManage, onSaved, on
           </button>
         ) : null}
       </div>
+    </div>
+  );
+}
+
+const BLANK_SPONSOR = {
+  name: "",
+  logoUrl: "",
+  linkUrl: "",
+  tier: "supporting",
+  active: true,
+  order: 0,
+};
+
+const sponsorDraft = (sponsor) => ({
+  name: sponsor?.name || "",
+  logoUrl: sponsor?.logoUrl || "",
+  linkUrl: sponsor?.linkUrl || "",
+  tier: sponsor?.tier === "title" ? "title" : "supporting",
+  active: sponsor?.active !== false,
+  order: Number(sponsor?.order) || 0,
+});
+
+/**
+ * Owner-side sponsor editor. This is ordinary public content: it never touches
+ * AdSlot/AdSense settings. The server pins scope/tenant from the verified
+ * tournament and validates the logo bytes and link scheme before anything is
+ * stored or shown on the public hub.
+ */
+export function SponsorsTab({ orgId, tournamentId, canManage, onSaved, onError }) {
+  const [sponsors, setSponsors] = useState([]);
+  const [draft, setDraft] = useState(BLANK_SPONSOR);
+  const [editingId, setEditingId] = useState(null);
+  const [logoFile, setLogoFile] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [localError, setLocalError] = useState("");
+  const fileRef = useRef(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setLocalError("");
+    try {
+      setSponsors(asArray(await listOrgSponsors(orgId, tournamentId)));
+    } catch (error) {
+      setLocalError(competitionErrorMessage(error, "Could not load sponsors."));
+    } finally {
+      setLoading(false);
+    }
+  }, [orgId, tournamentId]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const clearError = () => {
+    setLocalError("");
+    onError("");
+  };
+
+  const reportError = (message) => {
+    setLocalError(message);
+    onError(message);
+  };
+
+  const resetDraft = () => {
+    setDraft(BLANK_SPONSOR);
+    setEditingId(null);
+    setLogoFile(null);
+    if (fileRef.current) fileRef.current.value = "";
+  };
+
+  const saveSponsor = async (event) => {
+    event.preventDefault();
+    if (!draft.name.trim() || !draft.logoUrl.trim()) {
+      reportError("Enter a name and a logo URL, or upload a logo first.");
+      return;
+    }
+    setBusy(true);
+    clearError();
+    try {
+      const payload = {
+        name: draft.name.trim(),
+        logoUrl: draft.logoUrl.trim(),
+        linkUrl: draft.linkUrl.trim(),
+        tier: draft.tier,
+        order: Number(draft.order) || 0,
+        active: draft.active,
+      };
+      if (editingId) {
+        await updateOrgSponsor(orgId, tournamentId, editingId, payload);
+      } else {
+        await createOrgSponsor(orgId, tournamentId, payload);
+      }
+      resetDraft();
+      await load();
+      onSaved(editingId ? "Sponsor updated." : "Sponsor added.");
+    } catch (error) {
+      reportError(competitionErrorMessage(error, "Could not save the sponsor."));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const uploadLogo = async () => {
+    if (!logoFile) {
+      reportError("Choose a logo file first.");
+      return;
+    }
+    setBusy(true);
+    clearError();
+    try {
+      const result = await uploadOrgSponsorLogo(orgId, tournamentId, logoFile);
+      const url = result?.url || "";
+      if (!url) throw new Error("The upload did not return a logo URL");
+      setDraft((prev) => ({ ...prev, logoUrl: url }));
+      setLogoFile(null);
+      if (fileRef.current) fileRef.current.value = "";
+      onSaved("Logo uploaded. Save the sponsor to publish it.");
+    } catch (error) {
+      reportError(competitionErrorMessage(error, "Could not upload the logo."));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const toggleActive = async (sponsor) => {
+    setBusy(true);
+    clearError();
+    try {
+      await updateOrgSponsor(orgId, tournamentId, idOf(sponsor), { active: !sponsor.active });
+      await load();
+      onSaved(sponsor.active ? "Sponsor deactivated." : "Sponsor activated.");
+    } catch (error) {
+      reportError(competitionErrorMessage(error, "Could not change the sponsor's status."));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const removeSponsor = async (sponsor) => {
+    if (!window.confirm(`Delete sponsor ${sponsor.name}? This is recorded in the audit log.`)) return;
+    setBusy(true);
+    clearError();
+    try {
+      await deleteOrgSponsor(orgId, tournamentId, idOf(sponsor));
+      if (editingId === idOf(sponsor)) resetDraft();
+      await load();
+      onSaved("Sponsor deleted. The deletion was audited.");
+    } catch (error) {
+      reportError(competitionErrorMessage(error, "Could not delete the sponsor."));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const moveSponsor = async (index, direction) => {
+    const target = index + direction;
+    if (target < 0 || target >= sponsors.length) return;
+    const next = [...sponsors];
+    [next[index], next[target]] = [next[target], next[index]];
+    setBusy(true);
+    clearError();
+    try {
+      const saved = await reorderOrgSponsors(
+        orgId,
+        tournamentId,
+        next.map(idOf)
+      );
+      setSponsors(asArray(saved).length ? asArray(saved) : next);
+      onSaved("Sponsor order saved.");
+    } catch (error) {
+      reportError(competitionErrorMessage(error, "Could not reorder the sponsors."));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const previewSponsors = useMemo(() => {
+    const base = sponsors.filter(
+      (sponsor) =>
+        sponsor.active &&
+        idOf(sponsor) !== editingId &&
+        !(draft.tier === "title" && sponsor.tier === "title")
+    );
+    const hasDraft = draft.name.trim() && draft.logoUrl.trim();
+    return hasDraft ? [...base, { _id: editingId || "draft", ...draft }] : base;
+  }, [sponsors, draft, editingId]);
+
+  return (
+    <div className="space-y-4">
+      <div className={card}>
+        <p className={eyebrow}>Public strip</p>
+        <h3 className={`${sectionTitle} mt-1`}>Tournament sponsors</h3>
+        <p className="mt-1 text-xs font-semibold text-cric-muted">
+          One title sponsor and up to six supporting sponsors appear on the public tournament and match
+          pages. Platform-wide sponsors count toward those limits.
+        </p>
+        {localError ? <Banner kind="error">{localError}</Banner> : null}
+        <div data-testid="sponsor-list" className="mt-3">
+          {loading ? (
+            <p className="text-xs font-semibold text-cric-muted">Loading sponsors…</p>
+          ) : sponsors.length === 0 ? (
+            <p className="text-xs font-semibold text-cric-muted">No sponsors have been added yet.</p>
+          ) : (
+            <div className="space-y-2">
+              {sponsors.map((sponsor, index) => (
+              <div key={idOf(sponsor)} className={`${cardSubtle} flex flex-wrap items-center justify-between gap-3`}>
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-black uppercase tracking-wide">{sponsor.name}</p>
+                  <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-cric-muted">
+                    {sponsor.tier} · order {sponsor.order || 0} · {sponsor.active ? "active" : "inactive"}
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    aria-label={`Move ${sponsor.name} up`}
+                    onClick={() => moveSponsor(index, -1)}
+                    disabled={!canManage || busy || index === 0}
+                    className={secondaryButton}
+                  >
+                    ↑
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`Move ${sponsor.name} down`}
+                    onClick={() => moveSponsor(index, 1)}
+                    disabled={!canManage || busy || index === sponsors.length - 1}
+                    className={secondaryButton}
+                  >
+                    ↓
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDraft(sponsorDraft(sponsor));
+                      setEditingId(idOf(sponsor));
+                      clearError();
+                    }}
+                    disabled={!canManage}
+                    className={secondaryButton}
+                  >
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => toggleActive(sponsor)}
+                    disabled={!canManage || busy}
+                    className={secondaryButton}
+                  >
+                    {sponsor.active ? "Deactivate" : "Activate"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => removeSponsor(sponsor)}
+                    disabled={!canManage || busy}
+                    className={dangerButton}
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+            ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className={card}>
+        <p className={eyebrow}>Live preview</p>
+        <h3 className={`${sectionTitle} mt-1`}>What the public hub will show</h3>
+        <div data-testid="sponsor-preview" className={`${cardSubtle} mt-3`}>
+          {previewSponsors.some((sponsor) => sponsor.name && sponsor.logoUrl) ? (
+            <SponsorStrip sponsors={previewSponsors} />
+          ) : (
+            <p className="text-xs font-semibold text-cric-muted">
+              Add a name and logo below to preview the strip.
+            </p>
+          )}
+        </div>
+      </div>
+
+      {canManage ? (
+        <form onSubmit={saveSponsor} className={card}>
+          <p className={eyebrow}>{editingId ? "Edit sponsor" : "Add sponsor"}</p>
+          <h3 className={`${sectionTitle} mt-1`}>
+            {editingId ? "Update sponsor details" : "New local sponsor"}
+          </h3>
+          <div className="mt-4 grid gap-4 md:grid-cols-2">
+            <Field label="Sponsor name">
+              <input
+                value={draft.name}
+                onChange={(event) => setDraft((prev) => ({ ...prev, name: event.target.value }))}
+                className={input}
+                maxLength={100}
+              />
+            </Field>
+            <Field label="Link URL" hint="Optional. https:// links and https://wa.me/<number> are accepted.">
+              <input
+                value={draft.linkUrl}
+                onChange={(event) => setDraft((prev) => ({ ...prev, linkUrl: event.target.value }))}
+                placeholder="https://example.com"
+                className={input}
+                maxLength={600}
+              />
+            </Field>
+            <Field label="Logo URL" hint="Or upload a logo; the upload fills this field.">
+              <input
+                value={draft.logoUrl}
+                onChange={(event) => setDraft((prev) => ({ ...prev, logoUrl: event.target.value }))}
+                placeholder="/uploads/logo.png or https://…"
+                className={input}
+                maxLength={600}
+              />
+            </Field>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Tier">
+                <select
+                  value={draft.tier}
+                  onChange={(event) => setDraft((prev) => ({ ...prev, tier: event.target.value }))}
+                  className={input}
+                >
+                  <option value="supporting">Supporting</option>
+                  <option value="title">Title</option>
+                </select>
+              </Field>
+              <Field label="Order">
+                <input
+                  type="number"
+                  min={0}
+                  max={999}
+                  value={draft.order}
+                  onChange={(event) => setDraft((prev) => ({ ...prev, order: event.target.value }))}
+                  className={input}
+                />
+              </Field>
+            </div>
+          </div>
+          <div className="mt-4 grid items-end gap-3 sm:grid-cols-[1fr_auto]">
+            <Field label="Logo file" hint="PNG, JPEG, WebP or SVG, up to 5 MB. File contents are checked on the server.">
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                onChange={(event) => setLogoFile(event.target.files?.[0] || null)}
+                className={input}
+              />
+            </Field>
+            <button type="button" onClick={uploadLogo} disabled={busy || !logoFile} className={secondaryButton}>
+              Upload logo
+            </button>
+          </div>
+          <label className="mt-4 flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-cric-muted">
+            <input
+              type="checkbox"
+              checked={draft.active}
+              onChange={(event) => setDraft((prev) => ({ ...prev, active: event.target.checked }))}
+              className="h-4 w-4"
+            />
+            Active (shown publicly)
+          </label>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <button type="submit" disabled={busy} className={primaryButton}>
+              {busy ? "Saving…" : editingId ? "Save sponsor" : "Add sponsor"}
+            </button>
+            {editingId ? (
+              <button type="button" onClick={resetDraft} disabled={busy} className={secondaryButton}>
+                Cancel edit
+              </button>
+            ) : null}
+          </div>
+        </form>
+      ) : (
+        <Banner kind="info">
+          You can preview the sponsors, but only an owner or admin can change them.
+        </Banner>
+      )}
     </div>
   );
 }
