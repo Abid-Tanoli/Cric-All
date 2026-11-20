@@ -11,6 +11,7 @@
 //   extraRuns       wide: 1 + extra runs; no ball: 1; bye/leg bye: the runs
 //   isWide, isNoBall, isBye, isLegBye, isWicket, wicketCancelled
 //   wicketType, fielderName, bowlerName, batsmanName, displayBallNumber
+//   batsmanOnStrike, batsmanNonStrike, dismissedPlayer  (player refs / names)
 
 const n = (value) => {
   const parsed = Number(value);
@@ -21,6 +22,13 @@ const runsOffBat = (ball = {}) =>
   ball.batsmanRuns != null ? n(ball.batsmanRuns) : n(ball.runs);
 
 const isLegal = (ball = {}) => !ball.isWide && !ball.isNoBall;
+
+// A player ref can be an id or a populated document.
+export const playerIdOf = (value) => {
+  if (!value) return "";
+  if (typeof value === "object") return String(value._id || value.id || "");
+  return String(value);
+};
 
 export const plural = (count, word) => `${count} ${word}${count === 1 ? "" : "s"}`;
 
@@ -41,6 +49,13 @@ export function ballDeliveryRuns(ball = {}) {
   }
   return runsOffBat(ball);
 }
+
+// Runs credited to the batter: a wide, bye or leg bye never is.
+export const ballBatterRuns = (ball = {}) =>
+  ball.isWide || ball.isBye || ball.isLegBye ? 0 : runsOffBat(ball);
+
+// A wide is not a ball faced; a no ball is.
+export const ballFacedByBatter = (ball = {}) => !ball.isWide;
 
 // Chip label: •, 1, 4, 6, W, 1W, wd, 3wd, nb, 5nb, 5n-b, 2b, 1lb.
 export function ballChipText(ball = {}) {
@@ -104,6 +119,55 @@ function wicketPhrase(ball = {}) {
   return `OUT! ${type}`;
 }
 
+// Scorebook shorthand for the dismissal line: "c Fielder b Bowler", "lbw b
+// Bowler", "run out (Fielder)". Only fields that exist are used; nothing is
+// invented when the fielder or bowler is unknown.
+export function howOutText(ball = {}) {
+  const type = normalizeWicketType(ball.wicketType);
+  const bowler = ball.bowlerName || "";
+  const fielder = ball.fielderName || "";
+
+  if (type === "bowled") return bowler ? `b ${bowler}` : "bowled";
+  if (type === "lbw") return bowler ? `lbw b ${bowler}` : "lbw";
+  if (type === "caught") {
+    const caught = fielder ? `c ${fielder}` : "c";
+    return bowler ? `${caught} b ${bowler}` : caught;
+  }
+  if (type === "stumped") {
+    const stumped = fielder ? `st ${fielder}` : "st";
+    return bowler ? `${stumped} b ${bowler}` : stumped;
+  }
+  if (type === "run out") return fielder ? `run out (${fielder})` : "run out";
+  if (type === "hit wicket") return bowler ? `hit wicket b ${bowler}` : "hit wicket";
+  if (type === "retired hurt") return "retired hurt";
+  if (type === "retired out") return "retired out";
+  if (!type) return "out";
+  return type;
+}
+
+// "Hamza Khan c Fielder b Bowler, 16 (6)". Nothing to name means no line.
+export function dismissalLine({ name = "", howOut = "", runs = 0, balls = 0 } = {}) {
+  if (!name) return "";
+  return `${name}${howOut ? ` ${howOut}` : ""}, ${n(runs)} (${n(balls)})`;
+}
+
+// "Hamza Khan* 16 (6)" for the striker, "Shan 14 (6)" for the partner.
+export const batterScoreLine = ({ name = "", runs = 0, balls = 0, onStrike = false } = {}) =>
+  `${name || "Batter"}${onStrike ? "*" : ""} ${n(runs)} (${n(balls)})`;
+
+export const newBowlerText = (name = "", replacedName = "") => {
+  if (!name) return "";
+  if (replacedName) return `${name} comes into the attack, replacing ${replacedName}`;
+  return `${name} to open the bowling`;
+};
+
+export const newBatterText = (name = "", position = 0) => {
+  if (!name) return "";
+  return position > 0
+    ? `${name} comes in next at No. ${position}`
+    : `${name} comes in next`;
+};
+
 // The result half of a commentary line, e.g. "no run", "FOUR", "wide, 1 run".
 export function ballResultPhrase(ball = {}) {
   if (ball.wicketCancelled) return "no ball, wicket cancelled";
@@ -163,57 +227,192 @@ const orderedBalls = (balls = []) =>
 
 const bowlerKeyOf = (over, balls) =>
   String(
-    over?.bowler?._id ||
-      over?.bowler ||
-      balls[0]?.bowler?._id ||
-      balls[0]?.bowler ||
+    playerIdOf(over?.bowler) ||
+      playerIdOf(balls[0]?.bowler) ||
       ""
   );
 
+// Both batters at the crease when the over ended: whoever faced the last ball
+// is the striker. A batter dismissed off that last ball is not at the crease,
+// so he is left out instead of inventing his replacement.
+const creaseBatters = (deliveries, batterTotals) => {
+  const last = deliveries[deliveries.length - 1];
+  if (!last) return [];
+  const dismissedId = last.dismissalId || "";
+  const strikerId = playerIdOf(last.ball.batsmanOnStrike);
+  const nonStrikerId = playerIdOf(last.ball.batsmanNonStrike);
+  const rows = [];
+
+  if (strikerId && strikerId !== dismissedId) rows.push({ id: strikerId, onStrike: true });
+  if (nonStrikerId && nonStrikerId !== strikerId && nonStrikerId !== dismissedId) {
+    rows.push({ id: nonStrikerId, onStrike: false });
+  }
+
+  return rows.map((row) => {
+    const totals = batterTotals.get(row.id);
+    return {
+      id: row.id,
+      name: totals?.name || "",
+      runs: totals?.runs || 0,
+      balls: totals?.balls || 0,
+      onStrike: row.onStrike,
+    };
+  });
+};
+
+// The first batter to appear on a later delivery who has not batted yet.
+const incomingBatterAfter = (flat, index, appeared) => {
+  for (let i = index + 1; i < flat.length; i += 1) {
+    const { ball } = flat[i];
+    const ids = [playerIdOf(ball.batsmanOnStrike), playerIdOf(ball.batsmanNonStrike)];
+    const fresh = ids.find((id) => id && !appeared.has(id));
+    if (fresh) return fresh;
+  }
+  return "";
+};
+
 // One pass over the innings builds every over: chips, per-ball plain sentence
-// ("Over 14.3"), the running score at the end of that over and the bowler's
-// cumulative O-M-R-W. Output is newest first.
-export function buildPlainOverFeed(overs = []) {
+// ("Over 14.3"), the end-of-over card (score, chase, both batters, both
+// bowlers) and the new-bowler / new-batter event rows. Output is newest first.
+//
+// options.players     roster used to name ids that carry no name string
+// options.target      chase target (0 when there is no chase)
+// options.totalOvers  innings length, used for "need X from Y balls"
+export function buildPlainOverFeed(overs = [], options = {}) {
+  const { players = [], target = 0, totalOvers = 0 } = options || {};
+
+  const playerNames = new Map();
+  (players || []).forEach((player) => {
+    const id = playerIdOf(player);
+    const name = player?.name || player?.fullName || "";
+    if (id && name) playerNames.set(id, name);
+  });
+
   const sortedOvers = [...(overs || [])]
     .filter(Boolean)
     .sort((a, b) => overNumberOf(a) - overNumberOf(b));
 
+  const flat = [];
+  sortedOvers.forEach((over) => {
+    orderedBalls(over.balls || []).forEach((ball) => flat.push({ over, ball }));
+  });
+
+  const batterTotals = new Map();
+  const battingOrder = [];
+  const remember = (id, name) => {
+    if (!id) return;
+    if (!batterTotals.has(id)) {
+      batterTotals.set(id, { id, name: "", runs: 0, balls: 0 });
+      battingOrder.push(id);
+    }
+    const entry = batterTotals.get(id);
+    if (!entry.name) entry.name = name || playerNames.get(id) || "";
+  };
+  flat.forEach(({ ball }) => {
+    remember(playerIdOf(ball.batsmanOnStrike), ball.batsmanName);
+    remember(playerIdOf(ball.batsmanNonStrike), "");
+  });
+  const positionOf = new Map(battingOrder.map((id, index) => [id, index + 1]));
+
   const bowlerTotals = new Map();
+  const overBowlers = [];
+  const appeared = new Set();
   let score = { runs: 0, wickets: 0 };
+  let legalTotal = 0;
+  let flatIndex = 0;
   const feed = [];
 
   sortedOvers.forEach((over) => {
+    const overNo = overNumberOf(over);
     const balls = orderedBalls(over.balls || []);
     const bowlerKey = bowlerKeyOf(over, balls);
-    const bowlerName = over?.bowler?.name || balls[0]?.bowlerName || "";
+    const bowlerName =
+      over?.bowler?.name || balls[0]?.bowlerName || playerNames.get(bowlerKey) || "";
     const totals = bowlerTotals.get(bowlerKey) || { balls: 0, maidens: 0, runs: 0, wickets: 0 };
+
+    // Ends alternate every over, so the bowler at the other end is the one who
+    // bowled the previous over and the replaced bowler is over N-2.
+    const sameEnd = [...overBowlers].reverse().find((entry) => entry.overNumber % 2 === overNo % 2);
+    const events = [];
+    if (bowlerName) {
+      const text = sameEnd
+        ? sameEnd.key === bowlerKey
+          ? ""
+          : newBowlerText(bowlerName, sameEnd.name)
+        : newBowlerText(bowlerName, "");
+      if (text) events.push({ kind: "bowler", label: "New bowler", text });
+    }
 
     let overRuns = 0;
     let overWickets = 0;
     let legalBalls = 0;
+    const deliveries = [];
 
-    const deliveries = balls.map((ball) => {
+    balls.forEach((ball) => {
       const runs = ballDeliveryRuns(ball);
       const wicket = Boolean(ball.isWicket && !ball.wicketCancelled);
       overRuns += runs;
       score = { runs: score.runs + runs, wickets: score.wickets + (wicket ? 1 : 0) };
       totals.runs += runs;
-      if (isLegal(ball)) {
+
+      const legal = isLegal(ball);
+      if (legal) {
         legalBalls += 1;
         totals.balls += 1;
+        legalTotal += 1;
       }
       if (wicket) {
         overWickets += 1;
         totals.wickets += 1;
       }
-      const display = legalBalls + (isLegal(ball) ? 0 : 1);
-      return {
+
+      const strikerId = playerIdOf(ball.batsmanOnStrike);
+      const nonStrikerId = playerIdOf(ball.batsmanNonStrike);
+      if (strikerId) {
+        remember(strikerId, ball.batsmanName);
+        appeared.add(strikerId);
+        const row = batterTotals.get(strikerId);
+        row.runs += ballBatterRuns(ball);
+        if (ballFacedByBatter(ball)) row.balls += 1;
+      }
+      if (nonStrikerId) {
+        remember(nonStrikerId, "");
+        appeared.add(nonStrikerId);
+      }
+
+      const display = legalBalls + (legal ? 0 : 1);
+      const delivery = {
         ball,
-        label: `${overNumberOf(over)}.${display}`,
+        label: `${overNo}.${display}`,
         chip: ballChipText(ball),
         tone: ballChipTone(ball),
         text: ballSentence(ball, { bowlerName }),
+        wicket,
       };
+
+      if (wicket) {
+        const dismissedId = playerIdOf(ball.dismissedPlayer) || strikerId;
+        const dismissed = dismissedId ? batterTotals.get(dismissedId) : null;
+        delivery.dismissalId = dismissedId;
+        delivery.dismissal = dismissalLine({
+          name: dismissed?.name || ball.batsmanName || "",
+          howOut: howOutText(ball),
+          runs: dismissed?.runs || 0,
+          balls: dismissed?.balls || 0,
+        });
+      }
+
+      deliveries.push(delivery);
+      events.push({ kind: "ball", delivery });
+
+      if (wicket) {
+        const incoming = incomingBatterAfter(flat, flatIndex, appeared);
+        const incomingName = incoming ? batterTotals.get(incoming)?.name || "" : "";
+        const text = newBatterText(incomingName, positionOf.get(incoming) || 0);
+        if (text) events.push({ kind: "batter", label: "New batter", text });
+      }
+
+      flatIndex += 1;
     });
 
     const complete = legalBalls >= 6 || over?.isComplete === true;
@@ -223,9 +422,39 @@ export function buildPlainOverFeed(overs = []) {
     const bowlerLine = balls.length
       ? `${formatBowlerOversFromBalls(totals.balls)}-${totals.maidens}-${totals.runs}-${totals.wickets}`
       : "";
+    overBowlers.push({ overNumber: overNo, key: bowlerKey, name: bowlerName, line: bowlerLine });
+
+    const bowlers = [];
+    if (bowlerName || bowlerLine) {
+      bowlers.push({ id: bowlerKey, name: bowlerName, line: bowlerLine, isCurrent: true });
+    }
+    const previous = overBowlers[overBowlers.length - 2] || null;
+    if (previous && previous.key !== bowlerKey && (previous.name || previous.line)) {
+      bowlers.push({
+        id: previous.key,
+        name: previous.name,
+        line: previous.line,
+        isCurrent: false,
+      });
+    }
+
+    const chasing = n(target) > 0 && score.runs < n(target);
+    const chase = chasing
+      ? {
+          target: n(target),
+          need: n(target) - score.runs,
+          ballsLeft:
+            n(totalOvers) > 0 ? Math.max(0, n(totalOvers) * 6 - legalTotal) : null,
+        }
+      : null;
+    const chaseText = chase
+      ? chase.ballsLeft != null
+        ? `Target ${chase.target} · need ${chase.need} from ${plural(chase.ballsLeft, "ball")}`
+        : `Target ${chase.target} · need ${chase.need}`
+      : "";
 
     feed.push({
-      overNumber: overNumberOf(over),
+      overNumber: overNo,
       over,
       runs: overRuns,
       wickets: overWickets,
@@ -235,7 +464,15 @@ export function buildPlainOverFeed(overs = []) {
       score: { ...score },
       bowlerName,
       bowlerLine,
-      summary: `End of over ${overNumberOf(over)}: ${plural(overRuns, "run")}, ${score.runs}/${score.wickets}`,
+      summary: `End of over ${overNo}: ${plural(overRuns, "run")}, ${score.runs}/${score.wickets}`,
+      title: `${complete ? "End of over" : "Over"} ${overNo}${complete ? "" : " in progress"}`,
+      runsText: plural(overRuns, "run"),
+      scoreText: `${score.runs}/${score.wickets}`,
+      chase,
+      chaseText,
+      batters: creaseBatters(deliveries, batterTotals),
+      bowlers,
+      events,
     });
   });
 
