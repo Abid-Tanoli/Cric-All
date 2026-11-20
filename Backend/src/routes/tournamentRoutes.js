@@ -21,6 +21,7 @@ import {
   setTournamentAwards,
   setTournamentOfficialAwards
 } from '../controllers/TournamentController.js';
+import { listPublicSponsors } from '../controllers/sponsorController.js';
 
 const router = express.Router();
 const adminOnly = [protect, requireAdmin, requireVerifiedEmail];
@@ -28,6 +29,7 @@ const ownerOrAdmin = [...adminOnly, requireTournamentOwnerOrAdmin];
 
 router.get('/', getTournaments);
 router.get('/:id', optionalProtect, validateObjectId('id'), getTournament);
+router.get('/:id/sponsors', validateObjectId('id'), listPublicSponsors);
 router.get('/:id/points-table', validateObjectId('id'), getTournamentPointsTable);
 router.get('/:id/fixtures', optionalProtect, validateObjectId('id'), getTournamentFixtures);
 // NOTE: these two routes must name the param `tournamentId`: getTournamentSquad

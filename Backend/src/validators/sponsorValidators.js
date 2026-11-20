@@ -102,10 +102,43 @@ export const updateSponsorSchema = z
   .strict()
   .superRefine(checkPartialScope);
 
+// Organization routes pin scope/tournamentRef from the verified tournament, so
+// their payloads must not contain (or require) those fields at all.
+export const createOrgSponsorSchema = z
+  .object({
+    name,
+    logoUrl,
+    linkUrl: linkUrl.default(""),
+    tier: tier.default("supporting"),
+    order: order.default(0),
+    active: active.default(true),
+  })
+  .strict();
+
+export const updateOrgSponsorSchema = z
+  .object({
+    name,
+    logoUrl,
+    linkUrl,
+    tier,
+    order,
+    active,
+  })
+  .partial()
+  .strict();
+
 export const reorderSponsorsSchema = z
   .object({
     ids: z.array(objectId).min(1).max(50),
   })
   .strict();
 
-export default { createSponsorSchema, updateSponsorSchema, reorderSponsorsSchema, isSafeSponsorLink, isSafeLogoUrl };
+export default {
+  createSponsorSchema,
+  updateSponsorSchema,
+  createOrgSponsorSchema,
+  updateOrgSponsorSchema,
+  reorderSponsorsSchema,
+  isSafeSponsorLink,
+  isSafeLogoUrl,
+};
