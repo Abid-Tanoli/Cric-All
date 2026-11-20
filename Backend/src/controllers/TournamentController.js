@@ -364,6 +364,11 @@ export const getTournament = async (req, res) => {
     const payload = tournament.toObject();
     payload.winner = honours.winner;
     payload.runnerUp = honours.runnerUp;
+    // Keep the "Best Batter" alias available to every consumer of the detail
+    // payload; both names point at the same stored pick.
+    if (payload.officialAwards) {
+      payload.officialAwards.bestBatter = payload.officialAwards.bestBatsman || null;
+    }
     res.status(200).json(payload);
   } catch (error) {
     console.error("Error fetching tournament:", error);

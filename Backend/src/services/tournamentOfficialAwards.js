@@ -231,9 +231,13 @@ export function validateOfficialAwards({
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
       errors.citations = "Citations must be an object.";
     } else {
+      const citationSource = { ...raw };
+      if (hasOwn(citationSource, "bestBatter") && !hasOwn(citationSource, "bestBatsman")) {
+        citationSource.bestBatsman = citationSource.bestBatter;
+      }
       for (const key of OFFICIAL_AWARD_KEYS) {
-        if (!hasOwn(raw, key)) continue;
-        const value = parseCitation(raw[key], `citations.${key}`, OFFICIAL_AWARD_CITATION_MAX);
+        if (!hasOwn(citationSource, key)) continue;
+        const value = parseCitation(citationSource[key], `citations.${key}`, OFFICIAL_AWARD_CITATION_MAX);
         if (value !== undefined) citations[key] = value;
       }
     }
