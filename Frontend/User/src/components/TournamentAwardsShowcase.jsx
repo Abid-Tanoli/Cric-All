@@ -133,7 +133,7 @@ export default function TournamentAwardsShowcase({ stats = {}, showDerived = fal
   const officialBatter = officialAwards.bestBatsman || officialAwards.bestBatter;
   const hasOfficialAwards = Boolean(
     officialTop || officialBatter || officialAwards.bestBowler ||
-    officialAwards.bestFielder || officialAwards.emergingPlayer || officialAwards.note,
+    officialAwards.bestFielder || officialAwards.emergingPlayer,
   ) || customAwards.length > 0;
   const allowDerived = showDerived || hasOfficialAwards;
   const impactRows = stats.playerOfTournament?.rows || [];
@@ -203,9 +203,6 @@ export default function TournamentAwardsShowcase({ stats = {}, showDerived = fal
           />
         ))}
       </div>
-      {officialAwards.note && (
-        <p className="mt-4 text-center text-xs italic text-cric-muted">{officialAwards.note}</p>
-      )}
     </section>
   );
 }

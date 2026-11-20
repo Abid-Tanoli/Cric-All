@@ -93,7 +93,6 @@ describe("TournamentAwardsShowcase", () => {
             citation: "Final overhead catch",
           },
         ],
-        note: "Presented at the final ceremony",
       },
     };
 
@@ -112,7 +111,6 @@ describe("TournamentAwardsShowcase", () => {
     expect(custom).toHaveTextContent("Best Catch");
     expect(custom).toHaveTextContent("Cleo");
     expect(custom).toHaveTextContent("Final overhead catch");
-    expect(screen.getByText("Presented at the final ceremony")).toBeInTheDocument();
   });
 
   it("hides official honours when they are unpublished or the tournament is not completed", () => {
