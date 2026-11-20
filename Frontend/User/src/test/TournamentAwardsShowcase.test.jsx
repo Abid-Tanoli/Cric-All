@@ -59,6 +59,88 @@ describe("TournamentAwardsShowcase", () => {
     expect(screen.getAllByText("Official award")).toHaveLength(3);
   });
 
+  it("renders citations, fielder/emerging honours and custom awards when published", () => {
+    const stats = {
+      ...baseStats,
+      officialAwards: {
+        ...officialAwards,
+        published: true,
+        bestFielder: {
+          playerId: "f1",
+          name: "Finn",
+          team: "Sky Sports",
+          stats: { catches: 8, stumpings: 2, runOuts: 1 },
+        },
+        emergingPlayer: {
+          playerId: "e1",
+          name: "Elena",
+          team: "Young Star",
+          stats: { matches: 5, runs: 210, wickets: 7 },
+        },
+        citations: {
+          playerOfTournament: "Match-winning impact in every phase",
+          bestBatsman: "612 runs at 51 average",
+          bestBowler: "23 wickets",
+          bestFielder: "Eight catches behind the stumps",
+          emergingPlayer: "Seven wickets on debut",
+        },
+        customAwards: [
+          {
+            title: "Best Catch",
+            playerId: "c1",
+            name: "Cleo",
+            team: "Club C",
+            citation: "Final overhead catch",
+          },
+        ],
+      },
+    };
+
+    renderInRouter(<TournamentAwardsShowcase stats={stats} />);
+
+    const fielder = screen.getByTestId("award-card-bestFielder");
+    expect(fielder).toHaveTextContent("Best Fielder / Wicketkeeper");
+    expect(fielder).toHaveTextContent("8 catches · 2 stumpings · 1 run outs");
+    expect(fielder).toHaveTextContent("Eight catches behind the stumps");
+
+    const emerging = screen.getByTestId("award-card-emergingPlayer");
+    expect(emerging).toHaveTextContent("5 matches · 210 runs · 7 wickets");
+    expect(emerging).toHaveTextContent("Seven wickets on debut");
+
+    const custom = screen.getByTestId("award-card-custom-1");
+    expect(custom).toHaveTextContent("Best Catch");
+    expect(custom).toHaveTextContent("Cleo");
+    expect(custom).toHaveTextContent("Final overhead catch");
+  });
+
+  it("hides official honours when they are unpublished or the tournament is not completed", () => {
+    const { rerender } = renderInRouter(
+      <TournamentAwardsShowcase
+        stats={{
+          ...baseStats,
+          officialAwards: { ...officialAwards, published: false },
+          topRunScorers: [],
+          topWicketTakers: [],
+        }}
+      />,
+    );
+    expect(screen.queryByTestId("tournament-awards-showcase")).not.toBeInTheDocument();
+
+    rerender(
+      <MemoryRouter>
+        <TournamentAwardsShowcase
+          stats={{
+            ...baseStats,
+            publicStatus: "upcoming",
+            officialAwards: { ...officialAwards, published: true },
+          }}
+        />
+      </MemoryRouter>,
+    );
+    expect(screen.queryByTestId("award-card-playerOfTournament")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("award-card-bestBatsman")).not.toBeInTheDocument();
+  });
+
   it("uses derived discipline leaders when official picks are absent", () => {
     renderInRouter(
       <TournamentAwardsShowcase
@@ -147,5 +229,18 @@ describe("TournamentAwardsShowcase", () => {
     expect(Boolean(showcase.compareDocumentPosition(podium) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
     expect(showcase.querySelector('[data-testid="award-card-playerOfTournament"]')?.textContent).toContain("Wajid");
     expect(podium.querySelector('[data-testid="podium-place-1"]')?.textContent).toContain("Wajid");
+  });
+
+  it("falls back to the computed podium when official awards are unpublished", () => {
+    renderInRouter(
+      <PlayerOfTournament
+        data={{ rows: baseStats.playerOfTournament.rows, leader: baseStats.playerOfTournament.leader }}
+        officialAwards={{ ...officialAwards, published: false }}
+        stats={{ ...baseStats, publicStatus: "completed" }}
+      />,
+    );
+
+    expect(screen.queryByText("Official Top 3")).not.toBeInTheDocument();
+    expect(screen.getByText("Top 3 by impact points")).toBeInTheDocument();
   });
 });

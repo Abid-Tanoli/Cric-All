@@ -56,9 +56,20 @@ export default function TournamentManagement() {
     const [filters, setFilters] = useState({ status: '', team: '' });
     const awardsFormBlank = { winner: '', runnerUp: '', playerOfTournament: '', bestBatsman: '', bestBowler: '' };
     const [awardsForm, setAwardsForm] = useState(awardsFormBlank);
-    const officialAwardsFormBlank = { topPlayers: ['', '', ''], bestBatsman: '', bestBowler: '', note: '' };
+    const officialAwardsFormBlank = {
+        topPlayers: ['', '', ''],
+        bestBatsman: '',
+        bestBowler: '',
+        bestFielder: '',
+        emergingPlayer: '',
+        citations: { playerOfTournament: '', bestBatsman: '', bestBowler: '', bestFielder: '', emergingPlayer: '' },
+        customAwards: [],
+        note: '',
+        published: false,
+    };
     const [officialAwardsForm, setOfficialAwardsForm] = useState(officialAwardsFormBlank);
     const [awardSquads, setAwardSquads] = useState([]);
+    const [awardStats, setAwardStats] = useState(null);
 
     const fetchTournaments = useCallback(async () => {
         setLoading(true);
@@ -135,7 +146,19 @@ export default function TournamentManagement() {
             topPlayers: [savedTop[0] || '', savedTop[1] || '', savedTop[2] || ''],
             bestBatsman: detail.officialAwards?.bestBatsman?._id || '',
             bestBowler: detail.officialAwards?.bestBowler?._id || '',
+            bestFielder: detail.officialAwards?.bestFielder?._id || '',
+            emergingPlayer: detail.officialAwards?.emergingPlayer?._id || '',
+            citations: {
+                ...officialAwardsFormBlank.citations,
+                ...(detail.officialAwards?.citations || {}),
+            },
+            customAwards: (detail.officialAwards?.customAwards || []).map((award) => ({
+                title: award?.title || '',
+                player: award?.player?._id || award?.player || '',
+                citation: award?.citation || '',
+            })),
             note: detail.officialAwards?.note || '',
+            published: detail.officialAwards?.published === true,
         });
     }, [detail]);
 
@@ -146,8 +169,38 @@ export default function TournamentManagement() {
         let cancelled = false;
         (async () => {
             try {
-                const res = await api.get(`/tournaments/${selectedId}/squad`);
-                if (!cancelled) setAwardSquads(Array.isArray(res.data) ? res.data : []);
+                const [squadRes, statsRes] = await Promise.all([
+                    api.get(`/tournaments/${selectedId}/squad`),
+                    api.get(`/tournaments/${selectedId}/stats`),
+                ]);
+                if (cancelled) return;
+                setAwardSquads(Array.isArray(squadRes.data) ? squadRes.data : []);
+                const stats = statsRes.data || {};
+                setAwardStats(stats);
+                // Suggestions only fill empty picks. The organiser still has to
+                // confirm them by saving, and they are labelled "Official".
+                const leader = stats.playerOfTournament?.leader?.playerId || stats.playerOfTournament?.rows?.[0]?.playerId || '';
+                const used = new Set([leader].filter(Boolean));
+                const pick = (id) => {
+                    if (!id || used.has(id)) return '';
+                    used.add(id);
+                    return id;
+                };
+                const batter = pick(stats.topRunScorers?.[0]?.playerId);
+                const bowler = pick(stats.topWicketTakers?.[0]?.playerId);
+                const fielder = pick(stats.topFielders?.[0]?.playerId);
+                const emerging = pick(
+                    (stats.playerOfTournament?.rows || []).find((row) => !used.has(row.playerId))?.playerId,
+                );
+                setOfficialAwardsForm((prev) => {
+                    const next = { ...prev, topPlayers: [...prev.topPlayers] };
+                    if (!next.topPlayers[0] && leader) next.topPlayers[0] = leader;
+                    if (!next.bestBatsman && batter) next.bestBatsman = batter;
+                    if (!next.bestBowler && bowler) next.bestBowler = bowler;
+                    if (!next.bestFielder && fielder) next.bestFielder = fielder;
+                    if (!next.emergingPlayer && emerging) next.emergingPlayer = emerging;
+                    return next;
+                });
             } catch {
                 if (!cancelled) setAwardSquads([]);
             }
@@ -172,6 +225,7 @@ export default function TournamentManagement() {
     }, [awardSquads]);
 
     const tournamentTeams = useMemo(() => detail?.teams || [], [detail]);
+    const awardPlayerName = (id) => awardPlayerOptions.find((p) => p.id === id)?.name || id;
 
     const statusOptions = useMemo(
         () => Array.from(new Set(fixtures.map((f) => f.status).filter(Boolean))),
@@ -354,6 +408,35 @@ export default function TournamentManagement() {
             }
             return { ...form, topPlayers: next.slice(0, 3) };
         });
+    };
+
+    const setOfficialCitation = (key, value) => {
+        setOfficialAwardsForm((form) => ({
+            ...form,
+            citations: { ...form.citations, [key]: value },
+        }));
+    };
+
+    const setCustomAward = (index, field, value) => {
+        setOfficialAwardsForm((form) => {
+            const customAwards = [...form.customAwards];
+            customAwards[index] = { ...customAwards[index], [field]: value };
+            return { ...form, customAwards };
+        });
+    };
+
+    const addCustomAward = () => {
+        setOfficialAwardsForm((form) => {
+            if (form.customAwards.length >= 10) return form;
+            return { ...form, customAwards: [...form.customAwards, { title: '', player: '', citation: '' }] };
+        });
+    };
+
+    const removeCustomAward = (index) => {
+        setOfficialAwardsForm((form) => ({
+            ...form,
+            customAwards: form.customAwards.filter((_, i) => i !== index),
+        }));
     };
 
     const saveOfficialAwards = async () => {
@@ -653,7 +736,9 @@ export default function TournamentManagement() {
                 <div>
                     <h3 className="text-sm font-black uppercase tracking-wide text-[#031d44]">Official awards</h3>
                     <p className="text-xs text-slate-500 mt-1">
-                        Organiser-confirmed Top 3 and awards, shown at the top of the public Player of the Tournament page. They do not change the computed points or ranking order.
+                        Organiser-confirmed honours. Empty picks are suggested from the tournament stats, but the final choice is
+                        yours and is labelled &ldquo;Official&rdquo; on the public page. They never change points or ranking order
+                        and stay private until you publish them.
                     </p>
                 </div>
                 <div>
@@ -685,39 +770,76 @@ export default function TournamentManagement() {
                             </div>
                         ))}
                     </div>
-                    <p className="mt-2 text-[11px] text-slate-500">
-                        The 1st-place pick is the official Player of the Tournament. Leave 2nd and 3rd empty for a one-player podium.
-                    </p>
+                    <div className="mt-2 flex flex-wrap items-center gap-3">
+                        <p className="text-[11px] text-slate-500">
+                            The 1st-place pick is the official Player of the Tournament. Leave 2nd and 3rd empty for a one-player podium.
+                        </p>
+                        <input
+                            className={`${inputCls} max-w-xs`}
+                            aria-label="Official player of the tournament citation"
+                            maxLength={200}
+                            placeholder="Citation (optional)"
+                            value={officialAwardsForm.citations.playerOfTournament || ''}
+                            onChange={(e) => setOfficialCitation('playerOfTournament', e.target.value)}
+                        />
+                    </div>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {[
-                        ['bestBatsman', 'Official Best Batsman', 'Official best batsman'],
-                        ['bestBowler', 'Official Best Bowler', 'Official best bowler'],
-                    ].map(([field, label, ariaLabel]) => (
-                        <div key={field} className="flex flex-col gap-1 text-xs font-bold text-slate-600">
-                            <label htmlFor={`official-${field}`}>{label}</label>
-                            <div className="flex gap-2">
-                                <select
-                                    id={`official-${field}`}
-                                    aria-label={ariaLabel}
-                                    className={`${inputCls} flex-1`}
-                                    value={officialAwardsForm[field]}
-                                    onChange={(e) => setOfficialAwardsForm({ ...officialAwardsForm, [field]: e.target.value })}
-                                >
-                                    <option value="">Not awarded</option>
-                                    {awardPlayerOptions.map((p) => <option key={p.id} value={p.id}>{p.name} ({p.team})</option>)}
-                                </select>
-                                <button
-                                    type="button"
-                                    aria-label={`Clear ${label.toLowerCase()}`}
-                                    className="px-3 py-2 rounded-lg border border-slate-300 text-xs font-bold text-slate-600 hover:bg-slate-100"
-                                    onClick={() => setOfficialAwardsForm({ ...officialAwardsForm, [field]: '' })}
-                                >
-                                    Clear
-                                </button>
+                        ['bestBatsman', 'Official Best Batter', 'Official best batsman', 'bestBatsman'],
+                        ['bestBowler', 'Official Best Bowler', 'Official best bowler', 'bestBowler'],
+                        ['bestFielder', 'Official Best Fielder / Wicketkeeper', 'Official best fielder', 'bestFielder'],
+                        ['emergingPlayer', 'Official Emerging Player', 'Official emerging player', 'emergingPlayer'],
+                    ].map(([field, label, ariaLabel, citationKey]) => {
+                        const suggestedId = awardStats?.officialAwards?.[field]?.playerId
+                            || (field === 'bestBatsman' ? awardStats?.topRunScorers?.[0]?.playerId : null)
+                            || (field === 'bestBowler' ? awardStats?.topWicketTakers?.[0]?.playerId : null)
+                            || (field === 'bestFielder' ? awardStats?.topFielders?.[0]?.playerId : null)
+                            || (field === 'emergingPlayer' ? awardStats?.playerOfTournament?.rows?.[0]?.playerId : null);
+                        return (
+                            <div key={field} className="rounded-lg border border-slate-200 p-3 space-y-2">
+                                <label htmlFor={`official-${field}`} className="text-xs font-bold text-slate-600">{label}</label>
+                                <div className="flex gap-2">
+                                    <select
+                                        id={`official-${field}`}
+                                        aria-label={ariaLabel}
+                                        className={`${inputCls} flex-1`}
+                                        value={officialAwardsForm[field]}
+                                        onChange={(e) => setOfficialAwardsForm({ ...officialAwardsForm, [field]: e.target.value })}
+                                    >
+                                        <option value="">Not awarded</option>
+                                        {awardPlayerOptions.map((p) => <option key={p.id} value={p.id}>{p.name} ({p.team})</option>)}
+                                    </select>
+                                    <button
+                                        type="button"
+                                        aria-label={`Clear ${label.toLowerCase()}`}
+                                        className="px-3 py-2 rounded-lg border border-slate-300 text-xs font-bold text-slate-600 hover:bg-slate-100"
+                                        onClick={() => setOfficialAwardsForm({ ...officialAwardsForm, [field]: '' })}
+                                    >
+                                        Clear
+                                    </button>
+                                </div>
+                                <input
+                                    className={inputCls}
+                                    aria-label={`${label} citation`}
+                                    maxLength={200}
+                                    placeholder="Short citation (optional)"
+                                    value={officialAwardsForm.citations[citationKey] || ''}
+                                    onChange={(e) => setOfficialCitation(citationKey, e.target.value)}
+                                />
+                                {suggestedId && suggestedId !== officialAwardsForm[field] ? (
+                                    <button
+                                        type="button"
+                                        className="text-[11px] font-bold text-blue-700 hover:underline"
+                                        aria-label={`Use stats suggestion for ${label}`}
+                                        onClick={() => setOfficialAwardsForm({ ...officialAwardsForm, [field]: suggestedId })}
+                                    >
+                                        Suggested from stats: {awardPlayerName(suggestedId)} — use this
+                                    </button>
+                                ) : null}
                             </div>
-                        </div>
-                    ))}
+                        );
+                    })}
                     <label className="flex flex-col gap-1 text-xs font-bold text-slate-600 md:col-span-2">
                         Note (optional)
                         <textarea
@@ -730,6 +852,68 @@ export default function TournamentManagement() {
                         />
                     </label>
                 </div>
+                <div className="rounded-lg border border-slate-200 p-3 space-y-3">
+                    <p className="text-xs font-bold text-slate-600">Custom awards</p>
+                    {officialAwardsForm.customAwards.map((award, index) => (
+                        <div key={index} className="grid grid-cols-1 md:grid-cols-[1fr_1fr_1fr_auto] gap-2 items-end">
+                            <input
+                                className={inputCls}
+                                aria-label={`Custom award ${index + 1} title`}
+                                maxLength={60}
+                                placeholder="Award title"
+                                value={award.title}
+                                onChange={(e) => setCustomAward(index, 'title', e.target.value)}
+                            />
+                            <select
+                                className={inputCls}
+                                aria-label={`Custom award ${index + 1} player`}
+                                value={award.player}
+                                onChange={(e) => setCustomAward(index, 'player', e.target.value)}
+                            >
+                                <option value="">Select player</option>
+                                {awardPlayerOptions.map((p) => <option key={p.id} value={p.id}>{p.name} ({p.team})</option>)}
+                            </select>
+                            <input
+                                className={inputCls}
+                                aria-label={`Custom award ${index + 1} citation`}
+                                maxLength={200}
+                                placeholder="Citation (optional)"
+                                value={award.citation}
+                                onChange={(e) => setCustomAward(index, 'citation', e.target.value)}
+                            />
+                            <button
+                                type="button"
+                                aria-label={`Remove custom award ${index + 1}`}
+                                className="px-3 py-2 rounded-lg border border-red-300 text-xs font-bold text-red-600 hover:bg-red-50"
+                                onClick={() => removeCustomAward(index)}
+                            >
+                                Remove
+                            </button>
+                        </div>
+                    ))}
+                    <button
+                        type="button"
+                        className={btnGhost}
+                        aria-label="Add custom award"
+                        disabled={officialAwardsForm.customAwards.length >= 10}
+                        onClick={addCustomAward}
+                    >
+                        Add custom award
+                    </button>
+                </div>
+                <label className="flex items-start gap-2 text-xs text-slate-600">
+                    <input
+                        type="checkbox"
+                        aria-label="Publish official awards"
+                        className="mt-0.5"
+                        disabled={detail?.status !== 'completed'}
+                        checked={officialAwardsForm.published}
+                        onChange={(e) => setOfficialAwardsForm({ ...officialAwardsForm, published: e.target.checked })}
+                    />
+                    <span>
+                        Publish on the public tournament page. Only available when the tournament status is completed.
+                    </span>
+                </label>
                 <button className={btnPrimary} onClick={saveOfficialAwards}>Save official awards</button>
             </div>
         </div>

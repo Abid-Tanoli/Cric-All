@@ -20,6 +20,7 @@ const TOURNAMENT = {
   _id: "t1",
   name: "OPENCODE_TEST Knockout Cup",
   type: "knockout",
+  status: "completed",
   teams: [{ _id: "teamA", name: "Alpha CC" }, { _id: "teamB", name: "Beta CC" }],
   winner: { _id: "teamA", name: "Alpha CC" },
   runnerUp: { _id: "teamB", name: "Beta CC" },
@@ -151,7 +152,12 @@ describe("TournamentManagement awards tab", () => {
         topPlayers: ["p1", "p2", ""],
         bestBatsman: "p1",
         bestBowler: "p3",
+        bestFielder: "",
+        emergingPlayer: "",
+        citations: { playerOfTournament: "", bestBatsman: "", bestBowler: "", bestFielder: "", emergingPlayer: "" },
+        customAwards: [],
         note: "Presented at the final",
+        published: false,
       })
     );
     expect(get.mock.calls.filter(([u]) => u === "/tournaments/t1").length).toBeGreaterThan(1);
@@ -165,5 +171,55 @@ describe("TournamentManagement awards tab", () => {
 
     expect(screen.getByLabelText("Official 1st place").value).toBe("p3");
     expect(screen.getByLabelText("Official 2nd place").value).toBe("");
+  });
+
+  it("prefills empty picks from stats and saves new honours, citations, custom awards and publication", async () => {
+    get.mockImplementation((url) => {
+      if (url === "/tournaments") return Promise.resolve({ data: [TOURNAMENT] });
+      if (url === "/teams") return Promise.resolve({ data: TOURNAMENT.teams });
+      if (url === "/tournaments/t1") return Promise.resolve({ data: TOURNAMENT });
+      if (url === "/tournaments/t1/fixtures") return Promise.resolve({ data: [] });
+      if (url === "/tournaments/t1/squad") return Promise.resolve({ data: SQUADS });
+      if (url === "/tournaments/t1/stats") {
+        return Promise.resolve({
+          data: {
+            topRunScorers: [{ playerId: "p2", name: "Ben" }],
+            topWicketTakers: [{ playerId: "p3", name: "Cleo" }],
+            topFielders: [{ playerId: "p1", name: "Ann" }],
+            playerOfTournament: { rows: [], leader: null },
+          },
+        });
+      }
+      return Promise.resolve({ data: {} });
+    });
+
+    await openAwards();
+
+    // Stats only suggest; every pick is still an editable manual select.
+    expect(screen.getByLabelText("Official best batsman").value).toBe("p2");
+    expect(screen.getByLabelText("Official best bowler").value).toBe("p3");
+    expect(screen.getByLabelText("Official best fielder").value).toBe("p1");
+
+    fireEvent.change(screen.getByLabelText("Official emerging player"), { target: { value: "p1" } });
+    fireEvent.change(screen.getByLabelText("Official Best Fielder / Wicketkeeper citation"), {
+      target: { value: "Eight catches" },
+    });
+    fireEvent.click(screen.getByLabelText("Add custom award"));
+    fireEvent.change(screen.getByLabelText("Custom award 1 title"), { target: { value: "Best Catch" } });
+    fireEvent.change(screen.getByLabelText("Custom award 1 player"), { target: { value: "p3" } });
+    fireEvent.change(screen.getByLabelText("Custom award 1 citation"), { target: { value: "Final overhead" } });
+    fireEvent.click(screen.getByLabelText("Publish official awards"));
+    fireEvent.click(screen.getByRole("button", { name: /save official awards/i }));
+
+    await waitFor(() => expect(put).toHaveBeenCalledTimes(1));
+    const [url, body] = put.mock.calls[0];
+    expect(url).toBe("/tournaments/t1/official-awards");
+    expect(body.bestFielder).toBe("p1");
+    expect(body.emergingPlayer).toBe("p1");
+    expect(body.citations.bestFielder).toBe("Eight catches");
+    expect(body.customAwards).toEqual([
+      { title: "Best Catch", player: "p3", citation: "Final overhead" },
+    ]);
+    expect(body.published).toBe(true);
   });
 });

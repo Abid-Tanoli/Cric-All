@@ -118,6 +118,27 @@ const tournamentSchema = new mongoose.Schema(
       topPlayers: [{ type: mongoose.Schema.Types.ObjectId, ref: "Player" }],
       bestBatsman: { type: mongoose.Schema.Types.ObjectId, ref: "Player", default: null },
       bestBowler: { type: mongoose.Schema.Types.ObjectId, ref: "Player", default: null },
+      // PR G: additional organiser-confirmed honours. Like every field above,
+      // these are presentation-only and never feed points or standings.
+      bestFielder: { type: mongoose.Schema.Types.ObjectId, ref: "Player", default: null },
+      emergingPlayer: { type: mongoose.Schema.Types.ObjectId, ref: "Player", default: null },
+      // One short citation per award, keyed by its award field.
+      citations: {
+        playerOfTournament: { type: String, default: "", trim: true, maxlength: 200 },
+        bestBatsman: { type: String, default: "", trim: true, maxlength: 200 },
+        bestBowler: { type: String, default: "", trim: true, maxlength: 200 },
+        bestFielder: { type: String, default: "", trim: true, maxlength: 200 },
+        emergingPlayer: { type: String, default: "", trim: true, maxlength: 200 },
+      },
+      customAwards: [{
+        title: { type: String, required: true, trim: true, maxlength: 60 },
+        player: { type: mongoose.Schema.Types.ObjectId, ref: "Player", required: true },
+        citation: { type: String, default: "", trim: true, maxlength: 200 },
+      }],
+      // Awards are public only once the tournament is completed AND an
+      // organiser explicitly publishes them.
+      published: { type: Boolean, default: false },
+      publishedAt: { type: Date, default: null },
       note: { type: String, default: "", trim: true, maxlength: 500 },
     },
     sponsors: [{

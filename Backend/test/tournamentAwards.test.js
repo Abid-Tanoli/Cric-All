@@ -30,10 +30,12 @@ before(async () => {
   mongod = await startTestDb();
 
   const { default: tournamentRoutes } = await import("../src/routes/tournamentRoutes.js");
+  const { default: tournamentContentRoutes } = await import("../src/routes/tournamentContentRoutes.js");
   const { default: matchRoutes } = await import("../src/routes/matchRoutes.js");
   const app = express();
   app.use(express.json());
   app.use("/tournaments", tournamentRoutes);
+  app.use("/tournaments", tournamentContentRoutes);
   app.use("/matches", matchRoutes);
 
   server = http.createServer(app);
@@ -129,6 +131,13 @@ async function makeKnockout(admin) {
   });
 
   return { teamA, teamB, teamC, playerInA, playerInA2, playerInB, outsider, tournament };
+}
+
+async function publishAwards(tournament) {
+  await Tournament.updateOne(
+    { _id: tournament._id },
+    { $set: { status: "completed", "officialAwards.published": true } },
+  );
 }
 
 async function makeMatch({ teamA, teamB, player, status }) {
@@ -501,6 +510,7 @@ test("official awards route: an admin saves, public stats expose, and the award 
   assert.equal(saved.body.tournament.officialAwards.bestBowler.name, playerInB.name);
   assert.equal(saved.body.tournament.officialAwards.note, "Selected by the tournament committee");
 
+  await publishAwards(tournament);
   const read = await call("GET", `/tournaments/${tournament._id}`, null);
   assert.equal(read.status, 200);
   assert.equal(read.body.officialAwards.bestBatsman.name, playerInA.name);
@@ -522,6 +532,8 @@ test("public tournament detail preserves a legacy official player-of-tournament 
     user: await User.findOne({ role: "admin" }),
   });
   tournament.officialAwards.playerOfTournament = playerInA._id;
+  tournament.officialAwards.published = true;
+  tournament.status = "completed";
   await tournament.save();
 
   const detail = await call("GET", `/tournaments/${tournament._id}`, null);
@@ -566,6 +578,7 @@ test("official awards route: saves the three-place podium, syncs the alias and e
   // The organiser pick never alters the computed ranking.
   assert.deepEqual(stats.playerOfTournament.rows, []);
 
+  await publishAwards(tournament);
   const detail = await call("GET", `/tournaments/${tournament._id}`, null);
   assert.deepEqual(
     detail.body.officialAwards.topPlayers.map((p) => p.name),
@@ -745,6 +758,220 @@ test("official awards route: clearing one award leaves the others alone", async 
   assert.equal(after.officialAwards.bestBowler, null);
   assert.equal(String(after.officialAwards.playerOfTournament), String(playerInA._id));
   assert.equal(after.officialAwards.note, "Keep me");
+});
+
+// --- PR G: new official award categories, citations, custom honours, publish --
+
+test("official awards: bestBatter alias, citations and publish rules validate cleanly", () => {
+  const team = "aaaaaaaaaaaaaaaaaaaaaaaa";
+  const squad = "bbbbbbbbbbbbbbbbbbbbbbbb";
+  const outsider = "cccccccccccccccccccccccc";
+
+  const alias = validateOfficialAwards({
+    body: { bestBatter: squad },
+    teamIds: [team],
+    squadPlayerIds: [squad],
+    playerTeamById: new Map([[squad, team]]),
+    tournament: { status: "completed" },
+  });
+  assert.equal(alias.ok, true);
+  assert.equal(alias.data.bestBatsman, squad);
+
+  const honours = validateOfficialAwards({
+    body: {
+      bestFielder: squad,
+      emergingPlayer: squad,
+      bestBatter: squad,
+      citations: {
+        bestFielder: "Ten catches behind the stumps",
+        bestBatter: "620 runs at 155 SR",
+      },
+    },
+    teamIds: [team],
+    squadPlayerIds: [squad],
+    playerTeamById: new Map([[squad, team], [outsider, team]]),
+    tournament: { status: "completed" },
+  });
+  assert.equal(honours.ok, true, JSON.stringify(honours.errors));
+  assert.deepEqual(honours.data.citations, {
+    bestFielder: "Ten catches behind the stumps",
+    bestBatsman: "620 runs at 155 SR",
+  });
+
+  const tooLong = validateOfficialAwards({
+    body: { citations: { bestFielder: "x".repeat(201) } },
+    teamIds: [team],
+    squadPlayerIds: [squad],
+    tournament: { status: "completed" },
+  });
+  assert.equal(tooLong.ok, false);
+  assert.match(tooLong.errors["citations.bestFielder"], /200 characters/);
+
+  const premature = validateOfficialAwards({
+    body: { published: true },
+    teamIds: [team],
+    tournament: { status: "live" },
+  });
+  assert.equal(premature.ok, false);
+  assert.match(premature.errors.published, /only be published after/);
+
+  const publishable = validateOfficialAwards({
+    body: { published: true },
+    teamIds: [team],
+    tournament: { status: "completed" },
+  });
+  assert.equal(publishable.ok, true);
+  assert.equal(publishable.data.published, true);
+});
+
+test("official awards: custom honours need a title and a player from this tournament", () => {
+  const team = "aaaaaaaaaaaaaaaaaaaaaaaa";
+  const squad = "bbbbbbbbbbbbbbbbbbbbbbbb";
+  const outsider = "cccccccccccccccccccccccc";
+
+  const ok = validateOfficialAwards({
+    body: {
+      customAwards: [
+        { title: "Best Catch", playerId: squad, citation: "One-handed stunner" },
+        { title: "Fan Favourite", player: squad },
+      ],
+    },
+    teamIds: [team],
+    squadPlayerIds: [squad],
+    playerTeamById: new Map([[squad, team], [outsider, "dddddddddddddddddddddddd"]]),
+    tournament: { status: "completed" },
+  });
+  assert.equal(ok.ok, true, JSON.stringify(ok.errors));
+  assert.deepEqual(ok.data.customAwards, [
+    { title: "Best Catch", player: squad, citation: "One-handed stunner" },
+    { title: "Fan Favourite", player: squad, citation: "" },
+  ]);
+
+  const refused = validateOfficialAwards({
+    body: { customAwards: [{ title: "Best Catch", playerId: outsider }] },
+    teamIds: [team],
+    squadPlayerIds: [squad],
+    playerTeamById: new Map([[outsider, "dddddddddddddddddddddddd"]]),
+    tournament: { status: "completed" },
+  });
+  assert.equal(refused.ok, false);
+  assert.match(refused.errors.customAwards, /must belong to this tournament/);
+
+  const untitled = validateOfficialAwards({
+    body: { customAwards: [{ playerId: squad }] },
+    teamIds: [team],
+    squadPlayerIds: [squad],
+    tournament: { status: "completed" },
+  });
+  assert.equal(untitled.ok, false);
+  assert.match(untitled.errors.customAwards, /needs a title/);
+});
+
+test("official awards route: new honours and custom awards publish without touching standings", async () => {
+  const { token } = await makeAdmin();
+  const { teamA, playerInA, playerInA2, playerInB, tournament } = await makeKnockout({
+    user: await User.findOne({ role: "admin" }),
+  });
+  await Tournament.updateOne(
+    { _id: tournament._id },
+    { $set: { status: "completed", pointsTable: [{ team: teamA._id, points: 7, matchesPlayed: 3 }] } },
+  );
+  const before = await Tournament.findById(tournament._id).lean();
+
+  const saved = await call("PUT", `/tournaments/${tournament._id}/official-awards`, token, {
+    bestFielder: playerInA2._id.toString(),
+    emergingPlayer: playerInB._id.toString(),
+    bestBatter: playerInA._id.toString(),
+    citations: {
+      bestFielder: "A flawless tournament behind the stumps",
+      emergingPlayer: "Four wickets on debut",
+    },
+    customAwards: [{ title: "Best Catch", playerId: playerInA._id.toString(), citation: "The refrain of the final" }],
+    published: true,
+  });
+  assert.equal(saved.status, 200, JSON.stringify(saved.body));
+  const stored = await Tournament.findById(tournament._id).lean();
+  assert.equal(String(stored.officialAwards.bestFielder), String(playerInA2._id));
+  assert.equal(String(stored.officialAwards.emergingPlayer), String(playerInB._id));
+  assert.equal(stored.officialAwards.citations.bestFielder, "A flawless tournament behind the stumps");
+  assert.equal(stored.officialAwards.customAwards[0].title, "Best Catch");
+  assert.equal(stored.officialAwards.published, true);
+  assert.ok(stored.officialAwards.publishedAt, "publication time is recorded");
+
+  const detail = await call("GET", `/tournaments/${tournament._id}`, null);
+  assert.equal(detail.body.officialAwards.bestFielder.name, playerInA2.name);
+  assert.equal(detail.body.officialAwards.emergingPlayer.name, playerInB.name);
+  assert.equal(detail.body.officialAwards.bestBatter.name, playerInA.name);
+  assert.equal(detail.body.officialAwards.customAwards[0].citation, "The refrain of the final");
+  assert.equal(detail.body.officialAwards.customAwards[0].player.name, playerInA.name);
+
+  const stats = await call("GET", `/tournaments/${tournament._id}/stats?fresh=1`, null);
+  assert.equal(stats.status, 200, JSON.stringify(stats.body));
+  assert.equal(stats.body.officialAwards.bestFielder.citation, "A flawless tournament behind the stumps");
+  assert.equal(stats.body.officialAwards.customAwards[0].title, "Best Catch");
+
+  // Awards are presentation-only: neither the embedded table nor the public
+  // standings endpoint moves by a single point.
+  assert.deepEqual(stored.pointsTable.map((row) => [String(row.team), row.points]), [
+    [String(teamA._id), 7],
+  ]);
+  assert.deepEqual(before.pointsTable.map((row) => [String(row.team), row.points]), [
+    [String(teamA._id), 7],
+  ]);
+  const standings = await call("GET", `/tournaments/${tournament._id}/standings`, null);
+  assert.equal(standings.status, 200, JSON.stringify(standings.body));
+  const row = standings.body.rows.find((entry) => String(entry.team?._id || entry.team) === String(teamA._id));
+  assert.equal(row.points, 7);
+
+  const publishAudit = await AuditLog.findOne({ action: "tournament.official_awards_published" });
+  assert.ok(publishAudit, "publishing is audited separately");
+  assert.equal(publishAudit.metadata.published, true);
+});
+
+test("public reads hide official awards until completed AND published", async () => {
+  const { token } = await makeAdmin();
+  const { playerInA, tournament } = await makeKnockout({
+    user: await User.findOne({ role: "admin" }),
+  });
+  await call("PUT", `/tournaments/${tournament._id}/official-awards`, token, {
+    playerOfTournament: playerInA._id.toString(),
+    bestBatsman: playerInA._id.toString(),
+  });
+
+  const hiddenDetail = await call("GET", `/tournaments/${tournament._id}`, null);
+  assert.equal(hiddenDetail.status, 200);
+  assert.equal(hiddenDetail.body.officialAwards.playerOfTournament, null);
+  assert.equal(hiddenDetail.body.officialAwards.published, false);
+  const hiddenStats = await call("GET", `/tournaments/${tournament._id}/stats?fresh=1`, null);
+  assert.equal(hiddenStats.body.officialAwards.playerOfTournament, null);
+  assert.equal(hiddenStats.body.playerOfTournament.officialAward, null);
+
+  // Completing alone is not enough: the organiser must also publish.
+  await Tournament.updateOne({ _id: tournament._id }, { $set: { status: "completed" } });
+  const stillHidden = await call("GET", `/tournaments/${tournament._id}`, null);
+  assert.equal(stillHidden.body.officialAwards.playerOfTournament, null);
+
+  await Tournament.updateOne(
+    { _id: tournament._id },
+    { $set: { "officialAwards.published": true } },
+  );
+  const visible = await call("GET", `/tournaments/${tournament._id}`, null);
+  assert.equal(visible.body.officialAwards.playerOfTournament.name, playerInA.name);
+  const publishedStats = await call("GET", `/tournaments/${tournament._id}/stats?fresh=1`, null);
+  assert.equal(publishedStats.body.officialAwards.playerOfTournament.name, playerInA.name);
+});
+
+test("official awards route refuses publishing before the tournament is completed", async () => {
+  const { token } = await makeAdmin();
+  const { tournament } = await makeKnockout({ user: await User.findOne({ role: "admin" }) });
+
+  const refused = await call("PUT", `/tournaments/${tournament._id}/official-awards`, token, {
+    published: true,
+  });
+  assert.equal(refused.status, 400);
+  assert.match(refused.body.errors.published, /only be published after/);
+  const unchanged = await Tournament.findById(tournament._id).lean();
+  assert.equal(unchanged.officialAwards?.published || false, false);
 });
 
 // --- player of the match ----------------------------------------------------
