@@ -11,6 +11,10 @@ import {
   writeTournamentStatsCache,
   invalidateTournamentStatsCache,
 } from "../services/tournamentStats.js";
+import {
+  isOfficialAwardsPublic,
+  emptyOfficialAwards,
+} from "../services/tournamentOfficialAwards.js";
 import { buildTournamentBracket } from "../services/tournamentBracket.js";
 import { deriveTournamentPublicState } from "../services/tournamentPublicState.js";
 import {
@@ -120,6 +124,31 @@ export const getTournamentStats = async (req, res) => {
       .select("stage stageLabel round status startAt manualDraft isDraft")
       .lean();
     const publicState = deriveTournamentPublicState(tournament, statusMatches);
+
+    // PR G: the impact ranking and stat tables stay public as before; only the
+    // organiser-confirmed layer is withheld until completion + publication.
+    if (!isOfficialAwardsPublic(tournament)) {
+      const rows = stats.playerOfTournament?.rows || [];
+      stats = {
+        ...stats,
+        officialAwards: emptyOfficialAwards(),
+        playerOfTournament: {
+          ...(stats.playerOfTournament || {}),
+          topPlayers: rows.slice(0, 3).map((row, index) => ({
+            playerId: row.playerId,
+            name: row.name,
+            team: row.team,
+            teamId: row.teamId,
+            imageUrl: row.imageUrl || "",
+            official: false,
+            position: index + 1,
+          })),
+          topPlayersSource: "impact",
+          officialAward: null,
+          officialNote: "",
+        },
+      };
+    }
 
     res.set("Cache-Control", "public, max-age=15, stale-while-revalidate=30");
     res.status(200).json({ ...stats, publicStatus: publicState.status });

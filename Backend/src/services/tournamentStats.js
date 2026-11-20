@@ -1,7 +1,7 @@
 import Match from "../models/Match.js";
 import Tournament from "../models/Tournament.js";
 import { hiddenTeamIds, isHiddenTeamDoc, isReservedTestName } from "../utils/publicProjection.js";
-import { publicOfficialAwards } from "./tournamentOfficialAwards.js";
+import { OFFICIAL_AWARD_KEYS, publicOfficialAwards } from "./tournamentOfficialAwards.js";
 
 // ---------------------------------------------------------------------------
 // Tournament statistics
@@ -950,13 +950,18 @@ export const STATS_TEAM_SELECT = "name shortName logo isPublic";
 
 // The public "Official award" cards need the player's name/role and team label.
 const OFFICIAL_AWARD_STATS_POPULATE = [
-  ...["playerOfTournament", "bestBatsman", "bestBowler"].map((key) => ({
+  ...OFFICIAL_AWARD_KEYS.map((key) => ({
     path: `officialAwards.${key}`,
     select: "name playingRole role battingPosition team imageUrl",
     populate: { path: "team", select: "name shortName logo" },
   })),
   {
     path: "officialAwards.topPlayers",
+    select: "name playingRole role battingPosition team imageUrl",
+    populate: { path: "team", select: "name shortName logo" },
+  },
+  {
+    path: "officialAwards.customAwards.player",
     select: "name playingRole role battingPosition team imageUrl",
     populate: { path: "team", select: "name shortName logo" },
   },
@@ -1041,12 +1046,16 @@ export async function gatherTournamentStats(tournament, opts = {}) {
     .populate(OFFICIAL_AWARD_STATS_POPULATE)
     .lean();
   const officialAwards = publicOfficialAwards(officialTournament);
-  for (const key of ["playerOfTournament", "bestBatsman", "bestBowler"]) {
+  for (const key of OFFICIAL_AWARD_KEYS) {
     const award = officialAwards[key];
     if (award && award.teamId && hidden.has(String(award.teamId))) {
       officialAwards[key] = null;
     }
   }
+  officialAwards.bestBatter = officialAwards.bestBatsman;
+  officialAwards.customAwards = (officialAwards.customAwards || []).filter(
+    (award) => !(award?.teamId && hidden.has(String(award.teamId))),
+  );
   // Suppress hidden-team players from the podium, close the gaps and renumber
   // the places so the public page never shows a blank step. The compatibility
   // alias always mirrors the first remaining player.

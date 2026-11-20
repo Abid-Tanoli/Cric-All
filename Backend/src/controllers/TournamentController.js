@@ -27,6 +27,8 @@ import { deleteTournamentContent } from "../services/tournamentContent.js";
 import {
   OFFICIAL_AWARD_KEYS,
   validateOfficialAwards,
+  isOfficialAwardsPublic,
+  emptyOfficialAwards,
 } from "../services/tournamentOfficialAwards.js";
 import { invalidateTournamentStatsCache } from "../services/tournamentStats.js";
 import {
@@ -57,6 +59,17 @@ export {
 // Admin fixtures/scorecard screens can work against the same endpoint.
 const canSeeDrafts = (req) => req?.principalType === "admin";
 
+// Organisers need to keep editing awards before they are published. The org
+// detail route already proves the tournament belongs to req.org, so only its
+// members (and platform admins) may read the unpublished block.
+const canReadUnpublishedAwards = (req) =>
+  canSeeDrafts(req) ||
+  Boolean(
+    req?.org &&
+      req?.tournament &&
+      String(req.tournament.organizationRef || "") === String(req.org._id || ""),
+  );
+
 // Populates the official award players with just enough public profile and team
 // data for the "Official award" cards. Used by both the list and detail reads.
 const OFFICIAL_AWARD_POPULATE = [
@@ -69,6 +82,11 @@ const OFFICIAL_AWARD_POPULATE = [
   ]),
   {
     path: "officialAwards.topPlayers",
+    select: "name playingRole role battingPosition team imageUrl",
+    populate: { path: "team", select: "name shortName logo" },
+  },
+  {
+    path: "officialAwards.customAwards.player",
     select: "name playingRole role battingPosition team imageUrl",
     populate: { path: "team", select: "name shortName logo" },
   },
@@ -234,6 +252,10 @@ export const getTournaments = async (req, res) => {
         runnerUp: honours.runnerUp,
         publicStatus: state.status,
         publicEndDate: state.endDate,
+        // PR G: unpublished awards never leave the API on a public read.
+        officialAwards: isOfficialAwardsPublic(tournament)
+          ? tournament.officialAwards || emptyOfficialAwards()
+          : emptyOfficialAwards(),
       };
     });
 
@@ -307,8 +329,19 @@ export const getTournament = async (req, res) => {
         const teamId = team && typeof team === "object" ? team._id : team;
         return Boolean(teamId && hidden.has(String(teamId)));
       };
-      for (const key of ["playerOfTournament", "bestBatsman", "bestBowler"]) {
+      for (const key of [
+        "playerOfTournament",
+        "bestBatsman",
+        "bestBowler",
+        "bestFielder",
+        "emergingPlayer",
+      ]) {
         if (belongsToHiddenTeam(officialAwards[key])) officialAwards[key] = null;
+      }
+      if (Array.isArray(officialAwards.customAwards)) {
+        officialAwards.customAwards = officialAwards.customAwards.filter(
+          (award) => !belongsToHiddenTeam(award?.player),
+        );
       }
       if (Array.isArray(officialAwards.topPlayers)) {
         officialAwards.topPlayers = officialAwards.topPlayers.filter((player) => !belongsToHiddenTeam(player));
@@ -316,6 +349,12 @@ export const getTournament = async (req, res) => {
           officialAwards.playerOfTournament = officialAwards.topPlayers[0];
         }
       }
+    }
+
+    // PR G: publishing is the gate for every public awards surface. Organisers
+    // still receive their own unpublished picks through the org-scoped route.
+    if (!canReadUnpublishedAwards(req) && !isOfficialAwardsPublic(tournament)) {
+      tournament.officialAwards = emptyOfficialAwards();
     }
 
     // The header/banner/card reads winner/runnerUp from this endpoint. Return
@@ -988,7 +1027,11 @@ export const setTournamentOfficialAwards = async (req, res) => {
     // would throw a CastError) — the pure validator reports it field-by-field.
     const requestedPlayerIds = [
       ...OFFICIAL_AWARD_KEYS.map((key) => req.body?.[key]),
+      req.body?.bestBatter,
       ...(Array.isArray(req.body?.topPlayers) ? req.body.topPlayers : []),
+      ...(Array.isArray(req.body?.customAwards)
+        ? req.body.customAwards.map((award) => award?.playerId ?? award?.player)
+        : []),
     ]
       .map((value) => (value && typeof value === "object" ? value._id ?? value.id : value))
       .map((value) => (value === null || value === undefined ? "" : String(value).trim()))
@@ -1006,6 +1049,7 @@ export const setTournamentOfficialAwards = async (req, res) => {
       teamIds: tournament.teams || [],
       squadPlayerIds,
       playerTeamById,
+      tournament,
     });
 
     if (!validation.ok) {
@@ -1021,8 +1065,9 @@ export const setTournamentOfficialAwards = async (req, res) => {
         ? tournament.officialAwards.toObject()
         : tournament.officialAwards)
       : {};
+    const wasPublished = current.published === true;
     const next = { ...current };
-    for (const key of ["bestBatsman", "bestBowler"]) {
+    for (const key of ["bestBatsman", "bestBowler", "bestFielder", "emergingPlayer"]) {
       if (data[key] !== undefined) next[key] = data[key] || null;
     }
     if (data.topPlayers !== undefined) {
@@ -1031,7 +1076,15 @@ export const setTournamentOfficialAwards = async (req, res) => {
       next.topPlayers = data.topPlayers;
       next.playerOfTournament = data.topPlayers[0] || null;
     }
+    if (data.citations !== undefined) {
+      next.citations = { ...(current.citations || {}), ...data.citations };
+    }
+    if (data.customAwards !== undefined) next.customAwards = data.customAwards;
     if (data.note !== undefined) next.note = data.note || "";
+    if (data.published !== undefined) {
+      next.published = data.published;
+      next.publishedAt = data.published ? new Date() : null;
+    }
     tournament.officialAwards = next;
 
     await tournament.save();
@@ -1056,9 +1109,27 @@ export const setTournamentOfficialAwards = async (req, res) => {
         topPlayers: tournament.officialAwards?.topPlayers || [],
         bestBatsman: tournament.officialAwards?.bestBatsman || null,
         bestBowler: tournament.officialAwards?.bestBowler || null,
+        bestFielder: tournament.officialAwards?.bestFielder || null,
+        emergingPlayer: tournament.officialAwards?.emergingPlayer || null,
+        customAwards: (tournament.officialAwards?.customAwards || []).map((award) => award?.title),
+        published: tournament.officialAwards?.published === true,
         note: tournament.officialAwards?.note || "",
       },
     });
+
+    if (data.published !== undefined && data.published !== wasPublished) {
+      recordAudit({
+        req,
+        action: "tournament.official_awards_published",
+        targetType: "tournament",
+        targetId: tournament._id,
+        targetLabel: tournament.name,
+        metadata: {
+          published: data.published,
+          publishedAt: next.publishedAt || null,
+        },
+      });
+    }
 
     try {
       const io = getIO();
