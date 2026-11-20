@@ -2,7 +2,7 @@
 import {
   PRIMARY_TABS, MORE_TABS, idOf, sameId, teamName, longTeamName, playerName,
   number, formatOvers, getMatchBanner, collectPlayers, currentInningsOf, getTeamById,
-  getTarget, getRrr, getCrr, getResultLine, getTossLine, flattenCommentary
+  getTarget, getRrr, getCrr, getResultLine, getTossLine
 } from "../utils/matchHelpers";
 
 import SummaryTab from "./SummaryTab";
@@ -72,7 +72,6 @@ const EnhancedMatchTabs = ({ match, matchId }) => {
   ) || (partner && !sameId(partner.player, strikerId) ? partner : null);
   const bowler = (currentInnings?.bowling || []).find((row) => sameId(row.player, currentInnings?.currentBowler));
   const recentOvers = currentInnings?.oversHistory || [];
-  const commentaryOvers = flattenCommentary(currentInnings);
   const currentPartnership = (currentInnings?.partnerships || [])[(currentInnings?.partnerships || []).length - 1] || { runs: 0, balls: 0 };
 
   return (
@@ -202,7 +201,12 @@ const EnhancedMatchTabs = ({ match, matchId }) => {
               <RecentBalls overs={recentOvers} />
               </div>
               <div className="match-card">
-              <CommentaryPreview overs={commentaryOvers} players={players} onSwitchTab={setActiveTab} />
+              <CommentaryPreview
+                overs={recentOvers}
+                players={players}
+                useAiCommentary={match?.useAiCommentary === true}
+                onSwitchTab={setActiveTab}
+              />
               </div>
             </section>
             <aside className="space-y-3 sm:space-y-4 min-w-0">
@@ -225,8 +229,9 @@ const EnhancedMatchTabs = ({ match, matchId }) => {
 
         {effectiveTab === "commentary" && (
           <CommentaryTab
-            overs={commentaryOvers}
+            overs={recentOvers}
             players={players}
+            useAiCommentary={match?.useAiCommentary === true}
             visibleOvers={visibleOvers}
             onLoadMore={() => setVisibleOvers((value) => value + 5)}
           />

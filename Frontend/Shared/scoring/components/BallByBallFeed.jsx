@@ -1,19 +1,13 @@
 import React, { useRef, useEffect, useState } from "react";
 import { orderedBallsForDisplay } from "../../../Shared/components/RecentBallsStrip.jsx";
-import { describeBall } from "../utils/scoringVisibility";
+import { ballChipText, ballResultPhrase } from "../utils/plainCommentary";
 
 // Ball notation badge
 function BallBadge({ ball, small = false }) {
     const isWicket = ball.isWicket || ball.wicketCancelled;
     const isLegBye = ball.isLegBye;
     const isBye = ball.isBye;
-    const notation = ball.wicketCancelled ? "Nb"
-        : isWicket ? "W"
-            : ball.isWide ? "Wd"
-                : ball.isNoBall ? "Nb"
-                    : isLegBye ? "LB"
-                        : isBye ? "B"
-                            : (ball.runs === 0 && !ball.isWide && !ball.isNoBall) ? "•" : String(ball.runs || 0);
+    const notation = ballChipText(ball);
 
     const isFour = ball.runs === 4 && !ball.isWide && !ball.isNoBall && !ball.isWicket && !isLegBye && !isBye;
     const isSix = ball.runs === 6 && !ball.isWide && !ball.isNoBall && !ball.isWicket && !isLegBye && !isBye;
@@ -46,19 +40,7 @@ function fmtOver(totalBalls) {
 
 // Header for one ball
 function BallHeader({ ball, overNum, ballNum, onEdit }) {
-    const notation = ball.notation || (ball.wicketCancelled ? "Nb" : ball.isWicket ? "W" : ball.runs === 0 ? "•" : String(ball.runs));
-    const typeLabel = ball.wicketCancelled
-        ? "NB, WICKET CANCELLED"
-        : ball.isWicket
-            ? ball.wicketType?.toUpperCase() || "WICKET"
-            : ball.isWide ? `${ball.runs + 1} WIDE`
-                : ball.isNoBall ? `NB+${ball.runs}`
-                    : ball.isBye ? "BYE"
-                        : ball.isLegBye ? "LEG BYE"
-                            : ball.runs === 4 ? "FOUR"
-                                : ball.runs === 6 ? "SIX"
-                                    : ball.runs === 0 ? "DOT"
-                                        : `${ball.runs} RUN${ball.runs !== 1 ? "S" : ""}`;
+    const typeLabel = ballResultPhrase(ball);
 
     return (
         <div className="flex items-center gap-3 group">
@@ -66,22 +48,7 @@ function BallHeader({ ball, overNum, ballNum, onEdit }) {
             <div className="flex-1 min-w-0">
                 <div className="flex items-baseline gap-2 flex-wrap">
                     <span className="text-slate-900 font-bold text-sm leading-tight">
-                        {overNum}.{ballNum} {ball.bowlerName || 'Bowler'} to {ball.batsmanName || 'Batsman'}, {(() => {
-                            const runs = ball.runs || 0;
-                            if (ball.wicketCancelled) return "no ball, wicket cancelled";
-                            if (ball.isWicket) return "OUT!";
-                            if (ball.isWide) return "wide";
-                            if (ball.isNoBall) return "no ball";
-                            if (ball.isLegBye) return "leg bye";
-                            if (ball.isBye) return "bye";
-                            if (runs === 0) return "no run";
-                            if (runs === 1) return "1 run";
-                            if (runs === 2) return "2 runs";
-                            if (runs === 3) return "3 runs";
-                            if (runs === 4) return "FOUR";
-                            if (runs === 6) return "SIX";
-                            return `${runs} runs`;
-                        })()}
+                        {overNum}.{ballNum} {ball.bowlerName || 'Bowler'} to {ball.batsmanName || 'Batsman'}, {typeLabel}
                     </span>
                 </div>
             </div>
@@ -94,26 +61,6 @@ function BallHeader({ ball, overNum, ballNum, onEdit }) {
                 </button>
             )}
         </div>
-    );
-}
-
-// Commentary line below header
-function CommentaryLine({ text, loading }) {
-    if (loading) {
-        return (
-            <div className="ml-12 flex gap-1 items-center mt-1">
-                {[0, 1, 2].map(i => (
-                    <div key={i} className="w-1.5 h-1.5 bg-slate-600 rounded-full animate-bounce" style={{ animationDelay: `${i * 150}ms` }} />
-                ))}
-                <span className="text-slate-600 text-[10px] italic ml-1">AI commentary...</span>
-            </div>
-        );
-    }
-    if (!text) return null;
-    return (
-        <p className="ml-12 text-[11px] text-slate-400 italic leading-relaxed mt-0.5">
-            {text}
-        </p>
     );
 }
 
@@ -174,9 +121,9 @@ function OverBlock({ over, balls, onEdit, showReadMore, onReadMore, allPlayers, 
                                 <span className="inline-flex items-center px-2 py-0.5 rounded text-[9px] font-black bg-purple-500/20 text-purple-400 uppercase tracking-wider">Free Hit next</span>
                             </div>
                         )}
-                        {basicCommentary ? (
-                            <CommentaryLine text={describeBall(ball)} />
-                        ) : (ball.vividCommentary || ball.commentary) && (
+                        {/* AI off: the plain line above is the whole commentary,
+                            built by the shared helper. AI on: stored vivid text. */}
+                        {!basicCommentary && (ball.vividCommentary || ball.commentary) && (
                             <div className="ml-12 mt-2">
                                 <p className="text-[12px] text-slate-600 italic leading-relaxed">
                                     {ball.vividCommentary || ball.commentary}

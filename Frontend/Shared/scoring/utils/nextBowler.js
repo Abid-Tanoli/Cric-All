@@ -85,6 +85,64 @@ export function buildBowlerOptions({ bowlers = [], bowlingStats = [], lastOverBo
   return { eligible, ineligible };
 }
 
+const overNumberOf = (over) => (Number(over?.overNumber) || 0) + 1;
+
+// Player id -> the (1-based) over numbers that player bowled, in order.
+export function getBowlerOverNumbers(innings) {
+  const map = new Map();
+  (innings?.oversHistory || []).forEach((over) => {
+    const ballBowler = (over?.balls || []).find((ball) => ball?.bowler)?._id
+      || (over?.balls || []).find((ball) => ball?.bowler)?.bowler;
+    const bowlerId = idOf(over?.bowler) || idOf(ballBowler);
+    if (!bowlerId) return;
+    if (!map.has(bowlerId)) map.set(bowlerId, []);
+    const list = map.get(bowlerId);
+    const number = overNumberOf(over);
+    if (!list.includes(number)) list.push(number);
+  });
+  return map;
+}
+
+// Splits the bowling side into "already bowled" (first over first, with the
+// over numbers and the existing eligibility reasons attached) and "yet to
+// bowl" (roster order, always selectable). Eligibility itself is decided by
+// buildBowlerOptions, so the backend rules stay the only source of truth.
+export function buildBowlerGroups({ bowlers = [], bowlingStats = [], lastOverBowlerId, quota, innings }) {
+  const { eligible, ineligible } = buildBowlerOptions({
+    bowlers,
+    bowlingStats,
+    lastOverBowlerId,
+    quota,
+  });
+  const optionsById = new Map(
+    [...eligible, ...ineligible].map((option) => [String(option._id), option])
+  );
+  const rosterOrder = new Map(bowlers.map((player, index) => [idOf(player), index]));
+  const overNumbers = getBowlerOverNumbers(innings);
+
+  const all = bowlers
+    .map((player) => optionsById.get(idOf(player)))
+    .filter(Boolean)
+    .map((option) => ({
+      ...option,
+      overNumbers: overNumbers.get(String(option._id)) || [],
+    }));
+
+  const hasBowled = (option) => option.overNumbers.length > 0 || option.balls > 0;
+  const orderOf = (option) => rosterOrder.get(String(option._id)) ?? 0;
+
+  const bowled = all
+    .filter(hasBowled)
+    .sort(
+      (a, b) =>
+        (a.overNumbers[0] ?? Number.MAX_SAFE_INTEGER) -
+          (b.overNumbers[0] ?? Number.MAX_SAFE_INTEGER) || orderOf(a) - orderOf(b)
+    );
+  const yetToBowl = all.filter((option) => !hasBowled(option)).sort(orderOf);
+
+  return { bowled, yetToBowl };
+}
+
 export function getOversSummary({ totalOvers, quota, innings }) {
   const matchOvers = Number(totalOvers) || 0;
   return {
