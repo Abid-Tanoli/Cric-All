@@ -802,6 +802,30 @@ export default function OrgMatches({ orgId, events = [], canManage = true, canSc
   const [setupFor, setSetupFor] = useState(null);
   const [notice, setNotice] = useState(null);
   const [err, setErr] = useState("");
+  const [copiedOverlayId, setCopiedOverlayId] = useState("");
+
+  const copyOverlayLink = useCallback(async (id) => {
+    const url = `${window.location.origin}/overlay/${id}`;
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(url);
+      } else {
+        const input = document.createElement("textarea");
+        input.value = url;
+        input.setAttribute("readonly", "");
+        input.style.position = "absolute";
+        input.style.left = "-9999px";
+        document.body.appendChild(input);
+        input.select();
+        document.execCommand("copy");
+        document.body.removeChild(input);
+      }
+      setCopiedOverlayId(String(id));
+      window.setTimeout(() => setCopiedOverlayId((current) => (current === String(id) ? "" : current)), 2000);
+    } catch {
+      setErr("Could not copy overlay link.");
+    }
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -959,6 +983,14 @@ export default function OrgMatches({ orgId, events = [], canManage = true, canSc
                         {match.status === "live" ? "Resume scoring" : "Start scoring"}
                       </Link>
                     ) : null}
+                    <button
+                      type="button"
+                      onClick={() => copyOverlayLink(match._id)}
+                      className={secondaryButton}
+                      title="Copy OBS browser source overlay link"
+                    >
+                      {copiedOverlayId === String(match._id) ? "OBS link copied" : "Copy OBS overlay link"}
+                    </button>
                     {canManage ? (
                       <>
                         <button type="button" onClick={() => setSetupFor(setupFor?._id === match._id ? null : match)} className={secondaryButton}>

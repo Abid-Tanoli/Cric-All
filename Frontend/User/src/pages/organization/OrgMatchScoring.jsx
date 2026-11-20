@@ -39,6 +39,36 @@ export default function OrgMatchScoring() {
   const [orgMatches, setOrgMatches] = useState([]);
   const [matchDetail, setMatchDetail] = useState(null);
   const [toasts, setToasts] = useState([]);
+  const [overlayCopied, setOverlayCopied] = useState(false);
+
+  const showToast = useCallback((message, type = "info") => {
+    const id = Date.now() + Math.random();
+    setToasts((current) => [...current.slice(-2), { id, message, type }]);
+    window.setTimeout(() => setToasts((current) => current.filter((toast) => toast.id !== id)), 4000);
+  }, []);
+
+  const copyOverlayLink = useCallback(async () => {
+    const url = `${window.location.origin}/overlay/${matchId}`;
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(url);
+      } else {
+        const input = document.createElement("textarea");
+        input.value = url;
+        input.setAttribute("readonly", "");
+        input.style.position = "absolute";
+        input.style.left = "-9999px";
+        document.body.appendChild(input);
+        input.select();
+        document.execCommand("copy");
+        document.body.removeChild(input);
+      }
+      setOverlayCopied(true);
+      window.setTimeout(() => setOverlayCopied(false), 2000);
+    } catch {
+      showToast("Could not copy overlay link", "error");
+    }
+  }, [matchId, showToast]);
 
   useEffect(() => {
     let active = true;
@@ -99,12 +129,6 @@ export default function OrgMatchScoring() {
       return !organizationId || organizationId === String(orgId);
     };
   }, [orgMatches, orgId]);
-
-  const showToast = useCallback((message, type = "info") => {
-    const id = Date.now() + Math.random();
-    setToasts((current) => [...current.slice(-2), { id, message, type }]);
-    window.setTimeout(() => setToasts((current) => current.filter((toast) => toast.id !== id)), 4000);
-  }, []);
 
   const adapters = useMemo(() => ({
     api,
@@ -178,7 +202,15 @@ export default function OrgMatchScoring() {
   return (
     <ScoringAdaptersProvider value={adapters}>
       <div className="min-h-screen max-w-full overflow-x-hidden bg-cric-bg">
-        <div className="flex justify-end px-3 pt-3">
+        <div className="flex flex-wrap justify-end gap-2 px-3 pt-3">
+          <button
+            type="button"
+            onClick={copyOverlayLink}
+            className="inline-flex min-h-11 items-center justify-center rounded-xl border border-cric-border bg-cric-card px-4 py-2 text-xs font-black uppercase tracking-widest text-cric-text hover:border-cric-accent/60"
+            title="Copy OBS browser source overlay link"
+          >
+            {overlayCopied ? "OBS link copied" : "Copy OBS overlay link"}
+          </button>
           <IssueReportButton
             orgId={orgId}
             targetType="match"
