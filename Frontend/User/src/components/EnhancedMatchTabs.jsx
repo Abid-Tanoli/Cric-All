@@ -205,6 +205,8 @@ const EnhancedMatchTabs = ({ match, matchId }) => {
                 overs={recentOvers}
                 players={players}
                 useAiCommentary={match?.useAiCommentary === true}
+                target={number(currentInnings?.target)}
+                totalOvers={match?.totalOvers}
                 onSwitchTab={setActiveTab}
               />
               </div>
@@ -232,6 +234,8 @@ const EnhancedMatchTabs = ({ match, matchId }) => {
             overs={recentOvers}
             players={players}
             useAiCommentary={match?.useAiCommentary === true}
+            target={number(currentInnings?.target)}
+            totalOvers={match?.totalOvers}
             visibleOvers={visibleOvers}
             onLoadMore={() => setVisibleOvers((value) => value + 5)}
           />
