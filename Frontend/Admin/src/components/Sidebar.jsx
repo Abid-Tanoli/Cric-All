@@ -13,6 +13,7 @@ const menuItems = [
   { to: "/admin/scorers", label: "Scorer Assignment", icon: "SA" },
   { to: "/admin/events", label: "Manage Events", icon: "EV" },
   { to: "/admin/tournaments", label: "Tournaments", icon: "TR" },
+  { to: "/admin/sponsors", label: "Sponsors", icon: "SP" },
   { to: "/admin/teams", label: "Manage Teams", icon: "TM" },
   { to: "/admin/organizations", label: "Organizations", icon: "OR" },
   { to: "/admin/issues", label: "Issues", icon: "IS" },
