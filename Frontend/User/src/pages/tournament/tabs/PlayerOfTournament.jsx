@@ -88,11 +88,16 @@ export default function PlayerOfTournament({ data, officialAwards, stats = {} })
   const rows = Array.isArray(data?.rows) ? data.rows : [];
   const leader = data?.leader || rows[0] || null;
   const explanation = Array.isArray(data?.explanation) ? data.explanation : [];
-  const officialNote = officialAwards?.note || data?.officialNote || "";
-  const officialTopPlayers = Array.isArray(officialAwards?.topPlayers)
-    ? officialAwards.topPlayers
+  const publicStatus = String(stats?.publicStatus || "").toLowerCase();
+  const officialVisible =
+    officialAwards?.published !== false && (!publicStatus || publicStatus === "completed");
+  const visibleOfficialAwards = officialVisible ? officialAwards || {} : {};
+  const officialNote = visibleOfficialAwards.note || (officialVisible ? data?.officialNote : "") || "";
+  const officialTopPlayers = Array.isArray(visibleOfficialAwards.topPlayers)
+    ? visibleOfficialAwards.topPlayers
     : [];
-  const legacyOfficialPlayer = officialAwards?.playerOfTournament || data?.officialAward || null;
+  const legacyOfficialPlayer = visibleOfficialAwards.playerOfTournament
+    || (officialVisible ? data?.officialAward : null);
   const podiumPlayers = officialTopPlayers.length
     ? officialTopPlayers.slice(0, 3)
     : legacyOfficialPlayer
