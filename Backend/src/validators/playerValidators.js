@@ -320,6 +320,26 @@ export const adminUpdatePlayerSchema = createPlayerSchema
     message: 'Send either age or birthInfo.date, not both',
   });
 
+/**
+ * Admin tool: one request may correct at most 200 player roles. Both fields
+ * are validated up front so a bad item can reject the whole batch. The generic
+ * `validate()` middleware is not used for this route because the response has
+ * to name the failing item, not just the Zod path.
+ */
+export const bulkPlayerRoleSchema = z
+  .object({
+    updates: z
+      .array(
+        z
+          .object({ playerId: objectId, role: z.enum(PLAYING_ROLES) })
+          .strict()
+      )
+      .min(1)
+      .max(200),
+    dryRun: z.boolean().optional().default(false),
+  })
+  .strict();
+
 export default {
   createPlayerSchema,
   updatePlayerSchema,

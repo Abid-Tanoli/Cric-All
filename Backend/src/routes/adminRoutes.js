@@ -24,6 +24,10 @@ import {
 import { handoverOrganization } from "../controllers/orgHandoverController.js";
 import { handoverOrganizationSchema } from "../validators/orgValidators.js";
 import {
+  bulkUpdatePlayerRoles,
+  listPlayersMissingRole,
+} from "../controllers/adminPlayerRolesController.js";
+import {
   listAdminSponsors,
   createSponsor,
   updateSponsor,
@@ -70,6 +74,11 @@ router.post("/reset-password/:token", resetLimit, resetPassword);
 router.get("/profile", auth.protect, getAdminProfile);
 
 router.get("/", auth.protect, auth.requireAdmin, listAdmins);
+
+// Platform-admin player role repair. Declared before the admin `/:id` routes.
+router.get("/players/missing-role", auth.protect, auth.requireAdmin, listPlayersMissingRole);
+router.post("/players/bulk-role", auth.protect, auth.requireAdmin, bulkUpdatePlayerRoles);
+
 router.post("/create", auth.protect, auth.requireSuperAdmin, createAdmin);
 router.put("/:id", auth.protect, auth.requireSuperAdmin, updateAdmin);
 router.delete("/:id", auth.protect, auth.requireSuperAdmin, deleteAdmin);

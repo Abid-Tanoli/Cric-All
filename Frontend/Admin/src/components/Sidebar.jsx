@@ -18,6 +18,7 @@ const menuItems = [
   { to: "/admin/organizations", label: "Organizations", icon: "OR" },
   { to: "/admin/issues", label: "Issues", icon: "IS" },
   { to: "/admin/players", label: "Manage Players", icon: "PL" },
+  { to: "/admin/players/missing-role", label: "Players missing role", icon: "PR" },
   { to: "/admin/handler-requests", label: "Handler Requests", icon: "HR", flag: "handlerRequests" },
   { to: "/admin/bulk-import", label: "Bulk Import", icon: "BI" },
   { to: "/admin/blogs", label: "Manage Blogs", icon: "BL" },
