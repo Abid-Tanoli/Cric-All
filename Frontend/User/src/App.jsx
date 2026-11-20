@@ -61,6 +61,7 @@ const CreateOrganization = lazy(() => import("./pages/organization/CreateOrganiz
 const InvitationAccept = lazy(() => import("./pages/organization/InvitationAccept"));
 const OrgMatchScoring = lazy(() => import("./pages/organization/OrgMatchScoring"));
 const OrgSeriesDetail = lazy(() => import("./pages/organization/OrgSeriesDetail"));
+const Overlay = lazy(() => import("./pages/Overlay"));
 const CommunityIndex = lazy(() => import("./community/CommunityIndex"));
 const CommunityPost = lazy(() => import("./community/CommunityPost"));
 const CommunityCreate = lazy(() => import("./community/CommunityCreate"));
@@ -144,89 +145,110 @@ function RouteMeta() {
   return null;
 }
 
+function AppShell() {
+  const location = useLocation();
+  const isOverlay = /^\/overlay(?:\/|$)/.test(location.pathname);
+
+  if (isOverlay) {
+    return (
+      <Suspense fallback={<div className="flex min-h-screen items-center justify-center bg-transparent"><div className="h-10 w-10 animate-spin rounded-full border-4 border-white/60 border-t-transparent" /></div>}>
+        <Routes>
+          <Route path="/overlay/:matchId" element={<ErrorBoundary><Overlay /></ErrorBoundary>} />
+          <Route path="*" element={<ErrorBoundary><NotFound /></ErrorBoundary>} />
+        </Routes>
+      </Suspense>
+    );
+  }
+
+  return (
+    <div className="flex flex-col min-h-screen">
+      <OfflineBanner />
+      <SocketStatusIndicator getSocket={getSocket} />
+      <AppHeader />
+      <main className="flex-1">
+        <Suspense fallback={<div className="flex items-center justify-center min-h-screen bg-cric-bg"><div className="w-10 h-10 border-4 border-cric-accent border-t-transparent rounded-full animate-spin" /></div>}>
+          <Routes>
+            <Route path="/" element={<ErrorBoundary><Home /></ErrorBoundary>} />
+            <Route path="/login" element={<ErrorBoundary><AuthPage initialMode="login" /></ErrorBoundary>} />
+            <Route path="/register" element={<ErrorBoundary><AuthPage initialMode="register" /></ErrorBoundary>} />
+            <Route path="/auth" element={<ErrorBoundary><AuthPage initialMode="login" /></ErrorBoundary>} />
+            <Route path="/forgot-password" element={<ErrorBoundary><ForgotPassword /></ErrorBoundary>} />
+            <Route path="/reset-password/:token" element={<ErrorBoundary><ResetPassword /></ErrorBoundary>} />
+            <Route path="/change-password" element={<ErrorBoundary><ChangePassword /></ErrorBoundary>} />
+            <Route path="/verify-email/:token" element={<ErrorBoundary><VerifyEmail /></ErrorBoundary>} />
+            <Route path="/verify-phone" element={<ErrorBoundary><VerifyPhone /></ErrorBoundary>} />
+            <Route path="/reset-password" element={<ErrorBoundary><NotFound /></ErrorBoundary>} />
+            <Route path="/live" element={<ErrorBoundary><Live /></ErrorBoundary>} />
+            <Route path="/series" element={<ErrorBoundary><SeriesList /></ErrorBoundary>} />
+            <Route path="/tournaments" element={<ErrorBoundary><SeriesList /></ErrorBoundary>} />
+            <Route path="/series/:seriesId" element={<ErrorBoundary><TournamentHub /></ErrorBoundary>} />
+            <Route path="/series/:seriesId/articles/:slug" element={<ErrorBoundary><TournamentHub /></ErrorBoundary>} />
+            <Route path="/series/:seriesId/:tab" element={<ErrorBoundary><TournamentHub /></ErrorBoundary>} />
+            <Route path="/cricket/series/:seriesId" element={<ErrorBoundary><CricSeriesDetails /></ErrorBoundary>} />
+            <Route path="/cricket/match/:matchId" element={<ErrorBoundary><CricMatchDetails /></ErrorBoundary>} />
+            <Route path="/match/:matchId" element={<ErrorBoundary><Match /></ErrorBoundary>} />
+            <Route path="/matches/:matchId" element={<ErrorBoundary><Match /></ErrorBoundary>} />
+            <Route path="/summary/:matchId" element={<ErrorBoundary><Summary /></ErrorBoundary>} />
+            <Route path="/players" element={<ErrorBoundary><Players /></ErrorBoundary>} />
+            <Route path="/my-players" element={<ErrorBoundary><MyPlayers /></ErrorBoundary>} />
+            <Route path="/account" element={<ErrorBoundary><Account /></ErrorBoundary>} />
+            <Route path="/players/:playerId" element={<ErrorBoundary><PlayerProfile /></ErrorBoundary>} />
+            <Route path="/teams" element={<ErrorBoundary><Teams /></ErrorBoundary>} />
+            <Route path="/teams/international" element={<ErrorBoundary><InternationalTeams /></ErrorBoundary>} />
+            <Route path="/teams/leagues" element={<ErrorBoundary><LeagueTeams /></ErrorBoundary>} />
+            <Route path="/teams/leagues/:leagueId" element={<ErrorBoundary><LeagueDetails /></ErrorBoundary>} />
+            <Route path="/teams/incubation" element={<ErrorBoundary><IncubationTeams /></ErrorBoundary>} />
+            <Route path="/teams/:id" element={<ErrorBoundary><TeamProfile /></ErrorBoundary>} />
+            <Route path="/rankings" element={<ErrorBoundary><Rankings /></ErrorBoundary>} />
+            <Route path="/news" element={<ErrorBoundary><News /></ErrorBoundary>} />
+            <Route path="/blogs" element={<ErrorBoundary><Blogs /></ErrorBoundary>} />
+            <Route path="/videos" element={<ErrorBoundary><Videos /></ErrorBoundary>} />
+            <Route path="/intl" element={<ErrorBoundary><International /></ErrorBoundary>} />
+            <Route path="/international" element={<ErrorBoundary><International /></ErrorBoundary>} />
+            <Route path="/international/:matchId" element={<ErrorBoundary><InternationalMatchDetail /></ErrorBoundary>} />
+            <Route path="/international/match/:matchId" element={<ErrorBoundary><InternationalMatchDetail /></ErrorBoundary>} />
+            <Route path="/international/series/:seriesId" element={<ErrorBoundary><InternationalSeriesDetail /></ErrorBoundary>} />
+            <Route path="/highlights" element={<ErrorBoundary><Highlights /></ErrorBoundary>} />
+            <Route path="/cricket-news" element={<ErrorBoundary><CricketNews /></ErrorBoundary>} />
+            <Route path="/compare" element={<ErrorBoundary><PlayerComparison /></ErrorBoundary>} />
+            <Route path="/compare/:player1Id/:player2Id?" element={<ErrorBoundary><PlayerComparison /></ErrorBoundary>} />
+            <Route path="/dashboard" element={<ErrorBoundary><HandlerDashboard /></ErrorBoundary>} />
+            {/* The dashboard keeps the selected organization in ?org= rather than the
+                path, so the bare path stays the entry point. */}
+            <Route path="/organization/new" element={<ErrorBoundary><CreateOrganization /></ErrorBoundary>} />
+            <Route path="/organization/invitations/:token" element={<ErrorBoundary><InvitationAccept /></ErrorBoundary>} />
+            <Route path="/organization/:orgId/matches/:matchId/score/:tab" element={<ErrorBoundary><OrgMatchScoring /></ErrorBoundary>} />
+            <Route path="/organization/:orgId/series/:seriesId" element={<ErrorBoundary><OrgSeriesDetail /></ErrorBoundary>} />
+            <Route path="/organization" element={<ErrorBoundary><MyOrganization /></ErrorBoundary>} />
+            {/* Community routes stay mounted; CommunityIndex/CommunityPost render the
+                "coming soon" placeholder while the runtime switch is off. */}
+            <Route path="/community" element={<ErrorBoundary><CommunityIndex /></ErrorBoundary>} />
+            <Route path="/community/new" element={<ErrorBoundary><CommunityCreate /></ErrorBoundary>} />
+            <Route path="/community/post/:id" element={<ErrorBoundary><CommunityPost /></ErrorBoundary>} />
+            <Route path="/privacy" element={<ErrorBoundary><Privacy /></ErrorBoundary>} />
+            <Route path="/about" element={<ErrorBoundary><About /></ErrorBoundary>} />
+            <Route path="/contact" element={<ErrorBoundary><Contact /></ErrorBoundary>} />
+            <Route path="/terms" element={<ErrorBoundary><Terms /></ErrorBoundary>} />
+            <Route path="*" element={<ErrorBoundary><NotFound /></ErrorBoundary>} />
+          </Routes>
+        </Suspense>
+        <RouteAds />
+      </main>
+      <Footer />
+      <InstallAppBanner />
+      <PwaUpdateToast />
+    </div>
+  );
+}
+
 function App() {
   return (
     <ThemeProvider>
       <CommunityConfigProvider>
-      <Router>
-        <RouteMeta />
-        <div className="flex flex-col min-h-screen">
-        <OfflineBanner />
-        <SocketStatusIndicator getSocket={getSocket} />        <AppHeader />
-        <main className="flex-1">
-        <Suspense fallback={<div className="flex items-center justify-center min-h-screen bg-cric-bg"><div className="w-10 h-10 border-4 border-cric-accent border-t-transparent rounded-full animate-spin" /></div>}>
-        <Routes>
-          <Route path="/" element={<ErrorBoundary><Home /></ErrorBoundary>} />
-          <Route path="/login" element={<ErrorBoundary><AuthPage initialMode="login" /></ErrorBoundary>} />
-          <Route path="/register" element={<ErrorBoundary><AuthPage initialMode="register" /></ErrorBoundary>} />
-          <Route path="/auth" element={<ErrorBoundary><AuthPage initialMode="login" /></ErrorBoundary>} />
-          <Route path="/forgot-password" element={<ErrorBoundary><ForgotPassword /></ErrorBoundary>} />
-          <Route path="/reset-password/:token" element={<ErrorBoundary><ResetPassword /></ErrorBoundary>} />
-          <Route path="/change-password" element={<ErrorBoundary><ChangePassword /></ErrorBoundary>} />
-          <Route path="/verify-email/:token" element={<ErrorBoundary><VerifyEmail /></ErrorBoundary>} />
-          <Route path="/verify-phone" element={<ErrorBoundary><VerifyPhone /></ErrorBoundary>} />
-          <Route path="/reset-password" element={<ErrorBoundary><NotFound /></ErrorBoundary>} />
-          <Route path="/live" element={<ErrorBoundary><Live /></ErrorBoundary>} />
-          <Route path="/series" element={<ErrorBoundary><SeriesList /></ErrorBoundary>} />
-          <Route path="/tournaments" element={<ErrorBoundary><SeriesList /></ErrorBoundary>} />
-          <Route path="/series/:seriesId" element={<ErrorBoundary><TournamentHub /></ErrorBoundary>} />
-          <Route path="/series/:seriesId/articles/:slug" element={<ErrorBoundary><TournamentHub /></ErrorBoundary>} />
-          <Route path="/series/:seriesId/:tab" element={<ErrorBoundary><TournamentHub /></ErrorBoundary>} />
-          <Route path="/cricket/series/:seriesId" element={<ErrorBoundary><CricSeriesDetails /></ErrorBoundary>} />
-          <Route path="/cricket/match/:matchId" element={<ErrorBoundary><CricMatchDetails /></ErrorBoundary>} />
-          <Route path="/match/:matchId" element={<ErrorBoundary><Match /></ErrorBoundary>} />
-          <Route path="/matches/:matchId" element={<ErrorBoundary><Match /></ErrorBoundary>} />
-          <Route path="/summary/:matchId" element={<ErrorBoundary><Summary /></ErrorBoundary>} />
-          <Route path="/players" element={<ErrorBoundary><Players /></ErrorBoundary>} />
-          <Route path="/my-players" element={<ErrorBoundary><MyPlayers /></ErrorBoundary>} />
-          <Route path="/account" element={<ErrorBoundary><Account /></ErrorBoundary>} />
-          <Route path="/players/:playerId" element={<ErrorBoundary><PlayerProfile /></ErrorBoundary>} />
-          <Route path="/teams" element={<ErrorBoundary><Teams /></ErrorBoundary>} />
-          <Route path="/teams/international" element={<ErrorBoundary><InternationalTeams /></ErrorBoundary>} />
-          <Route path="/teams/leagues" element={<ErrorBoundary><LeagueTeams /></ErrorBoundary>} />
-          <Route path="/teams/leagues/:leagueId" element={<ErrorBoundary><LeagueDetails /></ErrorBoundary>} />
-          <Route path="/teams/incubation" element={<ErrorBoundary><IncubationTeams /></ErrorBoundary>} />
-          <Route path="/teams/:id" element={<ErrorBoundary><TeamProfile /></ErrorBoundary>} />
-          <Route path="/rankings" element={<ErrorBoundary><Rankings /></ErrorBoundary>} />
-          <Route path="/news" element={<ErrorBoundary><News /></ErrorBoundary>} />
-          <Route path="/blogs" element={<ErrorBoundary><Blogs /></ErrorBoundary>} />
-          <Route path="/videos" element={<ErrorBoundary><Videos /></ErrorBoundary>} />
-          <Route path="/intl" element={<ErrorBoundary><International /></ErrorBoundary>} />
-          <Route path="/international" element={<ErrorBoundary><International /></ErrorBoundary>} />
-          <Route path="/international/:matchId" element={<ErrorBoundary><InternationalMatchDetail /></ErrorBoundary>} />
-          <Route path="/international/match/:matchId" element={<ErrorBoundary><InternationalMatchDetail /></ErrorBoundary>} />
-          <Route path="/international/series/:seriesId" element={<ErrorBoundary><InternationalSeriesDetail /></ErrorBoundary>} />
-          <Route path="/highlights" element={<ErrorBoundary><Highlights /></ErrorBoundary>} />
-          <Route path="/cricket-news" element={<ErrorBoundary><CricketNews /></ErrorBoundary>} />
-          <Route path="/compare" element={<ErrorBoundary><PlayerComparison /></ErrorBoundary>} />
-          <Route path="/compare/:player1Id/:player2Id?" element={<ErrorBoundary><PlayerComparison /></ErrorBoundary>} />
-          <Route path="/dashboard" element={<ErrorBoundary><HandlerDashboard /></ErrorBoundary>} />
-          {/* The dashboard keeps the selected organization in ?org= rather than the
-              path, so the bare path stays the entry point. */}
-          <Route path="/organization/new" element={<ErrorBoundary><CreateOrganization /></ErrorBoundary>} />
-          <Route path="/organization/invitations/:token" element={<ErrorBoundary><InvitationAccept /></ErrorBoundary>} />
-          <Route path="/organization/:orgId/matches/:matchId/score/:tab" element={<ErrorBoundary><OrgMatchScoring /></ErrorBoundary>} />
-          <Route path="/organization/:orgId/series/:seriesId" element={<ErrorBoundary><OrgSeriesDetail /></ErrorBoundary>} />
-          <Route path="/organization" element={<ErrorBoundary><MyOrganization /></ErrorBoundary>} />
-          {/* Community routes stay mounted; CommunityIndex/CommunityPost render the
-              "coming soon" placeholder while the runtime switch is off. */}
-          <Route path="/community" element={<ErrorBoundary><CommunityIndex /></ErrorBoundary>} />
-          <Route path="/community/new" element={<ErrorBoundary><CommunityCreate /></ErrorBoundary>} />
-          <Route path="/community/post/:id" element={<ErrorBoundary><CommunityPost /></ErrorBoundary>} />
-          <Route path="/privacy" element={<ErrorBoundary><Privacy /></ErrorBoundary>} />
-          <Route path="/about" element={<ErrorBoundary><About /></ErrorBoundary>} />
-          <Route path="/contact" element={<ErrorBoundary><Contact /></ErrorBoundary>} />
-          <Route path="/terms" element={<ErrorBoundary><Terms /></ErrorBoundary>} />
-          <Route path="*" element={<ErrorBoundary><NotFound /></ErrorBoundary>} />
-        </Routes>
-        </Suspense>
-        <RouteAds />
-        </main>
-        <Footer />
-        <InstallAppBanner />
-        <PwaUpdateToast />
-        </div>
-      </Router>
+        <Router>
+          <RouteMeta />
+          <AppShell />
+        </Router>
       </CommunityConfigProvider>
     </ThemeProvider>
   );
