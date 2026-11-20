@@ -15,7 +15,10 @@ export const uploadsDir = path.resolve(
 const ALLOWED_EXTENSIONS = {
   "image/jpeg": ".jpg",
   "image/png": ".png",
-  "image/webp": ".webp"
+  "image/webp": ".webp",
+  // Only reached after sponsorImage.js has validated the SVG markup. The
+  // general /api/upload/image route keeps its narrower jpeg/png/webp filter.
+  "image/svg+xml": ".svg"
 };
 
 // Cloud storage is preferred when configured. With no SDK installed and no
@@ -58,7 +61,7 @@ export async function storeImage(buffer, mimetype, originalName = "") {
 
 // Matches storeImage's own scheme (`<13-digit epoch>-<12 hex>-<base>.<ext>`).
 // Only files this server wrote are ever eligible for deletion.
-const SAFE_UPLOAD_FILE_NAME = /^\d{13}-[0-9a-f]{12}-[a-zA-Z0-9_-]{0,40}\.(jpg|png|webp)$/;
+const SAFE_UPLOAD_FILE_NAME = /^\d{13}-[0-9a-f]{12}-[a-zA-Z0-9_-]{0,40}\.(jpg|png|webp|svg)$/;
 
 export function isUploadedFilename(name = "") {
   return SAFE_UPLOAD_FILE_NAME.test(name);
