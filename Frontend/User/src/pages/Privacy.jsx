@@ -1,6 +1,8 @@
 import React from "react";
 import { Link } from "react-router-dom";
 
+const contactEmail = (import.meta.env.VITE_CONTACT_EMAIL || "").trim();
+
 /** Simple-English privacy/terms page required by Google AdSense. */
 export default function Privacy() {
   return (
@@ -62,13 +64,23 @@ export default function Privacy() {
 
           <section id="contact">
             <h2 className="mb-2 text-lg font-black">Contact</h2>
-            <p className="text-cric-muted">
-              Questions about this page or your data? Please use our{" "}
-              <Link className="font-bold text-cric-accent underline" to="/contact">
-                Contact page
-              </Link>{" "}
-              for the current email address and contact topics.
-            </p>
+            {contactEmail ? (
+              <p className="text-cric-muted">
+                Questions about this page or your data? Write to{" "}
+                <a className="font-bold text-cric-accent underline" href={`mailto:${contactEmail}`}>
+                  {contactEmail}
+                </a>
+                .
+              </p>
+            ) : (
+              <p className="text-cric-muted">
+                Questions about this page or your data? Please use our{" "}
+                <Link className="font-bold text-cric-accent underline" to="/contact">
+                  Contact page
+                </Link>{" "}
+                for the current email address and contact topics.
+              </p>
+            )}
           </section>
         </div>
       </div>

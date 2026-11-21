@@ -283,7 +283,16 @@ The User app (https://cricall.online) is an installable PWA. Where the install e
 - **Windows / macOS (Chrome, Edge)** — click **Install app** in the navbar or footer, or use the install icon in the address bar.
 - Firefox desktop and other browsers that cannot install show no button.
 
-Installed app icons and branding come from `Frontend/User/public/icons/cricall-logo.svg`; replace that SVG with the production logo and run `npm run pwa:icons` inside `Frontend/User` to regenerate the 192/512/maskable/apple-touch/favicon files.
+### How to change the logo
+
+All branding for **both** apps comes from one folder: `Frontend/Shared/branding/`.
+
+1. Replace `logo-emblem.png` with your transparent emblem PNG (keep the filename, shorter side at least 512px).
+2. Optional: add a `logo-full.png` for wide spots such as the social image and registration form. Delete it to fall back to the emblem.
+3. Edit `brand.json` only if names or colours change (app/admin names, theme colours, `adminAccent`).
+4. Deploy as usual — `prebuild` runs `npm run brand:check` then `npm run brand`, regenerating every icon, favicon, social image, brand asset and offline page for User and Admin automatically. No other files need editing.
+
+The generated files (`public/icons/`, `public/brand/`, favicons, `social-share.png`, `offline.html`) are gitignored build artefacts. Admin icons use the same emblem on an accent-tinted background with an "A" badge, so the two apps stay visually distinct.
 
 Service worker updates: a new deploy installs a waiting worker, the app shows **"New version available. Reload"**, and it also re-checks on window focus. `sw.js`, `index.html` and the manifest are served with `Cache-Control: no-cache` (see `Frontend/User/public/serve.json`), so a deploy is picked up on the next visit instead of after the old precache expires.
 
