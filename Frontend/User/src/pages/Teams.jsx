@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { api } from "../services/api";
 import LoadingWithTimeout from "../components/LoadingWithTimeout";
+import LocationFilters, { locationQueryFromSearchParams } from "../components/LocationFilters";
 
 // Task 3: browse teams by the type of the organization that owns them
 // (club, school, college, academy, league, …). The type lives on
@@ -41,10 +42,14 @@ export default function Teams() {
   const [activeCategory, setActiveCategory] = useState("all");
   const [activeOrgType, setActiveOrgType] = useState("all");
   const [searchTerm, setSearchTerm] = useState("");
+  const [searchParams] = useSearchParams();
+  const locationQuery = locationQueryFromSearchParams(searchParams);
+  const locationKey = JSON.stringify(locationQuery);
 
   useEffect(() => {
     fetchTeams();
-  }, [activeCategory, searchTerm]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeCategory, searchTerm, locationKey]);
 
   // Options are derived from the teams actually loaded, so the filter always
   // reflects real organization types instead of a hardcoded enum. "all" is the
@@ -67,6 +72,7 @@ export default function Teams() {
       };
       if (activeCategory !== "all") params.category = activeCategory;
       if (searchTerm.trim()) params.search = searchTerm.trim();
+      Object.assign(params, locationQuery);
 
       const teamsRes = await api.get("/teams", { params, timeout: 8000 });
       const payload = Array.isArray(teamsRes.data) ? teamsRes.data : (teamsRes.data?.teams || []);
@@ -164,6 +170,9 @@ export default function Teams() {
             onChange={(e) => setSearchTerm(e.target.value)}
             className="w-full border border-cric-border rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-cric-accent"
           />
+          <div className="mt-4">
+            <LocationFilters />
+          </div>
         </div>
 
         {loading ? (

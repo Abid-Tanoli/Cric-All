@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { api } from "../services/api";
 import LoadingWithTimeout from "../components/LoadingWithTimeout";
+import LocationFilters, { locationQueryFromSearchParams } from "../components/LocationFilters";
 
 const SECTIONS = [
   { key: "teams", label: "Team Rankings" },
@@ -47,6 +48,9 @@ function cleanParams(params) {
 
 export default function Rankings() {
   const [section, setSection] = useState("teams");
+  const [searchParams] = useSearchParams();
+  const locationQuery = locationQueryFromSearchParams(searchParams);
+  const locationKey = JSON.stringify(locationQuery);
 
   const [teamItems, setTeamItems] = useState([]);
   const [teamLoading, setTeamLoading] = useState(true);
@@ -62,26 +66,33 @@ export default function Rankings() {
   const [playerScopeValue, setPlayerScopeValue] = useState("");
 
   const teamParams = useMemo(
-    () =>
-      cleanParams({
+    () => ({
+      ...cleanParams({
         limit: 100,
         orgType: teamOrgType.trim(),
         teamType,
         city: teamCity.trim(),
         country: teamCountry.trim(),
       }),
-    [teamOrgType, teamType, teamCity, teamCountry]
+      ...locationQuery,
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [teamOrgType, teamType, teamCity, teamCountry, locationKey]
   );
 
   const playerParams = useMemo(() => {
     const board = PLAYER_BOARDS.find((item) => item.key === playerBoard) || PLAYER_BOARDS[0];
-    return cleanParams({
-      limit: 100,
-      type: board.endpoint,
-      scope: playerScope,
-      scopeValue: playerScopeValue.trim(),
-    });
-  }, [playerBoard, playerScope, playerScopeValue]);
+    return {
+      ...cleanParams({
+        limit: 100,
+        type: board.endpoint,
+        scope: playerScope,
+        scopeValue: playerScopeValue.trim(),
+      }),
+      ...locationQuery,
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playerBoard, playerScope, playerScopeValue, locationKey]);
 
   useEffect(() => {
     let cancelled = false;
@@ -159,6 +170,9 @@ export default function Rankings() {
       </div>
 
       <main className="mx-auto max-w-7xl px-4 py-8">
+        <div className="mb-6">
+          <LocationFilters />
+        </div>
         {section === "teams" ? (
           <section aria-label="Team Rankings">
             <div className="mb-6 rounded-2xl border border-cric-border bg-cric-card p-4 shadow-sm">

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { createOrganization, listMyOrganizations, listOrganizationTypes } from "../../services/organizationApi";
 import { getStoredUser, notifyMembershipChanged } from "../auth/auth";
+import LocationSelect from "../../../../Shared/components/LocationSelect.jsx";
 import { Banner, Field, card, eyebrow, input, primaryButton, secondaryButton } from "./orgStyles";
 
 const emptyForm = {
@@ -11,6 +12,8 @@ const emptyForm = {
   description: "",
   website: "",
   location: { city: "", area: "", address: "", country: "" },
+  locationRefs: { countryId: null, provinceId: null, districtId: null, cityId: null, townId: null },
+  locationLabels: { country: "", province: "", district: "", city: "", town: "" },
   contact: { phone: "", email: "" },
   socialLinks: [["", ""]],
   privacy: { contactInfo: "public", socialLinks: "public", location: "public" },
@@ -79,6 +82,8 @@ export default function CreateOrganization() {
         contact: { phone: form.contact.phone.trim(), email: form.contact.email.trim() },
         socialLinks,
         privacy: { ...form.privacy },
+        locationRefs: form.locationRefs,
+        locationLabels: form.locationLabels,
       };
       if (parent) payload.parent = parent;
 
@@ -171,17 +176,20 @@ export default function CreateOrganization() {
 
         <div className={card}>
           <h2 className="text-sm font-black uppercase tracking-widest text-cric-text">Location &amp; contact</h2>
-          <div className="mt-4 grid gap-4 md:grid-cols-2">
-            <Field label="City">
-              <input value={form.location.city} onChange={setNested("location", "city")} className={input} />
-            </Field>
-            <Field label="Area">
-              <input value={form.location.area} onChange={setNested("location", "area")} className={input} />
-            </Field>
+          <div className="mt-4">
+            <LocationSelect
+              compact
+              value={form.locationRefs}
+              labels={form.locationLabels}
+              legacyHint={[form.location.city, form.location.country].filter(Boolean).join(", ")}
+              onChange={(refs, labels) =>
+                setForm((f) => ({ ...f, locationRefs: refs, locationLabels: labels }))
+              }
+            />
           </div>
           <div className="mt-4 grid gap-4 md:grid-cols-2">
-            <Field label="Country">
-              <input value={form.location.country} onChange={setNested("location", "country")} className={input} />
+            <Field label="Area / neighbourhood (optional)">
+              <input value={form.location.area} onChange={setNested("location", "area")} className={input} />
             </Field>
             <Field label="Contact phone">
               <input value={form.contact.phone} onChange={setNested("contact", "phone")} className={input} />

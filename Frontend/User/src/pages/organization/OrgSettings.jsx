@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { listOrganizationTypes, updateOrganization } from "../../services/organizationApi";
 import RequestDeletionButton from "../../components/RequestDeletionButton";
+import LocationSelect from "../../../../Shared/components/LocationSelect.jsx";
 import { PERMISSIONS, can } from "../../lib/orgUi";
 import {
   Banner,
@@ -30,6 +31,20 @@ const emptyForm = (org) => ({
     area: org?.location?.area || "",
     address: org?.location?.address || "",
     country: org?.location?.country || "",
+  },
+  locationRefs: {
+    countryId: org?.locationRefs?.countryId || null,
+    provinceId: org?.locationRefs?.provinceId || null,
+    districtId: org?.locationRefs?.districtId || null,
+    cityId: org?.locationRefs?.cityId || null,
+    townId: org?.locationRefs?.townId || null,
+  },
+  locationLabels: {
+    country: org?.locationLabels?.country || "",
+    province: org?.locationLabels?.province || "",
+    district: org?.locationLabels?.district || "",
+    city: org?.locationLabels?.city || "",
+    town: org?.locationLabels?.town || "",
   },
   contact: {
     phone: org?.contact?.phone || "",
@@ -116,6 +131,8 @@ export default function OrgSettings({ org, access, onSaved }) {
         },
         socialLinks: socialPayload(),
         privacy: { ...form.privacy },
+        locationRefs: form.locationRefs,
+        locationLabels: form.locationLabels,
       };
       const res = await updateOrganization(org._id, payload);
       setNotice(res.message || "Organization updated.");
@@ -205,21 +222,24 @@ export default function OrgSettings({ org, access, onSaved }) {
       <div className={card}>
         <h2 className={sectionTitle}>Location &amp; contact</h2>
         <fieldset disabled={!editable || busy} className="mt-4 space-y-4">
+          <LocationSelect
+            compact
+            value={form.locationRefs}
+            labels={form.locationLabels}
+            legacyHint={[form.location.city, form.location.area, form.location.country].filter(Boolean).join(", ")}
+            onChange={(refs, labels) =>
+              setForm((f) => ({ ...f, locationRefs: refs, locationLabels: labels }))
+            }
+          />
           <div className="grid gap-4 md:grid-cols-2">
-            <Field label="City">
-              <input value={form.location.city} onChange={setNested("location", "city")} className={input} />
-            </Field>
-            <Field label="Area">
+            <Field label="Area / neighbourhood (optional)">
               <input value={form.location.area} onChange={setNested("location", "area")} className={input} />
             </Field>
-          </div>
-          <Field label="Address">
-            <input value={form.location.address} onChange={setNested("location", "address")} className={input} />
-          </Field>
-          <div className="grid gap-4 md:grid-cols-2">
-            <Field label="Country">
-              <input value={form.location.country} onChange={setNested("location", "country")} className={input} />
+            <Field label="Address (optional)">
+              <input value={form.location.address} onChange={setNested("location", "address")} className={input} />
             </Field>
+          </div>
+          <div className="grid gap-4 md:grid-cols-2">
             <Field label="Contact phone">
               <input value={form.contact.phone} onChange={setNested("contact", "phone")} className={input} />
             </Field>

@@ -4,6 +4,7 @@ import useTournamentHub from "./useTournamentHub";
 import { resolveTabs } from "./registry";
 import TournamentSidebar from "./TournamentSidebar";
 import ShareButton from "../../components/ShareButton";
+import { locationLine } from "../../../../Shared/utils/locationDisplay.js";
 import TournamentChampionHero from "../../components/TournamentChampionHero";
 import SponsorStrip from "../../components/SponsorStrip";
 import HomeTab from "./tabs/HomeTab";
@@ -167,7 +168,8 @@ export default function TournamentHub() {
                 <p className="text-sm text-white/60 mt-2">
                   {formatRange(overview.startDate || tournament.startDate, overview.endDate || tournament.endDate)}
                   {(overview.venue || tournament.venue) && ` - ${overview.venue || tournament.venue}`}
-                  {overview.city && ` - ${overview.city}`}
+                  {(locationLine(tournament.locationLabels, overview.city) || overview.city) &&
+                    ` - ${locationLine(tournament.locationLabels, overview.city) || overview.city}`}
                 </p>
               </div>
             </div>

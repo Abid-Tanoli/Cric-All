@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../services/api";
 import { AGE_GROUPS, BATTING_POSITION_OPTIONS, BATTING_STYLES, BOWLING_STYLES, PLAYER_CATEGORIES, PLAYING_ROLES } from "../lib/playerFields";
+import LocationSelect from "../../../Shared/components/LocationSelect.jsx";
 
 // The quick "enlist" modal. It posts to the same self-service endpoint as
 // /my-players and, like it, has no team picker: squad membership is granted by a
@@ -24,6 +25,8 @@ export default function CreatePlayerProfile({ onSuccess, onCancel }) {
     "address.district": "",
     "address.city": "",
     "address.province": "",
+    locationRefs: { countryId: null, provinceId: null, districtId: null, cityId: null, townId: null },
+    locationLabels: { country: "", province: "", district: "", city: "", town: "" },
   });
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState(null);
@@ -39,10 +42,11 @@ export default function CreatePlayerProfile({ onSuccess, onCancel }) {
     try {
       const payload = { ...form };
       payload.address = {
-        town: form["address.town"],
-        district: form["address.district"],
-        city: form["address.city"],
-        province: form["address.province"],
+        town: form.locationLabels.town || form["address.town"],
+        district: form.locationLabels.district || form["address.district"],
+        city: form.locationLabels.city || form["address.city"],
+        province: form.locationLabels.province || form["address.province"],
+        country: form.locationLabels.country || "Pakistan",
       };
       delete payload["address.town"];
       delete payload["address.district"];
@@ -146,12 +150,17 @@ export default function CreatePlayerProfile({ onSuccess, onCancel }) {
             <input value={form.organization} onChange={set("organization")} placeholder="Institution Name" className="w-full p-2 bg-cric-card border border-cric-border rounded-lg text-xs font-bold text-cric-text" />
           </div>
 
-          <div className="bg-cric-bg p-4 rounded-xl border border-cric-border space-y-2">
-            <label className="block text-[9px] font-black uppercase tracking-widest text-cric-muted mb-1">Location</label>
-            <input value={form["address.town"]} onChange={set("address.town")} placeholder="Town" className="w-full p-2 bg-cric-card border border-cric-border rounded-lg text-xs font-bold text-cric-text" />
-            <input value={form["address.district"]} onChange={set("address.district")} placeholder="District" className="w-full p-2 bg-cric-card border border-cric-border rounded-lg text-xs font-bold text-cric-text" />
-            <input value={form["address.city"]} onChange={set("address.city")} placeholder="City" className="w-full p-2 bg-cric-card border border-cric-border rounded-lg text-xs font-bold text-cric-text" />
-            <input value={form["address.province"]} onChange={set("address.province")} placeholder="Province" className="w-full p-2 bg-cric-card border border-cric-border rounded-lg text-xs font-bold text-cric-text" />
+          <div className="bg-cric-bg p-4 rounded-xl border border-cric-border">
+            <label className="block text-[9px] font-black uppercase tracking-widest text-cric-muted mb-2">Location</label>
+            <LocationSelect
+              compact
+              value={form.locationRefs}
+              labels={form.locationLabels}
+              legacyHint={[form["address.city"], form["address.district"]].filter(Boolean).join(", ")}
+              onChange={(refs, labels) =>
+                setForm((prev) => ({ ...prev, locationRefs: refs, locationLabels: labels }))
+              }
+            />
           </div>
 
           {err && <p className="text-red-500 text-sm font-bold">{err}</p>}
