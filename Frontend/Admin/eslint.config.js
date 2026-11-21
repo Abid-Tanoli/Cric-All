@@ -3,7 +3,9 @@ import reactHooks from 'eslint-plugin-react-hooks'
 import reactRefresh from 'eslint-plugin-react-refresh'
 
 export default [
-  { ignores: ['dist/**'] },
+  // Node scripts use top-level await (like the User app's PWA scripts), which
+  // this ESLint 8 config cannot parse. They are run/tested directly by npm.
+  { ignores: ['dist/**', 'scripts/**'] },
   {
     languageOptions: {
       globals: { ...globals.browser },
