@@ -12,26 +12,46 @@ export default defineConfig({
     react(),
     tailwindcss(),
     VitePWA({
-      registerType: 'autoUpdate',
-      includeAssets: ['icons/icon-192.png', 'icons/icon-512.png'],
+      // Same pattern as the User app, but this is a separate install with its
+      // own origin, manifest and custom worker (src/sw.js).
+      strategies: 'injectManifest',
+      srcDir: 'src',
+      filename: 'sw.js',
+      // A new deploy waits until the user confirms the "Update" toast.
+      registerType: 'prompt',
+      // Registration lives in src/pwa/registerPwa.js so React can react to it.
+      injectRegister: false,
       manifest: {
+        id: '/',
         name: 'CricAll Admin',
         short_name: 'CricAll Admin',
         description: 'CricAll admin console — live scoring and management',
-        theme_color: '#0f172a',
-        background_color: '#0f172a',
+        lang: 'en',
+        dir: 'auto',
+        // Admin is its own origin/app; the installed app opens at the root.
+        start_url: '/',
+        scope: '/',
         display: 'standalone',
-        start_url: '/admin',
+        orientation: 'any',
+        // Deep admin blue: deliberately different from the User app's #0a0e14.
+        theme_color: '#101c30',
+        background_color: '#101c30',
         icons: [
-          { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' },
-          { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png' },
+          { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+          { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+          {
+            src: '/icons/icon-maskable-512.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'maskable',
+          },
         ],
       },
-      workbox: {
-        // Cache ONLY the app shell (static assets) and the login page.
-        // Live scoring and admin actions must never run offline: no API
-        // requests (GET or POST) and no auth/login data are written here.
-        navigateFallback: '/admin/login',
+      injectManifest: {
+        // index.html is NOT precached: the shell always comes from the network,
+        // and a failed navigation shows offline.html instead of a stale admin UI.
+        globPatterns: ['**/*.{js,css,svg,png,ico,webmanifest}', 'offline.html'],
+        globIgnores: ['**/*.map'],
       },
     }),
   ],
