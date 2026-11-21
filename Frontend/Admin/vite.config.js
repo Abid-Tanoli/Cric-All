@@ -4,11 +4,15 @@ import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
 import path from 'path'
 import { fileURLToPath } from 'node:url'
+import { loadBrand } from '../Shared/branding/brand-config.mjs'
+import { brandHtmlPlugin } from '../Shared/branding/vite-plugin.mjs'
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url))
+const brand = loadBrand()
 
 export default defineConfig({
   plugins: [
+    brandHtmlPlugin('admin'),
     react(),
     tailwindcss(),
     VitePWA({
@@ -23,8 +27,8 @@ export default defineConfig({
       injectRegister: false,
       manifest: {
         id: '/',
-        name: 'CricAll Admin',
-        short_name: 'CricAll Admin',
+        name: brand.adminName,
+        short_name: brand.adminName,
         description: 'CricAll admin console — live scoring and management',
         lang: 'en',
         dir: 'auto',
@@ -33,9 +37,9 @@ export default defineConfig({
         scope: '/',
         display: 'standalone',
         orientation: 'any',
-        // Deep admin blue: deliberately different from the User app's #0a0e14.
-        theme_color: '#101c30',
-        background_color: '#101c30',
+        // Deep admin blue: deliberately different from the User app's theme.
+        theme_color: brand.adminThemeColor,
+        background_color: brand.adminThemeColor,
         icons: [
           { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
           { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },

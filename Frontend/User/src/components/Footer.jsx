@@ -2,6 +2,7 @@ import React from "react";
 import { Link } from "react-router-dom";
 import { useCricketProviderStatus, isProviderConfigured } from "../hooks/useCricketProviderStatus";
 import InstallAppButton from "./InstallAppButton";
+import BrandMark from "@shared/branding/BrandMark";
 
 export default function Footer() {
   const year = new Date().getFullYear();
@@ -13,8 +14,9 @@ export default function Footer() {
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-6 sm:gap-8">
           <div className="col-span-2 sm:col-span-1">
-            <Link to="/" className="text-xl font-black font-raj italic text-cric-text tracking-tighter">
-              CricAll<span className="text-cric-accent">.</span>
+            <Link to="/" className="inline-flex items-center gap-2 text-xl font-black font-raj italic text-cric-text tracking-tighter">
+              <BrandMark size={24} chip />
+              <span>CricAll<span className="text-cric-accent">.</span></span>
             </Link>
             <p className="mt-2 text-xs sm:text-sm text-cric-muted leading-relaxed">
               Live cricket scores, match coverage, player stats, and more.

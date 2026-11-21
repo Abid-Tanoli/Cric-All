@@ -9,6 +9,7 @@ import { login, clearError } from "../../store/slices/authSlice";
 import api from "../../services/api";
 import { consumeSessionMessage } from "../../services/authSession";
 import PasswordField from "../../components/PasswordField";
+import BrandMark from "@shared/branding/BrandMark";
 
 const hasGoogleClientId = Boolean(import.meta.env.VITE_GOOGLE_CLIENT_ID && import.meta.env.VITE_GOOGLE_CLIENT_ID !== 'your_google_client_id.apps.googleusercontent.com');
 
@@ -67,6 +68,7 @@ export default function AdminLogin() {
       <div className="w-full max-w-md">
         <div className="bg-cric-card rounded-2xl shadow-xl p-6 sm:p-8 border border-cric-border">
           <div className="text-center mb-8">
+            <div className="flex justify-center mb-3"><BrandMark size={44} chip /></div>
             <h1 className="text-3xl font-black text-cric-text">CRICALL ADMIN</h1>
             <p className="text-cric-muted mt-2">Sign in to your account</p>
           </div>

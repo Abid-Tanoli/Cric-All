@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { GoogleLogin } from '@react-oauth/google';
 import { login, loginWithGoogle } from '../pages/auth/auth';
+import BrandMark from '@shared/branding/BrandMark';
 
 const hasGoogleClientId = Boolean(import.meta.env.VITE_GOOGLE_CLIENT_ID && import.meta.env.VITE_GOOGLE_CLIENT_ID !== 'your_google_client_id.apps.googleusercontent.com');
 
@@ -42,7 +43,10 @@ export default function Login({ onSuccess, onCancel, embedded = false }) {
     <div className={embedded ? "w-full" : "fixed inset-0 z-[80] flex items-center justify-center bg-cric-text/70 px-4 backdrop-blur-sm"}>
       <div className="w-full max-w-md bg-cric-card rounded-xl border border-cric-border shadow-xl p-6">
         <div className="flex items-center justify-between mb-6">
-          <h3 className="text-xl font-black text-cric-text uppercase tracking-tight">Login</h3>
+          <div className="flex items-center gap-2">
+            <BrandMark size={28} chip />
+            <h3 className="text-xl font-black text-cric-text uppercase tracking-tight">Login</h3>
+          </div>
           {onCancel && (
             <button
               type="button"
