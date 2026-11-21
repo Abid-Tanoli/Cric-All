@@ -8,6 +8,7 @@ import ResetPassword from "./pages/auth/ResetPassword";
 import Layout from "./components/Layout";
 import ProtectedRoute from "./components/ProtectedRoute";
 import OfflineBanner from "./components/OfflineBanner";
+import PwaUpdateToast from "./components/PwaUpdateToast";
 import ErrorBoundary from "../../Shared/components/ErrorBoundary";
 
 const Dashboard = lazy(() => import("./pages/Dashboard"));
@@ -59,6 +60,7 @@ export default function App() {
   return (
     <>
     <OfflineBanner />
+    <PwaUpdateToast />
     <Suspense fallback={<PageLoader />}>
     <Routes>
       <Route path="/admin/login" element={!token ? <AdminLogin /> : <Navigate to="/admin" />} />

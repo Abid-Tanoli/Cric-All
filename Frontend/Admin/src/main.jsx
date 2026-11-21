@@ -6,6 +6,7 @@ import { GoogleOAuthProvider } from "@react-oauth/google";
 import App from "./App";
 import store from "./store/store";
 import { ToastProvider } from "./components/Toast";
+import { setupPwa } from "./pwa/registerPwa";
 import "./index.css";
 
 // Theme initialization — prevents flash before React mounts
@@ -19,6 +20,9 @@ import "./index.css";
 })();
 
 const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID || "";
+
+// Registers the Admin service worker and wires the "Update" toast flow.
+setupPwa();
 
 ReactDOM.createRoot(document.getElementById("root")).render(
   <GoogleOAuthProvider clientId={googleClientId}>
