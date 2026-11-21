@@ -10,11 +10,12 @@
  */
 import { chromium } from 'playwright-core'
 import { execSync, spawn } from 'node:child_process'
-import { existsSync, readdirSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+const brand = JSON.parse(readFileSync(path.join(projectRoot, '../Shared/branding/brand.json'), 'utf8'))
 const port = Number(process.argv[2] || 4181)
 const baseUrl = `http://localhost:${port}`
 
@@ -128,6 +129,13 @@ try {
     ['192x192', '512x512'].every((size) => manifest.icons.some((icon) => icon.sizes === size)) &&
       manifest.icons.some((icon) => icon.purpose?.includes('maskable')),
   )
+  check(
+    'manifest uses brand.json admin names and theme',
+    manifest.name === brand.adminName &&
+      manifest.short_name === brand.adminName &&
+      manifest.theme_color === brand.adminThemeColor &&
+      manifest.background_color === brand.adminThemeColor,
+  )
 
   for (const src of manifest.icons.map((icon) => icon.src)) {
     const res = await fetch(`${baseUrl}${src}`)
@@ -137,10 +145,23 @@ try {
       `${res.status}`,
     )
   }
-  for (const extra of ['/icons/apple-touch-icon-180.png', '/favicon.ico', '/offline.html', '/robots.txt']) {
+  for (const extra of [
+    '/icons/apple-touch-icon-180.png',
+    '/favicon.ico',
+    '/favicon-16.png',
+    '/favicon-32.png',
+    '/brand/emblem.png',
+    '/brand/logo-full.png',
+    '/offline.html',
+    '/robots.txt',
+  ]) {
     const res = await fetch(`${baseUrl}${extra}`)
     check(`${extra} served directly (no redirect)`, res.ok && res.redirected === false, `${res.status}`)
   }
+  check(
+    'offline page uses the generated emblem',
+    /\/brand\/emblem\.png/.test(await (await fetch(`${baseUrl}/offline.html`)).text()),
+  )
 
   const robots = await (await fetch(`${baseUrl}/robots.txt`)).text()
   check('robots.txt disallows every crawler', /User-agent:\s*\*/i.test(robots) && /Disallow:\s*\//i.test(robots))

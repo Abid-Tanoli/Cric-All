@@ -12,27 +12,38 @@
  */
 import { chromium } from 'playwright-core'
 import { execSync, spawn } from 'node:child_process'
-import { existsSync, readdirSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+const brand = JSON.parse(readFileSync(path.join(projectRoot, '../Shared/branding/brand.json'), 'utf8'))
 const port = Number(process.argv[2] || 4180)
 const baseUrl = `http://localhost:${port}`
 
 function findLocalChrome() {
+  if (process.env.PWA_CHROME_PATH) return process.env.PWA_CHROME_PATH
   const root = process.env.LOCALAPPDATA && path.join(process.env.LOCALAPPDATA, 'ms-playwright')
-  if (!root || !existsSync(root)) return undefined
-  const found = []
-  for (const dir of readdirSync(root)) {
-    if (!dir.startsWith('chromium-')) continue
-    for (const sub of ['chrome-win64/chrome.exe', 'chrome-win/chrome.exe']) {
-      const exe = path.join(root, dir, sub)
-      if (existsSync(exe)) found.push({ exe, build: Number(dir.split('-')[1]) })
+  if (root && existsSync(root)) {
+    const found = []
+    for (const dir of readdirSync(root)) {
+      if (!dir.startsWith('chromium-')) continue
+      for (const sub of ['chrome-win64/chrome.exe', 'chrome-win/chrome.exe']) {
+        const exe = path.join(root, dir, sub)
+        if (existsSync(exe)) found.push({ exe, build: Number(dir.split('-')[1]) })
+      }
     }
+    found.sort((a, b) => b.build - a.build)
+    if (found[0]) return found[0].exe
   }
-  found.sort((a, b) => b.build - a.build)
-  return found[0]?.exe
+  // Machines without ms-playwright can still run the check with a system browser.
+  if (process.platform === 'win32') {
+    return [
+      'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+      'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+    ].find(existsSync)
+  }
+  return undefined
 }
 
 const results = []
@@ -99,6 +110,13 @@ try {
     ['192x192', '512x512'].every((size) => manifest.icons.some((icon) => icon.sizes === size)) &&
       manifest.icons.some((icon) => icon.purpose?.includes('maskable')),
   )
+  check(
+    'manifest uses brand.json names and user theme',
+    manifest.name === brand.appName &&
+      manifest.short_name === brand.appName &&
+      manifest.theme_color === brand.userThemeColor &&
+      manifest.background_color === brand.userThemeColor,
+  )
 
   for (const src of manifest.icons.map((icon) => icon.src)) {
     const res = await fetch(`${baseUrl}${src}`)
@@ -108,10 +126,23 @@ try {
       `${res.status}`,
     )
   }
-  for (const extra of ['/icons/apple-touch-icon-180.png', '/favicon.ico', '/offline.html']) {
+  for (const extra of [
+    '/icons/apple-touch-icon-180.png',
+    '/favicon.ico',
+    '/favicon-16.png',
+    '/favicon-32.png',
+    '/brand/emblem.png',
+    '/brand/logo-full.png',
+    '/social-share.png',
+    '/offline.html',
+  ]) {
     const res = await fetch(`${baseUrl}${extra}`)
     check(`${extra} served directly (no redirect)`, res.ok && res.redirected === false, `${res.status}`)
   }
+  check(
+    'offline page uses the generated emblem',
+    /\/brand\/emblem\.png/.test(await (await fetch(`${baseUrl}/offline.html`)).text()),
+  )
 
   const swRes = await fetch(`${baseUrl}/sw.js`)
   check(
