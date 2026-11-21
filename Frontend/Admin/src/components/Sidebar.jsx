@@ -3,6 +3,7 @@ import { NavLink } from "react-router-dom";
 import { useSelector } from "react-redux";
 import { adminFeatureFlags } from "../config/features";
 import { getOpenIssueCount } from "../services/issuesApi";
+import InstallAdminButton from "./InstallAdminButton";
 
 const menuItems = [
   { to: "/admin", label: "Dashboard", icon: "DB" },
@@ -121,6 +122,9 @@ export default function Sidebar({ open, onClose }) {
           ))}
         </ul>
       </nav>
+      <div className="border-t border-cric-border py-2">
+        <InstallAdminButton />
+      </div>
     </aside>
   );
 }
