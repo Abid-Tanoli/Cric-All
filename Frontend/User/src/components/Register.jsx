@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { GoogleLogin } from '@react-oauth/google';
 import { register, loginWithGoogle, verifyPhoneOtp, resendPhoneOtp, formatPhone } from '../pages/auth/auth';
 import PlayerForm from './PlayerForm';
+import BrandMark from '@shared/branding/BrandMark';
 
 const hasGoogleClientId = Boolean(import.meta.env.VITE_GOOGLE_CLIENT_ID && import.meta.env.VITE_GOOGLE_CLIENT_ID !== 'your_google_client_id.apps.googleusercontent.com');
 
@@ -169,12 +170,15 @@ export default function Register({ onSuccess, onCancel, embedded = false }) {
       <div className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-xl border border-cric-border bg-cric-card shadow-sm">
         <div className="bg-cric-accent px-6 py-5 text-white">
           <div className="flex items-start justify-between gap-4">
-            <div>
-              <p className="text-[10px] font-black uppercase tracking-widest text-white/70">Join CricAll</p>
-              <h3 className="mt-1 text-2xl font-black uppercase tracking-tight">Choose how you want to join</h3>
-              <p className="mt-2 max-w-2xl text-sm font-semibold text-white/80">
-                CricAll provides the platform. Create your account with an email address or phone number, verify it, and manage your cricket from one place.
-              </p>
+            <div className="flex items-start gap-3">
+              <BrandMark full size={32} chip />
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-white/70">Join CricAll</p>
+                <h3 className="mt-1 text-2xl font-black uppercase tracking-tight">Choose how you want to join</h3>
+                <p className="mt-2 max-w-2xl text-sm font-semibold text-white/80">
+                  CricAll provides the platform. Create your account with an email address or phone number, verify it, and manage your cricket from one place.
+                </p>
+              </div>
             </div>
             {onCancel && (
               <button

@@ -8,6 +8,7 @@
     "test:backend": "npm --prefix Backend test",
     "test:admin": "npm --prefix Frontend/Admin test",
     "test:user": "npm --prefix Frontend/User test",
+    "test:brand": "node --test Frontend/Shared/branding/test/brand.test.mjs",
     "test:smoke": "node Backend/scripts/api-smoke-test.cjs",
     "test:scoring": "node Backend/scripts/scoring-flow-test.cjs",
     "build": "npm --prefix Backend install && npm --prefix Frontend/User install && npm --prefix Frontend/Admin install && npm --prefix Frontend/User run build && npm --prefix Frontend/Admin run build",

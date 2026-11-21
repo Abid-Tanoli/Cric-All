@@ -6,6 +6,7 @@ import { resendVerification } from "../pages/auth/auth";
 import { featureFlags } from "../config/features";
 import { useCommunityConfig } from "../community/CommunityConfigContext";
 import { useCricketProviderStatus, isProviderConfigured } from "../hooks/useCricketProviderStatus";
+import BrandMark from "@shared/branding/BrandMark";
 
 export default function Header({ user, hasOrg, onShowLogin, onShowRegister, onLogout }) {
   const location = useLocation();
@@ -121,9 +122,9 @@ export default function Header({ user, hasOrg, onShowLogin, onShowRegister, onLo
       )}
       <div className="max-w-7xl mx-auto px-4 py-4 flex flex-wrap justify-between items-center gap-3">
         <div className="flex items-center gap-5 min-w-0">
-          <Link to="/" className="text-2xl font-black font-raj italic text-cric-text tracking-tighter" onClick={closeMobile}>
-            CricAll
-            <span className="text-cric-accent">.</span>
+          <Link to="/" className="inline-flex items-center gap-2 text-2xl font-black font-raj italic text-cric-text tracking-tighter" onClick={closeMobile}>
+            <BrandMark size={30} chip />
+            <span>CricAll<span className="text-cric-accent">.</span></span>
           </Link>
         </div>
 

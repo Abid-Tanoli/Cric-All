@@ -4,6 +4,7 @@ import { useSelector } from "react-redux";
 import { adminFeatureFlags } from "../config/features";
 import { getOpenIssueCount } from "../services/issuesApi";
 import InstallAdminButton from "./InstallAdminButton";
+import BrandMark from "@shared/branding/BrandMark";
 
 const menuItems = [
   { to: "/admin", label: "Dashboard", icon: "DB" },
@@ -77,9 +78,12 @@ export default function Sidebar({ open, onClose }) {
     >
       <div className="p-6 border-b border-cric-border">
         <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-xl font-black font-raj text-cric-accent tracking-tight">CricAll</h1>
-            <p className="text-xs text-cric-muted mt-1 uppercase tracking-widest font-bold">Admin Panel</p>
+          <div className="flex items-center gap-2">
+            <BrandMark size={30} chip />
+            <div>
+              <h1 className="text-xl font-black font-raj text-cric-accent tracking-tight">CricAll</h1>
+              <p className="text-xs text-cric-muted mt-1 uppercase tracking-widest font-bold">Admin Panel</p>
+            </div>
           </div>
           <button onClick={onClose} className="lg:hidden text-cric-muted hover:text-cric-accent p-1">
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

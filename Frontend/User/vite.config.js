@@ -5,6 +5,8 @@ import { VitePWA } from 'vite-plugin-pwa'
 import path from 'path'
 import { fileURLToPath } from 'node:url'
 import process from 'node:process'
+import { loadBrand } from '../Shared/branding/brand-config.mjs'
+import { brandHtmlPlugin } from '../Shared/branding/vite-plugin.mjs'
 
 // Keep %VITE_ADSENSE_CLIENT% in index.html defined (as an empty string) when a
 // build has no client id, so Vite does not emit an "undefined env" warning.
@@ -12,6 +14,7 @@ if (process.env.VITE_ADSENSE_CLIENT === undefined) process.env.VITE_ADSENSE_CLIE
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url))
 const adsenseStub = path.resolve(currentDir, 'src/components/ads/AdSlot.disabled.jsx')
+const brand = loadBrand()
 
 // The verification meta tag must be in the built HTML whenever a client id is
 // set, even when ads are disabled. Vite replaces %VITE_ADSENSE_CLIENT% in
@@ -49,6 +52,7 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [
+      brandHtmlPlugin('user'),
       adsenseVerificationMeta(env.VITE_ADSENSE_CLIENT),
       adsenseDisabledBuild(env.VITE_ADS_ENABLED === 'true'),
       react(),
@@ -68,8 +72,8 @@ export default defineConfig(({ mode }) => {
         injectRegister: false,
         manifest: {
           id: '/',
-          name: 'CricAll',
-          short_name: 'CricAll',
+          name: brand.appName,
+          short_name: brand.appName,
           description:
             'CricAll — live cricket scores, scorecards, series, teams and rankings.',
           lang: 'en',
@@ -79,8 +83,8 @@ export default defineConfig(({ mode }) => {
           display: 'standalone',
           orientation: 'any',
           // Dark navy with the orange CricAll accent (Frontend/Shared/styles/theme.css).
-          theme_color: '#0a0e14',
-          background_color: '#0a0e14',
+          theme_color: brand.userThemeColor,
+          background_color: brand.userThemeColor,
           categories: ['sports', 'news'],
           icons: [
             { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
