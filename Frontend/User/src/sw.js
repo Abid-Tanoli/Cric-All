@@ -39,15 +39,15 @@ const isAdHost = ({ url }) =>
   url.hostname.endsWith('.googleadservices.com') ||
   url.hostname === 'fundingchoicesmessages.google.com'
 
+// OBS overlay pages must stay fresh and their navigation/data must not be cached.
+const isOverlayPage = ({ url }) =>
+  url.pathname === '/overlay' || url.pathname.startsWith('/overlay/')
+
 // NetworkOnly as an explicit first route: it also stops the routes below from
 // ever matching API, Socket.IO or ad traffic.
 registerRoute(isAdHost, new NetworkOnly())
 registerRoute(isApiOrRealtime, new NetworkOnly())
-// OBS overlay pages must stay fresh and their navigation/data must not be cached.
 registerRoute(isOverlayPage, new NetworkOnly())
-
-const isOverlayPage = ({ url }) =>
-  url.pathname === '/overlay' || url.pathname.startsWith('/overlay/')
 
 const isPageNavigation = ({ request, url }) =>
   request.mode === 'navigate' && !isApiOrRealtime({ url }) && !isAdHost({ url }) && !isOverlayPage({ url })
