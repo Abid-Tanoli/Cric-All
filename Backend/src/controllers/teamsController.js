@@ -3,6 +3,7 @@ import TeamCategory from "../models/TeamCategory.js";
 import * as teamService from "../services/teamService.js";
 import * as playerService from "../services/playerService.js";
 import { recordAudit } from "../utils/audit.js";
+import { buildLocationFilterClauses } from "../services/locationService.js";
 import {
   resolveViewerContext,
   sanitizeTeamPublic,
@@ -75,6 +76,9 @@ export const listTeams = async (req, res) => {
       // manage route, which lists by organization and is not filtered.
       publicOnly: !viewer.isPlatformAdmin,
       excludeReservedTestNames: !viewer.isPlatformAdmin,
+      // Location filters match the selected node or any descendant, and are
+      // simply absent when the caller did not ask for one.
+      locationClauses: await buildLocationFilterClauses(req.query),
     });
 
     res.status(200).json(sanitizeTeamsPublic(teams, { viewer, canViewPrivate: viewer.isPlatformAdmin }));

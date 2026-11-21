@@ -9,6 +9,7 @@ import { isPlatformAdmin, resolveOrgAccess } from "../middleware/orgAccess.js";
 import { generateOrgSlug, upsertMembership } from "../services/membershipService.js";
 import { permissionsForRoles } from "../permissions/orgPermissions.js";
 import { recordAudit } from "../utils/audit.js";
+import { buildLocationFilterClauses } from "../services/locationService.js";
 import {
   PLAYER_ROSTER_SELECT,
   TEAM_PUBLIC_SELECT,
@@ -26,6 +27,7 @@ import {
 const SELF_SERVICE_FIELDS = [
   "name", "shortName", "logoUrl", "coverUrl", "description", "website",
   "type", "foundedYear", "location", "contact", "socialLinks", "privacy",
+  "locationRefs", "locationLabels",
 ];
 const SUPERVISORY_FIELDS = ["isActive", "parent", "category", "verificationStatus"];
 
@@ -55,6 +57,7 @@ async function assertTypeIsConfigured(type) {
 export const listOrganizations = async (req, res) => {
   try {
     const { category, type, search, page, limit } = req.query;
+    const locationClauses = await buildLocationFilterClauses(req.query);
     const viewer = await resolveViewerContext(req);
     // The public directory lists active organizations only. The Admin app is
     // supervisory and must also see deactivated ones, otherwise an operator
@@ -70,6 +73,7 @@ export const listOrganizations = async (req, res) => {
       const term = String(search).trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       if (term) query.$or = [{ name: new RegExp(term, "i") }, { shortName: new RegExp(term, "i") }];
     }
+    if (locationClauses.length) query.$and = locationClauses;
 
     const safePage = Math.max(Number(page) || 1, 1);
     const safeLimit = Math.min(Math.max(Number(limit) || 120, 1), 500);

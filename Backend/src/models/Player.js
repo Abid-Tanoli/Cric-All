@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import { BATTING_POSITIONS } from "../constants/battingPositions.js";
+import { locationRefFields, locationRefIndexes } from "./locationRefs.js";
 
 const playerSchema = new mongoose.Schema(
   {
@@ -68,6 +69,9 @@ const playerSchema = new mongoose.Schema(
       province: { type: String, default: "" },
       country: { type: String, default: "Pakistan" }
     },
+    // Optional residence/hometown from the curated tree. The free-text
+    // `address` block above is retained as the legacy fallback.
+    ...locationRefFields(),
     imageUrl: { type: String, default: "" },
     // Terminal A (oct11-A): contact and squad-entry facts the Admin form
     // collects. `phone` is stored in the digits-only canonical form produced by
@@ -160,6 +164,7 @@ playerSchema.index({ "address.town": 1 });
 playerSchema.index({ "address.district": 1 });
 playerSchema.index({ "address.city": 1 });
 playerSchema.index({ "address.country": 1 });
+locationRefIndexes(playerSchema);
 playerSchema.index({ playingRole: 1 });
 playerSchema.index({ "stats.runs": -1 });
 playerSchema.index({ "stats.wickets": -1 });

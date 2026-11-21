@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { locationRefFields, locationRefIndexes } from "./locationRefs.js";
 
 const teamOrganizationSchema = new mongoose.Schema({
   name: {
@@ -59,6 +60,9 @@ const teamOrganizationSchema = new mongoose.Schema({
     address: { type: String, default: "" },
     country: { type: String, default: "" },
   },
+  // Curated location tree. The free-text `location` block above is retained for
+  // backward compatibility and as the legacy read-only hint in forms.
+  ...locationRefFields(),
   contact: {
     phone: { type: String, default: "" },
     email: { type: String, default: "", trim: true, lowercase: true },
@@ -131,6 +135,7 @@ teamOrganizationSchema.index({ parent: 1 });
 teamOrganizationSchema.index({ owner: 1 });
 teamOrganizationSchema.index({ verificationStatus: 1 });
 teamOrganizationSchema.index({ "members.user": 1 });
+locationRefIndexes(teamOrganizationSchema);
 
 // Normalize the free-form social map to lowercase platform keys.
 teamOrganizationSchema.pre("validate", function normalizeSocialLinks() {

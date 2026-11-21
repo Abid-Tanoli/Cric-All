@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { locationRefFields, locationRefIndexes } from "./locationRefs.js";
 
 const ballSchema = new mongoose.Schema({
   ballNumber: { type: Number, required: true },
@@ -312,6 +313,8 @@ const matchSchema = new mongoose.Schema(
       province: String,
       country: { type: String, default: "Pakistan" }
     },
+    // Optional venue location from the curated tree; `address` stays untouched.
+    ...locationRefFields(),
     tournament: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Tournament"
@@ -546,6 +549,7 @@ matchSchema.index({ event: 1 });
 matchSchema.index({ series: 1, status: 1, startAt: 1 });
 matchSchema.index({ "innings.oversHistory.overNumber": 1 });
 matchSchema.index({ "innings.fallOfWickets.player": 1 });
+locationRefIndexes(matchSchema);
 
 matchSchema.pre('save', function () {
   if (this.isModified('matchType')) {

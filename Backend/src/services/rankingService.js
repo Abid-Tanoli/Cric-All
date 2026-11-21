@@ -13,6 +13,7 @@ import {
   isHiddenTeamDoc,
   canViewTeamPrivate,
 } from "../utils/publicProjection.js";
+import { findLocationNode } from "./locationService.js";
 
 // Fix B: every ranking board is a public read, so fixtures and hidden teams are
 // omitted from each one. `$and` rather than a `team` key of its own: several of
@@ -192,10 +193,25 @@ async function buildTeamScopeQuery(filters = {}) {
 
   if (category) query.category = category;
   if (teamType) query.type = String(teamType).trim();
-  if (city) query["address.city"] = textRegex(city);
-  if (district) query["address.district"] = textRegex(district);
-  if (town) query["address.town"] = textRegex(town);
-  if (country) query["address.country"] = textRegex(country);
+  // A Location id/slug filters by the curated tree (node or any descendant);
+  // a plain place name keeps the historical address regex.
+  const resolvedLocationIds = [];
+  const resolvedLevels = new Set();
+  for (const level of ["country", "province", "district", "city", "town"]) {
+    const raw = filters[level];
+    if (!raw) continue;
+    const node = await findLocationNode(raw, { type: level });
+    if (node) {
+      resolvedLocationIds.push(node._id);
+      resolvedLevels.add(level);
+    }
+  }
+  if (resolvedLocationIds.length) query.locationIds = { $all: resolvedLocationIds };
+
+  if (city && !resolvedLevels.has("city")) query["address.city"] = textRegex(city);
+  if (district && !resolvedLevels.has("district")) query["address.district"] = textRegex(district);
+  if (town && !resolvedLevels.has("town")) query["address.town"] = textRegex(town);
+  if (country && !resolvedLevels.has("country")) query["address.country"] = textRegex(country);
 
   // Task 4: browse team rankings by the organization type already stored on
   // TeamOrganization.type (free-form: club, school, university, ...). Types with
