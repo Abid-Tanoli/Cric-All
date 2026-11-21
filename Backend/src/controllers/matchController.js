@@ -19,6 +19,7 @@ import { recordAudit } from "../utils/audit.js";
 import { buildMatchInnings, ensureMatchInnings } from "../utils/matchInnings.js";
 import { updateTournamentPoints } from "../services/tournamentService.js";
 import { invalidateTournamentStatsCache } from "../services/tournamentStats.js";
+import { buildLocationFilterClauses } from "../services/locationService.js";
 
 const normalStatus = (status = "upcoming") => (status === "innings-break" ? "innings_break" : status);
 
@@ -308,6 +309,11 @@ export const getMatches = async (req, res) => {
     const excluded = await hiddenTeamIds();
     const andClauses = [reservedNamesMongoClause("title")];
     if (excluded.length) andClauses.push({ teams: { $nin: excluded } });
+    // Matches can carry their own venue location, or inherit the tournament's.
+    // Filtering is deliberately strict on the match's own stored branch; the
+    // tournament filter is applied by the caller with ?tournament=.
+    const locationClauses = await buildLocationFilterClauses(req.query);
+    if (locationClauses.length) andClauses.push(...locationClauses);
     query.$and = andClauses;
 
     const matches = await populateMatchList(Match.find(query))

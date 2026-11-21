@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import api from '../../../services/api';
 import PhotoInput from '../../../../../Shared/components/PhotoInput.jsx';
+import LocationSelect from '../../../../../Shared/components/LocationSelect.jsx';
 
 const CATEGORIES = ["School", "College", "University", "Organization", "Business", "Industry", "Club", "Corporate", "Academy", "International", "Other"];
 const AGE_GROUPS = ["U-10", "U-13", "U-15", "U-17", "U-19", "Open"];
@@ -16,6 +17,8 @@ export default function TeamForm({ editMode, currentTeam, onSave, onCancel }) {
   const [playerSearch, setPlayerSearch] = useState('');
   const [squadPlayers, setSquadPlayers] = useState([]);
   const [locationData, setLocationData] = useState(null);
+  const [locationRefs, setLocationRefs] = useState({});
+  const [locationLabels, setLocationLabels] = useState({});
   const [loading, setLoading] = useState(false);
   const [orgChain, setOrgChain] = useState([]);
 
@@ -63,6 +66,8 @@ export default function TeamForm({ editMode, currentTeam, onSave, onCancel }) {
       setValue('teamColorSecondary', currentTeam.teamColorSecondary || '#003087');
       setValue('fullAddress', currentTeam.fullAddress || '');
       setValue('city', currentTeam.address?.city || currentTeam.city || '');
+      setLocationRefs(currentTeam.locationRefs || {});
+      setLocationLabels(currentTeam.locationLabels || {});
       setValue('area', currentTeam.area || '');
       setValue('latitude', currentTeam.latitude || '');
       setValue('longitude', currentTeam.longitude || '');
@@ -208,6 +213,19 @@ export default function TeamForm({ editMode, currentTeam, onSave, onCancel }) {
         data.googleMapsUrl = locationData.googleMapsUrl;
         data.placeId = locationData.placeId;
         data.fullAddress = locationData.fullAddress;
+      }
+      // Only send the tree selection when something was actually chosen, so a
+      // plain edit never rewrites a team's existing place fields.
+      if (Object.values(locationRefs).some(Boolean)) {
+        data.locationRefs = locationRefs;
+        data.locationLabels = locationLabels;
+        data.address = {
+          country: locationLabels.country || 'Pakistan',
+          town: locationLabels.town || '',
+          district: locationLabels.district || '',
+          city: locationLabels.city || '',
+          province: locationLabels.province || '',
+        };
       }
       await onSave(data);
     } catch (e) {
@@ -382,6 +400,25 @@ export default function TeamForm({ editMode, currentTeam, onSave, onCancel }) {
       {/* Tab 2: Location & Contact */}
       {activeTab === 'location' && (
         <div className="space-y-6">
+          <div className="bg-cric-bg rounded-2xl p-6 border border-cric-border">
+            <h4 className="font-black text-xs uppercase tracking-widest text-cric-text mb-4">Location tree</h4>
+            <LocationSelect
+              compact
+              value={locationRefs}
+              labels={locationLabels}
+              legacyHint={
+                !locationRefs.cityId && (currentTeam?.address?.city || watch('city'))
+                  ? [currentTeam?.address?.city || watch('city'), currentTeam?.address?.province].filter(Boolean).join(', ')
+                  : ''
+              }
+              onChange={(refs, labels) => {
+                setLocationRefs(refs);
+                setLocationLabels(labels);
+                if (labels.city) setValue('city', labels.city);
+              }}
+            />
+          </div>
+
           <div className="bg-cric-bg rounded-2xl p-6 border border-cric-border">
             <h4 className="font-black text-xs uppercase tracking-widest text-cric-text mb-4">📍 Google Maps Location</h4>
             <div className="flex gap-4 mb-4">

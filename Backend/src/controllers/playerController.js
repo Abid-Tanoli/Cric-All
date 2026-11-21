@@ -7,6 +7,7 @@ import { recordAudit } from "../utils/audit.js";
 import * as playerService from "../services/playerService.js";
 import { applyPlayerFieldPolicy, resolvePlayerWriteAccess } from "../middleware/playerAccess.js";
 import { getPlayerStatsBundle } from "../services/playerStats.js";
+import { buildLocationFilterClauses } from "../services/locationService.js";
 import {
   PLAYER_ROSTER_SELECT,
   playerSelectFor,
@@ -80,6 +81,10 @@ export const getPlayers = async (req, res) => {
       if (excluded.length) andClauses.push({ team: { $nin: excluded } });
       query.$and = [...(query.$and || []), ...andClauses];
     }
+
+    // Optional location filter; the legacy free-text `city` above still works.
+    const locationClauses = await buildLocationFilterClauses(req.query);
+    if (locationClauses.length) query.$and = [...(query.$and || []), ...locationClauses];
 
     const [totalPlayers, players] = await Promise.all([
       Player.countDocuments(query).maxTimeMS(5000),

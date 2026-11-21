@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { locationRefFields, locationRefIndexes } from "./locationRefs.js";
 
 const tournamentSchema = new mongoose.Schema(
   {
@@ -209,6 +210,9 @@ const tournamentSchema = new mongoose.Schema(
         minOvers: { type: Number, default: 5, min: 0 },
       },
     },
+    // Optional host/venue location from the curated tree. `content.city` above
+    // stays as the legacy free-text value.
+    ...locationRefFields(),
     // Tournament/Series Squad: 11-20 players per team
     tournamentSquads: [{
       team: {
@@ -236,6 +240,7 @@ tournamentSchema.index({ teams: 1 });
 // The organization dashboard's tournament list: this tenant's competitions,
 // soonest first.
 tournamentSchema.index({ organizationRef: 1, startDate: -1 });
+locationRefIndexes(tournamentSchema);
 
 const Tournament = mongoose.models.Tournament || mongoose.model("Tournament", tournamentSchema);
 

@@ -25,6 +25,7 @@ import blogRoutes from "./routes/blogRoutes.js";
 import categoryRoutes from "./routes/categoryRoutes.js";
 import seriesRoutes from "./routes/seriesRoutes.js";
 import internationalRoutes from "./routes/international.js";
+import locationRoutes from "./routes/locationRoutes.js";
 
 // New team categorization routes
 import teamCategoryRoutes from "./routes/teamCategoryRoutes.js";
@@ -107,6 +108,7 @@ const databaseBackedPrefixes = [
   "/api/series",
   "/api/team-categories",
   "/api/organizations",
+  "/api/locations",
   "/api/rankings-v2",
   "/api/sync",
   "/api/settings",
@@ -191,6 +193,9 @@ app.use("/api/intl", internationalRoutes);
 // New team categorization routes
 app.use("/api/team-categories", teamCategoryRoutes);
 app.use("/api/organizations", organizationRoutes);
+// Curated country > province > district > city > town tree, plus the
+// authenticated "Other (add new)" suggestion flow and admin management.
+app.use("/api/locations", locationRoutes);
 // Personal invitation inbox (accept/reject an org invitation addressed to me).
 app.use("/api/invitations", invitationRoutes);
 app.use("/api/rankings-v2", rankingRoutes);

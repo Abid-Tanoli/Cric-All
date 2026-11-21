@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { locationRefFields, locationRefIndexes } from "./locationRefs.js";
 
 const eventSchema = new mongoose.Schema({
   // Event type: single match, series, tri-series, tournament, world cup, champions trophy
@@ -61,6 +62,8 @@ const eventSchema = new mongoose.Schema({
     province: { type: String, default: "" },
     country: { type: String, default: "Pakistan" }
   },
+  // Optional competition/venue location; the free-text address above remains.
+  ...locationRefFields(),
   // Teams participating in this event
   teams: [{ type: mongoose.Schema.Types.ObjectId, ref: "Team" }],
   // User (accountType handler / organization_admin) this event is managed by.
@@ -139,5 +142,6 @@ eventSchema.index({ teams: 1 });
 eventSchema.index({ managedBy: 1 });
 // The organization dashboard lists its own events by this key.
 eventSchema.index({ organization: 1, startDate: -1 });
+locationRefIndexes(eventSchema);
 
 export default mongoose.model("Event", eventSchema);

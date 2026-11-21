@@ -102,6 +102,9 @@ export async function listTeams(filters = {}) {
   }
   if (filters.isActive !== undefined) query.isActive = filters.isActive;
   if (filters.isPublic !== undefined) query.isPublic = filters.isPublic === 'true' || filters.isPublic === true;
+  if (Array.isArray(filters.locationClauses) && filters.locationClauses.length) {
+    andClauses.push(...filters.locationClauses);
+  }
 
   if (andClauses.length > 0) query.$and = andClauses;
 
@@ -109,7 +112,7 @@ export async function listTeams(filters = {}) {
     // `city` was in this projection but is not a Team field — city lives in
     // `address.city`, which is projected as part of `address`. Selecting a
     // nonexistent path was harmless but misleading.
-    .select("name shortName logo type category categoryRef organization organizationRef branchName address area players captain viceCaptain teamColorPrimary teamColorSecondary isActive profileComplete isPublic description establishedYear homeGround ageGroup")
+    .select("name shortName logo type category categoryRef organization organizationRef branchName address area players captain viceCaptain teamColorPrimary teamColorSecondary isActive profileComplete isPublic description establishedYear homeGround ageGroup locationRefs locationLabels locationIds")
     .populate("categoryRef", "name slug icon")
     .populate("organizationRef", "name slug type")
     .sort({ name: 1 })
@@ -306,6 +309,10 @@ export async function createTeam(data) {
     logo: data.logo || "",
     fullAddress: data.fullAddress || "",
     address,
+    // Location-tree selection from the Admin / org-owner form. The model's
+    // plugin resolves the labels and ancestor chain; legacy `address` is kept.
+    ...(data.locationRefs ? { locationRefs: data.locationRefs } : {}),
+    ...(data.locationLabels ? { locationLabels: data.locationLabels } : {}),
     area: data.area || "",
     latitude: data.latitude,
     longitude: data.longitude,
@@ -376,7 +383,7 @@ export async function updateTeam(teamId, data) {
     "establishedYear", "homeGround", "teamColorPrimary", "teamColorSecondary",
     "isActive", "profileComplete", "isInternal", "tags", "media",
     "videos", "socialLinks", "privacy", "isPublic",
-    "captain", "viceCaptain",
+    "captain", "viceCaptain", "locationRefs", "locationLabels",
   ];
 
   const objectIdFields = ["categoryRef", "organizationRef", "incubationGroup", "captain", "viceCaptain"];

@@ -37,6 +37,7 @@ const Sponsors = lazy(() => import("./pages/Sponsors"));
 const ManageAdmins = lazy(() => import("./pages/ManageAdmins"));
 const HandlerRequests = lazy(() => import("./pages/HandlerRequests"));
 const Organizations = lazy(() => import("./pages/Organizations"));
+const Locations = lazy(() => import("./pages/Locations"));
 const CommunityModeration = lazy(() => import("./pages/CommunityModeration"));
 const CommunitySettings = lazy(() => import("./pages/CommunitySettings"));
 const Issues = lazy(() => import("./pages/Issues"));
@@ -95,6 +96,7 @@ export default function App() {
           <Route path="/admin/sync" element={<ProtectedRoute><ErrorBoundary><Layout><SyncPanel /></Layout></ErrorBoundary></ProtectedRoute>} />
           <Route path="/admin/handler-requests" element={<ProtectedRoute><ErrorBoundary><Layout><HandlerRequests /></Layout></ErrorBoundary></ProtectedRoute>} />
           <Route path="/admin/organizations" element={<ProtectedRoute><ErrorBoundary><Layout><Organizations /></Layout></ErrorBoundary></ProtectedRoute>} />
+          <Route path="/admin/locations" element={<ProtectedRoute><ErrorBoundary><Layout><Locations /></Layout></ErrorBoundary></ProtectedRoute>} />
           <Route path="/admin/community" element={<ProtectedRoute><ErrorBoundary><Layout><CommunityModeration /></Layout></ErrorBoundary></ProtectedRoute>} />
           <Route path="/admin/community/settings" element={<ProtectedRoute><ErrorBoundary><Layout><CommunitySettings /></Layout></ErrorBoundary></ProtectedRoute>} />
           <Route path="/admin/issues" element={<ProtectedRoute><ErrorBoundary><Layout><Issues /></Layout></ErrorBoundary></ProtectedRoute>} />

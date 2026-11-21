@@ -79,6 +79,9 @@ export const PLAYER_PUBLIC_FIELDS = Object.freeze([
   "socialLinks",
   "privacy",
   "address",
+  "locationRefs",
+  "locationLabels",
+  "locationIds",
   "createdAt",
   "updatedAt",
 ]);
@@ -133,6 +136,9 @@ export const TEAM_PUBLIC_FIELDS = Object.freeze([
   "privacy",
   "tags",
   "players",
+  "locationRefs",
+  "locationLabels",
+  "locationIds",
   "isCountry",
   "espnTeamId",
   "incubationGroup",
@@ -476,6 +482,9 @@ export function sanitizeTeamPublic(doc, opts = {}) {
     for (const field of TEAM_LOCATION_FIELDS) {
       if (field in out) out[field] = field === "address" ? { town: "", district: "", city: "", province: "", country: "" } : "";
     }
+    // The curated tree's display names are location data too. The ids stay: they
+    // are what the server-side filters use and they reveal no place by themselves.
+    out.locationLabels = { country: "", province: "", district: "", city: "", town: "" };
   }
 
   if (privacy.contactInfo === "hidden") {

@@ -6,6 +6,7 @@ import {
   reservedNamesMongoClause,
   publicTeamClause,
 } from '../utils/publicProjection.js';
+import { findLocationNode } from '../services/locationService.js';
 
 const toNumber = (value, fallback = 0) => {
   const parsed = Number(value);
@@ -54,10 +55,30 @@ const buildScopeQuery = async (queryParams = {}, type = 'all') => {
     }
   }
   if (category) query.category = category;
-  if (city) query['address.city'] = textRegex(city);
-  if (district) query['address.district'] = textRegex(district);
-  if (town) query['address.town'] = textRegex(town);
-  if (country) query['address.country'] = textRegex(country);
+
+  // Location filters accept a Location id or slug and match the node or any
+  // descendant. A plain place name (the historical contract of these query
+  // params) still falls through to the legacy address regex.
+  const resolvedLocationIds = [];
+  const resolvedLevels = new Set();
+  for (const level of ['country', 'province', 'district', 'city', 'town']) {
+    const raw = queryParams[level];
+    if (!raw) continue;
+    const node = await findLocationNode(raw, { type: level });
+    if (node) {
+      resolvedLocationIds.push(node._id);
+      resolvedLevels.add(level);
+    }
+  }
+  if (resolvedLocationIds.length) query.locationIds = { $all: resolvedLocationIds };
+
+  if (city && !resolvedLevels.has('city')) query['address.city'] = textRegex(city);
+  if (district && !resolvedLevels.has('district')) query['address.district'] = textRegex(district);
+  if (town && !resolvedLevels.has('town')) query['address.town'] = textRegex(town);
+  if (country && !resolvedLevels.has('country')) query['address.country'] = textRegex(country);
+  if (queryParams.province && !resolvedLevels.has('province')) {
+    query['address.province'] = textRegex(queryParams.province);
+  }
 
   if (value && scope !== 'team') {
     if (scope === 'pre-town' || scope === 'pre_town' || scope === 'area') {

@@ -1,7 +1,8 @@
 import React, { useEffect, useState, useMemo, useCallback } from "react";
 import { api } from "../services/api";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import LiveNavbar from "../components/LiveNavbar";
+import LocationFilters, { locationQueryFromSearchParams } from "../components/LocationFilters";
 import { initSocket } from "../services/socket";
 import LiveMatchesSection from "../components/cricapi/LiveMatchesSection";
 import LoadingWithTimeout from "../components/LoadingWithTimeout";
@@ -11,10 +12,13 @@ export default function Live() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState("all"); // all, results, live, upcoming
+  const [searchParams] = useSearchParams();
+  const locationQuery = locationQueryFromSearchParams(searchParams);
+  const locationKey = JSON.stringify(locationQuery);
 
   const loadMatches = useCallback(async () => {
     try {
-      const res = await api.get("/matches", { timeout: 8000 });
+      const res = await api.get("/matches", { params: locationQuery, timeout: 8000 });
       // Handle different response formats
       const data = res.data?.matches || res.data || [];
       setMatches(Array.isArray(data) ? data : []);
@@ -26,7 +30,8 @@ export default function Live() {
     } finally {
       setLoading(false);
     }
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locationKey]);
 
   useEffect(() => {
     let mounted = true;
@@ -131,6 +136,10 @@ export default function Live() {
       </div>
 
       {/* Content */}
+      <div className="max-w-7xl mx-auto px-4 pt-6">
+        <LocationFilters />
+      </div>
+
       <div className="max-w-7xl mx-auto px-4 py-8">
         <LiveMatchesSection />
         {error && matches.length === 0 && (

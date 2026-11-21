@@ -2,10 +2,13 @@ import React, { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import PlayerCard from "../components/PlayerCard";
 import { api } from "../services/api";
+import LocationFilters, { locationQueryFromSearchParams } from "../components/LocationFilters";
 
 export default function Players() {
   const [searchParams] = useSearchParams();
   const teamIdFromUrl = searchParams.get("team");
+  const locationQuery = locationQueryFromSearchParams(searchParams);
+  const locationKey = JSON.stringify(locationQuery);
 
   const [players, setPlayers] = useState([]);
   const [teams, setTeams] = useState([]);
@@ -29,7 +32,8 @@ export default function Players() {
 
   useEffect(() => {
     fetchPlayers();
-  }, [filterTeam, filterRole, filterCampus]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterTeam, filterRole, filterCampus, locationKey]);
 
   const fetchPlayers = async () => {
     setLoading(true);
@@ -37,6 +41,7 @@ export default function Players() {
       const params = { limit: 100 };
       if (filterTeam) params.team = filterTeam;
       if (filterCampus) params.Campus = filterCampus;
+      Object.assign(params, locationQuery);
       const res = await api.get("/players", { params });
       const data = res.data;
       setPlayers(Array.isArray(data.players) ? data.players : (Array.isArray(data) ? data : []));
@@ -122,6 +127,10 @@ export default function Players() {
             </button>
           </div>
         </div>
+      </div>
+
+      <div className="max-w-7xl mx-auto px-4 pt-6">
+        <LocationFilters />
       </div>
 
       <div className="max-w-7xl mx-auto px-4 py-12">

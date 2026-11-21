@@ -353,6 +353,8 @@ export const adminGetContent = async (req, res) => {
         status: tournament.status,
         startDate: tournament.startDate,
         endDate: tournament.endDate,
+        locationRefs: tournament.locationRefs || {},
+        locationLabels: tournament.locationLabels || {},
       },
       settings,
       media: media.map((row) => ({
@@ -400,6 +402,12 @@ export const adminUpdateContent = async (req, res) => {
       }
     }
 
+    // Optional location-tree selection. The tournament's own `content.city`
+    // stays as the legacy display value; the refs power the listings filter.
+    if (body.locationRefs && typeof body.locationRefs === "object") {
+      tournament.locationRefs = body.locationRefs;
+    }
+
     tournament.content = {
       ...(tournament.content?.toObject?.() || tournament.content || {}),
       bannerImage: next.bannerImage,
@@ -421,7 +429,12 @@ export const adminUpdateContent = async (req, res) => {
 
     const settings = readContentSettings(tournament);
     invalidateTournamentStatsCache(tournament._id);
-    res.status(200).json({ settings, message: "Content settings updated" });
+    res.status(200).json({
+      settings,
+      locationRefs: tournament.locationRefs || {},
+      locationLabels: tournament.locationLabels || {},
+      message: "Content settings updated",
+    });
   } catch (error) {
     if (error instanceof HttpError) return res.status(error.status).json({ message: error.message });
     console.error("Error updating tournament content:", error);

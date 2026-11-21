@@ -18,6 +18,7 @@ const menuItems = [
   { to: "/admin/sponsors", label: "Sponsors", icon: "SP" },
   { to: "/admin/teams", label: "Manage Teams", icon: "TM" },
   { to: "/admin/organizations", label: "Organizations", icon: "OR" },
+  { to: "/admin/locations", label: "Locations", icon: "LO" },
   { to: "/admin/issues", label: "Issues", icon: "IS" },
   { to: "/admin/players", label: "Manage Players", icon: "PL" },
   { to: "/admin/players/missing-role", label: "Players missing role", icon: "PR" },

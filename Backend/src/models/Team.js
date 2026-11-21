@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { locationRefFields, locationRefIndexes } from "./locationRefs.js";
 
 const teamSchema = new mongoose.Schema(
   {
@@ -46,6 +47,10 @@ const teamSchema = new mongoose.Schema(
       country: { type: String, default: "Pakistan" }
     },
     fullAddress: { type: String, default: "" },
+    // Curated location tree (additive; `address` above is still the legacy /
+    // free-text fallback and is never removed). A team inherits the owning
+    // organization's location by default but may override it.
+    ...locationRefFields(),
     area: { type: String, default: "" },
     latitude: { type: Number },
     longitude: { type: Number },
@@ -227,5 +232,6 @@ teamSchema.index({ "address.city": 1 });
 teamSchema.index({ "address.country": 1 });
 teamSchema.index({ isActive: 1 });
 teamSchema.index({ managedBy: 1 });
+locationRefIndexes(teamSchema);
 
 export default mongoose.model("Team", teamSchema);

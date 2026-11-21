@@ -24,6 +24,7 @@ import {
   resolveTournamentHonours,
 } from "../services/tournamentPublicState.js";
 import { deleteTournamentContent } from "../services/tournamentContent.js";
+import { buildLocationFilterClauses } from "../services/locationService.js";
 import {
   OFFICIAL_AWARD_KEYS,
   validateOfficialAwards,
@@ -187,6 +188,8 @@ export const getTournaments = async (req, res) => {
     // one participant was made private.
     const hidden = new Set(await hiddenTeamIds());
     const query = { $and: [reservedNamesMongoClause("name")] };
+    const locationClauses = await buildLocationFilterClauses(req.query);
+    if (locationClauses.length) query.$and.push(...locationClauses);
 
     const tournaments = await Tournament.find(query)
       .populate("teams", "name shortName logo")

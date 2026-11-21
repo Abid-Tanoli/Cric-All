@@ -9,6 +9,7 @@ import ChangePlayerModal from "../components/ChangePlayerModal";
 import OrganizationPicker from "../components/OrganizationPicker";
 import { useToast } from "../components/Toast";
 import ConfirmModal from "../components/ConfirmModal";
+import LocationSelect from "../../../Shared/components/LocationSelect.jsx";
 
 const EVENT_TYPES = [
     { value: "single-match", label: "Single Match", icon: "🏏", desc: "One standalone match" },
@@ -36,6 +37,8 @@ export default function ManageEvents() {
     const selectedTotalTeams = watch("totalTeams");
     const selectedTotalMatches = watch("totalMatches");
     const [orgSelection, setOrgSelection] = useState({ id: null, name: "" });
+    const [locationRefs, setLocationRefs] = useState({});
+    const [locationLabels, setLocationLabels] = useState({});
 
     const EXPECTED_MULTI_TEAM_TYPES = ["series", "tri-series", "tournament", "world-cup", "champions-trophy", "league"];
     const expectedTeams = selectedType === "single-match"
@@ -90,6 +93,9 @@ export default function ManageEvents() {
         try {
             setLoading(true);
             data.organization = orgSelection.id || "";
+            if (Object.values(locationRefs).some(Boolean)) {
+                data.locationRefs = locationRefs;
+            }
             let eventId = editingId;
             if (editingId) {
                 await api.put(`/events/${editingId}`, data);
@@ -113,6 +119,7 @@ export default function ManageEvents() {
                             category: data.category || "Other",
                             organization: orgSelection.name || data.organization || "",
                             address: data.address || {},
+                            ...(data.locationRefs ? { locationRefs: data.locationRefs } : {}),
                             startAt,
                             teams: data.teams,
                             tournamentId: eventId,
@@ -129,6 +136,8 @@ export default function ManageEvents() {
             }
             reset();
             setOrgSelection({ id: null, name: "" });
+            setLocationRefs({});
+            setLocationLabels({});
             setShowForm(false);
             loadEvents();
         } catch (err) {
@@ -161,6 +170,8 @@ export default function ManageEvents() {
         setOrgSelection({ id: orgId, name: orgName });
         setValue("organization", orgId || "");
         setValue("address", ev.address || { town: "", district: "", city: "", province: "", country: "Pakistan" });
+        setLocationRefs(ev.locationRefs || {});
+        setLocationLabels(ev.locationLabels || {});
     };
 
     const onDelete = (id) => {
@@ -330,6 +341,23 @@ export default function ManageEvents() {
                             <h4 className="text-xs font-black text-[#031d44] uppercase tracking-widest flex items-center gap-2">
                                 <span className="text-lg">📍</span> Location Details
                             </h4>
+                            <LocationSelect
+                                compact
+                                value={locationRefs}
+                                labels={locationLabels}
+                                legacyHint={
+                                    !locationRefs.cityId && (watch("address.city") || watch("address.province"))
+                                        ? [watch("address.city"), watch("address.province")].filter(Boolean).join(", ")
+                                        : ""
+                                }
+                                onChange={(refs, labels) => {
+                                    setLocationRefs(refs);
+                                    setLocationLabels(labels);
+                                    for (const key of ["town", "district", "city", "province"]) {
+                                        setValue(`address.${key}`, labels[key] || "");
+                                    }
+                                }}
+                            />
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                                 <div>
                                     <label className="text-[10px] font-black uppercase text-slate-400 block mb-1">Town / Area</label>

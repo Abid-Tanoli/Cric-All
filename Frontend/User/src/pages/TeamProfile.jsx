@@ -6,6 +6,7 @@ import ShareMenu from '../community/ShareMenu';
 import { useCommunityConfig } from '../community/CommunityConfigContext';
 import PostsTab from '../community/PostsTab';
 import BattingPositionBadge from '@shared/components/BattingPositionBadge';
+import { locationLine } from '../../../Shared/utils/locationDisplay.js';
 
 const idOf = (v) => v?._id || v?.id || v;
 
@@ -162,7 +163,7 @@ export default function TeamProfile() {
               <p className="text-blue-200/60 text-sm mt-1">
                 {team.privacy?.location !== 'hidden' && (
                   <>
-                    {team.address?.city}{team.address?.country ? `, ${team.address.country}` : ''}
+                    {locationLine(team.locationLabels, [team.address?.city, team.address?.country].filter(Boolean).join(', '))}
                     {team.homeGround ? ` • ${team.homeGround}` : ''}
                   </>
                 )}
