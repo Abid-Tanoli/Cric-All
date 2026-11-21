@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+// React is imported explicitly for the Admin app: its test transform uses
+// the classic JSX runtime, where JSX needs the React binding in scope.
+import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { fetchLocations, suggestLocation } from "../services/locationApi.js";
 
 export const LOCATION_LEVELS = ["country", "province", "district", "city", "town"];

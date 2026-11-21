@@ -156,6 +156,10 @@ const ensureSingleMatchFixture = async (event) => {
       matchType: event.format || "T20",
       startAt: event.startDate,
       teams,
+      // A fixture created with its event inherits the venue's location, so the
+      // match listings can filter by the same place as the event.
+      ...(event.address ? { address: event.address } : {}),
+      ...(event.locationRefs?.countryId ? { locationRefs: event.locationRefs } : {}),
       event: event._id,
       organizationRef: event.organization || null,
       status: "upcoming",
@@ -176,7 +180,7 @@ export const createEvent = async (req, res) => {
   try {
     const { 
       name, shortName, eventType, teams, format, startDate, endDate, venue, description, totalMatches, totalTeams, overs,
-      category, subCategory, ageGroup, organization, address
+      category, subCategory, ageGroup, organization, address, locationRefs
     } = req.body;
 
     if (!name || !eventType) {
@@ -217,7 +221,9 @@ export const createEvent = async (req, res) => {
       subCategory: subCategory || "",
       ageGroup: ageGroup || "Open",
       organization: organization && /^[0-9a-f]{24}$/i.test(String(organization)) ? organization : null,
-      address: address || { town: "", district: "", city: "", province: "", country: "Pakistan" }
+      address: address || { town: "", district: "", city: "", province: "", country: "Pakistan" },
+      // Optional tree selection; labels/ancestors are resolved by the model.
+      ...(locationRefs ? { locationRefs } : {}),
     });
 
     await event.save();

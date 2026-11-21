@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import api, { API_BASE_URL } from '../services/api';
 import { useToast } from '../components/Toast';
+import LocationSelect from '../../../Shared/components/LocationSelect.jsx';
 
 // ---------------------------------------------------------------------------
 // Tournament hub content manager
@@ -78,6 +79,8 @@ export default function TournamentContent() {
   const [articles, setArticles] = useState([]);
 
   const [overview, setOverview] = useState({ bannerImage: '', shortDescription: '', city: '' });
+  const [locationRefs, setLocationRefs] = useState({});
+  const [locationLabels, setLocationLabels] = useState({});
   const [settings, setSettings] = useState({ visibility: {}, stats: { minBallsFaced: 30, minOvers: 5 } });
   const [saving, setSaving] = useState(false);
 
@@ -101,6 +104,8 @@ export default function TournamentContent() {
         shortDescription: data.settings?.shortDescription || '',
         city: data.settings?.city || '',
       });
+      setLocationRefs(data.tournament?.locationRefs || {});
+      setLocationLabels(data.tournament?.locationLabels || {});
       setSettings({
         visibility: { ...(data.settings?.visibility || {}) },
         stats: {
@@ -130,6 +135,7 @@ export default function TournamentContent() {
         bannerImage: overview.bannerImage,
         shortDescription: overview.shortDescription,
         city: overview.city,
+        ...(Object.values(locationRefs).some(Boolean) ? { locationRefs } : {}),
       });
       const saved = res.data?.settings;
       if (saved) {
@@ -374,7 +380,23 @@ export default function TournamentContent() {
               onChange={(e) => setOverview({ ...overview, shortDescription: e.target.value })}
             />
           </Field>
-          <Field label="City">
+          <Field label="Location">
+            <LocationSelect
+              compact
+              value={locationRefs}
+              labels={locationLabels}
+              legacyHint={!locationRefs.cityId && overview.city ? overview.city : ''}
+              onChange={(refs, labels) => {
+                setLocationRefs(refs);
+                setLocationLabels(labels);
+                setOverview((current) => ({
+                  ...current,
+                  city: labels.city || labels.district || labels.province || '',
+                }));
+              }}
+            />
+          </Field>
+          <Field label="City (display text)">
             <input
               aria-label="City"
               className={inputCls}

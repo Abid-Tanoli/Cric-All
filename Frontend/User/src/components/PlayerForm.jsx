@@ -3,6 +3,27 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { BATTING_POSITION_OPTIONS } from "@shared/battingPositions";
+import LocationSelect from "@shared/components/LocationSelect.jsx";
+
+const locationRefsSchema = z
+  .object({
+    countryId: z.string().nullable().optional(),
+    provinceId: z.string().nullable().optional(),
+    districtId: z.string().nullable().optional(),
+    cityId: z.string().nullable().optional(),
+    townId: z.string().nullable().optional(),
+  })
+  .optional();
+
+const locationLabelsSchema = z
+  .object({
+    country: z.string().optional(),
+    province: z.string().optional(),
+    district: z.string().optional(),
+    city: z.string().optional(),
+    town: z.string().optional(),
+  })
+  .optional();
 
 const userSchema = z.object({
   name: z.string().min(1, "Full name is required"),
@@ -23,6 +44,8 @@ const userSchema = z.object({
     city: z.string().min(1, "City is required"),
     province: z.string().min(1, "Province is required"),
   }).optional(),
+  locationRefs: locationRefsSchema,
+  locationLabels: locationLabelsSchema,
 });
 
 const adminSchema = z.object({
@@ -43,6 +66,8 @@ const adminSchema = z.object({
     city: z.string().optional(),
     province: z.string().optional(),
   }).optional(),
+  locationRefs: locationRefsSchema,
+  locationLabels: locationLabelsSchema,
 });
 
 const playingRoles = ["Batsman", "Bowler", "All-Rounder", "Batting-All-Rounder", "Bowling-All-Rounder", "Wicket-Keeper"];
@@ -107,10 +132,26 @@ export default function PlayerForm({
   submitButtonText,
 }) {
   const schema = mode === "user" ? userSchema : adminSchema;
-  const { register, handleSubmit, formState: { errors } } = useForm({
+  const { register, handleSubmit, setValue, watch, formState: { errors } } = useForm({
     resolver: zodResolver(schema),
     defaultValues,
   });
+
+  const locationRefs = watch("locationRefs") || {};
+  const locationLabels = watch("locationLabels") || {};
+  const legacyCity = defaultValues?.address?.city || "";
+  const legacyProvince = defaultValues?.address?.province || "";
+
+  // The tree selection stays the source of truth for filters, while the
+  // free-text fields below keep receiving the same names so existing screens
+  // and older records keep working unchanged.
+  const applyLocation = (refs, labels) => {
+    setValue("locationRefs", refs);
+    setValue("locationLabels", labels);
+    for (const key of ["town", "district", "city", "province"]) {
+      setValue(`address.${key}`, labels[key] || "");
+    }
+  };
 
   const handleFormSubmit = async (data) => {
     await onSubmit(data);
@@ -207,6 +248,17 @@ export default function PlayerForm({
         <label className="block text-[9px] font-black uppercase tracking-widest text-cric-muted mb-1">
           Location
         </label>
+        <LocationSelect
+          compact
+          value={locationRefs}
+          labels={locationLabels}
+          legacyHint={
+            !locationRefs.cityId && (legacyCity || legacyProvince)
+              ? [legacyCity, legacyProvince].filter(Boolean).join(", ")
+              : ""
+          }
+          onChange={applyLocation}
+        />
         <Input register={register} name="address.town" placeholder="Town" />
         <Input register={register} name="address.district" placeholder="District" />
         <Input register={register} name="address.city" placeholder="City" error={errors.address?.city?.message} />

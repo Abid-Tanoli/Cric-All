@@ -73,6 +73,14 @@ locationIds:    [ …every node on the branch, root … chosen node ]
 equality match. The server resolves the refs and labels from the chosen node's
 stored ancestors, so a client cannot create a branch that does not exist.
 
+Forms that write these refs:
+
+- **User:** registration player profile, organization create/settings, player
+  profile (`MyPlayers` still uses its legacy text fields until it is migrated).
+- **Admin:** player form, team form, event form, tournament content overview.
+- Every form keeps the legacy text fields visible and editable; a record that only
+  has old text shows that text as a hint beside the dropdowns.
+
 Migration for historical free text:
 
 ```bash

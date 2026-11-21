@@ -75,6 +75,7 @@ export default function Register({ onSuccess, onCancel, embedded = false }) {
             district: data.address?.district || '',
             city: data.address?.city || '',
             province: data.address?.province || '',
+            locationRefs: data.locationRefs || null,
           },
         },
       });

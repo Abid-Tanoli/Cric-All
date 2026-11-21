@@ -12,6 +12,10 @@ import Location from "../src/models/Location.js";
 import Team from "../src/models/Team.js";
 import Player from "../src/models/Player.js";
 import User from "../src/models/User.js";
+import Event from "../src/models/Event.js";
+import Match from "../src/models/Match.js";
+import { createTeam, updateTeam } from "../src/services/teamService.js";
+import { createEvent } from "../src/controllers/eventController.js";
 import { seedLocations, loadLocationSeedData } from "../src/seed/locations.js";
 import {
   buildLocationFilterClauses,
@@ -42,7 +46,14 @@ after(async () => {
 });
 
 beforeEach(async () => {
-  await Promise.all([Location.deleteMany({}), Team.deleteMany({}), Player.deleteMany({}), User.deleteMany({})]);
+  await Promise.all([
+    Location.deleteMany({}),
+    Team.deleteMany({}),
+    Player.deleteMany({}),
+    User.deleteMany({}),
+    Event.deleteMany({}),
+    Match.deleteMany({}),
+  ]);
 });
 
 async function makeTree() {
@@ -267,6 +278,67 @@ test("updating the location refs through findOneAndUpdate re-resolves labels", a
   assert.equal(String(reread.locationRefs.provinceId), String(lahore.parent));
   assert.equal(reread.locationLabels.district, "Lahore");
   assert.equal(reread.address.city, "legacy", "legacy text is untouched");
+});
+
+// ---------------------------------------------------------------------------
+// Admin form entry points
+// ---------------------------------------------------------------------------
+test("admin team create and update persist the tree selection", async () => {
+  const { pakistan, punjab, lahore, city, town } = await makeTree();
+  const refs = {
+    countryId: pakistan._id,
+    provinceId: punjab._id,
+    districtId: lahore._id,
+    cityId: city._id,
+    townId: town._id,
+  };
+
+  const team = await createTeam({ name: "Tree Team", locationRefs: refs });
+  assert.equal(team.locationLabels.town, "Model Town");
+  assert.equal(team.locationIds.length, 5);
+
+  // The Admin edit whitelist must let a later change through too.
+  const updated = await updateTeam(team._id, {
+    locationRefs: { ...refs, townId: null },
+  });
+  assert.equal(updated.locationRefs.townId, null);
+  assert.equal(updated.locationLabels.town, "");
+  assert.equal(updated.locationIds.length, 4);
+  assert.equal(updated.address.city, "", "legacy text is not invented");
+});
+
+test("an event and its auto-created fixture inherit the chosen location", async () => {
+  const { pakistan, punjab, lahore, city } = await makeTree();
+  const a = await Team.create({ name: "Event Team A" });
+  const b = await Team.create({ name: "Event Team B" });
+
+  const req = mockReq({
+    body: {
+      name: "Location Derby",
+      eventType: "single-match",
+      teams: [a._id, b._id],
+      startDate: new Date(),
+      locationRefs: {
+        countryId: pakistan._id,
+        provinceId: punjab._id,
+        districtId: lahore._id,
+        cityId: city._id,
+      },
+    },
+  });
+  const res = mockRes();
+  await createEvent(req, res);
+
+  assert.equal(res.statusCode, 201);
+  const event = await Event.findById(res.body.event._id);
+  assert.equal(event.locationLabels.city, "Lahore City");
+  const fixture = await Match.findOne({ event: event._id });
+  assert.equal(fixture.locationLabels.city, "Lahore City");
+  assert.deepEqual(
+    fixture.locationIds.map(String),
+    event.locationIds.map(String),
+    "the fixture carries the same branch for listing filters"
+  );
 });
 
 // ---------------------------------------------------------------------------

@@ -81,6 +81,8 @@ export default function ManagePlayers() {
       ageGroup: p.ageGroup || "Open",
       organization: p.organization || "",
       address: p.address || { town: "", district: "", city: "", province: "" },
+      locationRefs: p.locationRefs || {},
+      locationLabels: p.locationLabels || {},
       gallery: p.gallery || [],
       videos: p.videos || [],
       socialLinks: p.socialLinks || {},

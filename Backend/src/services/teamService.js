@@ -309,6 +309,10 @@ export async function createTeam(data) {
     logo: data.logo || "",
     fullAddress: data.fullAddress || "",
     address,
+    // Location-tree selection from the Admin / org-owner form. The model's
+    // plugin resolves the labels and ancestor chain; legacy `address` is kept.
+    ...(data.locationRefs ? { locationRefs: data.locationRefs } : {}),
+    ...(data.locationLabels ? { locationLabels: data.locationLabels } : {}),
     area: data.area || "",
     latitude: data.latitude,
     longitude: data.longitude,
@@ -379,7 +383,7 @@ export async function updateTeam(teamId, data) {
     "establishedYear", "homeGround", "teamColorPrimary", "teamColorSecondary",
     "isActive", "profileComplete", "isInternal", "tags", "media",
     "videos", "socialLinks", "privacy", "isPublic",
-    "captain", "viceCaptain",
+    "captain", "viceCaptain", "locationRefs", "locationLabels",
   ];
 
   const objectIdFields = ["categoryRef", "organizationRef", "incubationGroup", "captain", "viceCaptain"];
