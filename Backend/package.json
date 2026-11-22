@@ -11,6 +11,7 @@
     "seed:locations": "node src/scripts/seedLocations.js",
     "locations:migrate": "node src/scripts/migrateLocationRefs.js",
     "locations:migrate:apply": "node src/scripts/migrateLocationRefs.js --apply",
+    "orgtypes:migrate": "node src/scripts/migrateOrgTypes.js",
     "db:export:cric-all": "node src/scripts/exportDbSnapshot.js --db=cric-all",
     "db:export:test": "node src/scripts/exportDbSnapshot.js --db=test",
     "db:backup": "node src/scripts/backupDb.js",

@@ -11,9 +11,22 @@ import { permissionsForRoles } from "../permissions/orgPermissions.js";
 import { recordAudit } from "../utils/audit.js";
 import { buildLocationFilterClauses } from "../services/locationService.js";
 import {
+  OrgTypeValidationError,
+  canRequestVerification,
+  effectiveOrgType,
+  isSensitiveVerificationChange,
+  mapLegacyTypeToOrgType,
+  normalizeLegacyType,
+  orgTypeQuery,
+  resolveCreateFields,
+  resolveUpdateFields,
+} from "../services/organizationService.js";
+import {
   PLAYER_ROSTER_SELECT,
   TEAM_PUBLIC_SELECT,
   resolveViewerContext,
+  sanitizeOrganizationPublic,
+  sanitizeOrganizationsPublic,
   sanitizeTeamPublic,
   sanitizeTeamsPublic,
   reservedNamesMongoClause,
@@ -26,10 +39,13 @@ import {
 // handled separately in the controller).
 const SELF_SERVICE_FIELDS = [
   "name", "shortName", "logoUrl", "coverUrl", "description", "website",
-  "type", "foundedYear", "location", "contact", "socialLinks", "privacy",
+  "type", "orgType", "typeDetails", "foundedYear", "location", "contact", "socialLinks", "privacy",
   "locationRefs", "locationLabels",
 ];
-const SUPERVISORY_FIELDS = ["isActive", "parent", "category", "verificationStatus"];
+const SUPERVISORY_FIELDS = [
+  "isActive", "parent", "category", "verificationStatus",
+  "verificationNote", "verifiedBy", "verifiedAt",
+];
 
 const toPlain = (doc) => (typeof doc?.toObject === "function" ? doc.toObject() : { ...doc });
 
@@ -43,8 +59,13 @@ function withMembershipSummary(org, membershipCount) {
 
 async function assertTypeIsConfigured(type) {
   if (!type) return;
+  const normalized = normalizeLegacyType(type);
+  // The new enum has values that are deliberately not TeamCategories
+  // (local_club, company, foundation). Their mapped legacy slugs are in this
+  // table, so they are valid even when an older database has no such category.
+  if (mapLegacyTypeToOrgType(normalized).mapped) return;
   const found = await TeamCategory.findOne({
-    $or: [{ slug: String(type).toLowerCase() }, { name: { $regex: `^${String(type).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, $options: "i" } }],
+    $or: [{ slug: normalized }, { name: { $regex: `^${String(type).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, $options: "i" } }],
   }).lean();
   if (!found) {
     const error = new Error("Unknown organization type");
@@ -54,9 +75,20 @@ async function assertTypeIsConfigured(type) {
   }
 }
 
+/** Shared error translation for the per-type validation service. */
+function orgTypeError(res, error, action) {
+  if (error instanceof OrgTypeValidationError || error.code === "ORG_TYPE_UNKNOWN") {
+    return res.status(error.status || 422).json({ message: error.message, code: error.code });
+  }
+  if (error.code === 11000) {
+    return res.status(409).json({ message: "That organization slug is taken.", code: "ORG_SLUG_TAKEN" });
+  }
+  return res.status(400).json({ message: `Failed to ${action} organization`, error: error.message });
+}
+
 export const listOrganizations = async (req, res) => {
   try {
-    const { category, type, search, page, limit } = req.query;
+    const { category, type, orgType, verificationStatus, search, page, limit } = req.query;
     const locationClauses = await buildLocationFilterClauses(req.query);
     const viewer = await resolveViewerContext(req);
     // The public directory lists active organizations only. The Admin app is
@@ -67,13 +99,20 @@ export const listOrganizations = async (req, res) => {
     // is where an operator looks for them) authenticates and is exempt.
     if (!viewer.isPlatformAdmin) Object.assign(query, reservedNamesMongoClause("name"));
     if (category) query.category = category;
-    if (type) query.type = String(type).toLowerCase();
+    // The review queue is supervisory: only a platform admin may filter by it.
+    if (viewer.isPlatformAdmin && verificationStatus) {
+      query.verificationStatus = String(verificationStatus).trim();
+    }
+    const clauses = [];
+    const typeClause = orgTypeQuery(orgType || type);
+    if (typeClause) clauses.push(typeClause);
     if (search) {
       // Escape the term so a user searching "cric." cannot inject an operator.
       const term = String(search).trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      if (term) query.$or = [{ name: new RegExp(term, "i") }, { shortName: new RegExp(term, "i") }];
+      if (term) clauses.push({ $or: [{ name: new RegExp(term, "i") }, { shortName: new RegExp(term, "i") }] });
     }
-    if (locationClauses.length) query.$and = locationClauses;
+    clauses.push(...locationClauses);
+    if (clauses.length) query.$and = clauses;
 
     const safePage = Math.max(Number(page) || 1, 1);
     const safeLimit = Math.min(Math.max(Number(limit) || 120, 1), 500);
@@ -116,7 +155,9 @@ export const listOrganizations = async (req, res) => {
     );
 
     res.status(200).json({
-      items: orgsWithCounts,
+      items: viewer.isPlatformAdmin
+        ? orgsWithCounts
+        : sanitizeOrganizationsPublic(orgsWithCounts, { canViewPrivate: false }),
       total,
       page: safePage,
       limit: safeLimit,
@@ -167,7 +208,9 @@ export const getOrganization = async (req, res) => {
       .lean();
 
     res.status(200).json({
-      organization: { ...org, memberCount: members.length },
+      organization: canSeePrivate
+        ? { ...org, orgType: org.orgType || mapLegacyTypeToOrgType(org.type).orgType, memberCount: members.length }
+        : sanitizeOrganizationPublic({ ...org, memberCount: members.length }, { canViewPrivate: false }),
       branches: canSeePrivate ? branches : sanitizeTeamsPublic(branches, { viewer }),
       members: members.map((m) => ({
         _id: m._id,
@@ -188,13 +231,19 @@ export const createOrganization = async (req, res) => {
     const platform = isPlatformAdmin(req);
     const settings = await getPlatformSettings();
 
-    if (payload.type) await assertTypeIsConfigured(payload.type);
+    // One place resolves the new enum, its legacy twin and the per-type details.
+    const resolved = resolveCreateFields(payload);
+    if (!payload.orgType && payload.type) await assertTypeIsConfigured(payload.type);
+    Object.assign(payload, resolved);
 
     if (!platform) {
       // Self-service: the caller owns what they create. Supervisory fields
       // cannot be set from this path.
       delete payload.isActive;
       delete payload.verificationStatus;
+      delete payload.verificationNote;
+      delete payload.verifiedBy;
+      delete payload.verifiedAt;
       delete payload.members;
       payload.owner = req.user._id;
       payload.createdBy = req.user._id;
@@ -241,7 +290,7 @@ export const createOrganization = async (req, res) => {
       targetType: "organization",
       targetId: org._id,
       targetLabel: org.name,
-      metadata: { verificationStatus: org.verificationStatus, platform },
+      metadata: { verificationStatus: org.verificationStatus, orgType: org.orgType, platform },
     });
 
     const fresh = await TeamOrganization.findById(org._id)
@@ -252,13 +301,7 @@ export const createOrganization = async (req, res) => {
       message: "Organization created successfully",
     });
   } catch (error) {
-    if (error.code === "ORG_TYPE_UNKNOWN") {
-      return res.status(422).json({ message: error.message, code: error.code });
-    }
-    if (error.code === 11000) {
-      return res.status(409).json({ message: "That organization slug is taken.", code: "ORG_SLUG_TAKEN" });
-    }
-    res.status(400).json({ message: "Failed to create organization", error: error.message });
+    return orgTypeError(res, error, "create");
   }
 };
 
@@ -266,8 +309,6 @@ export const updateOrganization = async (req, res) => {
   try {
     const org = req.org; // loaded + authorized by requireOrgPermission('manage_org')
     const platform = isPlatformAdmin(req);
-
-    if (req.body.type) await assertTypeIsConfigured(req.body.type);
 
     if (!platform) {
       const attempted = SUPERVISORY_FIELDS.filter((field) => req.body[field] !== undefined);
@@ -277,13 +318,38 @@ export const updateOrganization = async (req, res) => {
           code: "ORG_SUPERVISORY_FIELDS",
         });
       }
+    }
+
+    const resolved = resolveUpdateFields(req.body, org);
+    if (req.body.type && !req.body.orgType) await assertTypeIsConfigured(req.body.type);
+
+    // Changing the type or a registration number invalidates a granted Verified
+    // badge. The reset is deliberately unconditional so it cannot be skipped by
+    // an owner editing their own details.
+    const resetVerification =
+      isSensitiveVerificationChange(resolved) && org.verificationStatus === "verified";
+
+    if (!platform) {
       const patch = {};
       for (const field of SELF_SERVICE_FIELDS) {
         if (req.body[field] !== undefined) patch[field] = req.body[field];
       }
+      Object.assign(patch, {
+        type: resolved.type,
+        orgType: resolved.orgType,
+      });
+      if (resolved.typeDetails !== undefined) patch.typeDetails = resolved.typeDetails;
       if (patch.name) patch.slug = await generateOrgSlug(patch.slug || patch.name, org._id);
+      if (resetVerification) {
+        patch.verificationStatus = "unverified";
+        patch.verifiedBy = null;
+        patch.verifiedAt = null;
+        patch.verificationNote = "";
+      }
 
-      const updated = await TeamOrganization.findByIdAndUpdate(org._id, patch, {
+      const update = { ...patch };
+      if (resolved.typeChanged && !resolved.detailsChanged) update.$unset = { typeDetails: 1 };
+      const updated = await TeamOrganization.findByIdAndUpdate(org._id, update, {
         new: true,
         runValidators: true,
       }).populate("owner", "name email");
@@ -294,20 +360,34 @@ export const updateOrganization = async (req, res) => {
         targetType: "organization",
         targetId: org._id,
         targetLabel: updated.name,
-        metadata: { fields: Object.keys(patch) },
+        metadata: {
+          fields: Object.keys(patch),
+          orgType: resolved.orgType,
+          verificationReset: resetVerification,
+        },
       });
       const count = await Membership.countDocuments({ organization: org._id, status: "active" });
       return res.status(200).json({ organization: withMembershipSummary(updated, count), message: "Organization updated successfully" });
     }
 
-    const patch = { ...req.body };
+    const patch = { ...req.body, type: resolved.type, orgType: resolved.orgType };
+    if (resolved.typeDetails !== undefined) patch.typeDetails = resolved.typeDetails;
     if (patch.name || patch.slug) patch.slug = await generateOrgSlug(patch.slug || patch.name, req.params.id);
-    if (patch.verificationStatus && patch.verificationStatus !== org.verificationStatus) {
+    const statusChanged = patch.verificationStatus && patch.verificationStatus !== org.verificationStatus;
+    if (statusChanged) {
       patch.verifiedBy = req.user?._id || null;
       patch.verifiedAt = new Date();
     }
+    if (resetVerification && !statusChanged) {
+      patch.verificationStatus = "unverified";
+      patch.verifiedBy = null;
+      patch.verifiedAt = null;
+      patch.verificationNote = "";
+    }
 
-    const updated = await TeamOrganization.findByIdAndUpdate(req.params.id, patch, { new: true, runValidators: true })
+    const update = { ...patch };
+    if (resolved.typeChanged && !resolved.detailsChanged) update.$unset = { typeDetails: 1 };
+    const updated = await TeamOrganization.findByIdAndUpdate(req.params.id, update, { new: true, runValidators: true })
       .populate("owner", "name email")
       .populate("category", "name slug icon");
     if (!updated) return res.status(404).json({ message: "Organization not found" });
@@ -318,18 +398,144 @@ export const updateOrganization = async (req, res) => {
       targetType: "organization",
       targetId: updated._id,
       targetLabel: updated.name,
-      metadata: { fields: Object.keys(patch) },
+      metadata: {
+        fields: Object.keys(patch),
+        orgType: resolved.orgType,
+        verificationReset: resetVerification,
+        note: patch.verificationNote || "",
+      },
     });
     const count = await Membership.countDocuments({ organization: updated._id, status: "active" });
     res.status(200).json({ organization: withMembershipSummary(updated, count), message: "Organization updated successfully" });
   } catch (error) {
-    if (error.code === "ORG_TYPE_UNKNOWN") {
-      return res.status(422).json({ message: error.message, code: error.code });
+    return orgTypeError(res, error, "update");
+  }
+};
+
+/**
+ * Owner-initiated verification request. The registration number is the only
+ * thing an Admin actually checks for a registered club, so a request without it
+ * is rejected here rather than creating busywork in the review queue.
+ */
+export const requestOrganizationVerification = async (req, res) => {
+  try {
+    const org = req.org; // loaded + authorized by requireOrgPermission
+    const plain = typeof org.toObject === "function" ? org.toObject() : { ...org };
+    if (plain.verificationStatus === "pending") {
+      return res.status(409).json({
+        message: "A verification request is already pending.",
+        code: "ORG_VERIFICATION_PENDING",
+      });
     }
-    if (error.code === 11000) {
-      return res.status(409).json({ message: "That organization slug is taken.", code: "ORG_SLUG_TAKEN" });
+    if (plain.verificationStatus === "verified") {
+      return res.status(409).json({
+        message: "This organization is already verified.",
+        code: "ORG_ALREADY_VERIFIED",
+      });
     }
-    res.status(400).json({ message: "Failed to update organization", error: error.message });
+    if (effectiveOrgType(plain) === "registered_club" && !canRequestVerification(plain)) {
+      return res.status(422).json({
+        message: "Add a registration number before requesting verification.",
+        code: "ORG_REGISTRATION_REQUIRED",
+      });
+    }
+
+    const updated = await TeamOrganization.findByIdAndUpdate(
+      plain._id,
+      {
+        verificationStatus: "pending",
+        verifiedBy: null,
+        verifiedAt: null,
+        verificationNote: "",
+      },
+      { new: true, runValidators: true }
+    );
+    await recordAudit({
+      req,
+      organization: plain._id,
+      action: "org.verification_requested",
+      targetType: "organization",
+      targetId: plain._id,
+      targetLabel: plain.name,
+      metadata: { orgType: updated.orgType },
+    });
+    res.status(200).json({
+      organization: withMembershipSummary(updated, 1),
+      message: "Verification request sent",
+    });
+  } catch (error) {
+    return orgTypeError(res, error, "request verification for");
+  }
+};
+
+/** Platform-admin decision on a pending request. */
+export const reviewOrganizationVerification = async (req, res) => {
+  try {
+    const decision = req.params.decision; // "approve" | "reject"
+    const org = await TeamOrganization.findById(req.params.id);
+    if (!org) return res.status(404).json({ message: "Organization not found" });
+
+    const note = String(req.body?.note || "").trim();
+    const verified = decision === "approve";
+    const updated = await TeamOrganization.findByIdAndUpdate(
+      org._id,
+      {
+        verificationStatus: verified ? "verified" : "rejected",
+        verifiedBy: req.user?._id || null,
+        verifiedAt: new Date(),
+        verificationNote: note,
+      },
+      { new: true, runValidators: true }
+    );
+    await recordAudit({
+      req,
+      organization: org._id,
+      action: "org.verification_changed",
+      targetType: "organization",
+      targetId: org._id,
+      targetLabel: org.name,
+      metadata: { decision, note, orgType: updated.orgType },
+    });
+    res.status(200).json({
+      organization: withMembershipSummary(updated, 1),
+      message: verified ? "Organization verified" : "Verification request rejected",
+    });
+  } catch (error) {
+    return orgTypeError(res, error, "review verification for");
+  }
+};
+
+/** Platform-admin reset — returns a verified org to unverified. */
+export const resetOrganizationVerification = async (req, res) => {
+  try {
+    const org = await TeamOrganization.findById(req.params.id);
+    if (!org) return res.status(404).json({ message: "Organization not found" });
+    const note = String(req.body?.note || "").trim();
+    const updated = await TeamOrganization.findByIdAndUpdate(
+      org._id,
+      {
+        verificationStatus: "unverified",
+        verifiedBy: null,
+        verifiedAt: null,
+        verificationNote: note,
+      },
+      { new: true, runValidators: true }
+    );
+    await recordAudit({
+      req,
+      organization: org._id,
+      action: "org.verification_reset",
+      targetType: "organization",
+      targetId: org._id,
+      targetLabel: org.name,
+      metadata: { note, orgType: updated.orgType },
+    });
+    res.status(200).json({
+      organization: withMembershipSummary(updated, 1),
+      message: "Verification reset",
+    });
+  } catch (error) {
+    return orgTypeError(res, error, "reset verification for");
   }
 };
 

@@ -3,30 +3,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { api } from "../services/api";
 import LoadingWithTimeout from "../components/LoadingWithTimeout";
 import LocationFilters, { locationQueryFromSearchParams } from "../components/LocationFilters";
-
-// Task 3: browse teams by the type of the organization that owns them
-// (club, school, college, academy, league, …). The type lives on
-// TeamOrganization and is populated onto each team as `organizationRef.type`.
-const ORG_TYPE_ICONS = {
-  club: "🏏",
-  school: "🏫",
-  college: "🎓",
-  university: "🏛️",
-  academy: "⭐",
-  league: "🏆",
-  organization: "🏢",
-  business: "💼",
-  industry: "🏭",
-  corporate: "🏢",
-  international: "🌍",
-  other: "📋",
-};
-
-const orgTypeLabel = (type) => String(type || "")
-  .split(/[_\s-]+/)
-  .filter(Boolean)
-  .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-  .join(" ");
+import { normalizeOrgType, orgTypeIcon, orgTypeLabel, verificationBadge } from "../../../Shared/orgTypes.js";
 
 const ICONS = {
   School: "🏫", College: "🎓", University: "🏛️",
@@ -55,12 +32,15 @@ export default function Teams() {
   // reflects real organization types instead of a hardcoded enum. "all" is the
   // mixed view.
   const orgTypeOptions = useMemo(() => {
-    const types = new Set();
+    const types = new Map();
     teams.forEach((team) => {
-      const type = team.organizationRef?.type;
-      if (type) types.add(String(type).toLowerCase());
+      const ref = team.organizationRef;
+      const raw = String(ref?.orgType || ref?.type || "").toLowerCase();
+      if (raw && !types.has(raw)) types.set(raw, normalizeOrgType(raw));
     });
-    return Array.from(types).sort();
+    return Array.from(types, ([value, type]) => ({ value, type })).sort((a, b) =>
+      orgTypeLabel(a.type).localeCompare(orgTypeLabel(b.type))
+    );
   }, [teams]);
 
   const fetchTeams = async () => {
@@ -88,7 +68,10 @@ export default function Teams() {
   };
 
   const filteredTeams = teams.filter(t => {
-    if (activeOrgType !== "all" && String(t.organizationRef?.type || "").toLowerCase() !== activeOrgType) return false;
+    if (activeOrgType !== "all") {
+      const raw = String(t.organizationRef?.orgType || t.organizationRef?.type || "").toLowerCase();
+      if (normalizeOrgType(raw) !== normalizeOrgType(activeOrgType)) return false;
+    }
     if (activeCategory !== "all" && t.category !== activeCategory) return false;
     if (searchTerm && !t.name.toLowerCase().includes(searchTerm.toLowerCase()) &&
         !t.organization?.toLowerCase().includes(searchTerm.toLowerCase()) &&
@@ -156,9 +139,9 @@ export default function Teams() {
               className="w-full rounded-xl border border-cric-border bg-cric-bg px-4 py-3 text-sm font-bold text-cric-text focus:outline-none focus:ring-2 focus:ring-cric-accent sm:w-64"
             >
               <option value="all">All types</option>
-              {orgTypeOptions.map((type) => (
-                <option key={type} value={type}>
-                  {ORG_TYPE_ICONS[type] || "📋"} {orgTypeLabel(type)}
+              {orgTypeOptions.map(({ value, type }) => (
+                <option key={value} value={value}>
+                  {orgTypeIcon(type)} {orgTypeLabel(type)}
                 </option>
               ))}
             </select>
@@ -231,9 +214,19 @@ export default function Teams() {
                         </h3>
                         <span className="text-xs opacity-50">{ICONS[category]}</span>
                       </div>
-                      <div className="flex items-center gap-3 text-xs text-cric-muted">
+                      <div className="flex flex-wrap items-center gap-2 text-xs text-cric-muted">
                         {team.organization && <span>🏢 {team.organization}</span>}
                         {team.branchName && <span>📍 {team.branchName}</span>}
+                        {team.organizationRef ? (
+                          <span className="rounded-full border border-cric-border bg-cric-bg px-2 py-0.5 text-[10px] font-black uppercase tracking-wider">
+                            {orgTypeIcon(team.organizationRef)} {orgTypeLabel(team.organizationRef)}
+                          </span>
+                        ) : null}
+                        {team.organizationRef?.verificationStatus === "verified" ? (
+                          <span className={`rounded-full border px-2 py-0.5 text-[10px] font-black uppercase tracking-wider ${verificationBadge("verified").className}`}>
+                            ✓ Verified
+                          </span>
+                        ) : null}
                       </div>
                       <div className="flex items-center justify-between mt-3 pt-3 border-t border-slate-100">
                         <span className="text-xs text-cric-muted">👥 {team.players?.length || 0} players</span>

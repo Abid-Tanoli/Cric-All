@@ -1,5 +1,6 @@
 import express from 'express';
 import { protect, optionalProtect, requireVerifiedEmail } from '../middleware/authMiddleware.js';
+import rateLimiter from '../middleware/rateLimiter.js';
 import {
   requireAnyOrgPermission,
   requireOrgAdminType,
@@ -7,6 +8,7 @@ import {
   requireOrgOwner,
   requireOrgPermission,
   requirePlatformAdminDelete,
+  isPlatformAdmin,
 } from '../middleware/orgAccess.js';
 import { PERMISSIONS } from '../permissions/orgPermissions.js';
 import validateObjectId from '../middleware/validateObjectId.js';
@@ -14,6 +16,7 @@ import validate from '../middleware/validate.js';
 import {
   createOrganizationSchema,
   updateOrganizationSchema,
+  verificationDecisionSchema,
   addMemberSchema,
   updateMemberSchema,
   createInvitationSchema,
@@ -44,6 +47,9 @@ import {
   getOrganizationChildren,
   getOrganizationChain,
   getMyOrganizations,
+  requestOrganizationVerification,
+  reviewOrganizationVerification,
+  resetOrganizationVerification,
 } from '../controllers/organizationController.js';
 import {
   addOrgTeamPlayers,
@@ -152,6 +158,53 @@ router.get('/roots', optionalProtect, getRootOrganizations);
 router.post('/', ...manage, requireOrgAdminType, validate(createOrganizationSchema), createOrganization);
 router.put('/:id', ...manage, validateObjectId('id'), requireOrgPermission(PERMISSIONS.MANAGE_ORG), validate(updateOrganizationSchema), updateOrganization);
 router.delete('/:id', ...manage, validateObjectId('id'), requirePlatformAdminDelete, requireOrgPermission(PERMISSIONS.MANAGE_ORG), deleteOrganization);
+
+// --- verification -----------------------------------------------------------
+// Owners ask for a review; only a platform admin can decide. The request route
+// is rate limited so a rejected org cannot spam the review queue.
+const verificationRequestRateLimit = rateLimiter({ windowMs: 60_000, max: 5 });
+const withDecision = (decision) => (req, res, next) => {
+  req.params.decision = decision;
+  return reviewOrganizationVerification(req, res, next);
+};
+const reviewVerification = withDecision("approve");
+const rejectVerification = withDecision("reject");
+
+router.post(
+  '/:id/verification/request',
+  ...manage,
+  validateObjectId('id'),
+  requireOrgPermission(PERMISSIONS.MANAGE_ORG),
+  verificationRequestRateLimit,
+  requestOrganizationVerification
+);
+router.post(
+  '/:id/verification/approve',
+  ...manage,
+  validateObjectId('id'),
+  (req, res, next) =>
+    isPlatformAdmin(req) ? next() : res.status(403).json({ message: "Platform admin required", code: "ORG_ADMIN_REQUIRED" }),
+  validate(verificationDecisionSchema),
+  reviewVerification
+);
+router.post(
+  '/:id/verification/reject',
+  ...manage,
+  validateObjectId('id'),
+  (req, res, next) =>
+    isPlatformAdmin(req) ? next() : res.status(403).json({ message: "Platform admin required", code: "ORG_ADMIN_REQUIRED" }),
+  validate(verificationDecisionSchema),
+  rejectVerification
+);
+router.post(
+  '/:id/verification/reset',
+  ...manage,
+  validateObjectId('id'),
+  (req, res, next) =>
+    isPlatformAdmin(req) ? next() : res.status(403).json({ message: "Platform admin required", code: "ORG_ADMIN_REQUIRED" }),
+  validate(verificationDecisionSchema),
+  resetOrganizationVerification
+);
 
 router.get('/:id', optionalProtect, validateObjectId('id'), getOrganization);
 router.get('/:id/children', optionalProtect, validateObjectId('id'), getOrganizationChildren);

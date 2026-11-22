@@ -1,5 +1,26 @@
 import mongoose from "mongoose";
 import { locationRefFields, locationRefIndexes } from "./locationRefs.js";
+import { mapLegacyTypeToOrgType, ORG_TYPES } from "../services/organizationService.js";
+
+// One additive subdocument for type-specific data. The per-type allow-list lives
+// in organizationService; Mongoose drops unknown keys as a second line of defence.
+const typeDetailsSchema = new mongoose.Schema({
+  registrationNumber: { type: String, default: undefined },
+  registrationAuthority: { type: String, default: undefined },
+  affiliation: { type: String, default: undefined },
+  foundedYear: { type: Number, default: undefined },
+  institutionName: { type: String, default: undefined },
+  educationLevel: { type: String, default: undefined },
+  affiliationBoard: { type: String, default: undefined },
+  affiliationUniversity: { type: String, default: undefined },
+  department: { type: String, default: undefined },
+  affiliationBody: { type: String, default: undefined },
+  companyName: { type: String, default: undefined },
+  industrySector: { type: String, default: undefined },
+  foundationName: { type: String, default: undefined },
+  focusArea: { type: String, default: undefined },
+  typeNote: { type: String, default: undefined },
+}, { _id: false });
 
 const teamOrganizationSchema = new mongoose.Schema({
   name: {
@@ -29,6 +50,25 @@ const teamOrganizationSchema = new mongoose.Schema({
     trim: true,
     lowercase: true,
     default: "other",
+  },
+  // Fixed enum for the new forms. Old clients omit it: on validation we derive
+  // it from the legacy `type`, falling back to "other", so both fields are
+  // always writable during the transition.
+  orgType: {
+    type: String,
+    enum: ORG_TYPES,
+    default: undefined,
+    index: true,
+  },
+  typeDetails: {
+    type: typeDetailsSchema,
+    default: undefined,
+  },
+  // Internal marker used only by migrateOrgTypes --revert. It records that the
+  // migration (not a user or an API client) set orgType on this document.
+  orgTypeMigration: {
+    type: mongoose.Schema.Types.Mixed,
+    default: undefined,
   },
   shortName: {
     type: String,
@@ -136,6 +176,13 @@ teamOrganizationSchema.index({ owner: 1 });
 teamOrganizationSchema.index({ verificationStatus: 1 });
 teamOrganizationSchema.index({ "members.user": 1 });
 locationRefIndexes(teamOrganizationSchema);
+
+// Legacy clients create organizations with only the free-form `type`. Derive a
+// matching orgType on validation (defaulting to "other" when neither is set) so
+// reads can prefer orgType without losing the meaning of an old write.
+teamOrganizationSchema.pre("validate", function syncOrgTypeFromLegacyType() {
+  if (!this.orgType) this.orgType = mapLegacyTypeToOrgType(this.type).orgType;
+});
 
 // Normalize the free-form social map to lowercase platform keys.
 teamOrganizationSchema.pre("validate", function normalizeSocialLinks() {

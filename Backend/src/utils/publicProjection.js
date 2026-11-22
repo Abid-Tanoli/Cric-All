@@ -33,7 +33,9 @@
 import Membership from "../models/Membership.js";
 import Player from "../models/Player.js";
 import Team from "../models/Team.js";
+import TeamOrganization from "../models/TeamOrganization.js";
 import { PERMISSIONS, roleHasPermission, isOrgAdminRole } from "../permissions/orgPermissions.js";
+import { effectiveOrgType, publicTypeDetails } from "../services/organizationService.js";
 
 // ---------------------------------------------------------------------------
 // Public field sets
@@ -153,6 +155,40 @@ export const TEAM_PUBLIC_FIELDS = Object.freeze([
 export const PLAYER_PUBLIC_SELECT = PLAYER_PUBLIC_FIELDS.filter((f) => f !== "_id").join(" ");
 export const PLAYER_ROSTER_SELECT = PLAYER_ROSTER_FIELDS.filter((f) => f !== "_id").join(" ");
 export const TEAM_PUBLIC_SELECT = TEAM_PUBLIC_FIELDS.filter((f) => f !== "_id").join(" ");
+
+/**
+ * Public Organization fields. Registration identifiers and the admin-only
+ * verification note are deliberately absent; `typeDetails` is replaced with
+ * just the institution/company/foundation display name by the sanitizer.
+ */
+export const ORGANIZATION_PUBLIC_FIELDS = Object.freeze([
+  "_id",
+  "name",
+  "shortName",
+  "slug",
+  "logoUrl",
+  "coverUrl",
+  "description",
+  "website",
+  "foundedYear",
+  "location",
+  "locationRefs",
+  "locationLabels",
+  "locationIds",
+  "category",
+  "type",
+  "orgType",
+  "verificationStatus",
+  "isActive",
+  "parent",
+  "typeDetails",
+  "memberCount",
+  "branchCount",
+  "totalPlayers",
+  "createdAt",
+  "updatedAt",
+]);
+export const ORGANIZATION_PUBLIC_SELECT = ORGANIZATION_PUBLIC_FIELDS.filter((f) => f !== "_id").join(" ");
 
 /** The team fields a public player payload needs. */
 export const PLAYER_TEAM_SELECT_PUBLIC = "name shortName logo";
@@ -518,6 +554,55 @@ export function sanitizeTeamsPublic(docs, opts = {}) {
   return docs.map((doc) => sanitizeTeamPublic(doc, opts));
 }
 
+// ---------------------------------------------------------------------------
+// Organization
+// ---------------------------------------------------------------------------
+
+/** True when `viewer` may see the full organization document. */
+export function canViewOrganizationPrivate(viewer, org) {
+  if (!viewer?.userId) return false;
+  if (viewer.isPlatformAdmin) return true;
+  const orgId = idOf(org?._id);
+  return Boolean(orgId && viewer.managedOrgIds.has(orgId));
+}
+
+/**
+ * Public projection of an organization. The whitelist keeps registration
+ * identifiers out by construction; `orgType` prefers the new enum and falls
+ * back to the legacy `type` so older rows can be badged immediately.
+ */
+export function sanitizeOrganizationPublic(doc, opts = {}) {
+  const plain = toPlain(doc);
+  if (!plain) return plain;
+
+  const { viewer = null } = opts;
+  const canViewPrivate =
+    opts.canViewPrivate === true || canViewOrganizationPrivate(viewer, plain);
+
+  const orgType = effectiveOrgType(plain);
+  if (canViewPrivate) {
+    const full = { ...plain, orgType };
+    delete full.orgTypeMigration;
+    delete full.__v;
+    return full;
+  }
+
+  const out = pick(plain, ORGANIZATION_PUBLIC_FIELDS, TeamOrganization.schema);
+  out.orgType = orgType;
+  out.typeDetails = publicTypeDetails(orgType, plain.typeDetails);
+  // Registration identifiers and private contact/social data never enter the
+  // whitelist; the location flag is honoured here so a hidden address stays
+  // hidden even though the location block itself is public by default.
+  if (plain.privacy?.location === "hidden") out.location = {};
+  delete out.__v;
+  return out;
+}
+
+export function sanitizeOrganizationsPublic(docs, opts = {}) {
+  if (!Array.isArray(docs)) return docs;
+  return docs.map((doc) => sanitizeOrganizationPublic(doc, opts));
+}
+
 /**
  * Convenience wrapper for a team payload that also carries populated players:
  * resolves the player's owning organization from the team so that a manager of
@@ -680,6 +765,8 @@ export default {
   PLAYER_PUBLIC_FIELDS,
   PLAYER_ROSTER_FIELDS,
   TEAM_PUBLIC_FIELDS,
+  ORGANIZATION_PUBLIC_FIELDS,
+  ORGANIZATION_PUBLIC_SELECT,
   PLAYER_PUBLIC_SELECT,
   PLAYER_ROSTER_SELECT,
   TEAM_PUBLIC_SELECT,
@@ -692,6 +779,9 @@ export default {
   anonymousViewer,
   canViewPlayerPrivate,
   canViewTeamPrivate,
+  canViewOrganizationPrivate,
+  sanitizeOrganizationPublic,
+  sanitizeOrganizationsPublic,
   sanitizePlayerPublic,
   sanitizePlayersPublic,
   sanitizeTeamPublic,
