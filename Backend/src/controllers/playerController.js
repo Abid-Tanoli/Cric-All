@@ -8,6 +8,7 @@ import * as playerService from "../services/playerService.js";
 import { applyPlayerFieldPolicy, resolvePlayerWriteAccess } from "../middleware/playerAccess.js";
 import { getPlayerStatsBundle } from "../services/playerStats.js";
 import { buildLocationFilterClauses } from "../services/locationService.js";
+import { invalidFilterResponse, parseFilter, resolveTeamIds } from "../services/orgTypeFilterService.js";
 import {
   PLAYER_ROSTER_SELECT,
   playerSelectFor,
@@ -38,6 +39,13 @@ export const normalizeEmptyOptionalIds = (body) => {
 export const getPlayers = async (req, res) => {
   try {
     const { page = 1, limit = 10, search = "", team = "", campus = "", category, subCategory, ageGroup, organization, city } = req.query;
+    let orgTypeValues;
+    try {
+      orgTypeValues = parseFilter(req.query.orgType);
+    } catch (error) {
+      return invalidFilterResponse(res, error);
+    }
+    const teamIdsForOrgType = await resolveTeamIds(orgTypeValues);
     const safeLimit = Math.min(Math.max(Number(limit) || 10, 1), 100);
     const safePage = Math.max(Number(page) || 1, 1);
     const query = {};
@@ -80,6 +88,9 @@ export const getPlayers = async (req, res) => {
       const andClauses = [reservedNamesMongoClause("name")];
       if (excluded.length) andClauses.push({ team: { $nin: excluded } });
       query.$and = [...(query.$and || []), ...andClauses];
+    }
+    if (teamIdsForOrgType) {
+      query.$and = [...(query.$and || []), { team: { $in: teamIdsForOrgType } }];
     }
 
     // Optional location filter; the legacy free-text `city` above still works.

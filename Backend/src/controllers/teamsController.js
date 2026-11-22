@@ -4,6 +4,7 @@ import * as teamService from "../services/teamService.js";
 import * as playerService from "../services/playerService.js";
 import { recordAudit } from "../utils/audit.js";
 import { buildLocationFilterClauses } from "../services/locationService.js";
+import { invalidFilterResponse, parseFilter, resolveOrgIds } from "../services/orgTypeFilterService.js";
 import {
   resolveViewerContext,
   sanitizeTeamPublic,
@@ -45,6 +46,13 @@ async function teamIsReadableBy(viewer, teamId) {
 export const listTeams = async (req, res) => {
   try {
     const { category, categoryRef, organizationRef, city, search, type, page, limit, includePlayers, scope } = req.query;
+    let orgTypeValues;
+    try {
+      orgTypeValues = parseFilter(req.query.orgType);
+    } catch (error) {
+      return invalidFilterResponse(res, error);
+    }
+    const orgTypeIds = await resolveOrgIds(orgTypeValues);
     const viewer = await resolveViewerContext(req);
 
     // Round 5: `GET /api/teams` is unauthenticated and used to return every team
@@ -66,6 +74,7 @@ export const listTeams = async (req, res) => {
       city,
       search,
       type,
+      orgTypeIds,
       page,
       limit,
       includePlayers,

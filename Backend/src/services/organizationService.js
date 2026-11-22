@@ -18,6 +18,61 @@ export const ORG_TYPES = Object.freeze([
 
 export const ORG_TYPE_SET = new Set(ORG_TYPES);
 
+/** Display labels for public projections. No type-specific data is disclosed. */
+export const ORG_TYPE_LABELS = Object.freeze({
+  local_club: "Local club",
+  registered_club: "Registered club",
+  school: "School",
+  college: "College",
+  university: "University",
+  company: "Industry / company",
+  foundation: "Foundation / NGO",
+  other: "Other",
+});
+
+/** Team side labels. Additive only; existing teams read as `1st XI`. */
+export const TEAM_ROLES = Object.freeze(["1st XI", "2nd XI", "U19", "U16", "women", "other"]);
+export const DEFAULT_TEAM_ROLE = "1st XI";
+
+export class InvalidOrgTypeFilterError extends Error {
+  constructor(value) {
+    super(`Invalid organization type filter: ${value}`);
+    this.name = "InvalidOrgTypeFilterError";
+    this.code = "ORG_TYPE_FILTER_INVALID";
+    this.status = 400;
+  }
+}
+
+/**
+ * Parse a listing's `orgType` query value. An empty value (or the explicit
+ * `all`) leaves the listing unfiltered. Anything else must be one of the
+ * enum values — a comma list is allowed, but an empty element is never ignored.
+ */
+export function parseOrgTypeFilter(raw) {
+  if (raw === undefined || raw === null) return [];
+  const value = String(raw).trim().toLowerCase();
+  if (!value || value === "all") return [];
+  const values = value.split(",").map((entry) => entry.trim());
+  for (const entry of values) {
+    if (!ORG_TYPE_SET.has(entry)) throw new InvalidOrgTypeFilterError(entry);
+  }
+  return [...new Set(values)];
+}
+
+/** `orgTypeQuery` for several types, used by listings that accept a comma list. */
+export function orgTypesQuery(values) {
+  const list = Array.isArray(values) ? values : [values];
+  const clauses = [];
+  for (const value of list) {
+    const clause = orgTypeQuery(value);
+    if (!clause) continue;
+    if (Array.isArray(clause?.$or)) clauses.push(...clause.$or);
+    else clauses.push(clause);
+  }
+  if (!clauses.length) return null;
+  return clauses.length === 1 ? clauses[0] : { $or: clauses };
+}
+
 /** Legacy slugs mapped by the migration. Exact normalized match only. */
 export const LEGACY_TYPE_TO_ORG_TYPE = Object.freeze({
   club: "local_club",
@@ -311,6 +366,12 @@ export function isSensitiveVerificationChange({ typeChanged, registrationNumberC
 export default {
   ORG_TYPES,
   ORG_TYPE_SET,
+  ORG_TYPE_LABELS,
+  TEAM_ROLES,
+  DEFAULT_TEAM_ROLE,
+  InvalidOrgTypeFilterError,
+  parseOrgTypeFilter,
+  orgTypesQuery,
   LEGACY_TYPE_TO_ORG_TYPE,
   ORG_TYPE_TO_LEGACY_TYPE,
   TYPE_DETAIL_FIELDS,

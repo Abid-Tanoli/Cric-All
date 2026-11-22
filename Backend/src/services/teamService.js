@@ -8,6 +8,7 @@ import TeamPlayerRanking from "../models/TeamPlayerRanking.js";
 import Match from "../models/Match.js";
 import { getIO } from "../socket/socket.js";
 import { deleteStoredFile, deleteStoredFiles } from "../utils/photoStore.js";
+import { DEFAULT_TEAM_ROLE, TEAM_ROLES } from "./organizationService.js";
 import {
   PLAYER_ROSTER_SELECT,
   TEAM_PUBLIC_SELECT,
@@ -78,6 +79,7 @@ export async function listTeams(filters = {}) {
   if (filters.category) query.category = filters.category;
   if (filters.categoryRef) query.categoryRef = filters.categoryRef;
   if (filters.organizationRef) query.organizationRef = filters.organizationRef;
+  if (Array.isArray(filters.orgTypeIds)) andClauses.push({ organizationRef: { $in: filters.orgTypeIds } });
   if (filters.type) query.type = filters.type;
   if (filters.city) query["address.city"] = { $regex: filters.city, $options: "i" };
   if (filters.search) {
@@ -112,7 +114,7 @@ export async function listTeams(filters = {}) {
     // `city` was in this projection but is not a Team field — city lives in
     // `address.city`, which is projected as part of `address`. Selecting a
     // nonexistent path was harmless but misleading.
-    .select("name shortName logo type category categoryRef organization organizationRef branchName address area players captain viceCaptain teamColorPrimary teamColorSecondary isActive profileComplete isPublic description establishedYear homeGround ageGroup locationRefs locationLabels locationIds")
+    .select("name shortName logo type teamRole category categoryRef organization organizationRef branchName address area players captain viceCaptain teamColorPrimary teamColorSecondary isActive profileComplete isPublic description establishedYear homeGround ageGroup locationRefs locationLabels locationIds")
     .populate("categoryRef", "name slug icon")
     .populate("organizationRef", "name slug type orgType verificationStatus")
     .sort({ name: 1 })
@@ -272,7 +274,69 @@ export function stripOrganizationChangeFlag(data) {
   return rest;
 }
 
+export function validateTeamRole(value) {
+  if (value === undefined || value === null || value === "") return;
+  if (!TEAM_ROLES.includes(value)) {
+    const error = new Error(`Team role must be one of ${TEAM_ROLES.join(", ")}`);
+    error.code = "TEAM_ROLE_INVALID";
+    throw error;
+  }
+}
+
+/**
+ * Create the organization's first side through the exact same `createTeam`
+ * service a manual "Add another team" uses. The name match is an idempotency
+ * guard backed by Team's existing unique `(organizationRef, name)` index: a
+ * concurrent double submit loses the insert race, and is then read back rather
+ * than producing a second team.
+ */
+export async function ensureDefaultTeam(org, creatorId = null) {
+  const name = String(org?.name || "").trim();
+  if (!org?._id || !name) throw new Error("Organization is missing a name");
+  validateTeamRole(DEFAULT_TEAM_ROLE);
+
+  const existing = await Team.findOne({ organizationRef: org._id, name, teamRole: DEFAULT_TEAM_ROLE })
+    .select("_id")
+    .lean();
+  if (existing) {
+    return { team: await Team.findById(existing._id), created: false };
+  }
+
+  const labels = org.locationLabels || {};
+  const legacy = org.location || {};
+  const address = {
+    town: labels.town || "",
+    district: labels.district || "",
+    city: legacy.city || labels.city || "",
+    province: labels.province || "",
+    country: legacy.country || labels.country || "Pakistan",
+  };
+
+  try {
+    const team = await createTeam({
+      name,
+      organization: name,
+      organizationRef: org._id,
+      teamRole: DEFAULT_TEAM_ROLE,
+      address,
+      area: legacy.area || "",
+      ...(org.locationRefs ? { locationRefs: org.locationRefs } : {}),
+      ...(org.locationLabels ? { locationLabels: org.locationLabels } : {}),
+      ...(creatorId ? { createdBy: creatorId } : {}),
+    });
+    return { team, created: true };
+  } catch (error) {
+    // The unique index is the real guard; the pre-check above only saves work.
+    if (error.code === 11000 || error.code === "TEAM_NAME_TAKEN" || /already exists/i.test(error.message || "")) {
+      const raced = await Team.findOne({ organizationRef: org._id, name }).select("_id").lean();
+      if (raced) return { team: await Team.findById(raced._id), created: false };
+    }
+    throw error;
+  }
+}
+
 export async function createTeam(data) {
+  validateTeamRole(data.teamRole);
   // Round 5: the duplicate check runs before the insert and is org-scoped, so a
   // collision inside one organization is a 409 while the same name in a
   // different organization is allowed.
@@ -304,6 +368,7 @@ export async function createTeam(data) {
     ageGroup: data.ageGroup || "Open",
     organization: data.organization || "",
     organizationRef: data.organizationRef || null,
+    ...(data.teamRole !== undefined ? { teamRole: data.teamRole } : {}),
     branchName: data.branchName || "",
     ownername: data.ownername || "",
     logo: data.logo || "",
@@ -359,6 +424,7 @@ export async function createTeam(data) {
 }
 
 export async function updateTeam(teamId, data) {
+  validateTeamRole(data.teamRole);
   // Round 5: the uniqueness probe follows the team's *resulting* organization,
   // so a rename is checked against the organization the team will end up in.
   // `updateTeam` refuses to move a team between organizations (see
@@ -376,7 +442,7 @@ export async function updateTeam(teamId, data) {
   const oldMediaUrls = (team.media || []).map((entry) => entry.url);
 
   const updateFields = [
-    "name", "shortName", "type", "category", "categoryRef", "subCategory", "description", "ageGroup",
+    "name", "shortName", "type", "teamRole", "category", "categoryRef", "subCategory", "description", "ageGroup",
     "organization", "organizationRef", "branchName", "ownername", "logo",
     "fullAddress", "address", "area", "latitude", "longitude",
     "googleMapsUrl", "placeId", "phone", "email", "website",

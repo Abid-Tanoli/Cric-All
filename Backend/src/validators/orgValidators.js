@@ -59,6 +59,8 @@ export const createOrganizationSchema = z
     type: z.string().trim().toLowerCase().max(40).default("other"),
     // The keys/values are checked per type in organizationService (one place).
     orgType: z.enum(ORG_TYPES).optional(),
+    // Convenience option: a client may opt out of the automatic first team.
+    createDefaultTeam: z.boolean().optional().default(true),
     typeDetails: z.record(z.string(), z.unknown()).optional(),
     foundedYear: z
       .number()

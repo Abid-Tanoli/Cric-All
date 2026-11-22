@@ -10,6 +10,7 @@ import { generateOrgSlug, upsertMembership } from "../services/membershipService
 import { permissionsForRoles } from "../permissions/orgPermissions.js";
 import { recordAudit } from "../utils/audit.js";
 import { buildLocationFilterClauses } from "../services/locationService.js";
+import { invalidFilterResponse, parseFilter } from "../services/orgTypeFilterService.js";
 import {
   OrgTypeValidationError,
   canRequestVerification,
@@ -18,6 +19,7 @@ import {
   mapLegacyTypeToOrgType,
   normalizeLegacyType,
   orgTypeQuery,
+  orgTypesQuery,
   resolveCreateFields,
   resolveUpdateFields,
 } from "../services/organizationService.js";
@@ -89,6 +91,12 @@ function orgTypeError(res, error, action) {
 export const listOrganizations = async (req, res) => {
   try {
     const { category, type, orgType, verificationStatus, search, page, limit } = req.query;
+    let orgTypeValues;
+    try {
+      orgTypeValues = parseFilter(orgType);
+    } catch (error) {
+      return invalidFilterResponse(res, error);
+    }
     const locationClauses = await buildLocationFilterClauses(req.query);
     const viewer = await resolveViewerContext(req);
     // The public directory lists active organizations only. The Admin app is
@@ -104,7 +112,7 @@ export const listOrganizations = async (req, res) => {
       query.verificationStatus = String(verificationStatus).trim();
     }
     const clauses = [];
-    const typeClause = orgTypeQuery(orgType || type);
+    const typeClause = orgTypeValues.length ? orgTypesQuery(orgTypeValues) : orgTypeQuery(type);
     if (typeClause) clauses.push(typeClause);
     if (search) {
       // Escape the term so a user searching "cric." cannot inject an operator.
@@ -228,6 +236,8 @@ export const getOrganization = async (req, res) => {
 export const createOrganization = async (req, res) => {
   try {
     const payload = { ...req.body };
+    const createDefaultTeam = payload.createDefaultTeam !== false;
+    delete payload.createDefaultTeam;
     const platform = isPlatformAdmin(req);
     const settings = await getPlatformSettings();
 
@@ -293,12 +303,41 @@ export const createOrganization = async (req, res) => {
       metadata: { verificationStatus: org.verificationStatus, orgType: org.orgType, platform },
     });
 
+    let defaultTeam = null;
+    let defaultTeamCreated = false;
+    let defaultTeamError = "";
+    if (createDefaultTeam) {
+      try {
+        const result = await teamService.ensureDefaultTeam(org, req.user._id);
+        defaultTeam = sanitizeTeamPublic(result.team, { canViewPrivate: true });
+        defaultTeamCreated = result.created;
+        await recordAudit({
+          req,
+          organization: org._id,
+          action: "team.created",
+          targetType: "team",
+          targetId: result.team._id,
+          targetLabel: result.team.name,
+          metadata: { defaultTeam: true, created: result.created },
+        });
+      } catch (error) {
+        // A failure of the convenience step must never undo the organization.
+        defaultTeamError = "Default team was not created";
+        console.error("Default team creation failed:", error.message);
+      }
+    }
+
     const fresh = await TeamOrganization.findById(org._id)
       .populate("owner", "name email")
       .populate("category", "name slug icon");
     res.status(201).json({
       organization: withMembershipSummary(fresh, 1),
-      message: "Organization created successfully",
+      defaultTeam,
+      defaultTeamCreated,
+      defaultTeamError,
+      message: defaultTeamError
+        ? "Organization created successfully; default team was not created"
+        : "Organization created successfully",
     });
   } catch (error) {
     return orgTypeError(res, error, "create");

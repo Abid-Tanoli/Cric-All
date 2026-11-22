@@ -36,6 +36,13 @@ const teamSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "TeamOrganization",
     },
+    // Which side of the club this team represents. Additive: legacy teams have
+    // no value and are displayed as the default, without a data rewrite.
+    teamRole: {
+      type: String,
+      enum: ["1st XI", "2nd XI", "U19", "U16", "women", "other"],
+      default: "1st XI",
+    },
     branchName: { type: String, default: "" },
 
     // Detailed Address
@@ -176,6 +183,7 @@ teamSchema.index({ type: 1 });
 teamSchema.index({ category: 1 });
 teamSchema.index({ categoryRef: 1 });
 teamSchema.index({ organizationRef: 1 });
+teamSchema.index({ organizationRef: 1, teamRole: 1 });
 
 // Round 5 (Phase 4): team names are unique *per organization*, not globally.
 // The old `unique: true` on `name` meant two unrelated organizations could not

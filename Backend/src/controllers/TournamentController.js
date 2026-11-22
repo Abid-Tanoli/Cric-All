@@ -25,6 +25,7 @@ import {
 } from "../services/tournamentPublicState.js";
 import { deleteTournamentContent } from "../services/tournamentContent.js";
 import { buildLocationFilterClauses } from "../services/locationService.js";
+import { invalidFilterResponse, parseFilter, resolveOrgIds } from "../services/orgTypeFilterService.js";
 import {
   OFFICIAL_AWARD_KEYS,
   validateOfficialAwards,
@@ -181,6 +182,13 @@ export const getTournaments = async (req, res) => {
     const page = Math.max(Number(req.query.page) || 1, 1);
     const requestedStatus = normalizePublicStatus(req.query.status);
     const statusFilter = PUBLIC_STATUSES.has(requestedStatus) ? requestedStatus : null;
+    let orgTypeValues;
+    try {
+      orgTypeValues = parseFilter(req.query.orgType);
+    } catch (error) {
+      return invalidFilterResponse(res, error);
+    }
+    const orgTypeIds = await resolveOrgIds(orgTypeValues);
 
     // Fix B: the public tournament board omits fixtures and tournaments that
     // ONLY involve hidden teams. A tournament that also has public teams stays
@@ -188,6 +196,7 @@ export const getTournaments = async (req, res) => {
     // one participant was made private.
     const hidden = new Set(await hiddenTeamIds());
     const query = { $and: [reservedNamesMongoClause("name")] };
+    if (orgTypeIds) query.$and.push({ organizationRef: { $in: orgTypeIds } });
     const locationClauses = await buildLocationFilterClauses(req.query);
     if (locationClauses.length) query.$and.push(...locationClauses);
 
