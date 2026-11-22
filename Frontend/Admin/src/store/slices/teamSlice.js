@@ -9,9 +9,9 @@ const initialState = {
 
 export const fetchTeams = createAsyncThunk(
   "teams/fetchAll",
-  async (_, thunkAPI) => {
+  async (params, thunkAPI) => {
     try {
-      const res = await api.get("/teams");
+      const res = await api.get("/teams", { params });
       return res.data;
     } catch (err) {
       return thunkAPI.rejectWithValue(

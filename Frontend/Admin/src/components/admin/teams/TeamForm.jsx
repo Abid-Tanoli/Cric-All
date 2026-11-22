@@ -3,6 +3,7 @@ import { useForm } from 'react-hook-form';
 import api from '../../../services/api';
 import PhotoInput from '../../../../../Shared/components/PhotoInput.jsx';
 import LocationSelect from '../../../../../Shared/components/LocationSelect.jsx';
+import { TEAM_ROLES } from '../../../../../Shared/orgTypes.js';
 
 const CATEGORIES = ["School", "College", "University", "Organization", "Business", "Industry", "Club", "Corporate", "Academy", "International", "Other"];
 const AGE_GROUPS = ["U-10", "U-13", "U-15", "U-17", "U-19", "Open"];
@@ -52,6 +53,7 @@ export default function TeamForm({ editMode, currentTeam, onSave, onCancel }) {
       setValue('name', currentTeam.name);
       setValue('shortName', currentTeam.shortName);
       setValue('category', currentTeam.category || 'Other');
+      setValue('teamRole', currentTeam.teamRole || '1st XI');
       setValue('categoryRef', currentTeam.categoryRef?._id || '');
       setValue('subCategory', currentTeam.subCategory || '');
       setValue('ageGroup', currentTeam.ageGroup || 'Open');
@@ -282,6 +284,16 @@ export default function TeamForm({ editMode, currentTeam, onSave, onCancel }) {
                 <label className="text-[10px] font-black uppercase text-cric-muted block mb-1">Category *</label>
                 <select {...register('category', { required: true })} className="w-full bg-cric-card border border-cric-border rounded-xl px-4 py-3 text-cric-text">
                   {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-[10px] font-black uppercase text-cric-muted block mb-1">Team role</label>
+                <select
+                  {...register('teamRole')}
+                  defaultValue={editMode && currentTeam?.teamRole ? currentTeam.teamRole : '1st XI'}
+                  className="w-full bg-cric-card border border-cric-border rounded-xl px-4 py-3 text-cric-text"
+                >
+                  {TEAM_ROLES.map(role => <option key={role} value={role}>{role}</option>)}
                 </select>
               </div>
           </div>

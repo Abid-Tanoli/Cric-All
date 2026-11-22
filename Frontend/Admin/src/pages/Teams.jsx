@@ -11,6 +11,7 @@ import { initSocket } from '../store/socket';
 import api from '../services/api';
 import TeamForm from '../components/admin/teams/TeamForm';
 import ConfirmModal from '../components/ConfirmModal';
+import { ORG_TYPES, orgTypeLabel, TEAM_ROLES, teamRoleLabel } from '../../../Shared/orgTypes.js';
 
 const CATEGORIES = [
   { key: 'all', label: 'All', icon: '📋' },
@@ -37,12 +38,17 @@ const Teams = () => {
   const [filterCategory, setFilterCategory] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [cityFilter, setCityFilter] = useState('');
+  const [orgTypeFilter, setOrgTypeFilter] = useState('all');
+  const [teamRoleFilter, setTeamRoleFilter] = useState('all');
   const [organizations, setOrganizations] = useState([]);
   const [expandedOrgs, setExpandedOrgs] = useState({});
   const [confirmModal, setConfirmModal] = useState({ open: false, title: '', message: '', onConfirm: null, variant: 'danger' });
 
   useEffect(() => {
-    dispatch(fetchTeams());
+    dispatch(fetchTeams(orgTypeFilter === 'all' ? undefined : { orgType: orgTypeFilter }));
+  }, [dispatch, orgTypeFilter]);
+
+  useEffect(() => {
     dispatch(fetchPlayers());
     fetchOrganizations();
     initSocket();
@@ -73,6 +79,8 @@ const Teams = () => {
       if (!matches) return false;
     }
     if (cityFilter && !team.address?.city?.toLowerCase().includes(cityFilter.toLowerCase())) return false;
+    if (teamRoleFilter !== 'all' && teamRoleLabel(team.teamRole) !== teamRoleFilter) return false;
+    if (orgTypeFilter !== 'all' && orgTypeLabel(team.organizationRef || team) !== orgTypeLabel({ orgType: orgTypeFilter })) return false;
     return true;
   });
 
@@ -207,6 +215,28 @@ const Teams = () => {
             onChange={(e) => setSearchTerm(e.target.value)}
             className="flex-1 bg-cric-card border border-cric-border rounded-xl px-4 py-2 focus:outline-none focus:ring-2 focus:ring-cric-accent text-cric-text"
           />
+          <select
+            aria-label="Filter by organization type"
+            value={orgTypeFilter}
+            onChange={(e) => setOrgTypeFilter(e.target.value)}
+            className="w-full sm:w-48 bg-cric-card border border-cric-border rounded-xl px-4 py-2 focus:outline-none focus:ring-2 focus:ring-cric-accent text-cric-text"
+          >
+            <option value="all">All types</option>
+            {ORG_TYPES.map((type) => (
+              <option key={type.value} value={type.value}>{type.icon} {type.label}</option>
+            ))}
+          </select>
+          <select
+            aria-label="Filter by team role"
+            value={teamRoleFilter}
+            onChange={(e) => setTeamRoleFilter(e.target.value)}
+            className="w-full sm:w-40 bg-cric-card border border-cric-border rounded-xl px-4 py-2 focus:outline-none focus:ring-2 focus:ring-cric-accent text-cric-text"
+          >
+            <option value="all">All roles</option>
+            {TEAM_ROLES.map((role) => (
+              <option key={role} value={role}>{role}</option>
+            ))}
+          </select>
           <input
             type="text"
             placeholder="Filter by city..."
@@ -339,6 +369,9 @@ const Teams = () => {
                           <h3 className="text-lg font-bold text-cric-text">{team.name}</h3>
                         </div>
                         <p className="text-xs text-cric-muted mb-3">
+                          <span className="mr-2 rounded-full border border-cric-border bg-cric-bg px-2 py-0.5 font-black">
+                            {teamRoleLabel(team.teamRole)}
+                          </span>
                           {team.organization}{team.organization && team.address?.city ? ` • ` : ''}{team.address?.city || ''}
                         </p>
                         <div className="flex items-center gap-4 text-xs text-cric-muted mb-3">
