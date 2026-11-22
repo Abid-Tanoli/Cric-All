@@ -1,28 +1,13 @@
 import React, { useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { GoogleLogin } from '@react-oauth/google';
-import { register, loginWithGoogle, verifyPhoneOtp, resendPhoneOtp, formatPhone } from '../pages/auth/auth';
+import { register, loginWithGoogle, verifyPhoneOtp, resendPhoneOtp, formatPhone, getStoredUser } from '../pages/auth/auth';
 import PlayerForm from './PlayerForm';
+import RegistrationBranch from './RegistrationBranch';
+import { branchForOrgType, REGISTRATION_BRANCHES } from '../../../Shared/orgTypes.js';
 import BrandMark from '@shared/branding/BrandMark';
 
 const hasGoogleClientId = Boolean(import.meta.env.VITE_GOOGLE_CLIENT_ID && import.meta.env.VITE_GOOGLE_CLIENT_ID !== 'your_google_client_id.apps.googleusercontent.com');
-
-const accountTypes = [
-  {
-    value: 'player',
-    label: 'Player',
-    description: 'Create your player profile and join teams or events.',
-  },
-  {
-    value: 'handler',
-    label: 'Cricket Handler',
-    description: 'For local cricket handlers who run teams, tournaments and scoring.',
-  },
-  {
-    value: 'organization_admin',
-    label: 'Organization Admin',
-    description: 'For schools, colleges, universities, industries, clubs, leagues and academies.',
-  },
-];
 
 const organizationCategories = [
   'School',
@@ -53,6 +38,36 @@ export default function Register({ onSuccess, onCancel, embedded = false }) {
   const [otpMsg, setOtpMsg] = useState(null);
   const [otpErr, setOtpErr] = useState(null);
   const [otpLoading, setOtpLoading] = useState(false);
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const [branchKey, setBranchKey] = useState(() => {
+    const requested = searchParams.get('branch');
+    if (REGISTRATION_BRANCHES.some((item) => item.key === requested)) return requested;
+    return branchForOrgType(searchParams.get('orgType'))?.key || '';
+  });
+
+  const branch = REGISTRATION_BRANCHES.find((item) => item.key === branchKey) || null;
+
+  const chooseBranch = (next) => {
+    setBranchKey(next.key);
+    setErr(null);
+    if (next.orgType && getStoredUser()) {
+      navigate(`/organization/new?orgType=${next.orgType}`, { replace: true });
+    } else if (next.orgType) {
+      // Keep the sign-up fields unchanged; only remember which org form to open.
+      setAccountType('organization_admin');
+    }
+  };
+
+  const finishSignup = () => {
+    const signedInUser = postSignup.user;
+    setPostSignup(null);
+    if (branch?.orgType) {
+      navigate(`/organization/new?orgType=${branch.orgType}`, { replace: true });
+    } else {
+      onSuccess?.(signedInUser);
+    }
+  };
 
   const submitPlayerForm = async (data) => {
     setErr(null);
@@ -266,7 +281,7 @@ export default function Register({ onSuccess, onCancel, embedded = false }) {
               <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
                 <button
                   type="button"
-                  onClick={() => { const u = postSignup.user; setPostSignup(null); onSuccess?.(u); }}
+                  onClick={finishSignup}
                   className="rounded-lg bg-cric-accent px-8 py-3 text-xs font-black uppercase tracking-widest text-white shadow-sm transition hover:bg-orange-600"
                 >
                   Continue
@@ -309,27 +324,27 @@ export default function Register({ onSuccess, onCancel, embedded = false }) {
             </div>
           )}
 
-          <div className="grid gap-3 md:grid-cols-3 mb-6">
-            {accountTypes.map((item) => (
-              <button
-                key={item.value}
-                type="button"
-                onClick={() => setAccountType(item.value)}
-                className={`rounded-lg border p-4 text-left transition-all ${
-                  accountType === item.value
-                    ? 'border-cric-accent bg-cric-accent text-white shadow-sm'
-                    : 'border-cric-border bg-cric-card text-cric-muted hover:border-cric-accent/30'
-                }`}
-              >
-                <span className="block text-sm font-black uppercase tracking-wide">{item.label}</span>
-                <span className={`mt-2 block text-xs font-semibold leading-relaxed ${accountType === item.value ? 'text-white/80' : 'text-cric-muted'}`}>
-                  {item.description}
-                </span>
-              </button>
-            ))}
+          <div className="mb-6">
+            {branch ? (
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-cric-border bg-cric-bg px-4 py-3">
+                <p className="text-xs font-black uppercase tracking-widest text-cric-text">
+                  {branch.icon} {branch.label}
+                  <span className="ml-2 text-[11px] font-bold text-cric-muted" lang="ur" dir="rtl">{branch.labelUr}</span>
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setBranchKey('')}
+                  className="rounded-lg border border-cric-border bg-cric-card px-3 py-2 text-[10px] font-black uppercase tracking-widest text-cric-muted"
+                >
+                  Change
+                </button>
+              </div>
+            ) : (
+              <RegistrationBranch onSelect={chooseBranch} />
+            )}
           </div>
 
-          {accountType === 'player' ? (
+          {branch && branch.key === 'player' ? (
             <div className="bg-cric-card rounded-xl border border-cric-border p-5">
               <h4 className="text-sm font-black text-cric-text uppercase tracking-widest mb-4 pb-3 border-b border-cric-border">
                 Register as Player
@@ -340,7 +355,7 @@ export default function Register({ onSuccess, onCancel, embedded = false }) {
                 loading={loading}
               />
             </div>
-          ) : (
+          ) : branch ? (
             <form onSubmit={submitHandlerForm} className="space-y-5 text-cric-text">
               <label className="text-[10px] font-black uppercase tracking-widest text-cric-muted">Full Name</label>
               <input
@@ -426,7 +441,7 @@ export default function Register({ onSuccess, onCancel, embedded = false }) {
                 </button>
               </div>
             </form>
-          )}
+          ) : null}
           </>
           )}
         </div>

@@ -88,9 +88,14 @@ describe("CreateOrganization organization types", () => {
       </MemoryRouter>
     );
 
-    // All eight cards are present with queryable labels.
+    // The six large branch cards are the first choice; choosing one opens the
+    // organization form with that type preselected.
+    expect(screen.getAllByRole("button", { name: / \/ / })).toHaveLength(6);
+    fireEvent.click(screen.getByRole("button", { name: "Registered club / رجسٹرڈ کلب" }));
+
+    // The form keeps all eight switchable type cards.
     expect(screen.getAllByRole("radio")).toHaveLength(8);
-    expect(screen.queryByLabelText("Registration number")).toBeNull();
+    expect(screen.queryByLabelText("Registration number")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("radio", { name: /Registered club/ }));
     expect(screen.getByLabelText("Registration number")).toBeTruthy();
