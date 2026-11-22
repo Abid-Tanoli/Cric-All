@@ -137,7 +137,7 @@ export const getMyOrgAccess = async (req, res) => {
   try {
     const orgId = req.params.id || req.params.orgId;
     if (!mongoose.Types.ObjectId.isValid(orgId)) return notFound(res, "Organization not found");
-    const org = await TeamOrganization.findById(orgId).select("name shortName slug logoUrl type isActive verificationStatus");
+    const org = await TeamOrganization.findById(orgId).select("name shortName slug logoUrl type orgType typeDetails isActive verificationStatus");
     if (!org) return notFound(res, "Organization not found");
 
     const membership = await Membership.findOne({

@@ -114,7 +114,7 @@ export async function listTeams(filters = {}) {
     // nonexistent path was harmless but misleading.
     .select("name shortName logo type category categoryRef organization organizationRef branchName address area players captain viceCaptain teamColorPrimary teamColorSecondary isActive profileComplete isPublic description establishedYear homeGround ageGroup locationRefs locationLabels locationIds")
     .populate("categoryRef", "name slug icon")
-    .populate("organizationRef", "name slug type")
+    .populate("organizationRef", "name slug type orgType verificationStatus")
     .sort({ name: 1 })
     .skip((page - 1) * limit)
     .limit(limit)
@@ -139,7 +139,7 @@ export async function getTeamProfile(teamId, viewer = null) {
     .select(viewer?.userId ? `${TEAM_PUBLIC_SELECT} managedBy` : TEAM_PUBLIC_SELECT)
     .populate("players", PLAYER_ROSTER_SELECT)
     .populate("categoryRef", "name slug icon")
-    .populate("organizationRef", "name slug type");
+    .populate("organizationRef", "name slug type orgType verificationStatus");
   if (!team) return null;
 
   // Fix B: a team the owner has hidden, or a fixture, is not addressable by id

@@ -14,6 +14,7 @@ import {
   canViewTeamPrivate,
 } from "../utils/publicProjection.js";
 import { findLocationNode } from "./locationService.js";
+import { orgTypeQuery } from "./organizationService.js";
 
 // Fix B: every ranking board is a public read, so fixtures and hidden teams are
 // omitted from each one. `$and` rather than a `team` key of its own: several of
@@ -213,12 +214,12 @@ async function buildTeamScopeQuery(filters = {}) {
   if (town && !resolvedLevels.has("town")) query["address.town"] = textRegex(town);
   if (country && !resolvedLevels.has("country")) query["address.country"] = textRegex(country);
 
-  // Task 4: browse team rankings by the organization type already stored on
-  // TeamOrganization.type (free-form: club, school, university, ...). Types with
-  // no organizations resolve to an empty $in, which correctly yields no rows.
-  const orgTypeValue = String(orgType || "").trim();
-  if (orgTypeValue) {
-    const orgs = await TeamOrganization.find({ type: orgTypeValue })
+  // Browse team rankings by organization type. The shared clause accepts both
+  // the new enum and legacy slugs (club -> local_club, business -> company, ...),
+  // so an older row without orgType still matches the same filter.
+  const typeClause = orgTypeQuery(orgType);
+  if (typeClause) {
+    const orgs = await TeamOrganization.find(typeClause)
       .select("_id")
       .limit(5000)
       .maxTimeMS(5000)

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { ORG_ROLES } from "../permissions/orgPermissions.js";
 import { isValidPhone } from "../utils/phone.js";
+import { ORG_TYPES } from "../services/organizationService.js";
 
 // Organization, membership and invitation request validation.
 //
@@ -56,6 +57,9 @@ export const createOrganizationSchema = z
     // Drawn from the TeamCategory configuration collection; checked against
     // it in the controller because the validator stays pure.
     type: z.string().trim().toLowerCase().max(40).default("other"),
+    // The keys/values are checked per type in organizationService (one place).
+    orgType: z.enum(ORG_TYPES).optional(),
+    typeDetails: z.record(z.string(), z.unknown()).optional(),
     foundedYear: z
       .number()
       .int()
@@ -99,10 +103,19 @@ export const createOrganizationSchema = z
     // Supervisory — ignored on the self-service path (see the controller).
     isActive: z.boolean().optional(),
     verificationStatus: z.enum(["unverified", "pending", "verified", "rejected"]).optional(),
+    // Reason recorded by the Admin app when approving or rejecting a request.
+    verificationNote: z.string().trim().max(500).optional(),
   })
   .strict();
 
 export const updateOrganizationSchema = createOrganizationSchema.partial();
+
+/** Reason recorded when a platform admin approves or rejects an org request. */
+export const verificationDecisionSchema = z
+  .object({
+    note: z.string().trim().max(500).optional(),
+  })
+  .strict();
 
 const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
