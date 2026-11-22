@@ -132,7 +132,11 @@ export function orgTypeOf(org) {
 }
 
 export function orgTypeMeta(value) {
-  return BY_VALUE.get(normalizeOrgType(value)) || BY_VALUE.get("other");
+  // Callers pass either a raw enum/legacy slug or a whole organization object.
+  // Resolving objects through orgTypeOf keeps `orgTypeLabel(org)` honest when a
+  // legacy `type` and the new `orgType` disagree on the same payload.
+  const resolved = value && typeof value === "object" ? orgTypeOf(value) : normalizeOrgType(value);
+  return BY_VALUE.get(resolved) || BY_VALUE.get("other");
 }
 
 export function orgTypeLabel(value) {

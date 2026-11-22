@@ -88,7 +88,7 @@ function orgTypeError(res, error, action) {
 
 export const listOrganizations = async (req, res) => {
   try {
-    const { category, type, orgType, search, page, limit } = req.query;
+    const { category, type, orgType, verificationStatus, search, page, limit } = req.query;
     const locationClauses = await buildLocationFilterClauses(req.query);
     const viewer = await resolveViewerContext(req);
     // The public directory lists active organizations only. The Admin app is
@@ -99,6 +99,10 @@ export const listOrganizations = async (req, res) => {
     // is where an operator looks for them) authenticates and is exempt.
     if (!viewer.isPlatformAdmin) Object.assign(query, reservedNamesMongoClause("name"));
     if (category) query.category = category;
+    // The review queue is supervisory: only a platform admin may filter by it.
+    if (viewer.isPlatformAdmin && verificationStatus) {
+      query.verificationStatus = String(verificationStatus).trim();
+    }
     const clauses = [];
     const typeClause = orgTypeQuery(orgType || type);
     if (typeClause) clauses.push(typeClause);

@@ -144,15 +144,17 @@ export function orgTypeQuery(value) {
   const raw = normalizeLegacyType(value);
   if (!raw) return null;
 
-  const aliases = new Set();
-  if (ORG_TYPE_SET.has(raw)) aliases.add(raw);
-  for (const [legacy, mapped] of Object.entries(LEGACY_TYPE_TO_ORG_TYPE)) {
-    if (mapped === raw) aliases.add(legacy);
-    if (legacy === raw) aliases.add(mapped);
-  }
+  const targetOrgTypes = new Set();
+  if (ORG_TYPE_SET.has(raw)) targetOrgTypes.add(raw);
+  if (LEGACY_TYPE_TO_ORG_TYPE[raw]) targetOrgTypes.add(LEGACY_TYPE_TO_ORG_TYPE[raw]);
+  // Unknown value: don't guess "other", return a clause that matches nothing useful.
+  if (targetOrgTypes.size === 0) return { type: raw };
 
-  const orgTypes = [...aliases].filter((alias) => ORG_TYPE_SET.has(alias));
-  const legacyTypes = [...aliases].filter((alias) => !ORG_TYPE_SET.has(alias));
+  const orgTypes = [...targetOrgTypes];
+  const legacyTypes = Object.entries(LEGACY_TYPE_TO_ORG_TYPE)
+    .filter(([, mapped]) => targetOrgTypes.has(mapped))
+    .map(([legacy]) => legacy)
+    .filter((legacy) => !ORG_TYPE_SET.has(legacy));
   const clauses = [];
   if (orgTypes.length) clauses.push({ orgType: { $in: orgTypes } });
   if (legacyTypes.length) clauses.push({ orgType: { $exists: false }, type: { $in: legacyTypes } });
@@ -184,8 +186,9 @@ function sanitizeYear(value, rule, field) {
   if (!Number.isFinite(number) || !Number.isInteger(number)) {
     throw new OrgTypeValidationError(`${field} must be a whole year`, { field });
   }
-  if (number < rule.min || number > rule.max()) {
-    throw new OrgTypeValidationError(`${field} must be between ${rule.min} and ${rule.max()}`, { field });
+  const max = typeof rule.max === "function" ? rule.max() : rule.max;
+  if (number < rule.min || number > max) {
+    throw new OrgTypeValidationError(`${field} must be between ${rule.min} and ${max}`, { field });
   }
   return number;
 }
