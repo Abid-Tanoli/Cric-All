@@ -58,7 +58,7 @@ describe('Teams organization-type filter (Task 3)', () => {
     expect(screen.getByText('Beta Grammar School')).toBeInTheDocument()
 
     fireEvent.change(screen.getByLabelText('Filter by organization type'), {
-      target: { value: 'club' },
+      target: { value: 'local_club' },
     })
 
     await waitFor(() => {

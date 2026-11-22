@@ -7,7 +7,7 @@ import { useCommunityConfig } from '../community/CommunityConfigContext';
 import PostsTab from '../community/PostsTab';
 import BattingPositionBadge from '@shared/components/BattingPositionBadge';
 import { locationLine } from '../../../Shared/utils/locationDisplay.js';
-import { orgTypeIcon, orgTypeLabel, verificationBadge } from '../../../Shared/orgTypes.js';
+import { orgTypeIcon, orgTypeLabel, teamRoleLabel, verificationBadge } from '../../../Shared/orgTypes.js';
 
 const idOf = (v) => v?._id || v?.id || v;
 
@@ -148,6 +148,9 @@ export default function TeamProfile() {
             <div>
               <h1 className="text-4xl font-black uppercase tracking-tighter italic">{team.name}</h1>
               <div className="flex flex-wrap gap-2 mt-2">
+                <span className="px-3 py-1 bg-white/10 rounded-full text-xs font-bold">
+                  {teamRoleLabel(team.teamRole)}
+                </span>
                 {team.category && (
                   <span className="px-3 py-1 bg-white/10 rounded-full text-xs font-bold">{team.category}</span>
                 )}

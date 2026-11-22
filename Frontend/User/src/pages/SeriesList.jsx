@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { api } from "../services/api";
 import SeriesCard from "../components/cricapi/SeriesCard";
 import Loader from "../components/cricapi/Loader";
 import ErrorState from "../components/cricapi/ErrorState";
+import OrgTypeFilter, { orgTypeFromSearchParams } from "../components/OrgTypeFilter";
 import { buildTournamentAwards } from "../utils/tournamentAwards";
 
 const LOCAL_TYPES = ["single-match", "series", "tri-series", "tournament", "world-cup", "champions-trophy", "league"];
@@ -40,6 +41,8 @@ const normalizeLocalItem = (item, source) => ({
 });
 
 export default function SeriesList() {
+  const [searchParams] = useSearchParams();
+  const orgType = orgTypeFromSearchParams(searchParams);
   const [events, setEvents] = useState([]);
   const [providerSeries, setProviderSeries] = useState([]);
   const [providerLoading, setProviderLoading] = useState(true);
@@ -79,7 +82,7 @@ export default function SeriesList() {
       // from /series as soon as the site had one event. Fetch both and merge.
       const [eventsResult, tournamentsResult] = await Promise.allSettled([
         api.get("/events", { params: { limit: 100 }, timeout: 8000 }),
-        api.get("/tournaments", { params: { limit: 100 }, timeout: 8000 }),
+        api.get("/tournaments", { params: { limit: 100, ...(orgType ? { orgType } : {}) }, timeout: 8000 }),
       ]);
 
       const eventsData = eventsResult.status === "fulfilled"
@@ -110,7 +113,7 @@ export default function SeriesList() {
     };
 
     await Promise.allSettled([loadProvider(), loadLocal()]);
-  }, []);
+  }, [orgType]);
 
   useEffect(() => {
     loadData();
@@ -157,6 +160,9 @@ export default function SeriesList() {
             placeholder="Search Pakistan, Australia, PAK AUS..."
             className="w-full rounded-xl border border-cric-border bg-cric-bg px-4 py-3 text-sm font-bold text-cric-text outline-none focus:border-blue-500"
           />
+          <div className="mt-3 max-w-xs">
+            <OrgTypeFilter />
+          </div>
         </section>
 
         <section>
