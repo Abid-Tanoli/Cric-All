@@ -7,6 +7,7 @@ import { useCommunityConfig } from '../community/CommunityConfigContext';
 import PostsTab from '../community/PostsTab';
 import BattingPositionBadge from '@shared/components/BattingPositionBadge';
 import { locationLine } from '../../../Shared/utils/locationDisplay.js';
+import { orgTypeIcon, orgTypeLabel, verificationBadge } from '../../../Shared/orgTypes.js';
 
 const idOf = (v) => v?._id || v?.id || v;
 
@@ -153,6 +154,16 @@ export default function TeamProfile() {
                 {team.organization && (
                   <span className="px-3 py-1 bg-white/10 rounded-full text-xs font-bold">{team.organization}</span>
                 )}
+                {team.organizationRef ? (
+                  <span className="px-3 py-1 bg-white/10 rounded-full text-xs font-bold">
+                    {orgTypeIcon(team.organizationRef)} {orgTypeLabel(team.organizationRef)}
+                  </span>
+                ) : null}
+                {team.organizationRef?.verificationStatus === 'verified' ? (
+                  <span className={`px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider ${verificationBadge('verified').className}`}>
+                    ✓ Verified
+                  </span>
+                ) : null}
                 {team.branchName && (
                   <span className="px-3 py-1 bg-white/10 rounded-full text-xs font-bold">{team.branchName}</span>
                 )}

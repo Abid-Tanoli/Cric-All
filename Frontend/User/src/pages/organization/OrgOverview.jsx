@@ -8,13 +8,16 @@ import {
   formatDateTime,
   isOwner,
   roleLabel,
-  verificationStyles,
 } from "../../lib/orgUi";
+import { orgTypeIcon, orgTypeLabel, verificationBadge } from "../../../../Shared/orgTypes.js";
 import { Banner, Stat, card, cardSubtle, eyebrow, sectionTitle } from "./orgStyles";
 
 const AUDIT_ACTIONS = {
   "org.created": "Organization created",
   "org.updated": "Details updated",
+  "org.verification_requested": "Verification requested",
+  "org.verification_changed": "Verification decision recorded",
+  "org.verification_reset": "Verification reset",
   "org.ownership_transferred": "Ownership transferred",
   "membership.added": "Member added",
   "membership.roles_changed": "Roles changed",
@@ -84,7 +87,7 @@ export default function OrgOverview({ org, access, onGoToTab }) {
             <h2 className={sectionTitle}>{org.name}</h2>
             <p className="mt-1 text-xs font-semibold text-cric-muted">
               {org.shortName ? `${org.shortName} · ` : ""}
-              {org.category?.name || "Uncategorised"}
+              {orgTypeIcon(org)} {orgTypeLabel(org)}
               {org.slug ? ` · /${org.slug}` : ""}
             </p>
             {org.description ? (
@@ -96,10 +99,10 @@ export default function OrgOverview({ org, access, onGoToTab }) {
           <div className="flex flex-wrap items-center gap-2">
             <span
               className={`rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-widest ${
-                verificationStyles[org.verificationStatus] || verificationStyles.unverified
+                verificationBadge(org.verificationStatus).className
               }`}
             >
-              {org.verificationStatus || "unverified"}
+              {verificationBadge(org.verificationStatus).label}
             </span>
             {org.isActive === false && (
               <span className="rounded-full border border-red-300 bg-red-50 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-red-700">

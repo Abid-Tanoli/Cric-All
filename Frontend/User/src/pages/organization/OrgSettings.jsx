@@ -1,7 +1,19 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { listOrganizationTypes, updateOrganization } from "../../services/organizationApi";
+import React, { useMemo, useState } from "react";
+import {
+  requestOrganizationVerification,
+  updateOrganization,
+} from "../../services/organizationApi";
 import RequestDeletionButton from "../../components/RequestDeletionButton";
 import LocationSelect from "../../../../Shared/components/LocationSelect.jsx";
+import {
+  emptyTypeDetails,
+  legacyTypeForOrgType,
+  orgTypeMeta,
+  orgTypeOf,
+  serializeTypeDetails,
+  verificationBadge,
+} from "../../../../Shared/orgTypes.js";
+import { OrgTypeDetails, OrgTypePicker } from "./OrgTypeFields";
 import { PERMISSIONS, can } from "../../lib/orgUi";
 import {
   Banner,
@@ -12,6 +24,7 @@ import {
   eyebrow,
   input,
   primaryButton,
+  secondaryButton,
   sectionTitle,
 } from "./orgStyles";
 
@@ -21,6 +34,8 @@ const emptyForm = (org) => ({
   name: org?.name || "",
   shortName: org?.shortName || "",
   type: org?.type || "other",
+  orgType: orgTypeOf(org),
+  typeDetails: { ...emptyTypeDetails(orgTypeOf(org)), ...(org?.typeDetails || {}) },
   description: org?.description || "",
   website: org?.website || "",
   logoUrl: org?.logoUrl || "",
@@ -60,7 +75,6 @@ const emptyForm = (org) => ({
 
 export default function OrgSettings({ org, access, onSaved }) {
   const [form, setForm] = useState(() => emptyForm(org));
-  const [types, setTypes] = useState([]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [notice, setNotice] = useState("");
@@ -71,16 +85,19 @@ export default function OrgSettings({ org, access, onSaved }) {
   // The form is (re)seeded from `org` by remounting this component under a new
   // key at the call site, so there is no "reset on change" effect here.
 
-  useEffect(() => {
-    listOrganizationTypes()
-      .then((res) => setTypes(Array.isArray(res) ? res : []))
-      .catch(() => setTypes([]));
-  }, []);
-
   // A Map comes back as a plain object from JSON; normalise both shapes.
   const socialEntries = useMemo(() => form.socialLinks, [form.socialLinks]);
 
   const setTop = (key) => (event) => setForm((f) => ({ ...f, [key]: event.target.value }));
+  const chooseType = (orgType) =>
+    setForm((f) => ({
+      ...f,
+      orgType,
+      type: legacyTypeForOrgType(orgType),
+      typeDetails: emptyTypeDetails(orgType),
+    }));
+  const setDetail = (key, value) =>
+    setForm((f) => ({ ...f, typeDetails: { ...f.typeDetails, [key]: value } }));
   const setNested = (group, key) => (event) =>
     setForm((f) => ({ ...f, [group]: { ...f[group], [key]: event.target.value } }));
 
@@ -114,6 +131,8 @@ export default function OrgSettings({ org, access, onSaved }) {
         name: form.name.trim(),
         shortName: form.shortName.trim(),
         type: form.type,
+        orgType: form.orgType,
+        typeDetails: serializeTypeDetails(form.orgType, form.typeDetails),
         description: form.description.trim(),
         website: form.website.trim(),
         logoUrl: form.logoUrl.trim(),
@@ -140,6 +159,21 @@ export default function OrgSettings({ org, access, onSaved }) {
       onSaved?.(res.organization);
     } catch (error) {
       setErr(error.message || "Could not save the organization");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const requestVerification = async () => {
+    setBusy(true);
+    setErr("");
+    setNotice("");
+    try {
+      const res = await requestOrganizationVerification(org._id);
+      setNotice(res.message || "Verification request sent.");
+      onSaved?.(res.organization);
+    } catch (error) {
+      setErr(error.message || "Could not request verification");
     } finally {
       setBusy(false);
     }
@@ -175,20 +209,10 @@ export default function OrgSettings({ org, access, onSaved }) {
             </Field>
           </div>
 
-          <div className="grid gap-4 md:grid-cols-3">
-            <Field label="Type" hint="Chosen from the platform's category list.">
-              {types.length > 0 ? (
-                <select value={form.type} onChange={setTop("type")} className={input}>
-                  {types.map((category) => (
-                    <option key={category._id} value={category.slug || category.name.toLowerCase()}>
-                      {category.name}
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <input value={form.type} onChange={setTop("type")} className={input} placeholder="other" />
-              )}
-            </Field>
+          <OrgTypePicker value={form.orgType} onChange={chooseType} />
+          <OrgTypeDetails orgType={form.orgType} value={form.typeDetails} onChange={setDetail} />
+
+          <div className="grid gap-4 md:grid-cols-2">
             <Field label="Website">
               <input value={form.website} onChange={setTop("website")} className={input} placeholder="https://…" />
             </Field>
@@ -311,6 +335,28 @@ export default function OrgSettings({ org, access, onSaved }) {
           ))}
         </datalist>
       </div>
+
+      {editable && (
+        <div className={card}>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className={sectionTitle}>Verification</h2>
+              <p className="mt-1 text-xs font-semibold text-cric-muted">
+                Current status:{" "}
+                <span className={`rounded-full border px-2 py-0.5 text-[10px] font-black uppercase tracking-widest ${verificationBadge(org?.verificationStatus).className}`}>
+                  {verificationBadge(org?.verificationStatus).label}
+                </span>
+              </p>
+            </div>
+            {orgTypeMeta(form.orgType).verificationEligible &&
+            !["pending", "verified"].includes(String(org?.verificationStatus || "unverified")) ? (
+              <button type="button" onClick={requestVerification} disabled={busy} className={secondaryButton}>
+                Request verification
+              </button>
+            ) : null}
+          </div>
+        </div>
+      )}
 
       {editable && (
         <div className={card}>

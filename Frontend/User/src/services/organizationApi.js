@@ -20,6 +20,9 @@ export const updateOrganization = (orgId, payload) => unwrap(api.put(`/organizat
 
 export const deleteOrganization = (orgId) => unwrap(api.delete(`/organizations/${orgId}`));
 
+export const requestOrganizationVerification = (orgId) =>
+  unwrap(api.post(`/organizations/${orgId}/verification/request`, {}));
+
 // --- dashboard support -------------------------------------------------------
 export const getMyOrgAccess = (orgId) => unwrap(api.get(`/organizations/${orgId}/access`));
 
@@ -309,6 +312,7 @@ export default {
   createOrganization,
   updateOrganization,
   deleteOrganization,
+  requestOrganizationVerification,
   getMyOrgAccess,
   getOrgOverview,
   listOrgAuditLog,

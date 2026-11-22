@@ -1,6 +1,15 @@
 import React, { useEffect, useState } from "react";
 import { api } from "../services/api";
 import ConfirmModal from "../components/ConfirmModal";
+import {
+  ORG_TYPES,
+  emptyTypeDetails,
+  fieldsForOrgType,
+  normalizeOrgType,
+  orgTypeLabel,
+  serializeTypeDetails,
+  verificationBadge,
+} from "../../../Shared/orgTypes.js";
 
 const errMsg = (error, fallback) => error?.response?.data?.message || error?.message || fallback;
 
@@ -17,6 +26,8 @@ export default function Organizations() {
   const [err, setErr] = useState(null);
   const [notice, setNotice] = useState("");
   const [search, setSearch] = useState("");
+  const [orgTypeFilter, setOrgTypeFilter] = useState("all");
+  const [verificationFilter, setVerificationFilter] = useState("all");
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const PAGE_SIZE = 50;
@@ -25,6 +36,8 @@ export default function Organizations() {
   const [form, setForm] = useState(null);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(null); // org pending delete
+  const [reviewing, setReviewing] = useState(null); // { org, decision }
+  const [reviewNote, setReviewNote] = useState("");
 
   // Handover: find-or-create the owner's account, assign ownership, and show
   // the temporary password exactly once so the admin can pass it on.
@@ -40,7 +53,13 @@ export default function Organizations() {
     try {
       const [orgRes, catRes] = await Promise.all([
         api.get("/organizations", {
-          params: { page, limit: PAGE_SIZE, ...(search.trim() ? { search: search.trim() } : {}) },
+          params: {
+            page,
+            limit: PAGE_SIZE,
+            ...(search.trim() ? { search: search.trim() } : {}),
+            ...(orgTypeFilter !== "all" ? { orgType: orgTypeFilter } : {}),
+            ...(verificationFilter !== "all" ? { verificationStatus: verificationFilter } : {}),
+          },
         }),
         api.get("/team-categories").catch(() => ({ data: [] })),
       ]);
@@ -59,7 +78,7 @@ export default function Organizations() {
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, search]);
+  }, [page, search, orgTypeFilter, verificationFilter]);
 
   const totalPages = Math.max(Math.ceil(total / PAGE_SIZE), 1);
 
@@ -71,6 +90,8 @@ export default function Organizations() {
       description: org.description || "",
       website: org.website || "",
       category: org.category?._id || "",
+      orgType: normalizeOrgType(org),
+      typeDetails: { ...emptyTypeDetails(normalizeOrgType(org)), ...(org.typeDetails || {}) },
       isActive: org.isActive !== false,
     });
     setErr(null);
@@ -88,6 +109,8 @@ export default function Organizations() {
         description: form.description.trim(),
         website: form.website.trim(),
         category: form.category || undefined,
+        orgType: form.orgType,
+        typeDetails: serializeTypeDetails(form.orgType, form.typeDetails),
         isActive: form.isActive,
       });
       setNotice(`"${form.name}" updated.`);
@@ -109,6 +132,28 @@ export default function Organizations() {
       await load();
     } catch (error) {
       setErr(errMsg(error, "Could not change status"));
+    }
+  };
+
+  const openReview = (org, decision) => {
+    setReviewing({ org, decision });
+    setReviewNote("");
+    setErr(null);
+  };
+
+  const submitReview = async () => {
+    const { org, decision } = reviewing;
+    setSaving(true);
+    setErr(null);
+    try {
+      await api.post(`/organizations/${org._id}/verification/${decision}`, { note: reviewNote.trim() });
+      setNotice(`"${org.name}" ${decision === "approve" ? "verified" : "rejected"}.`);
+      setReviewing(null);
+      await load();
+    } catch (error) {
+      setErr(errMsg(error, "Could not record the verification decision"));
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -203,20 +248,52 @@ export default function Organizations() {
             Supervisory view — organizations self-manage from the user site; you can override anything here.
           </p>
         </div>
-        <input
-          value={search}
-          onChange={(e) => {
-            setSearch(e.target.value);
-            setPage(1);
-          }}
-          placeholder="Search organizations..."
-          className={`${inputCls} max-w-xs`}
-        />
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPage(1);
+            }}
+            placeholder="Search organizations..."
+            aria-label="Search organizations"
+            className={`${inputCls} max-w-xs`}
+          />
+          <select
+            value={orgTypeFilter}
+            onChange={(e) => {
+              setOrgTypeFilter(e.target.value);
+              setPage(1);
+            }}
+            aria-label="Filter by organization type"
+            className={`${inputCls} max-w-[180px]`}
+          >
+            <option value="all">All types</option>
+            {ORG_TYPES.map((type) => (
+              <option key={type.value} value={type.value}>{type.icon} {type.label}</option>
+            ))}
+          </select>
+          <select
+            value={verificationFilter}
+            onChange={(e) => {
+              setVerificationFilter(e.target.value);
+              setPage(1);
+            }}
+            aria-label="Filter by verification status"
+            className={`${inputCls} max-w-[180px]`}
+          >
+            <option value="all">All verification</option>
+            {["pending", "verified", "rejected", "unverified"].map((status) => (
+              <option key={status} value={status}>{verificationBadge(status).label}</option>
+            ))}
+          </select>
+        </div>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {[
           { label: "Total", value: total },
+          { label: "Pending review on this page", value: orgs.filter((o) => o.verificationStatus === "pending").length },
           { label: "Ownerless on this page", value: ownerless },
           { label: "Inactive on this page", value: inactive },
         ].map((s) => (
@@ -236,19 +313,21 @@ export default function Organizations() {
             <tr className="border-b border-cric-border text-[10px] font-black uppercase tracking-widest text-cric-muted">
               <th className="text-left px-4 py-3">Organization</th>
               <th className="text-left px-4 py-3">Category</th>
+              <th className="text-left px-4 py-3">Type</th>
               <th className="text-left px-4 py-3">Owner</th>
               <th className="text-right px-4 py-3">Teams</th>
               <th className="text-right px-4 py-3">Players</th>
               <th className="text-right px-4 py-3">Members</th>
               <th className="text-center px-4 py-3">Status</th>
+              <th className="text-center px-4 py-3">Verification</th>
               <th className="text-right px-4 py-3">Actions</th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={8} className="px-4 py-6 text-center text-cric-muted font-semibold">Loading...</td></tr>
+              <tr><td colSpan={10} className="px-4 py-6 text-center text-cric-muted font-semibold">Loading...</td></tr>
             ) : filtered.length === 0 ? (
-              <tr><td colSpan={8} className="px-4 py-6 text-center text-cric-muted font-semibold">No organizations found.</td></tr>
+              <tr><td colSpan={10} className="px-4 py-6 text-center text-cric-muted font-semibold">No organizations found.</td></tr>
             ) : (
               filtered.map((org) => (
                 <tr key={org._id} className="border-b border-cric-border/60 last:border-0 hover:bg-cric-bg/50">
@@ -257,6 +336,7 @@ export default function Organizations() {
                     {org.shortName && <p className="text-[10px] font-bold uppercase tracking-widest text-cric-muted">{org.shortName}</p>}
                   </td>
                   <td className="px-4 py-3 text-cric-muted font-semibold">{org.category?.name || "—"}</td>
+                  <td className="px-4 py-3 text-cric-muted font-semibold">{orgTypeLabel(org)}</td>
                   <td className="px-4 py-3">
                     {org.owner ? (
                       <span className="font-semibold text-cric-text">{org.owner.name}</span>
@@ -278,8 +358,37 @@ export default function Organizations() {
                       {org.isActive === false ? "Inactive" : "Active"}
                     </span>
                   </td>
+                  <td className="px-4 py-3 text-center">
+                    <span className={`rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-widest ${verificationBadge(org.verificationStatus).className}`}>
+                      {verificationBadge(org.verificationStatus).label}
+                    </span>
+                  </td>
                   <td className="px-4 py-3 text-right">
-                    <div className="inline-flex gap-2">
+                    <div className="inline-flex flex-wrap justify-end gap-2">
+                      {org.verificationStatus === "pending" ? (
+                        <>
+                          <button
+                            onClick={() => openReview(org, "approve")}
+                            className="rounded-lg border border-emerald-300 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-emerald-700 hover:bg-emerald-50"
+                          >
+                            Approve
+                          </button>
+                          <button
+                            onClick={() => openReview(org, "reject")}
+                            className="rounded-lg border border-red-300 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-red-600 hover:bg-red-50"
+                          >
+                            Reject
+                          </button>
+                        </>
+                      ) : null}
+                      {["verified", "rejected"].includes(org.verificationStatus) ? (
+                        <button
+                          onClick={() => openReview(org, "reset")}
+                          className="rounded-lg border border-cric-border px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-cric-muted hover:text-cric-text"
+                        >
+                          Reset
+                        </button>
+                      ) : null}
                       <button
                         onClick={() => openHandover(org)}
                         className="rounded-lg border border-cric-accent px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-cric-accent hover:bg-cric-accent/10"
@@ -547,6 +656,57 @@ export default function Organizations() {
               </select>
             </div>
             <div>
+              <label className={labelCls}>Organization type</label>
+              <select
+                value={form.orgType}
+                onChange={(e) =>
+                  setForm((f) => ({
+                    ...f,
+                    orgType: e.target.value,
+                    typeDetails: emptyTypeDetails(e.target.value),
+                  }))
+                }
+                className={inputCls}
+              >
+                {ORG_TYPES.map((type) => (
+                  <option key={type.value} value={type.value}>{type.label}</option>
+                ))}
+              </select>
+            </div>
+            {fieldsForOrgType(form.orgType).length > 0 ? (
+              <div className="rounded-xl border border-cric-border bg-cric-bg p-3 sm:col-span-2">
+                <p className={labelCls}>{orgTypeLabel(form.orgType)} details</p>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {fieldsForOrgType(form.orgType).map((field) => (
+                    <div key={field.key}>
+                      <label className={labelCls}>{field.label}</label>
+                      {field.type === "select" ? (
+                        <select
+                          value={form.typeDetails[field.key] || ""}
+                          onChange={(e) =>
+                            setForm((f) => ({ ...f, typeDetails: { ...f.typeDetails, [field.key]: e.target.value } }))
+                          }
+                          className={inputCls}
+                        >
+                          <option value="">— Select —</option>
+                          {field.options.map((option) => <option key={option} value={option}>{option}</option>)}
+                        </select>
+                      ) : (
+                        <input
+                          type={field.type === "number" ? "number" : "text"}
+                          value={form.typeDetails[field.key] || ""}
+                          onChange={(e) =>
+                            setForm((f) => ({ ...f, typeDetails: { ...f.typeDetails, [field.key]: e.target.value } }))
+                          }
+                          className={inputCls}
+                        />
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+            <div>
               <label className={labelCls}>Description</label>
               <textarea value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} rows={3} className={inputCls} />
             </div>
@@ -578,6 +738,37 @@ export default function Organizations() {
           </form>
         </div>
       )}
+
+      {reviewing ? (
+        <div className="fixed inset-0 z-[9998] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="mx-4 w-full max-w-md rounded-2xl border border-cric-border bg-cric-card p-6 shadow-2xl">
+            <h3 className="text-lg font-black text-cric-text">
+              {reviewing.decision === "approve" ? "Approve" : reviewing.decision === "reject" ? "Reject" : "Reset"} verification
+            </h3>
+            <p className="mt-1 text-xs font-semibold text-cric-muted">{reviewing.org.name}</p>
+            <label className={`mt-4 ${labelCls}`}>Note (optional, stored in the audit log)</label>
+            <textarea
+              value={reviewNote}
+              onChange={(event) => setReviewNote(event.target.value)}
+              rows={3}
+              maxLength={500}
+              className={inputCls}
+            />
+            <div className="mt-4 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setReviewing(null)}
+                className="rounded-lg border border-cric-border px-5 py-2.5 text-xs font-black uppercase tracking-widest text-cric-muted"
+              >
+                Cancel
+              </button>
+              <button type="button" onClick={submitReview} disabled={saving} className={btnCls}>
+                Confirm
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <ConfirmModal
         open={Boolean(deleting)}

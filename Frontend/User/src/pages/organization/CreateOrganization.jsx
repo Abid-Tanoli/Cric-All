@@ -1,14 +1,23 @@
 import React, { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { createOrganization, listMyOrganizations, listOrganizationTypes } from "../../services/organizationApi";
+import {
+  createOrganization,
+  listMyOrganizations,
+  requestOrganizationVerification,
+} from "../../services/organizationApi";
 import { getStoredUser, notifyMembershipChanged } from "../auth/auth";
 import LocationSelect from "../../../../Shared/components/LocationSelect.jsx";
+import { emptyTypeDetails, legacyTypeForOrgType, serializeTypeDetails } from "../../../../Shared/orgTypes.js";
+import { OrgTypeDetails, OrgTypePicker } from "./OrgTypeFields";
 import { Banner, Field, card, eyebrow, input, primaryButton, secondaryButton } from "./orgStyles";
 
 const emptyForm = {
   name: "",
   shortName: "",
   type: "other",
+  orgType: "local_club",
+  typeDetails: emptyTypeDetails("local_club"),
+  requestVerification: false,
   description: "",
   website: "",
   location: { city: "", area: "", address: "", country: "" },
@@ -24,16 +33,12 @@ export default function CreateOrganization() {
   const storedUser = getStoredUser();
 
   const [form, setForm] = useState(emptyForm);
-  const [types, setTypes] = useState([]);
   const [parents, setParents] = useState([]);
   const [parent, setParent] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
 
   useEffect(() => {
-    listOrganizationTypes()
-      .then((res) => setTypes(Array.isArray(res) ? res : []))
-      .catch(() => setTypes([]));
     listMyOrganizations()
       .then((res) => {
         const manageable = (Array.isArray(res) ? res : []).filter(
@@ -45,6 +50,16 @@ export default function CreateOrganization() {
   }, []);
 
   const setTop = (key) => (event) => setForm((f) => ({ ...f, [key]: event.target.value }));
+  const chooseType = (orgType) =>
+    setForm((f) => ({
+      ...f,
+      orgType,
+      type: legacyTypeForOrgType(orgType),
+      typeDetails: emptyTypeDetails(orgType),
+      requestVerification: false,
+    }));
+  const setDetail = (key, value) =>
+    setForm((f) => ({ ...f, typeDetails: { ...f.typeDetails, [key]: value } }));
   const setNested = (group, key) => (event) =>
     setForm((f) => ({ ...f, [group]: { ...f[group], [key]: event.target.value } }));
 
@@ -71,6 +86,8 @@ export default function CreateOrganization() {
         name: form.name.trim(),
         shortName: form.shortName.trim(),
         type: form.type,
+        orgType: form.orgType,
+        typeDetails: serializeTypeDetails(form.orgType, form.typeDetails),
         description: form.description.trim(),
         website: form.website.trim(),
         location: {
@@ -88,6 +105,9 @@ export default function CreateOrganization() {
       if (parent) payload.parent = parent;
 
       const res = await createOrganization(payload);
+      if (form.requestVerification && payload.typeDetails.registrationNumber) {
+        await requestOrganizationVerification(res.organization._id);
+      }
       // This account now belongs to an organization. The header caches that
       // fact per signed-in session, so it has to be told before we navigate.
       notifyMembershipChanged();
@@ -131,20 +151,32 @@ export default function CreateOrganization() {
             </Field>
           </div>
 
-          <div className="mt-4 grid gap-4 md:grid-cols-3">
-            <Field label="Type" hint="Drawn from the platform category list.">
-              {types.length > 0 ? (
-                <select value={form.type} onChange={setTop("type")} className={input}>
-                  {types.map((category) => (
-                    <option key={category._id} value={category.slug || category.name.toLowerCase()}>
-                      {category.name}
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <input value={form.type} onChange={setTop("type")} className={input} />
-              )}
-            </Field>
+          <div className="mt-5">
+            <OrgTypePicker value={form.orgType} onChange={chooseType} />
+          </div>
+
+          <div className="mt-4">
+            <OrgTypeDetails orgType={form.orgType} value={form.typeDetails} onChange={setDetail} />
+          </div>
+
+          {form.orgType === "registered_club" ? (
+            <label className="mt-4 flex items-start gap-3 rounded-xl border border-cric-border bg-cric-bg p-3 text-sm font-semibold text-cric-text">
+              <input
+                type="checkbox"
+                checked={form.requestVerification}
+                onChange={(event) => setForm((f) => ({ ...f, requestVerification: event.target.checked }))}
+                className="mt-1 h-4 w-4 accent-cric-accent"
+              />
+              <span>
+                Request verification after saving
+                <span className="mt-1 block text-[11px] font-semibold text-cric-muted">
+                  A platform admin reviews the registration number. Nothing is shown publicly except the badge.
+                </span>
+              </span>
+            </label>
+          ) : null}
+
+          <div className="mt-4 grid gap-4 md:grid-cols-2">
             <Field label="Website">
               <input value={form.website} onChange={setTop("website")} className={input} placeholder="https://…" />
             </Field>
