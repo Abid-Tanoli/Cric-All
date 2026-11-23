@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 process.env.JWT_SECRET = process.env.JWT_SECRET || "test-secret-not-a-real-one";
 process.env.FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:5173";
+process.env.EMAIL_MX_CHECK = "false"; // unit tests must never touch DNS
 
 import mongoose from "mongoose";
 import { startTestDb, stopTestDb, mockReq, mockRes } from "./helpers/testDb.js";
