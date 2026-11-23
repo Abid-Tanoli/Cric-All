@@ -41,6 +41,7 @@ const Locations = lazy(() => import("./pages/Locations"));
 const CommunityModeration = lazy(() => import("./pages/CommunityModeration"));
 const CommunitySettings = lazy(() => import("./pages/CommunitySettings"));
 const Issues = lazy(() => import("./pages/Issues"));
+const EmailVerificationSupport = lazy(() => import("./pages/EmailVerificationSupport"));
 
 const PageLoader = () => (
   <div className="min-h-screen bg-[#0f172a] flex items-center justify-center">
@@ -99,6 +100,7 @@ export default function App() {
           <Route path="/admin/locations" element={<ProtectedRoute><ErrorBoundary><Layout><Locations /></Layout></ErrorBoundary></ProtectedRoute>} />
           <Route path="/admin/community" element={<ProtectedRoute><ErrorBoundary><Layout><CommunityModeration /></Layout></ErrorBoundary></ProtectedRoute>} />
           <Route path="/admin/community/settings" element={<ProtectedRoute><ErrorBoundary><Layout><CommunitySettings /></Layout></ErrorBoundary></ProtectedRoute>} />
+          <Route path="/admin/users/verification" element={<ProtectedRoute><ErrorBoundary><Layout><EmailVerificationSupport /></Layout></ErrorBoundary></ProtectedRoute>} />
           <Route path="/admin/issues" element={<ProtectedRoute><ErrorBoundary><Layout><Issues /></Layout></ErrorBoundary></ProtectedRoute>} />
           <Route path="/admin/admins" element={<SuperAdminRoute><ErrorBoundary><Layout><ManageAdmins /></Layout></ErrorBoundary></SuperAdminRoute>} />
       <Route path="/" element={<Navigate to="/admin" />} />
