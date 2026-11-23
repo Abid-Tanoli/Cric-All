@@ -3,7 +3,8 @@ import { Link, useSearchParams } from "react-router-dom";
 import { api } from "../services/api";
 import LoadingWithTimeout from "../components/LoadingWithTimeout";
 import LocationFilters, { locationQueryFromSearchParams } from "../components/LocationFilters";
-import { normalizeOrgType, orgTypeIcon, orgTypeLabel, verificationBadge } from "../../../Shared/orgTypes.js";
+import OrgTypeFilter, { orgTypeFromSearchParams } from "../components/OrgTypeFilter";
+import { normalizeOrgType, orgTypeIcon, orgTypeLabel, teamRoleLabel, verificationBadge } from "../../../Shared/orgTypes.js";
 
 const ICONS = {
   School: "🏫", College: "🎓", University: "🏛️",
@@ -17,16 +18,16 @@ export default function Teams() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [activeCategory, setActiveCategory] = useState("all");
-  const [activeOrgType, setActiveOrgType] = useState("all");
   const [searchTerm, setSearchTerm] = useState("");
   const [searchParams] = useSearchParams();
+  const activeOrgType = orgTypeFromSearchParams(searchParams) || "all";
   const locationQuery = locationQueryFromSearchParams(searchParams);
   const locationKey = JSON.stringify(locationQuery);
 
   useEffect(() => {
     fetchTeams();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeCategory, searchTerm, locationKey]);
+  }, [activeCategory, activeOrgType, searchTerm, locationKey]);
 
   // Options are derived from the teams actually loaded, so the filter always
   // reflects real organization types instead of a hardcoded enum. "all" is the
@@ -38,9 +39,11 @@ export default function Teams() {
       const raw = String(ref?.orgType || ref?.type || "").toLowerCase();
       if (raw && !types.has(raw)) types.set(raw, normalizeOrgType(raw));
     });
-    return Array.from(types, ([value, type]) => ({ value, type })).sort((a, b) =>
-      orgTypeLabel(a.type).localeCompare(orgTypeLabel(b.type))
-    );
+    return Array.from(types.values(), (type) => ({
+      value: type,
+      label: orgTypeLabel(type),
+      icon: orgTypeIcon(type),
+    })).sort((a, b) => a.label.localeCompare(b.label));
   }, [teams]);
 
   const fetchTeams = async () => {
@@ -51,6 +54,7 @@ export default function Teams() {
         includePlayers: false,
       };
       if (activeCategory !== "all") params.category = activeCategory;
+      if (activeOrgType !== "all") params.orgType = activeOrgType;
       if (searchTerm.trim()) params.search = searchTerm.trim();
       Object.assign(params, locationQuery);
 
@@ -69,8 +73,9 @@ export default function Teams() {
 
   const filteredTeams = teams.filter(t => {
     if (activeOrgType !== "all") {
+      const allowed = activeOrgType.split(",").map(normalizeOrgType);
       const raw = String(t.organizationRef?.orgType || t.organizationRef?.type || "").toLowerCase();
-      if (normalizeOrgType(raw) !== normalizeOrgType(activeOrgType)) return false;
+      if (!allowed.includes(normalizeOrgType(raw))) return false;
     }
     if (activeCategory !== "all" && t.category !== activeCategory) return false;
     if (searchTerm && !t.name.toLowerCase().includes(searchTerm.toLowerCase()) &&
@@ -124,27 +129,8 @@ export default function Teams() {
               </button>
             ))}
           </div>
-          <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center">
-            <label
-              htmlFor="org-type-filter"
-              className="text-[10px] font-black uppercase tracking-widest text-cric-muted"
-            >
-              Organization type
-            </label>
-            <select
-              id="org-type-filter"
-              aria-label="Filter by organization type"
-              value={activeOrgType}
-              onChange={(e) => setActiveOrgType(e.target.value)}
-              className="w-full rounded-xl border border-cric-border bg-cric-bg px-4 py-3 text-sm font-bold text-cric-text focus:outline-none focus:ring-2 focus:ring-cric-accent sm:w-64"
-            >
-              <option value="all">All types</option>
-              {orgTypeOptions.map(({ value, type }) => (
-                <option key={value} value={value}>
-                  {orgTypeIcon(type)} {orgTypeLabel(type)}
-                </option>
-              ))}
-            </select>
+          <div className="mb-4 max-w-sm">
+            <OrgTypeFilter ariaLabel="Filter by organization type" options={orgTypeOptions} />
           </div>
           <input
             type="text"
@@ -216,6 +202,9 @@ export default function Teams() {
                       </div>
                       <div className="flex flex-wrap items-center gap-2 text-xs text-cric-muted">
                         {team.organization && <span>🏢 {team.organization}</span>}
+                        <span className="rounded-full border border-cric-border bg-cric-bg px-2 py-0.5 text-[10px] font-black uppercase tracking-wider">
+                          {teamRoleLabel(team.teamRole)}
+                        </span>
                         {team.branchName && <span>📍 {team.branchName}</span>}
                         {team.organizationRef ? (
                           <span className="rounded-full border border-cric-border bg-cric-bg px-2 py-0.5 text-[10px] font-black uppercase tracking-wider">

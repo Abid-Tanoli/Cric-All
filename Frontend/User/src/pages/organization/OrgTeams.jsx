@@ -9,6 +9,7 @@ import {
   updateOrgTeam,
 } from "../../services/organizationApi";
 import { PERMISSIONS, can, formatDate } from "../../lib/orgUi";
+import { TEAM_ROLES, teamRoleLabel } from "../../../../Shared/orgTypes.js";
 import {
   Banner,
   Field,
@@ -26,6 +27,7 @@ const AGE_GROUPS = ["U-10", "U-13", "U-15", "U-17", "U-19", "Open"];
 const emptyTeam = {
   name: "",
   shortName: "",
+  teamRole: "1st XI",
   category: "",
   ageGroup: "Open",
   homeGround: "",
@@ -50,6 +52,7 @@ function TeamForm({ orgId, categories, initial, onDone, onCancel }) {
       const payload = {
         name: form.name.trim(),
         shortName: form.shortName.trim(),
+        teamRole: form.teamRole,
         ageGroup: form.ageGroup,
         homeGround: form.homeGround.trim(),
         description: form.description.trim(),
@@ -74,6 +77,13 @@ function TeamForm({ orgId, categories, initial, onDone, onCancel }) {
         </Field>
         <Field label="Short name">
           <input value={form.shortName} onChange={set("shortName")} className={input} maxLength={20} />
+        </Field>
+        <Field label="Team role">
+          <select value={form.teamRole} onChange={set("teamRole")} className={input}>
+            {TEAM_ROLES.map((role) => (
+              <option key={role} value={role}>{role}</option>
+            ))}
+          </select>
         </Field>
       </div>
       <div className="grid gap-4 md:grid-cols-3">
@@ -246,6 +256,7 @@ export default function OrgTeams({ orgId, access, onChanged }) {
                       _id: team._id,
                       name: team.name,
                       shortName: team.shortName,
+                      teamRole: teamRoleLabel(team.teamRole),
                       category: team.category,
                       ageGroup: team.ageGroup,
                       homeGround: team.homeGround,
@@ -265,7 +276,7 @@ export default function OrgTeams({ orgId, access, onChanged }) {
                         <p className="truncate text-sm font-black text-cric-text">{team.name}</p>
                         <p className="truncate text-[10px] font-bold uppercase tracking-wider text-cric-muted">
                           {team.shortName ? `${team.shortName} · ` : ""}
-                          {team.category || "Uncategorised"} · {team.ageGroup || "Open"}
+                          {teamRoleLabel(team.teamRole)} · {team.category || "Uncategorised"} · {team.ageGroup || "Open"}
                           {team.isActive === false ? " · inactive" : ""}
                         </p>
                         {team.homeGround ? (

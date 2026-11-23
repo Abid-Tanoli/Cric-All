@@ -57,6 +57,7 @@ export const createOrgTeamSchema = z
     name: z.string().trim().min(2, "Team name must be at least 2 characters").max(150),
     shortName: z.string().trim().max(20).default(""),
     type: z.enum(TEAM_TYPES).default("local_team"),
+    teamRole: z.enum(["1st XI", "2nd XI", "U19", "U16", "women", "other"]).default("1st XI"),
     category: z.enum(TEAM_CATEGORIES).default("Other"),
     ageGroup: z.enum(AGE_GROUPS).default("Open"),
     description: text(2000),

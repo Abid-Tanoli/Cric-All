@@ -35,7 +35,7 @@ import Player from "../models/Player.js";
 import Team from "../models/Team.js";
 import TeamOrganization from "../models/TeamOrganization.js";
 import { PERMISSIONS, roleHasPermission, isOrgAdminRole } from "../permissions/orgPermissions.js";
-import { effectiveOrgType, publicTypeDetails } from "../services/organizationService.js";
+import { ORG_TYPE_LABELS, effectiveOrgType, publicTypeDetails } from "../services/organizationService.js";
 
 // ---------------------------------------------------------------------------
 // Public field sets
@@ -109,6 +109,8 @@ export const TEAM_PUBLIC_FIELDS = Object.freeze([
   "shortName",
   "longName",
   "type",
+  "teamRole",
+  "orgTypeLabel",
   "category",
   "categoryRef",
   "subCategory",
@@ -501,9 +503,15 @@ export function sanitizeTeamPublic(doc, opts = {}) {
 
   const { viewer = null, playerOrgId = null } = opts;
   const canViewPrivate = opts.canViewPrivate === true || canViewTeamPrivate(viewer, plain);
+  // The label is derived from the populated organization only; an unpopulated
+  // ObjectId (or an org-less platform team) has no type to show.
+  const populatedOrg = plain.organizationRef && typeof plain.organizationRef === "object" && !plain.organizationRef._bsontype
+    ? plain.organizationRef
+    : null;
+  const orgTypeLabel = populatedOrg ? (ORG_TYPE_LABELS[effectiveOrgType(populatedOrg)] || ORG_TYPE_LABELS.other) : "";
 
   if (canViewPrivate) {
-    const full = { ...plain };
+    const full = { ...plain, orgTypeLabel };
     delete full.__v;
     if (Array.isArray(full.players)) {
       full.players = mapPopulated(full.players, (player) => sanitizePlayerPublic(player, opts));
@@ -513,6 +521,7 @@ export function sanitizeTeamPublic(doc, opts = {}) {
 
   const privacy = plain.privacy || {};
   const out = pick(plain, TEAM_PUBLIC_FIELDS, Team.schema);
+  out.orgTypeLabel = orgTypeLabel;
 
   if (privacy.location === "hidden") {
     for (const field of TEAM_LOCATION_FIELDS) {

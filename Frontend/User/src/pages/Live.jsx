@@ -3,6 +3,7 @@ import { api } from "../services/api";
 import { Link, useSearchParams } from "react-router-dom";
 import LiveNavbar from "../components/LiveNavbar";
 import LocationFilters, { locationQueryFromSearchParams } from "../components/LocationFilters";
+import OrgTypeFilter, { orgTypeFromSearchParams } from "../components/OrgTypeFilter";
 import { initSocket } from "../services/socket";
 import LiveMatchesSection from "../components/cricapi/LiveMatchesSection";
 import LoadingWithTimeout from "../components/LoadingWithTimeout";
@@ -15,10 +16,11 @@ export default function Live() {
   const [searchParams] = useSearchParams();
   const locationQuery = locationQueryFromSearchParams(searchParams);
   const locationKey = JSON.stringify(locationQuery);
+  const orgType = orgTypeFromSearchParams(searchParams);
 
   const loadMatches = useCallback(async () => {
     try {
-      const res = await api.get("/matches", { params: locationQuery, timeout: 8000 });
+      const res = await api.get("/matches", { params: { ...locationQuery, ...(orgType ? { orgType } : {}) }, timeout: 8000 });
       // Handle different response formats
       const data = res.data?.matches || res.data || [];
       setMatches(Array.isArray(data) ? data : []);
@@ -31,7 +33,7 @@ export default function Live() {
       setLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [locationKey]);
+  }, [locationKey, orgType]);
 
   useEffect(() => {
     let mounted = true;
@@ -137,7 +139,10 @@ export default function Live() {
 
       {/* Content */}
       <div className="max-w-7xl mx-auto px-4 pt-6">
-        <LocationFilters />
+        <div className="mb-4 grid gap-3 sm:grid-cols-2">
+          <OrgTypeFilter />
+          <LocationFilters />
+        </div>
       </div>
 
       <div className="max-w-7xl mx-auto px-4 py-8">

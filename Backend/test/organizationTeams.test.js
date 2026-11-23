@@ -66,7 +66,7 @@ async function makeUser(overrides = {}) {
 
 async function makeOrg(owner, name = "Teams Org") {
   const res = mockRes();
-  await createOrganization(mockReq({ user: owner, principalType: "user", body: { name } }), res);
+  await createOrganization(mockReq({ user: owner, principalType: "user", body: { name, createDefaultTeam: false } }), res);
   assert.strictEqual(res.statusCode, 201, JSON.stringify(res.body));
   return res.body.organization;
 }

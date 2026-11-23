@@ -88,12 +88,12 @@ describe('Rankings page (Task 4)', () => {
     )
     await waitFor(() => expect(callsFor('/rankings-v2/overall').length).toBeGreaterThan(0))
 
-    fireEvent.change(screen.getByLabelText('Organization type'), { target: { value: 'club' } })
+    fireEvent.change(screen.getByLabelText('Organization type'), { target: { value: 'local_club' } })
     fireEvent.change(screen.getByLabelText('City'), { target: { value: 'Lahore' } })
 
     await waitFor(() => {
       const last = callsFor('/rankings-v2/overall').at(-1)
-      expect(last[1].params.orgType).toBe('club')
+      expect(last[1].params.orgType).toBe('local_club')
       expect(last[1].params.city).toBe('Lahore')
     })
   })

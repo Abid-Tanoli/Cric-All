@@ -1,13 +1,21 @@
 import React, { useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import {
   createOrganization,
+  createOrgTeam,
   listMyOrganizations,
   requestOrganizationVerification,
 } from "../../services/organizationApi";
 import { getStoredUser, notifyMembershipChanged } from "../auth/auth";
 import LocationSelect from "../../../../Shared/components/LocationSelect.jsx";
-import { emptyTypeDetails, legacyTypeForOrgType, serializeTypeDetails } from "../../../../Shared/orgTypes.js";
+import RegistrationBranch from "../../components/RegistrationBranch";
+import {
+  emptyTypeDetails,
+  legacyTypeForOrgType,
+  ORG_TYPE_VALUES,
+  serializeTypeDetails,
+  teamRoleLabel,
+} from "../../../../Shared/orgTypes.js";
 import { OrgTypeDetails, OrgTypePicker } from "./OrgTypeFields";
 import { Banner, Field, card, eyebrow, input, primaryButton, secondaryButton } from "./orgStyles";
 
@@ -18,6 +26,7 @@ const emptyForm = {
   orgType: "local_club",
   typeDetails: emptyTypeDetails("local_club"),
   requestVerification: false,
+  createDefaultTeam: true,
   description: "",
   website: "",
   location: { city: "", area: "", address: "", country: "" },
@@ -30,13 +39,24 @@ const emptyForm = {
 
 export default function CreateOrganization() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const storedUser = getStoredUser();
+  const requestedType = searchParams.get("orgType");
+  const orgTypeFromUrl = ORG_TYPE_VALUES.includes(requestedType) ? requestedType : "";
 
-  const [form, setForm] = useState(emptyForm);
+  const [form, setForm] = useState(() => ({
+    ...emptyForm,
+    orgType: orgTypeFromUrl || emptyForm.orgType,
+    type: legacyTypeForOrgType(orgTypeFromUrl || emptyForm.orgType),
+    typeDetails: emptyTypeDetails(orgTypeFromUrl || emptyForm.orgType),
+  }));
   const [parents, setParents] = useState([]);
   const [parent, setParent] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const [created, setCreated] = useState(null);
+  const [retryBusy, setRetryBusy] = useState(false);
+  const [retryError, setRetryError] = useState("");
 
   useEffect(() => {
     listMyOrganizations()
@@ -58,6 +78,14 @@ export default function CreateOrganization() {
       typeDetails: emptyTypeDetails(orgType),
       requestVerification: false,
     }));
+  const chooseBranch = (branch) => {
+    if (!branch.orgType) {
+      navigate("/register?mode=register&branch=player", { replace: true });
+      return;
+    }
+    setSearchParams({ orgType: branch.orgType }, { replace: true });
+    chooseType(branch.orgType);
+  };
   const setDetail = (key, value) =>
     setForm((f) => ({ ...f, typeDetails: { ...f.typeDetails, [key]: value } }));
   const setNested = (group, key) => (event) =>
@@ -87,6 +115,7 @@ export default function CreateOrganization() {
         shortName: form.shortName.trim(),
         type: form.type,
         orgType: form.orgType,
+        createDefaultTeam: form.createDefaultTeam,
         typeDetails: serializeTypeDetails(form.orgType, form.typeDetails),
         description: form.description.trim(),
         website: form.website.trim(),
@@ -111,7 +140,12 @@ export default function CreateOrganization() {
       // This account now belongs to an organization. The header caches that
       // fact per signed-in session, so it has to be told before we navigate.
       notifyMembershipChanged();
-      navigate(`/organization?org=${res.organization._id}`);
+      setCreated({
+        organization: res.organization,
+        team: res.defaultTeam || null,
+        failure: res.defaultTeamError || "",
+        teamName: form.name.trim() || res.organization.name,
+      });
     } catch (error) {
       setErr(error.message || "Could not create the organization");
     } finally {
@@ -119,7 +153,91 @@ export default function CreateOrganization() {
     }
   };
 
+  const retryTeam = async () => {
+    if (!created) return;
+    setRetryBusy(true);
+    setRetryError("");
+    try {
+      const result = await createOrgTeam(created.organization._id, {
+        name: created.teamName,
+        teamRole: "1st XI",
+      });
+      const team = result?.team || result;
+      setCreated((current) => ({ ...current, team, failure: "" }));
+    } catch (error) {
+      setRetryError(error.message || "Could not create the team");
+    } finally {
+      setRetryBusy(false);
+    }
+  };
+
   if (!storedUser) return null;
+
+  if (!orgTypeFromUrl) {
+    return (
+      <div className="min-h-screen bg-cric-bg px-4 py-8 text-cric-text">
+        <div className="mx-auto max-w-3xl">
+          <RegistrationBranch onSelect={chooseBranch} />
+        </div>
+      </div>
+    );
+  }
+
+  if (created) {
+    const orgId = created.organization._id;
+    return (
+      <div className="min-h-screen bg-cric-bg px-4 py-8 text-cric-text">
+        <div className="mx-auto max-w-2xl space-y-4">
+          <div className={card}>
+            <p className={eyebrow}>Done</p>
+            <h1 className="mt-1 text-2xl font-black uppercase tracking-tight">Organization created</h1>
+            <p className="mt-2 text-sm font-semibold text-cric-muted">
+              <span className="font-black text-cric-text">{created.organization.name}</span> is ready. You are its owner.
+            </p>
+            {created.team ? (
+              <p className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm font-bold text-emerald-700">
+                First team “{created.team.name}” ({teamRoleLabel(created.team.teamRole)}) is ready.
+              </p>
+            ) : (
+              <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3">
+                <p className="text-sm font-black text-amber-800">
+                  {created.failure || "Default team was not created"}
+                </p>
+                <button
+                  type="button"
+                  onClick={retryTeam}
+                  disabled={retryBusy}
+                  className="mt-3 rounded-lg bg-cric-accent px-5 py-2 text-[10px] font-black uppercase tracking-widest text-white disabled:opacity-60"
+                >
+                  {retryBusy ? "Creating…" : "Create team now"}
+                </button>
+                {retryError ? <p className="mt-2 text-xs font-bold text-red-600">{retryError}</p> : null}
+              </div>
+            )}
+          </div>
+          <div className="flex flex-wrap gap-3">
+            <button
+              type="button"
+              onClick={() => navigate(`/organization?org=${orgId}&tab=players`)}
+              className={primaryButton}
+            >
+              Add players
+            </button>
+            <button
+              type="button"
+              onClick={() => navigate(`/organization?org=${orgId}&tab=teams`)}
+              className={secondaryButton}
+            >
+              Add another team
+            </button>
+            <Link to={`/organization?org=${orgId}`} className={secondaryButton}>
+              Go to organization
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-cric-bg px-4 py-8 text-cric-text">
@@ -149,6 +267,24 @@ export default function CreateOrganization() {
             <Field label="Short name">
               <input value={form.shortName} onChange={setTop("shortName")} className={input} maxLength={20} />
             </Field>
+          </div>
+
+          <div className="mt-4 rounded-xl border border-cric-border bg-cric-bg p-4">
+            <p className="text-xs font-black uppercase tracking-widest text-cric-text">
+              A first team will be created automatically
+            </p>
+            <p className="mt-1 text-xs font-semibold text-cric-muted">
+              “{form.name.trim() || "Your organization"}” · 1st XI · your account becomes its manager.
+            </p>
+            <label className="mt-3 flex items-start gap-3 text-xs font-semibold text-cric-text">
+              <input
+                type="checkbox"
+                checked={form.createDefaultTeam}
+                onChange={(event) => setForm((f) => ({ ...f, createDefaultTeam: event.target.checked }))}
+                className="mt-0.5 h-4 w-4 accent-cric-accent"
+              />
+              <span>Create the first team automatically (recommended)</span>
+            </label>
           </div>
 
           <div className="mt-5">

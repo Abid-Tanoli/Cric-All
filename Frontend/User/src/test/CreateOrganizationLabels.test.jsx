@@ -39,7 +39,7 @@ describe('CreateOrganization field labels', () => {
     localStorage.setItem('bq_token', 'test-token');
 
     render(
-      <MemoryRouter>
+      <MemoryRouter initialEntries={["/organization/new?orgType=local_club"]}>
         <CreateOrganization />
       </MemoryRouter>
     );

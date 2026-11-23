@@ -3,6 +3,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { api } from "../services/api";
 import LoadingWithTimeout from "../components/LoadingWithTimeout";
 import LocationFilters, { locationQueryFromSearchParams } from "../components/LocationFilters";
+import OrgTypeFilter, { orgTypeFromSearchParams } from "../components/OrgTypeFilter";
 
 const SECTIONS = [
   { key: "teams", label: "Team Rankings" },
@@ -48,13 +49,13 @@ function cleanParams(params) {
 
 export default function Rankings() {
   const [section, setSection] = useState("teams");
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const locationQuery = locationQueryFromSearchParams(searchParams);
   const locationKey = JSON.stringify(locationQuery);
+  const teamOrgType = orgTypeFromSearchParams(searchParams);
 
   const [teamItems, setTeamItems] = useState([]);
   const [teamLoading, setTeamLoading] = useState(true);
-  const [teamOrgType, setTeamOrgType] = useState("");
   const [teamType, setTeamType] = useState("");
   const [teamCity, setTeamCity] = useState("");
   const [teamCountry, setTeamCountry] = useState("");
@@ -69,7 +70,7 @@ export default function Rankings() {
     () => ({
       ...cleanParams({
         limit: 100,
-        orgType: teamOrgType.trim(),
+        orgType: teamOrgType,
         teamType,
         city: teamCity.trim(),
         country: teamCountry.trim(),
@@ -136,7 +137,9 @@ export default function Rankings() {
   const activeScope = PLAYER_SCOPES.find((item) => item.key === playerScope) || PLAYER_SCOPES[0];
 
   const resetTeamFilters = () => {
-    setTeamOrgType("");
+    const params = new URLSearchParams(searchParams);
+    params.delete("orgType");
+    setSearchParams(params, { replace: true });
     setTeamType("");
     setTeamCity("");
     setTeamCountry("");
@@ -177,17 +180,7 @@ export default function Rankings() {
           <section aria-label="Team Rankings">
             <div className="mb-6 rounded-2xl border border-cric-border bg-cric-card p-4 shadow-sm">
               <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
-                <label className="flex flex-col gap-1 text-[10px] font-black uppercase tracking-widest text-cric-muted">
-                  Organization type
-                  <input
-                    id="org-type-filter"
-                    aria-label="Organization type"
-                    value={teamOrgType}
-                    onChange={(event) => setTeamOrgType(event.target.value)}
-                    placeholder="e.g. club, school"
-                    className="rounded-xl border border-cric-border bg-cric-bg px-4 py-3 text-sm font-bold text-cric-text outline-none focus:border-blue-500"
-                  />
-                </label>
+                <OrgTypeFilter ariaLabel="Organization type" />
                 <label className="flex flex-col gap-1 text-[10px] font-black uppercase tracking-widest text-cric-muted">
                   Team type
                   <select

@@ -8,6 +8,7 @@ export const ORG_TYPES = Object.freeze([
   {
     value: "local_club",
     label: "Local club",
+    labelUr: "مقامی کلب",
     icon: "🏏",
     description: "A community or neighbourhood cricket club.",
     fields: [],
@@ -15,6 +16,7 @@ export const ORG_TYPES = Object.freeze([
   {
     value: "registered_club",
     label: "Registered club",
+    labelUr: "رجسٹرڈ کلب",
     icon: "📜",
     description: "A formally registered club. Registration details can be reviewed for a Verified badge.",
     fields: [
@@ -28,6 +30,7 @@ export const ORG_TYPES = Object.freeze([
   {
     value: "school",
     label: "School",
+    labelUr: "اسکول",
     icon: "🏫",
     description: "A school cricket programme.",
     fields: [
@@ -44,6 +47,7 @@ export const ORG_TYPES = Object.freeze([
   {
     value: "college",
     label: "College",
+    labelUr: "کالج",
     icon: "🎓",
     description: "A college or intermediate college.",
     fields: [
@@ -60,6 +64,7 @@ export const ORG_TYPES = Object.freeze([
   {
     value: "university",
     label: "University",
+    labelUr: "یونیورسٹی",
     icon: "🏛️",
     description: "A university or higher-education department.",
     fields: [
@@ -71,6 +76,7 @@ export const ORG_TYPES = Object.freeze([
   {
     value: "company",
     label: "Industry / company",
+    labelUr: "صنعت / کمپنی",
     icon: "🏢",
     description: "A corporate or industry team.",
     fields: [
@@ -81,6 +87,7 @@ export const ORG_TYPES = Object.freeze([
   {
     value: "foundation",
     label: "Foundation / NGO",
+    labelUr: "فاؤنڈیشن / این جی او",
     icon: "🤝",
     description: "A foundation, trust or non-governmental organisation.",
     fields: [
@@ -92,6 +99,7 @@ export const ORG_TYPES = Object.freeze([
   {
     value: "other",
     label: "Other",
+    labelUr: "دیگر",
     icon: "❓",
     description: "Something else — tell us what it is.",
     fields: [{ key: "typeNote", label: "What kind of organization is it?", type: "textarea" }],
@@ -101,6 +109,34 @@ export const ORG_TYPES = Object.freeze([
 export const ORG_TYPE_VALUES = ORG_TYPES.map((type) => type.value);
 
 const BY_VALUE = new Map(ORG_TYPES.map((type) => [type.value, type]));
+
+/** Team sides. `1st XI` is also what a legacy team with no role reads as. */
+export const TEAM_ROLES = Object.freeze(["1st XI", "2nd XI", "U19", "U16", "women", "other"]);
+
+export function teamRoleLabel(value) {
+  return TEAM_ROLES.includes(value) ? value : "1st XI";
+}
+
+const metaFor = (value) => BY_VALUE.get(value) || BY_VALUE.get("other");
+
+/**
+ * The six first-choice cards shown before a player/org form. Organization cards
+ * carry the orgType they preselect; the institution card starts at `school` and
+ * remains switchable in the organization form's type picker.
+ */
+export const REGISTRATION_BRANCHES = Object.freeze([
+  { key: "player", label: "Player", labelUr: "کھلاڑی", icon: "🏏", description: "Create a player profile and join teams or events.", orgType: null },
+  { key: "local_club", label: "Local club", labelUr: "مقامی کلب", icon: metaFor("local_club").icon, description: "A community or neighbourhood cricket club.", orgType: "local_club" },
+  { key: "registered_club", label: "Registered club", labelUr: "رجسٹرڈ کلب", icon: metaFor("registered_club").icon, description: "A formally registered club with reviewable details.", orgType: "registered_club" },
+  { key: "institution", label: "School / College / University", labelUr: "اسکول / کالج / یونیورسٹی", icon: metaFor("school").icon, description: "An educational institution cricket programme.", orgType: "school" },
+  { key: "company", label: "Industry / company", labelUr: "صنعت / کمپنی", icon: metaFor("company").icon, description: "A corporate or industry cricket team.", orgType: "company" },
+  { key: "foundation", label: "Foundation / NGO", labelUr: "فاؤنڈیشن / این جی او", icon: metaFor("foundation").icon, description: "A foundation, trust or non-governmental organisation.", orgType: "foundation" },
+]);
+
+export function branchForOrgType(value) {
+  const orgType = normalizeOrgType(value);
+  return REGISTRATION_BRANCHES.find((branch) => branch.orgType === orgType) || null;
+}
 
 /** Legacy `type` slugs still written by older clients, mapped to the new enum. */
 const LEGACY_TO_ORG_TYPE = Object.freeze({
@@ -204,6 +240,10 @@ export function verificationBadge(status) {
 export default {
   ORG_TYPES,
   ORG_TYPE_VALUES,
+  TEAM_ROLES,
+  teamRoleLabel,
+  REGISTRATION_BRANCHES,
+  branchForOrgType,
   normalizeOrgType,
   orgTypeOf,
   orgTypeMeta,
