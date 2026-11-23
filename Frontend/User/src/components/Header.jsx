@@ -58,19 +58,14 @@ export default function Header({ user, hasOrg, onShowLogin, onShowRegister, onLo
   const isOrgActive = location.pathname.startsWith("/organization");
   const isMyPlayersActive = location.pathname === "/my-players";
   const isAccountActive = location.pathname === "/account";
-  // Banner only while NEITHER identifier is verified: email OR phone being
-  // verified satisfies the account (see isIdentityVerified on the backend).
-  // `!== true` (not `=== false`) so users whose cached profile predates the
-  // phone fields still see the banner. When REQUIRE_VERIFIED_ACCOUNT is turned
-  // off platform-wide the whole banner is hidden (the backend no longer blocks).
+  // Email-only gate: phone/SMS verification is deferred, so a phone number can
+  // never satisfy the account (see isIdentityVerified on the backend). `!== true`
+  // (not `=== false`) so cached profiles predating the field still see the banner.
+  // When REQUIRE_VERIFIED_ACCOUNT is off platform-wide the backend no longer blocks,
+  // so the banner is hidden too.
   const needsVerification = Boolean(
-    flags.requireVerifiedAccount &&
-      user &&
-      user.emailVerified !== true &&
-      user.phoneVerified !== true
+    flags.requireVerifiedAccount && user && user.emailVerified !== true
   );
-  const missingEmail = Boolean(user && user.email && user.emailVerified !== true);
-  const missingPhone = Boolean(user && user.phone && user.phoneVerified !== true);
   // "My Organizations" only means something once the account belongs to one. An
   // account with no organization still needs a way to create its first one, so it
   // gets a labelled entry point instead of an empty dashboard link.
@@ -81,8 +76,8 @@ export default function Header({ user, hasOrg, onShowLogin, onShowRegister, onLo
   const handleResend = async () => {
     setResendState("Sending...");
     try {
-      await resendVerification(user.email);
-      setResendState("Sent — check your inbox (in development the link is printed in the server log).");
+      await resendVerification(user?.email);
+      setResendState("If that address has an unverified account, a new code has been sent.");
     } catch (error) {
       setResendState(error?.message || "Could not send right now. Please wait a minute and retry.");
     }
@@ -93,30 +88,22 @@ export default function Header({ user, hasOrg, onShowLogin, onShowRegister, onLo
       {needsVerification && (
         <div className="bg-cric-accent/15 border-b border-cric-accent/40 px-4 py-2 flex flex-wrap items-center justify-center gap-3 text-center">
           <p className="text-[10px] font-black uppercase tracking-widest text-cric-text">
-            {missingEmail && missingPhone
-              ? "Verify your email or phone number to create organizations, teams and matches."
-              : missingPhone
-                ? "Verify your phone number to create organizations, teams and matches."
-                : "Verify your email to create organizations, teams and matches."}
+            Verify your email to continue
           </p>
-          {missingEmail && (
-            <button
-              type="button"
-              onClick={handleResend}
-              className="rounded-lg bg-cric-accent px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-white hover:bg-orange-600 transition-colors"
-            >
-              Resend link
-            </button>
-          )}
-          {missingPhone && (
-            <button
-              type="button"
-              onClick={() => navigate("/verify-phone")}
-              className="rounded-lg bg-cric-accent px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-white hover:bg-orange-600 transition-colors"
-            >
-              Verify phone
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={() => navigate(`/verify-email${user?.email ? `?email=${encodeURIComponent(user.email)}` : ''}`)}
+            className="rounded-lg bg-cric-accent px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-white hover:bg-orange-600 transition-colors"
+          >
+            Verify email
+          </button>
+          <button
+            type="button"
+            onClick={handleResend}
+            className="rounded-lg bg-cric-bg px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-cric-muted hover:text-cric-text transition-colors"
+          >
+            Resend code
+          </button>
           {resendState && <span className="text-[10px] font-bold text-cric-muted">{resendState}</span>}
         </div>
       )}

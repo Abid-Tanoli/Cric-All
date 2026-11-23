@@ -22,15 +22,28 @@ const renderHeader = (user = unverified) =>
     </ThemeProvider>
   )
 
-const banner = () => screen.queryByText(/create organizations, teams and matches/i)
+const banner = () => screen.queryByText(/verify your email to continue/i)
 
-describe('Verification banner (REQUIRE_VERIFIED_ACCOUNT)', () => {
+describe('Verification banner (email-only gate)', () => {
   afterEach(() => {
     vi.unstubAllEnvs()
   })
 
   it('shows the banner for an unverified user by default', () => {
     renderHeader()
+    expect(banner()).toBeInTheDocument()
+  })
+
+  it('uses the exact required copy and never offers fake phone verification', () => {
+    renderHeader()
+    expect(banner()).toHaveTextContent('Verify your email to continue')
+    expect(screen.getByRole('button', { name: /verify email/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /resend code/i })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /verify phone/i })).not.toBeInTheDocument()
+  })
+
+  it('still shows the banner when only a phone number is verified', () => {
+    renderHeader({ ...unverified, email: '', phoneVerified: true })
     expect(banner()).toBeInTheDocument()
   })
 
@@ -46,7 +59,7 @@ describe('Verification banner (REQUIRE_VERIFIED_ACCOUNT)', () => {
     expect(banner()).toBeInTheDocument()
   })
 
-  it('never shows the banner for a verified user', () => {
+  it('never shows the banner for an email-verified user', () => {
     renderHeader({ ...unverified, emailVerified: true })
     expect(banner()).not.toBeInTheDocument()
   })

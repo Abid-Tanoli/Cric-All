@@ -85,14 +85,16 @@ export async function changePassword(currentPassword, newPassword) {
   return user;
 }
 
-export async function verifyEmailToken(token) {
-  const res = await api.post('/auth/verify-email', { token });
-  const { user } = res.data || {};
-  if (user) {
-    // Refresh the cached user so the verification banner disappears.
-    localStorage.setItem('bq_user', JSON.stringify(user));
-    window.dispatchEvent(new CustomEvent('bq-auth-changed'));
-  }
+function refreshCachedUser(user) {
+  if (!user) return;
+  localStorage.setItem('bq_user', JSON.stringify(user));
+  window.dispatchEvent(new CustomEvent('bq-auth-changed'));
+}
+
+/** Submit the 6-digit email code. On success the cached user is refreshed so the banner disappears. */
+export async function verifyEmailCode(email, code) {
+  const res = await api.post('/auth/verify-email', { email, code });
+  refreshCachedUser(res.data?.user);
   return res.data;
 }
 
@@ -101,22 +103,10 @@ export async function resendVerification(email) {
   return res.data;
 }
 
-/**
- * Submit the 6-digit code sent to `phone`. On success the cached user is
- * refreshed so the verification banner disappears, exactly like verifyEmailToken.
- */
-export async function verifyPhoneOtp(phone, otp) {
-  const res = await api.post('/auth/verify-phone', { phone, otp });
-  const { user } = res.data || {};
-  if (user) {
-    localStorage.setItem('bq_user', JSON.stringify(user));
-    window.dispatchEvent(new CustomEvent('bq-auth-changed'));
-  }
-  return res.data;
-}
-
-export async function resendPhoneOtp(phone) {
-  const res = await api.post('/auth/resend-phone-otp', { phone });
+/** "Wrong email?" — replace the address, invalidate old codes and send a fresh one. */
+export async function changeVerificationEmail(email) {
+  const res = await api.post('/auth/change-verification-email', { email });
+  refreshCachedUser(res.data?.user);
   return res.data;
 }
 
