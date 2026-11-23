@@ -98,11 +98,21 @@ async function makeUser(overrides = {}) {
   });
 }
 
-/** Create an org owned by `owner` through the controller (not a raw insert). */
+/**
+ * Create an org owned by `owner` through the controller (not a raw insert).
+ *
+ * These tests cover self-service and membership lifecycle, not the automatic
+ * first team, so they opt out to keep their original empty-org assumptions.
+ * `orgDefaultTeam.test.js` covers the default-team behaviour.
+ */
 async function makeOrg(owner, overrides = {}) {
   const res = mockRes();
   await createOrganization(
-    mockReq({ user: owner, principalType: "user", body: { name: "Test Org", ...overrides } }),
+    mockReq({
+      user: owner,
+      principalType: "user",
+      body: { name: "Test Org", ...overrides, createDefaultTeam: false },
+    }),
     res,
   );
   assert.strictEqual(res.statusCode, 201, JSON.stringify(res.body));
@@ -308,7 +318,11 @@ test("sub-organizations are limited to orgs the caller manages", async () => {
 
   const allowed = mockRes();
   await createOrganization(
-    mockReq({ user: mine, principalType: "user", body: { name: "My Sub Org", parent: String(parent._id) } }),
+    mockReq({
+      user: mine,
+      principalType: "user",
+      body: { name: "My Sub Org", parent: String(parent._id), createDefaultTeam: false },
+    }),
     allowed,
   );
   assert.strictEqual(allowed.statusCode, 201, JSON.stringify(allowed.body));

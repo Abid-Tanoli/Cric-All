@@ -13,7 +13,7 @@ import Membership from "../src/models/Membership.js";
 import { listOrganizations } from "../src/controllers/organizationController.js";
 import { listTeams } from "../src/controllers/teamsController.js";
 import { getPlayers } from "../src/controllers/playerController.js";
-import { getTournaments } from "../src/controllers/tournamentController.js";
+import { getTournaments } from "../src/controllers/TournamentController.js";
 import { getMatches } from "../src/controllers/matchController.js";
 import { InvalidOrgTypeFilterError, parseOrgTypeFilter } from "../src/services/organizationService.js";
 import { startTestDb, stopTestDb, mockReq, mockRes } from "./helpers/testDb.js";
