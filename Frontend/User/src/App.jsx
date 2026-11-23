@@ -175,6 +175,8 @@ function AppShell() {
             <Route path="/forgot-password" element={<ErrorBoundary><ForgotPassword /></ErrorBoundary>} />
             <Route path="/reset-password/:token" element={<ErrorBoundary><ResetPassword /></ErrorBoundary>} />
             <Route path="/change-password" element={<ErrorBoundary><ChangePassword /></ErrorBoundary>} />
+            <Route path="/verify-email" element={<ErrorBoundary><VerifyEmail /></ErrorBoundary>} />
+            {/* Legacy token links no longer verify; the page explains and offers the code form. */}
             <Route path="/verify-email/:token" element={<ErrorBoundary><VerifyEmail /></ErrorBoundary>} />
             <Route path="/verify-phone" element={<ErrorBoundary><VerifyPhone /></ErrorBoundary>} />
             <Route path="/reset-password" element={<ErrorBoundary><NotFound /></ErrorBoundary>} />

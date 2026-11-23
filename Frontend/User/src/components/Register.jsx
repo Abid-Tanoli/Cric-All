@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { GoogleLogin } from '@react-oauth/google';
-import { register, loginWithGoogle, verifyPhoneOtp, resendPhoneOtp, formatPhone, getStoredUser } from '../pages/auth/auth';
+import { register, loginWithGoogle, getStoredUser } from '../pages/auth/auth';
+import EmailCodeForm from './EmailCodeForm';
 import PlayerForm from './PlayerForm';
 import RegistrationBranch from './RegistrationBranch';
 import { branchForOrgType, REGISTRATION_BRANCHES } from '../../../Shared/orgTypes.js';
@@ -34,10 +35,6 @@ export default function Register({ onSuccess, onCancel, embedded = false }) {
   const [err, setErr] = useState(null);
   const [loading, setLoading] = useState(false);
   const [postSignup, setPostSignup] = useState(null);
-  const [otp, setOtp] = useState('');
-  const [otpMsg, setOtpMsg] = useState(null);
-  const [otpErr, setOtpErr] = useState(null);
-  const [otpLoading, setOtpLoading] = useState(false);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [branchKey, setBranchKey] = useState(() => {
@@ -73,7 +70,7 @@ export default function Register({ onSuccess, onCancel, embedded = false }) {
     setErr(null);
     setLoading(true);
     try {
-      const { user, phoneVerification, requiresPhoneVerification } = await register(data.name, data.email, data.password, {
+      const { user, verificationSent, verificationReason } = await register(data.name, data.email, data.password, {
         accountType: 'player',
         phone: data.phone || '',
         playerProfile: {
@@ -94,11 +91,8 @@ export default function Register({ onSuccess, onCancel, embedded = false }) {
           },
         },
       });
-      if (requiresPhoneVerification && user && user.phoneVerified !== true) {
-        setOtp('');
-        setOtpMsg(null);
-        setOtpErr(null);
-        setPostSignup({ user, type: 'player', phoneVerification, requiresPhoneVerification });
+      if (user && user.email && user.emailVerified !== true) {
+        setPostSignup({ user, type: 'player', verificationSent, verificationReason });
       } else {
         onSuccess?.(user);
       }
@@ -121,14 +115,11 @@ export default function Register({ onSuccess, onCancel, embedded = false }) {
         phone,
         joinIntent,
       });
-      setOtp('');
-      setOtpMsg(null);
-      setOtpErr(null);
       setPostSignup({
         user: data.user,
         type: accountType,
-        phoneVerification: data.phoneVerification,
-        requiresPhoneVerification: data.requiresPhoneVerification,
+        verificationSent: data.verificationSent,
+        verificationReason: data.verificationReason,
       });
     } catch (error) {
       setErr(error.response?.data?.message || 'Registration failed');
@@ -137,35 +128,8 @@ export default function Register({ onSuccess, onCancel, embedded = false }) {
     }
   };
 
-  const submitOtp = async (e) => {
-    e.preventDefault();
-    setOtpLoading(true);
-    setOtpMsg(null);
-    setOtpErr(null);
-    try {
-      const data = await verifyPhoneOtp(postSignup.user.phone, otp.trim());
-      setOtpMsg(data.message || 'Phone number verified.');
-      setPostSignup(s => (s ? { ...s, user: data.user || s.user } : s));
-      setOtp('');
-    } catch (error) {
-      setOtpErr(error.response?.data?.message || 'Invalid or expired code.');
-    } finally {
-      setOtpLoading(false);
-    }
-  };
-
-  const resendOtp = async () => {
-    setOtpLoading(true);
-    setOtpMsg(null);
-    setOtpErr(null);
-    try {
-      const data = await resendPhoneOtp(postSignup.user.phone);
-      setOtpMsg(data.message || 'A new code is on its way.');
-    } catch (error) {
-      setOtpErr(error.response?.data?.message || 'Could not resend the code.');
-    } finally {
-      setOtpLoading(false);
-    }
+  const handleEmailVerified = (updatedUser) => {
+    if (updatedUser) setPostSignup((s) => (s ? { ...s, user: updatedUser } : s));
   };
 
   const handleGoogleSuccess = async (credentialResponse) => {
@@ -192,7 +156,7 @@ export default function Register({ onSuccess, onCancel, embedded = false }) {
                 <p className="text-[10px] font-black uppercase tracking-widest text-white/70">Join CricAll</p>
                 <h3 className="mt-1 text-2xl font-black uppercase tracking-tight">Choose how you want to join</h3>
                 <p className="mt-2 max-w-2xl text-sm font-semibold text-white/80">
-                  CricAll provides the platform. Create your account with an email address or phone number, verify it, and manage your cricket from one place.
+                  CricAll provides the platform. Create your account with an email address or phone number, verify your email, and manage your cricket from one place.
                 </p>
               </div>
             </div>
@@ -214,75 +178,31 @@ export default function Register({ onSuccess, onCancel, embedded = false }) {
               <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-cric-accent/20 text-2xl text-cric-accent">✓</div>
               <h4 className="text-xl font-black uppercase tracking-tight text-cric-text">Thanks, {postSignup.user.name}!</h4>
 
-              {postSignup.user.email && (
-                <p className="mx-auto mt-3 max-w-md text-sm font-semibold leading-relaxed text-cric-muted">
-                  Your account is ready. We sent a verification link to{' '}
-                  <span className="font-black text-cric-accent">{postSignup.user.email}</span>.
-                  Verify your email to unlock organizations, teams and matches.
-                </p>
-              )}
-
-              {postSignup.requiresPhoneVerification && !postSignup.user.phoneVerified && (
-                <div className="mx-auto mt-5 max-w-md rounded-xl border border-cric-border bg-cric-card p-5 text-left">
-                  <p className="text-[10px] font-black uppercase tracking-widest text-cric-muted">
-                    Verify your phone number
-                  </p>
-                  <p className="mt-2 text-sm font-semibold leading-relaxed text-cric-muted">
-                    Enter the 6-digit code sent to{' '}
-                    <span className="font-black text-cric-accent">{formatPhone(postSignup.user.phone)}</span>.
-                  </p>
-                  {postSignup.phoneVerification?.message && (
-                    <p className="mt-2 text-xs font-semibold text-cric-muted">
-                      {postSignup.phoneVerification.message}
-                    </p>
-                  )}
-                  <form onSubmit={submitOtp} className="mt-4 flex flex-col gap-3">
-                    <input
-                      inputMode="numeric"
-                      autoComplete="one-time-code"
-                      maxLength={6}
-                      placeholder="123456"
-                      value={otp}
-                      onChange={e => setOtp(e.target.value.replace(/\D/g, ''))}
-                      className="w-full rounded-lg border border-cric-border bg-cric-bg px-3 py-3 text-center text-lg font-black tracking-[0.4em] text-cric-text focus:outline-none focus:ring-2 focus:ring-cric-accent/30 focus:border-cric-accent"
-                    />
-                    {otpMsg && <p className="text-sm font-bold text-green-600">{otpMsg}</p>}
-                    {otpErr && <p className="text-sm font-bold text-red-500">{otpErr}</p>}
-                    <div className="flex flex-wrap items-center gap-3">
-                      <button
-                        type="submit"
-                        disabled={otpLoading || otp.trim().length !== 6}
-                        className="rounded-lg bg-cric-accent px-6 py-3 text-[10px] font-black uppercase tracking-widest text-white shadow-sm transition hover:bg-orange-600 disabled:opacity-60"
-                      >
-                        {otpLoading ? 'Verifying...' : 'Verify Phone'}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={resendOtp}
-                        disabled={otpLoading}
-                        className="rounded-lg bg-cric-bg px-6 py-3 text-[10px] font-black uppercase tracking-widest text-cric-muted transition hover:bg-cric-border disabled:opacity-60"
-                      >
-                        Resend Code
-                      </button>
-                    </div>
-                  </form>
+              {postSignup.user.email && postSignup.user.emailVerified !== true ? (
+                <div className="mx-auto mt-5 max-w-md rounded-xl border border-cric-accent/30 bg-cric-card p-5 text-left">
+                  <EmailCodeForm
+                    email={postSignup.user.email}
+                    onVerified={handleEmailVerified}
+                    compact
+                  />
                 </div>
-              )}
-
-              {!postSignup.user.email && !postSignup.requiresPhoneVerification && (
+              ) : (
                 <p className="mx-auto mt-3 max-w-md text-sm font-semibold leading-relaxed text-cric-muted">
-                  Your account is ready.
+                  {postSignup.user.email
+                    ? 'Your email is verified. You can now manage your cricket.'
+                    : 'Your account is ready. Add and verify an email in Account settings to unlock creation features.'}
                 </p>
               )}
 
-              <p className="mx-auto mt-2 max-w-md text-xs font-semibold text-cric-muted">
-                (In development the link/code is printed in the backend server log.)
+              <p className="mx-auto mt-3 max-w-md text-[11px] font-semibold text-cric-muted">
+                Phone/SMS verification is not available yet — your phone number is shown as not verified.
               </p>
               <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
                 <button
                   type="button"
                   onClick={finishSignup}
-                  className="rounded-lg bg-cric-accent px-8 py-3 text-xs font-black uppercase tracking-widest text-white shadow-sm transition hover:bg-orange-600"
+                  disabled={Boolean(postSignup.user.email) && postSignup.user.emailVerified !== true}
+                  className="rounded-lg bg-cric-accent px-8 py-3 text-xs font-black uppercase tracking-widest text-white shadow-sm transition hover:bg-orange-600 disabled:opacity-60"
                 >
                   Continue
                 </button>

@@ -55,9 +55,15 @@ const userSchema = new mongoose.Schema({
   // Google linking that drops a password, suspension). Compared against the
   // `tv` claim in the JWT by `protect`.
   tokenVersion: { type: Number, default: 0 },
-  // Email verification: random token stored hashed, single-use, expiring.
+  // Email verification: a 6-digit code stored only as its SHA-256 hash.
+  // `emailVerificationToken` is the legacy link-token field, kept so older
+  // documents still load; new signups never write it.
   emailVerificationToken: { type: String, select: false, default: undefined },
+  emailVerificationCode: { type: String, select: false, default: undefined },
   emailVerificationExpires: { type: Date, default: undefined },
+  // Wrong guesses against the current code; after MAX_EMAIL_CODE_ATTEMPTS the
+  // code is invalidated and a new one must be requested.
+  emailVerificationAttempts: { type: Number, default: 0 },
   verificationSentAt: { type: Date, default: undefined },
   // Phone verification: the same token/expiry/resend/attempt design as email
   // verification, but the secret is a short numeric OTP instead of a link.

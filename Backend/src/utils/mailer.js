@@ -135,10 +135,10 @@ function safeError(error, config) {
  * Send a mail. Always resolves — a mail failure is logged with the recipient
  * domain only and never thrown into the request path.
  *
- * @param {{to: string, subject: string, text: string, replyTo?: string}} message
+ * @param {{to: string, subject: string, text: string, replyTo?: string, html?: string}} message
  * @returns {Promise<{driver: string, delivered: boolean, error?: string}>}
  */
-export async function sendMail({ to, subject, text, replyTo } = {}) {
+export async function sendMail({ to, subject, text, replyTo, html } = {}) {
   if (!to) {
     log.warn({ event: "mail.skipped" }, "sendMail called without a recipient");
     return { driver: "none", delivered: false };
@@ -164,7 +164,10 @@ export async function sendMail({ to, subject, text, replyTo } = {}) {
       to: safeTo,
       subject: safeSubject,
       text: safeText,
-      html: buildHtml(safeText),
+      // A caller may supply a purpose-built minimal HTML template. It is
+      // generated in code (never from user input) for verification mails;
+      // everything else keeps the safe text wrapper.
+      html: typeof html === "string" && html ? html : buildHtml(safeText),
       ...(replyTo || config.replyTo
         ? { replyTo: sanitizeHeaderValue(replyTo || config.replyTo) }
         : {}),

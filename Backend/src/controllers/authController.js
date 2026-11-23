@@ -13,17 +13,16 @@ import {
   isResetTokenExpired,
 } from "../utils/passwordReset.js";
 import {
-  hashVerificationToken,
-  isVerificationExpired,
-  issueVerificationEmail,
+  hashEmailCode,
+  isEmailCodeExpired,
+  isEmailCoolingDown,
+  issueEmailCode,
+  invalidateEmailCode,
+  MAX_EMAIL_CODE_ATTEMPTS,
 } from "../utils/emailVerification.js";
+import { checkEmailPolicy, normalizeEmail } from "../utils/emailPolicy.js";
+import { canSendVerification, recordVerificationSend } from "../utils/verificationBudget.js";
 import { normalizePhone } from "../utils/phone.js";
-import {
-  hashOtp,
-  isOtpExpired,
-  issuePhoneOtp,
-  MAX_OTP_ATTEMPTS,
-} from "../utils/phoneVerification.js";
 import logger from "../utils/logger.js";
 import { recordAudit } from "../utils/audit.js";
 import { deleteUserAccount, AccountDeletionError } from "../services/accountDeletionService.js";
@@ -31,6 +30,26 @@ import { deleteUserAccount, AccountDeletionError } from "../services/accountDele
 const log = logger.child({ service: "auth" });
 
 const userFrontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
+
+const EMAIL_POLICY_MESSAGES = {
+  INVALID_EMAIL: "Please use a valid email address",
+  DISPOSABLE_EMAIL: "Please use a permanent email address (temporary mailboxes are not accepted)",
+  NO_MX_RECORD: "This email domain cannot receive mail. Please use a different address",
+};
+
+/**
+ * Issue a verification code with the shared hourly budget (per user + per IP).
+ * Never throws into a request path: mailer already swallows delivery errors.
+ */
+async function deliverVerificationCode(user, req, { force = false } = {}) {
+  const budget = canSendVerification(user, req);
+  if (!budget.allowed) {
+    return { sent: false, reason: "rate_limited", retryAfterMs: budget.retryAfterMs };
+  }
+  const result = await issueEmailCode(user, { force });
+  if (result.sent) recordVerificationSend(user, req);
+  return result;
+}
 
 // Everything the client is allowed to see about its own account.
 function publicUser(user, extra = {}) {
@@ -81,15 +100,29 @@ export const registerUser = async (req, res) => {
     if (phoneInput && !normalizedPhone) {
       return res.status(400).json({ message: "Please provide a valid phone number" });
     }
-    if (!name || !password || (!email && !normalizedPhone)) {
+    const normalizedEmail = email ? normalizeEmail(email) : "";
+    if (!name || !password || (!normalizedEmail && !normalizedPhone)) {
       return res.status(400).json({ message: "All fields are required" });
+    }
+
+    // Strict syntax, a small maintained disposable list, and an MX check that
+    // fails open. DNS is consulted via Node's built-in resolver only, and a
+    // timeout/SERVFAIL never blocks signup.
+    if (normalizedEmail) {
+      const policy = await checkEmailPolicy(normalizedEmail);
+      if (!policy.ok) {
+        return res.status(400).json({
+          message: EMAIL_POLICY_MESSAGES[policy.reason] || "Please use a valid email address",
+          code: policy.reason,
+        });
+      }
     }
 
     // Email setters (lowercase/trim) normalize both sides of this lookup, and
     // phone is stored pre-normalized, so both duplicate checks compare
     // canonical values.
-    if (email) {
-      const emailExists = await User.findOne({ email });
+    if (normalizedEmail) {
+      const emailExists = await User.findOne({ email: normalizedEmail });
       if (emailExists) {
         // Explicit, actionable message on the register form (requested UX).
         return res.status(409).json({
@@ -115,7 +148,7 @@ export const registerUser = async (req, res) => {
 
     const newUser = await User.create({
       name,
-      ...(email ? { email } : {}),
+      ...(normalizedEmail ? { email: normalizedEmail } : {}),
       ...(normalizedPhone ? { phone: normalizedPhone } : {}),
       password,
       role,
@@ -187,15 +220,13 @@ export const registerUser = async (req, res) => {
       }
     }
 
-    // Both verification steps are best-effort: registration still succeeds if
-    // the mail/SMS drivers are not configured yet (the link/code is in the
-    // server log). The account itself is usable immediately either way.
-    const verification = email
-      ? await issueVerificationEmail(newUser, { frontendUrl: userFrontendUrl })
+    // Email verification is best-effort: registration still succeeds if the
+    // mail driver is not configured yet (with MAIL_DRIVER=console the code is
+    // written to the backend log for local testing). Phone/SMS verification is
+    // deferred — no SMS is sent and the phone is always shown as "not verified".
+    const verification = normalizedEmail
+      ? await deliverVerificationCode(newUser, req, { force: true })
       : { sent: false, reason: "no_email" };
-    const phoneVerification = normalizedPhone
-      ? await issuePhoneOtp(newUser, { force: true })
-      : null;
 
     const token = generateToken(newUser);
 
@@ -213,8 +244,7 @@ export const registerUser = async (req, res) => {
       requiresEmailVerification: Boolean(newUser.email),
       verificationSent: verification.sent,
       verificationReason: verification.reason,
-      requiresPhoneVerification: Boolean(normalizedPhone),
-      phoneVerification,
+      requiresPhoneVerification: false,
     });
   } catch (err) {
     if (isDuplicateKeyError(err)) {
@@ -430,30 +460,59 @@ export const changePassword = async (req, res) => {
 };
 
 /**
- * POST /api/auth/verify-email { token }
- * Single-use: the stored hash is cleared as soon as it matches.
+ * POST /api/auth/verify-email { email, code }
+ *
+ * A 6-digit, 10-minute, single-use code. Only its SHA-256 hash is stored.
+ * Five wrong guesses invalidate the code; a new one must then be requested.
  */
 export const verifyEmail = async (req, res) => {
   try {
-    const { token } = req.body;
-    if (!token) return res.status(400).json({ message: "Verification token is required" });
+    const { email, code } = req.body;
+    if (!email || !code) {
+      return res.status(400).json({ message: "Email address and verification code are required" });
+    }
 
-    const hashed = hashVerificationToken(token);
-    const user = await User.findOne({ emailVerificationToken: hashed })
-      .select("+emailVerificationToken");
+    const invalid = {
+      message: "This verification code is invalid or has expired.",
+      code: "VERIFY_CODE_INVALID",
+    };
+    const user = await User.findOne({ email: normalizeEmail(email) })
+      .select("+emailVerificationCode");
 
-    if (!user || isVerificationExpired(user.emailVerificationExpires)) {
+    if (!user || !user.emailVerificationCode || isEmailCodeExpired(user.emailVerificationExpires)) {
+      return res.status(400).json(invalid);
+    }
+    if ((user.emailVerificationAttempts || 0) >= MAX_EMAIL_CODE_ATTEMPTS) {
       return res.status(400).json({
-        message: "This verification link is invalid or has expired.",
-        code: "VERIFY_TOKEN_INVALID",
+        message: "Too many incorrect attempts. Request a new code.",
+        code: "VERIFY_CODE_INVALID",
       });
+    }
+
+    if (user.emailVerificationCode !== hashEmailCode(code)) {
+      user.emailVerificationAttempts = (user.emailVerificationAttempts || 0) + 1;
+      const exhausted = user.emailVerificationAttempts >= MAX_EMAIL_CODE_ATTEMPTS;
+      if (exhausted) invalidateEmailCode(user);
+      await user.save();
+      return res.status(400).json(
+        exhausted
+          ? { message: "Too many incorrect attempts. Request a new code.", code: "VERIFY_CODE_INVALID" }
+          : invalid,
+      );
     }
 
     user.emailVerified = true;
     user.emailVerifiedAt = new Date();
-    user.emailVerificationToken = undefined;
-    user.emailVerificationExpires = undefined;
+    invalidateEmailCode(user);
     await user.save();
+
+    await recordAudit({
+      req,
+      action: "user.email_verified",
+      targetType: "user",
+      targetId: user._id,
+      targetLabel: user.email,
+    });
 
     res.status(200).json({
       message: "Email verified. You can now use all account features.",
@@ -467,33 +526,27 @@ export const verifyEmail = async (req, res) => {
 
 /**
  * POST /api/auth/resend-verification { email }
- * Always generic (no account enumeration) and rate-limited at the route.
- * A per-account cool-down prevents mail bombing.
+ *
+ * The response is deliberately generic for unknown, already-verified and
+ * cooled-down addresses: it must not reveal whether an account exists. The
+ * 60s per-account cooldown and the rolling-hour user/IP budget are still
+ * enforced — they simply skip the send instead of changing the response.
  */
 export const resendVerification = async (req, res) => {
   try {
     const { email } = req.body;
     if (!email) return res.status(400).json({ message: "Email is required" });
 
-    const user = await User.findOne({ email });
-
     const generic = {
-      message: "If an account exists for that email and is unverified, a new link has been sent.",
+      message: "If an account exists for that email and is unverified, a new code has been sent.",
     };
+    const user = await User.findOne({ email: normalizeEmail(email) });
 
-    if (!user || user.emailVerified === true) {
+    if (!user || user.emailVerified === true || isEmailCoolingDown(user.verificationSentAt)) {
       return res.status(200).json(generic);
     }
 
-    const result = await issueVerificationEmail(user, { frontendUrl: userFrontendUrl });
-
-    if (result.reason === "cooldown") {
-      return res.status(429).json({
-        message: "A verification link was sent recently. Please wait a minute before requesting another.",
-        code: "RESEND_COOLDOWN",
-      });
-    }
-
+    await deliverVerificationCode(user, req);
     res.status(200).json(generic);
   } catch (err) {
     log.error({ event: "resend-verification.failed", err: err.message }, "resend verification failed");
@@ -502,116 +555,88 @@ export const resendVerification = async (req, res) => {
 };
 
 /**
- * POST /api/auth/verify-phone { phone, otp }
- * Mirrors verifyEmail: single-use (the stored hash is cleared on match),
- * expiring, and now attempt-limited — a 6-digit code must not be guessable.
- * The response is intentionally generic for unknown phones (no enumeration).
+ * POST /api/auth/change-verification-email { email } (authenticated)
+ *
+ * "Wrong email?" on the code-entry screen. Replaces the address, clears all
+ * verification secrets and restarts the flow. Changing an already-verified
+ * address re-verifies it: the mailbox that was proven is no longer on file.
  */
-export const verifyPhone = async (req, res) => {
+export const changeVerificationEmail = async (req, res) => {
   try {
-    const { phone, otp } = req.body;
-    const normalized = typeof phone === "string" ? normalizePhone(phone) : null;
-    if (!normalized || !otp) {
-      return res.status(400).json({ message: "Phone number and verification code are required" });
+    if (req.principalType !== "user") {
+      return res.status(403).json({
+        message: "This endpoint is for user accounts only.",
+        code: "WRONG_PRINCIPAL",
+      });
     }
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ message: "Email is required" });
 
-    const invalid = {
-      message: "This verification code is invalid or has expired.",
-      code: "OTP_INVALID",
-    };
-
-    const user = await User.findOne({ phone: normalized })
-      .select("+phoneVerificationOtp");
-    if (!user || !user.phoneVerificationOtp || isOtpExpired(user.phoneVerificationExpires)) {
-      return res.status(400).json(invalid);
-    }
-    if ((user.phoneVerificationAttempts || 0) >= MAX_OTP_ATTEMPTS) {
+    const normalized = normalizeEmail(email);
+    const policy = await checkEmailPolicy(normalized);
+    if (!policy.ok) {
       return res.status(400).json({
-        message: "Too many incorrect attempts. Request a new code.",
-        code: "OTP_INVALID",
+        message: EMAIL_POLICY_MESSAGES[policy.reason] || "Please use a valid email address",
+        code: policy.reason,
       });
     }
 
-    if (user.phoneVerificationOtp !== hashOtp(otp)) {
-      user.phoneVerificationAttempts = (user.phoneVerificationAttempts || 0) + 1;
-      const exhausted = user.phoneVerificationAttempts >= MAX_OTP_ATTEMPTS;
-      if (exhausted) {
-        // Burn the code so it cannot be tried again.
-        user.phoneVerificationOtp = undefined;
-        user.phoneVerificationExpires = undefined;
-      }
-      await user.save();
-      return res.status(400).json(
-        exhausted
-          ? {
-              message: "Too many incorrect attempts. Request a new code.",
-              code: "OTP_INVALID",
-            }
-          : invalid,
-      );
+    const existing = await User.findOne({ email: normalized });
+    if (existing && String(existing._id) !== String(req.user._id)) {
+      return res.status(409).json({
+        message: "An account with this email already exists. Please sign in instead.",
+        code: "EMAIL_TAKEN",
+      });
     }
 
-    user.phoneVerified = true;
-    user.phoneVerifiedAt = new Date();
-    user.phoneVerificationOtp = undefined;
-    user.phoneVerificationExpires = undefined;
-    user.phoneVerificationAttempts = 0;
+    const user = await User.findById(req.user._id);
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    const previousEmail = user.email || "";
+    user.email = normalized;
+    user.emailVerified = false;
+    user.emailVerifiedAt = undefined;
+    invalidateEmailCode(user);
     await user.save();
 
+    const result = await deliverVerificationCode(user, req, { force: true });
+
+    await recordAudit({
+      req,
+      action: "user.email_change_requested",
+      targetType: "user",
+      targetId: user._id,
+      targetLabel: normalized,
+      metadata: { previousEmail, verificationSent: result.sent },
+    });
+
     res.status(200).json({
-      message: "Phone number verified. You can now use all account features.",
+      message: "Verification email updated. Enter the new code to continue.",
+      email: normalized,
+      requiresEmailVerification: true,
+      verificationSent: result.sent,
+      verificationReason: result.reason,
       user: publicUser(user),
     });
   } catch (err) {
-    log.error({ event: "verify-phone.failed", err: err.message }, "phone verification failed");
-    res.status(500).json({ message: "Phone verification failed" });
+    log.error({ event: "change-verification-email.failed", err: err.message }, "change verification email failed");
+    res.status(500).json({ message: "Could not change the verification email" });
   }
 };
 
-/**
- * POST /api/auth/resend-phone-otp { phone }
- * Same contract as resend-verification: generic 200 for unknown or already
- * verified numbers (no enumeration) plus a per-account cool-down. The one
- * non-generic case is when the code genuinely could not be delivered anywhere
- * — that says so instead of silently pretending it was sent.
- */
-export const resendPhoneOtp = async (req, res) => {
-  try {
-    const { phone } = req.body;
-    const normalized = typeof phone === "string" ? normalizePhone(phone) : null;
-    if (!normalized) return res.status(400).json({ message: "Phone number is required" });
-
-    const user = await User.findOne({ phone: normalized });
-
-    const generic = {
-      message: "If an account exists for that phone number and is unverified, a new code has been sent.",
-    };
-
-    if (!user || user.phoneVerified === true) {
-      return res.status(200).json(generic);
-    }
-
-    const result = await issuePhoneOtp(user);
-
-    if (result.reason === "cooldown") {
-      return res.status(429).json({
-        message: "A verification code was sent recently. Please wait a minute before requesting another.",
-        code: "RESEND_COOLDOWN",
-      });
-    }
-    if (!result.sent) {
-      return res.status(400).json({
-        message: result.message,
-        code: "NO_DELIVERY_CHANNEL",
-      });
-    }
-
-    res.status(200).json(generic);
-  } catch (err) {
-    log.error({ event: "resend-phone-otp.failed", err: err.message }, "resend phone OTP failed");
-    res.status(500).json({ message: "Could not resend verification code" });
-  }
+// Phone/SMS verification is deferred. The endpoints are kept so older clients
+// get a clear answer instead of a 404, but they never send an SMS and never
+// flip phoneVerified — the UI shows the phone as "not verified".
+const PHONE_VERIFICATION_DEFERRED = {
+  message: "Phone verification is currently unavailable. Please verify your email address instead.",
+  code: "PHONE_VERIFICATION_DEFERRED",
 };
+
+export const verifyPhone = async (req, res) =>
+  res.status(400).json(PHONE_VERIFICATION_DEFERRED);
+
+export const resendPhoneOtp = async (req, res) =>
+  res.status(400).json(PHONE_VERIFICATION_DEFERRED);
 
 export const deleteAccount = async (req, res) => {
   try {

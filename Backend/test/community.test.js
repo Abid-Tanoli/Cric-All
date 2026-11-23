@@ -35,7 +35,7 @@ const ABSENT_ID = "0123456789abcdef01234567";
 const OPERATOR_ID = encodeURIComponent(JSON.stringify({ $ne: null }));
 
 // ---------------------------------------------------------------------------
-// Console-mail token plumbing — same mechanism as e2e/lib/bootstrap.js, but
+// Console-mail code plumbing — same mechanism as e2e/lib/bootstrap.js, but
 // with its own cursor and no name prefix (see header comment).
 // ---------------------------------------------------------------------------
 
@@ -57,25 +57,27 @@ function readNewLog() {
   return chunk;
 }
 
-function extractVerifyToken(text, recipient) {
-  const re = /verify-email\/([A-Za-z0-9_-]{16,128})/;
+function extractVerificationCode(text, recipient) {
+  // Requiring the English phrase keeps timestamps and other digits on the same
+  // pino line out of the match.
   const needle = String(recipient).toLowerCase();
   for (const line of String(text).split(/\r?\n/)) {
     if (!line.toLowerCase().includes(needle)) continue;
-    const m = line.match(re);
+    if (!line.toLowerCase().includes("verification code")) continue;
+    const m = line.match(/(?<!\d)(\d{6})(?!\d)/);
     if (m) return m[1];
   }
   return null;
 }
 
-async function waitForVerifyToken(recipient) {
+async function waitForVerificationCode(recipient) {
   const deadline = Date.now() + 20000;
   while (Date.now() < deadline) {
-    const token = extractVerifyToken(readNewLog(), recipient);
-    if (token) return token;
+    const code = extractVerificationCode(readNewLog(), recipient);
+    if (code) return code;
     await new Promise((r) => setTimeout(r, 250));
   }
-  throw new Error(`no verify-email token for ${recipient} in ${LOG_PATH}`);
+  throw new Error(`no verification code for ${recipient} in ${LOG_PATH}`);
 }
 
 async function registerPlainUser({ label, name, accountType = "player" }) {
@@ -86,8 +88,8 @@ async function registerPlainUser({ label, name, accountType = "player" }) {
     { name, email, password: PASSWORD, accountType },
     { expect: [200, 201] }
   );
-  const token = await waitForVerifyToken(email);
-  await api.post("/auth/verify-email", { token }, { expect: [200] });
+  const code = await waitForVerificationCode(email);
+  await api.post("/auth/verify-email", { email, code }, { expect: [200] });
   const login = await api.post("/auth/login", { email, password: PASSWORD }, { expect: [200] });
   api.setToken(login.body?.token);
   const profile = await api.get("/auth/profile", { expect: [200] });

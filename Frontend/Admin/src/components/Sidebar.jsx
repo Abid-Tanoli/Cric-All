@@ -28,6 +28,7 @@ const menuItems = [
   { to: "/admin/rankings", label: "Rankings", icon: "RK" },
   { to: "/admin/sync", label: "Sync Panel", icon: "SY" },
   { to: "/admin/community", label: "Community", icon: "CM" },
+  { to: "/admin/users/verification", label: "Email verification", icon: "EV" },
   { to: "/admin/admins", label: "Manage Admins", icon: "AD", superAdminOnly: true },
 ];
 

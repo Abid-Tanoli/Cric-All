@@ -63,11 +63,20 @@ async function makeEmailUser(overrides = {}) {
   });
 }
 
-/** A phone-only account: no email at all, which is the whole point of Fix A. */
+/**
+ * A phone-addressed account. Phone/SMS verification is deferred, so the
+ * generic identity gate is email-only: every account that is expected to take
+ * a privileged action (accept an invite, be added directly) also carries a
+ * verified email — exactly what the grandfathering migration gives a legacy
+ * phone-verified account. `phoneVerified` is kept only for the invitation's
+ * channel-specific address check, which is unchanged org-permission logic.
+ */
 async function makePhoneUser({ phone, phoneVerified = true, ...overrides } = {}) {
   counter += 1;
   return User.create({
     name: `Phone Person ${counter}`,
+    email: `phone-person-${counter}@openctest.dev`,
+    emailVerified: true,
     phone,
     phoneVerified,
     password: "password-123",

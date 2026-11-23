@@ -321,6 +321,59 @@ credentials out of shell history, tickets and git. To roll back mail only, set
 `MAIL_DRIVER=console` in the root `.env` and recreate the backend container;
 no code change or redeploy is needed.
 
+### 8.1 Email verification on signup (6-digit code)
+
+Signup now issues a **6-digit numeric code**, not a link. The raw code is never
+stored: only a SHA-256 hash, a 10-minute expiry (`EMAIL_CODE_MINUTES`), a wrong
+attempt counter (5 misses invalidate the code) and a 60-second resend cooldown.
+Per-user and per-IP rolling-hour send caps (`EMAIL_VERIFICATION_MAX_PER_HOUR`,
+default 10) use the backend's shared in-memory rate limiter. Signup rejects
+disposable domains and domains with a definitive no-MX answer; DNS errors or
+timeouts (`EMAIL_MX_TIMEOUT_MS`) **fail open** so signup is never blocked.
+
+New accounts start with `emailVerified: false`. They can log in and browse, but
+creating an organization, team, player profile, tournament or community post
+requires a verified email (message: `Verify your email to continue.`). Phone/SMS
+verification is **deferred**: no SMS is sent, the phone endpoints return 400,
+and phone is always shown as "not verified". Phone-only accounts must add an
+email through "Change email" on the code screen before they can create content.
+
+Testing locally without an SMTP account:
+
+```dotenv
+# root .env (or Backend/.env for a non-Docker run)
+MAIL_DRIVER=console
+```
+
+Then recreate the backend and watch its log — the console mail driver is the
+**only** place a verification code or mail body is ever printed:
+
+```bash
+docker compose up -d --build backend user-frontend admin-frontend
+docker compose logs -f backend
+```
+
+Enter the printed 6-digit code at `/verify-email`. "Resend code" is available
+after 60 seconds, and "Change email" invalidates the old address and sends a
+fresh code to the new one.
+
+For existing accounts, grandfathering is an explicit two-step operation. The
+default is a read-only dry-run; it never writes by accident:
+
+```bash
+docker compose exec backend npm run db:migrate-user-verification
+# review the plan, then opt in to writes:
+docker compose exec backend npm run db:migrate-user-verification:apply
+```
+
+By default `--apply` grandfathers accounts verified under the *old* rule
+(including legacy phone-verified accounts) so nobody silently loses access.
+Use `--apply --require-verification` only if the owner deliberately wants every
+unverified account to stay unverified. Duplicate emails are reported, never
+merged or deleted. Admin support can mark an address verified for genuine
+delivery failures at `/admin/users/verification`; every override, including a
+no-op, is recorded in the audit log as `admin.user_email_verified`.
+
 ## 9. Rollback (only if the new deployment is unhealthy)
 
 1. Stop the stack: `docker compose --profile local-mongo down`

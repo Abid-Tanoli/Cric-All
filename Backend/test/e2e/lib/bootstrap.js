@@ -13,8 +13,8 @@
  * deliberately never used to score.
  *
  * Email verification is exercised for real: the server runs the `console` mail
- * driver, so the verification and invitation links land in the server log and
- * are parsed back out of it. No token is ever stubbed.
+ * driver, so the 6-digit verification codes and invitation links land in the
+ * server log and are parsed back out of it. No secret is ever stubbed.
  */
 
 import { readFileSync, existsSync } from "node:fs";
@@ -31,7 +31,7 @@ let logCursor = 0;
  * Marks the current end of the log as the baseline. Called once at the start of
  * a run so that `readNewLog()` only ever returns output this run produced -
  * otherwise a fresh process reads the whole file and happily re-uses the
- * verification link of a previous run, which the server has already consumed.
+ * verification code of a previous run, which the server has already consumed.
  */
 function syncLogCursor() {
   try {
@@ -57,24 +57,22 @@ function readNewLog() {
 }
 
 /**
- * The console mail driver writes the raw link into a pino `msg` field, so the
- * token appears verbatim even though the surrounding newlines are escaped.
+ * The console mail driver writes the raw body into a pino `msg` field, so the
+ * secret appears verbatim even though the surrounding newlines are escaped.
  *
- * Link shapes, both produced by `frontendUrl`:
- *   verify     : {frontendUrl}/verify-email/{token}
- *   invitation : {frontendUrl}/organization/invitations/{token}
+ * Shapes:
+ *   verification : a 6-digit code on its own line
+ *   invitation   : {frontendUrl}/organization/invitations/{token}
  *
  * `recipient` is not a nicety. The console mailer is one shared log, so matching
- * "first token of this kind in the new output" hands process A the link that was
- * mailed to process B's account the moment two suites bootstrap concurrently.
- * Those links are single-use, so the *other* process then fails with
- * VERIFY_TOKEN_INVALID - a flake that looks like a server bug and is not one.
- * Every line carries the recipient in its `to` field, so the match is narrowed
- * to the account that is actually waiting for it.
+ * "first secret in the new output" hands process A a code/link mailed to process
+ * B's account the moment two suites bootstrap concurrently. Those secrets are
+ * single-use, so the *other* process then fails to verify - a flake that looks
+ * like a server bug and is not one. Every line carries the recipient in its
+ * `to` field, so the match is narrowed to the account waiting for it.
  */
-function extractToken(text, kind, recipient = null) {
-  const seg = kind === "verify" ? "verify-email" : "organization/invitations";
-  const re = new RegExp(`${seg}\\/([A-Za-z0-9_-]{16,128})`);
+function extractInvitationToken(text, recipient = null) {
+  const re = /organization\/invitations\/([A-Za-z0-9_-]{16,128})/;
   // The mailer lowercases the address, so compare case-insensitively.
   const needle = recipient ? String(recipient).toLowerCase() : null;
   for (const line of String(text).split(/\r?\n/)) {
@@ -85,23 +83,42 @@ function extractToken(text, kind, recipient = null) {
   return null;
 }
 
-async function waitForToken(kind, recipient, timeoutMs = 20000) {
+function extractVerificationCode(text, recipient = null) {
+  // Only the verification mail body carries the English phrase. Requiring it
+  // keeps timestamps and other digits on the same pino line out of the match.
+  const needle = recipient ? String(recipient).toLowerCase() : null;
+  for (const line of String(text).split(/\r?\n/)) {
+    if (needle && !line.toLowerCase().includes(needle)) continue;
+    if (!line.toLowerCase().includes("verification code")) continue;
+    const m = line.match(/(?<!\d)(\d{6})(?!\d)/);
+    if (m) return m[1];
+  }
+  return null;
+}
+
+async function waitForSecret(extract, description, recipient, timeoutMs = 20000) {
   const started = Date.now();
   while (Date.now() - started < timeoutMs) {
-    const token = extractToken(readNewLog(), kind, recipient);
-    if (token) return token;
+    const secret = extract(readNewLog(), recipient);
+    if (secret) return secret;
     await sleep(250);
   }
   throw new Error(
-    `Timed out waiting for a ${kind} token${recipient ? ` for ${recipient}` : ""} in ${LOG_PATH}. ` +
+    `Timed out waiting for a ${description}${recipient ? ` for ${recipient}` : ""} in ${LOG_PATH}. ` +
       `Is MAIL_DRIVER=console set on the local server?`,
   );
 }
 
+const waitForInvitationToken = (recipient, timeoutMs) =>
+  waitForSecret(extractInvitationToken, "invitation token", recipient, timeoutMs);
+
+const waitForVerificationCode = (recipient, timeoutMs) =>
+  waitForSecret(extractVerificationCode, "verification code", recipient, timeoutMs);
+
 /**
- * Registers one account, pulls its verification link out of the server log,
- * verifies it, then logs in. Returns the account *and* its own authenticated
- * client, so no two accounts can ever share a token.
+ * Registers one account, pulls its 6-digit code out of the server log, verifies
+ * it, then logs in. Returns the account *and* its own authenticated client, so
+ * no two accounts can ever share a code.
  */
 export async function registerVerifiedUser(makeClient, { name, email, password, accountType, organizationName }) {
   const api = makeClient();
@@ -120,8 +137,8 @@ export async function registerVerifiedUser(makeClient, { name, email, password, 
     { expect: [200, 201] },
   );
 
-  const verifyToken = await waitForToken("verify", email);
-  await api.post("/auth/verify-email", { token: verifyToken }, { expect: [200] });
+  const code = await waitForVerificationCode(email);
+  await api.post("/auth/verify-email", { email, code }, { expect: [200] });
 
   const login = await api.post("/auth/login", { email, password }, { expect: [200] });
   const token = login.body?.token;
@@ -131,7 +148,7 @@ export async function registerVerifiedUser(makeClient, { name, email, password, 
   const profile = await api.get("/auth/profile", { expect: [200] });
   const user = profile.body?.user || profile.body;
   if (user?.emailVerified === false || user?.isEmailVerified === false) {
-    throw new Error(`Account ${email} is still unverified after the console-mail link`);
+    throw new Error(`Account ${email} is still unverified after the console-mail code`);
   }
 
   return {
@@ -221,7 +238,7 @@ export async function bootstrap({ makeClient, runId }) {
   );
   const invitationId = String(inviteRes.body?.invitation?._id || inviteRes.body?._id || "");
 
-  const inviteToken = await waitForToken("invitation", scorer.email);
+  const inviteToken = await waitForInvitationToken(scorer.email);
   const accept = await scorer.api.post("/invitations/accept", { token: inviteToken }, { expect: [200] });
   const acceptedRoles = accept.body?.member?.roles || accept.body?.roles || [];
   if (!acceptedRoles.includes("score_handler")) {

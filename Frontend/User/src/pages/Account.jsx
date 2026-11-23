@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { deleteAccount } from "../services/authApi";
-import { logout } from "./auth/auth";
+import { getStoredUser, logout } from "./auth/auth";
 import {
   Banner,
   alertError,
@@ -20,6 +20,8 @@ export default function Account() {
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const user = getStoredUser() || {};
+  const emailVerified = user.emailVerified === true;
 
   const doDelete = async () => {
     setBusy(true);
@@ -57,6 +59,49 @@ export default function Account() {
           <Banner kind="error">{err}</Banner>
         </div>
       ) : null}
+
+      <div className={`${card} mt-6`}>
+        <h2 className="text-sm font-black uppercase tracking-widest">Verification</h2>
+        <dl className="mt-4 space-y-3 text-sm font-semibold text-cric-muted">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <dt>
+              Email <span className="text-cric-text">{user.email || "(none)"}</span>
+            </dt>
+            <dd>
+              <span
+                className={
+                  emailVerified
+                    ? "rounded-full bg-green-500/15 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-green-600"
+                    : "rounded-full bg-cric-accent/15 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-cric-accent"
+                }
+              >
+                {emailVerified ? "Verified" : "Not verified"}
+              </span>
+            </dd>
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <dt>
+              Phone <span className="text-cric-text">{user.phone || "(none)"}</span>
+            </dt>
+            <dd>
+              <span className="rounded-full bg-cric-border/50 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-cric-muted">
+                Not verified
+              </span>
+            </dd>
+          </div>
+        </dl>
+        <p className="mt-3 text-[11px] font-semibold text-cric-muted">
+          Phone/SMS verification is not available yet. Email verification is required to create
+          organizations, teams, players and tournaments.
+        </p>
+        {!emailVerified && (
+          <div className="mt-5">
+            <Link to={`/verify-email${user.email ? `?email=${encodeURIComponent(user.email)}` : ''}`} className={secondaryButton}>
+              Verify email
+            </Link>
+          </div>
+        )}
+      </div>
 
       <div className={`${card} mt-6`}>
         <h2 className="text-sm font-black uppercase tracking-widest">Password</h2>

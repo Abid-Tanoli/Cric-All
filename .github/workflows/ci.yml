@@ -37,6 +37,8 @@ jobs:
           JWT_SECRET="ci-only-secret" \
           LOG_LEVEL=info \
           MAIL_DRIVER=console \
+          EMAIL_MX_CHECK=false \
+          EMAIL_VERIFICATION_MAX_PER_HOUR=1000 \
           PORT=5000 \
           node src/index.js > backend.log 2>&1 &
           echo "PID=$!" >> $GITHUB_ENV
@@ -50,6 +52,7 @@ jobs:
           BASE_URL: http://localhost:5000/api
           E2E_API_BASE: http://127.0.0.1:5000/api
           E2E_BACKEND_LOG: backend.log
+          EMAIL_MX_CHECK: "false"
 
       - name: Run smoke tests
         run: npm run test:smoke

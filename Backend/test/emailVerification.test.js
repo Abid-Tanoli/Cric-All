@@ -4,11 +4,14 @@ import assert from "node:assert/strict";
 process.env.GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || "test-client-id.apps.googleusercontent.com";
 
 import {
-  generateVerificationToken,
-  hashVerificationToken,
-  isVerificationExpired,
-  isVerificationCoolingDown,
-  VERIFICATION_TOKEN_EXPIRY_MS,
+  generateEmailCode,
+  hashEmailCode,
+  isEmailCodeExpired,
+  isEmailCoolingDown,
+  EMAIL_CODE_EXPIRY_MS,
+  RESEND_COOLDOWN_MS,
+  MAX_EMAIL_CODE_ATTEMPTS,
+  buildVerificationMail,
 } from "../src/utils/emailVerification.js";
 import {
   isResetTokenExpired,
@@ -40,36 +43,50 @@ function callMiddleware(handler, req) {
   return { status, body, nextCalled };
 }
 
-test("verification token is 64 hex chars and unique", () => {
-  const a = generateVerificationToken();
-  const b = generateVerificationToken();
-  assert.match(a, /^[0-9a-f]{64}$/);
-  assert.notEqual(a, b);
+test("verification code is exactly 6 numeric digits, zero-padded", () => {
+  for (let i = 0; i < 50; i++) {
+    assert.match(generateEmailCode(), /^\d{6}$/);
+  }
+  // Zero padding is part of the contract (never shorten a leading-zero code).
+  const raw = String(generateEmailCode());
+  assert.equal(raw.padStart(6, "0").length, 6);
 });
 
-test("verification token is stored hashed, never raw", () => {
-  const token = generateVerificationToken();
-  const hashed = hashVerificationToken(token);
-  assert.equal(hashed.length, 64);
-  assert.notEqual(hashed, token);
-  assert.equal(hashVerificationToken(token), hashed, "hash must be stable");
-  assert.notEqual(hashVerificationToken(generateVerificationToken()), hashed);
+test("verification code is stored hashed, never raw", () => {
+  const code = generateEmailCode();
+  const hashed = hashEmailCode(code);
+  assert.match(hashed, /^[0-9a-f]{64}$/);
+  assert.notEqual(hashed, code);
+  assert.equal(hashEmailCode(code), hashed, "hash must be stable");
+  assert.notEqual(hashEmailCode(generateEmailCode()), hashed);
 });
 
-test("verification expiry defaults to 24h and rejects missing/past expiries", () => {
-  assert.equal(VERIFICATION_TOKEN_EXPIRY_MS, 24 * 60 * 60 * 1000);
-  assert.equal(isVerificationExpired(undefined), true, "missing expiry must count as expired");
-  assert.equal(isVerificationExpired(null), true);
-  assert.equal(isVerificationExpired(new Date(Date.now() + 60_000)), false);
-  assert.equal(isVerificationExpired(new Date(Date.now() - 1_000)), true);
-  assert.equal(isVerificationExpired("not-a-date"), true);
+test("verification expiry defaults to 10 minutes and rejects missing/past expiries", () => {
+  assert.equal(EMAIL_CODE_EXPIRY_MS(), 10 * 60 * 1000);
+  assert.equal(isEmailCodeExpired(undefined), true, "missing expiry must count as expired");
+  assert.equal(isEmailCodeExpired(null), true);
+  assert.equal(isEmailCodeExpired(new Date(Date.now() + 60_000)), false);
+  assert.equal(isEmailCodeExpired(new Date(Date.now() - 1_000)), true);
+  assert.equal(isEmailCodeExpired("not-a-date"), true);
 });
 
-test("verification resend cool-down blocks within 60s and allows after", () => {
+test("lockout threshold, cooldown length and mail template are pinned", () => {
+  assert.equal(MAX_EMAIL_CODE_ATTEMPTS, 5);
+  assert.equal(RESEND_COOLDOWN_MS, 60_000);
+
   const now = Date.now();
-  assert.equal(isVerificationCoolingDown(null, now), false);
-  assert.equal(isVerificationCoolingDown(new Date(now - 10_000), now), true);
-  assert.equal(isVerificationCoolingDown(new Date(now - 120_000), now), false);
+  assert.equal(isEmailCoolingDown(null, now), false);
+  assert.equal(isEmailCoolingDown(new Date(now - 10_000), now), true);
+  assert.equal(isEmailCoolingDown(new Date(now - 120_000), now), false);
+
+  const mail = buildVerificationMail({ code: "004213", name: "Sara", minutes: 10 });
+  assert.match(mail.subject, /CricAll/i);
+  assert.match(mail.text, /004213/);
+  assert.match(mail.text, /10 minutes/);
+  assert.match(mail.text, /did not request this/i);
+  assert.match(mail.text, /اپنا ای میل|تصدیقی کوڈ/); // Urdu text
+  assert.match(mail.html, /004213/);
+  assert.doesNotMatch(mail.html, /<img|tracking|beacon/i, "no tracking pixels");
 });
 
 test("reset token expiry treats a missing expiry as expired (regression)", () => {
@@ -82,15 +99,17 @@ test("reset token expiry treats a missing expiry as expired (regression)", () =>
   assert.equal(hashResetToken(token).length, 64);
 });
 
-test("console mail driver writes the message to the server log", async () => {
+test("console mail driver writes the 6-digit code to the server log", async () => {
   const captured = [];
   const original = console.log;
   console.log = (...args) => captured.push(args.join(" "));
   try {
+    const mail = buildVerificationMail({ code: "123456" });
     const result = await sendMail({
       to: "dev@example.com",
-      subject: "Verify your CricAll email address",
-      text: "Open http://localhost:5173/verify-email/abc123",
+      subject: mail.subject,
+      text: mail.text,
+      html: mail.html,
     });
     assert.equal(result.driver, "console");
     assert.equal(result.delivered, true);
@@ -98,7 +117,7 @@ test("console mail driver writes the message to the server log", async () => {
     console.log = original;
   }
   const joined = captured.join("\n");
-  assert.match(joined, /verify-email\/abc123/, "the link must land in the log");
+  assert.match(joined, /123456/, "the code must land in the console driver log");
   assert.match(joined, /dev@example\.com/);
 });
 
@@ -117,7 +136,7 @@ test("register schema rejects NoSQL operator objects in email", () => {
   assert.equal(result.success, false);
 });
 
-test("register schema strips unexpected keys and applies defaults", () => {
+test("register schema uses strict syntax, lowercases and strips unexpected keys", () => {
   const result = registerSchema.safeParse({
     name: "  Test User ",
     email: "  USER@Example.COM ",
@@ -127,11 +146,21 @@ test("register schema strips unexpected keys and applies defaults", () => {
     evil: { $ne: 1 },
   });
   assert.equal(result.success, true);
-  assert.equal(result.data.email, "USER@Example.COM");
+  assert.equal(result.data.email, "user@example.com");
   assert.equal(result.data.accountType, "handler");
   assert.equal(result.data.$gt, undefined);
   assert.equal(result.data.evil, undefined);
   assert.equal(result.data.organizationName, "");
+});
+
+test("register schema rejects obviously invalid email syntax", () => {
+  for (const email of ["not-an-email", "a@b", "a@@b.com", "a b@example.com", "a@localhost"]) {
+    assert.equal(
+      registerSchema.safeParse({ name: "T", email, password: "password123" }).success,
+      false,
+      `${email} must be rejected`,
+    );
+  }
 });
 
 test("forgot-password schema rejects object email (injection guard)", () => {
@@ -144,17 +173,17 @@ test("login schema requires a string password", () => {
   assert.equal(loginSchema.safeParse({ email: "a@b.com", password: { $ne: 1 } }).success, false);
 });
 
-test("requireVerifiedEmail: unverified user is blocked with 403 EMAIL_NOT_VERIFIED", () => {
-  const { status, body, nextCalled } = callMiddleware(requireVerifiedEmail, {
-    user: { emailVerified: false },
+test("requireVerifiedEmail: email-only gate blocks unverified and phone-only users", () => {
+  const unverified = callMiddleware(requireVerifiedEmail, {
+    user: { emailVerified: false, phoneVerified: true },
     principalType: "user",
   });
-  assert.equal(nextCalled, false);
-  assert.equal(status, 403);
-  assert.equal(body.code, "EMAIL_NOT_VERIFIED");
+  assert.equal(unverified.nextCalled, false);
+  assert.equal(unverified.status, 403);
+  assert.equal(unverified.body.code, "EMAIL_NOT_VERIFIED");
 });
 
-test("requireVerifiedEmail: verified user and platform admin pass", () => {
+test("requireVerifiedEmail: verified email and platform admin pass", () => {
   assert.equal(callMiddleware(requireVerifiedEmail, { user: { emailVerified: true }, principalType: "user" }).nextCalled, true);
   assert.equal(callMiddleware(requireVerifiedEmail, { user: { role: "admin" }, principalType: "admin" }).nextCalled, true);
   assert.equal(callMiddleware(requireVerifiedEmail, {}).status, 401);

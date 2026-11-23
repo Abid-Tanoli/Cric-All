@@ -1,16 +1,18 @@
-import test, { before, after } from "node:test";
+import test, { before, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 
 process.env.JWT_SECRET = process.env.JWT_SECRET || "test-secret-not-a-real-one";
 process.env.FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:5173";
+process.env.EMAIL_MX_CHECK = "false"; // unit tests must never touch DNS
 
 import mongoose from "mongoose";
 import { startTestDb, stopTestDb, mockReq, mockRes } from "./helpers/testDb.js";
 import User from "../src/models/User.js";
-import { registerUser, loginUser, verifyEmail, resendVerification, resetPassword, forgotPassword } from "../src/controllers/authController.js";
+import { registerUser, loginUser, verifyEmail, resendVerification, changeVerificationEmail, resetPassword, forgotPassword } from "../src/controllers/authController.js";
 import { protect, requireVerifiedEmail } from "../src/middleware/authMiddleware.js";
 import { generateToken } from "../src/utils/jwt.js";
-import { hashVerificationToken, generateVerificationToken, getVerificationExpiry } from "../src/utils/emailVerification.js";
+import { hashEmailCode, generateEmailCode, getEmailCodeExpiry, invalidateEmailCode } from "../src/utils/emailVerification.js";
+import { resetRateLimiterForTests } from "../src/middleware/rateLimiter.js";
 import validate from "../src/middleware/validate.js";
 import { forgotPasswordSchema } from "../src/validators/authValidators.js";
 
@@ -24,9 +26,14 @@ after(async () => {
   await stopTestDb(mongod);
 });
 
-// The console mail driver writes the link into the log; capture it so the test
-// can use the exact token that was issued.
-async function captureVerificationLink(fn) {
+beforeEach(() => {
+  // Hourly user/IP send budgets are process-local; isolate every test.
+  resetRateLimiterForTests();
+});
+
+// MAIL_DRIVER=console writes the code into the backend log. Capture it so the
+// test uses the exact code that was issued (never a code stored in the DB).
+async function captureEmailCode(fn) {
   const captured = [];
   const original = console.log;
   console.log = (...args) => captured.push(args.join(" "));
@@ -35,8 +42,9 @@ async function captureVerificationLink(fn) {
   } finally {
     console.log = original;
   }
-  const joined = captured.join("\n");
-  const match = joined.match(/verify-email\/([0-9a-f]{64})/);
+  // The console driver logs JSON, so the code is preceded by an escaped "\\n"
+  // (whose "n" is a word character) — use digit boundaries, not \\b.
+  const match = captured.join("\n").match(/(?<!\d)(\d{6})(?!\d)/);
   return match ? match[1] : null;
 }
 
@@ -54,7 +62,7 @@ function nextCalled() {
   };
 }
 
-test("register creates an unverified account and mails a verification link", async () => {
+test("register creates an unverified account and mails a 6-digit code", async () => {
   const req = mockReq({
     body: {
       name: "Verify Tester",
@@ -67,53 +75,52 @@ test("register creates an unverified account and mails a verification link", asy
   });
   const res = mockRes();
 
-  let token = null;
-  token = await captureVerificationLink(() => registerUser(req, res));
+  const code = await captureEmailCode(() => registerUser(req, res));
 
   assert.equal(res.statusCode, 201, JSON.stringify(res.body));
   assert.equal(res.body.user.email, "verify@example.com", "email must be normalized");
   assert.equal(res.body.user.emailVerified, false);
   assert.equal(res.body.requiresEmailVerification, true);
+  assert.equal(res.body.requiresPhoneVerification, false, "no SMS/fake phone step");
 
-  const stored = await User.findOne({ email: "verify@example.com" }).select("+emailVerificationToken");
+  const stored = await User.findOne({ email: "verify@example.com" }).select("+emailVerificationCode");
   assert.ok(stored, "user persisted");
   assert.equal(stored.emailVerified, false);
   assert.equal(stored.passwordSet, true);
   assert.equal(stored.status, "active");
-  assert.ok(stored.emailVerificationToken, "a hashed token is stored");
-  assert.notEqual(stored.emailVerificationToken, token, "raw token must never be stored");
-  assert.ok(token, "the console mail driver must contain the raw link");
+  assert.ok(code, "the console mail driver must contain the raw code");
+  assert.match(code, /^\d{6}$/);
+  assert.equal(stored.emailVerificationCode, hashEmailCode(code), "only the hash is stored");
+  assert.notEqual(stored.emailVerificationCode, code);
+  assert.ok(stored.emailVerificationExpires > new Date());
+  assert.ok(stored.emailVerificationExpires <= new Date(Date.now() + 10 * 60 * 1000 + 1000));
 
   // Privileged action blocked while unverified.
   const blocked = nextCalled();
-  requireVerifiedEmail(
-    { user: stored, principalType: "user" },
-    blocked.res,
-    blocked.next,
-  );
+  requireVerifiedEmail({ user: stored, principalType: "user" }, blocked.res, blocked.next);
   assert.equal(blocked.called, false);
   assert.equal(blocked.res.statusCode, 403);
   assert.equal(blocked.res.body.code, "EMAIL_NOT_VERIFIED");
 
-  // Verify with the mailed token.
+  // Verify with the mailed code.
   const verifyRes = mockRes();
-  await verifyEmail(mockReq({ body: { token } }), verifyRes);
+  await verifyEmail(mockReq({ body: { email: "  VERIFY@example.com ", code } }), verifyRes);
   assert.equal(verifyRes.statusCode, 200, JSON.stringify(verifyRes.body));
 
-  const afterVerify = await User.findOne({ email: "verify@example.com" }).select("+emailVerificationToken");
+  const afterVerify = await User.findOne({ email: "verify@example.com" }).select("+emailVerificationCode");
   assert.equal(afterVerify.emailVerified, true);
   assert.ok(afterVerify.emailVerifiedAt);
-  assert.equal(afterVerify.emailVerificationToken, undefined, "token must be single-use");
+  assert.equal(afterVerify.emailVerificationCode, undefined, "code must be single-use");
 
   const allowed = nextCalled();
   requireVerifiedEmail({ user: afterVerify, principalType: "user" }, allowed.res, allowed.next);
   assert.equal(allowed.called, true);
 
-  // Re-using the same token must fail.
+  // Re-using the same code must fail.
   const reuseRes = mockRes();
-  await verifyEmail(mockReq({ body: { token } }), reuseRes);
+  await verifyEmail(mockReq({ body: { email: "verify@example.com", code } }), reuseRes);
   assert.equal(reuseRes.statusCode, 400);
-  assert.equal(reuseRes.body.code, "VERIFY_TOKEN_INVALID");
+  assert.equal(reuseRes.body.code, "VERIFY_CODE_INVALID");
 });
 
 test("duplicate registration with different casing is rejected with 409", async () => {
@@ -136,49 +143,55 @@ test("duplicate registration with different casing is rejected with 409", async 
   assert.equal(count, 1, "exactly one account per normalized email");
 });
 
-test("an expired verification token is rejected", async () => {
+test("an expired verification code is rejected", async () => {
+  const code = "123456";
   const user = await User.create({
     name: "Expired User",
     email: "expired@example.com",
     password: "password123",
-    emailVerificationToken: hashVerificationToken("expired-token-0123456789abcdef"),
+    emailVerificationCode: hashEmailCode(code),
     emailVerificationExpires: new Date(Date.now() - 1000),
   });
 
   const res = mockRes();
-  await verifyEmail(mockReq({ body: { token: "expired-token-0123456789abcdef" } }), res);
+  await verifyEmail(mockReq({ body: { email: "expired@example.com", code } }), res);
   assert.equal(res.statusCode, 400);
-  assert.equal(res.body.code, "VERIFY_TOKEN_INVALID");
+  assert.equal(res.body.code, "VERIFY_CODE_INVALID");
 
   const stored = await User.findById(user._id);
   assert.equal(stored.emailVerified, false);
 });
 
-test("resend-verification is generic, rate-limited by cool-down, and never leaks", async () => {
+test("resend-verification is generic and enforces the 60s cooldown without leaking", async () => {
   // Unknown email → same generic 200 as a real one.
   const unknown = mockRes();
   await resendVerification(mockReq({ body: { email: "nobody@example.com" } }), unknown);
   assert.equal(unknown.statusCode, 200);
   assert.ok(!JSON.stringify(unknown.body).includes("nobody@example.com"));
 
-  // Fresh registration → immediate resend hits the per-account cool-down.
+  // Fresh registration → immediate resend is a generic 200 but sends nothing.
   const reg = mockRes();
   await registerUser(
     mockReq({ body: { name: "Cooldown", email: "cooldown@example.com", password: "password123" } }),
     reg,
   );
   assert.equal(reg.statusCode, 201, JSON.stringify(reg.body));
+  const before = await User.findOne({ email: "cooldown@example.com" });
+  const sentAt = before.verificationSentAt;
 
   const resend = mockRes();
   await resendVerification(mockReq({ body: { email: "cooldown@example.com" } }), resend);
-  assert.equal(resend.statusCode, 429);
-  assert.equal(resend.body.code, "RESEND_COOLDOWN");
+  assert.equal(resend.statusCode, 200);
+  assert.deepEqual(resend.body, unknown.body, "responses must not reveal account existence");
+  const after = await User.findOne({ email: "cooldown@example.com" });
+  assert.equal(after.verificationSentAt.getTime(), sentAt.getTime(), "no mail sent during cooldown");
 
-  // Already verified → generic 200, no new token.
+  // Already verified → generic 200, no new code.
   await User.updateOne({ email: "verify@example.com" }, { $set: { emailVerified: true, verificationSentAt: null } });
   const verified = mockRes();
   await resendVerification(mockReq({ body: { email: "verify@example.com" } }), verified);
   assert.equal(verified.statusCode, 200);
+  assert.deepEqual(verified.body, unknown.body);
 });
 
 test("suspended accounts cannot log in and are rejected by protect", async () => {
@@ -334,10 +347,53 @@ test("forgot-password rejects a NoSQL operator in email before touching the DB",
   assert.equal(typeof req.body.email, "object", "operator object must not reach the query");
 });
 
-test("verification token helpers never produce colliding hashes for distinct users", async () => {
-  const a = generateVerificationToken();
-  const b = generateVerificationToken();
-  assert.notEqual(hashVerificationToken(a), hashVerificationToken(b));
-  assert.ok(getVerificationExpiry() > new Date());
+test("verification code helpers never produce colliding hashes for distinct codes", async () => {
+  const a = generateEmailCode();
+  const b = generateEmailCode();
+  assert.notEqual(hashEmailCode(a), hashEmailCode(b));
+  assert.ok(getEmailCodeExpiry() > new Date());
   assert.equal(mongoose.connection.readyState, 1);
+});
+
+test("changing the verification email restarts the flow and invalidates the old code", async () => {
+  const user = await User.create({
+    name: "Change Email User",
+    email: "old-address@example.com",
+    password: "password123",
+  });
+  const oldCode = "654321";
+  user.emailVerificationCode = hashEmailCode(oldCode);
+  user.emailVerificationExpires = getEmailCodeExpiry();
+  await user.save();
+
+  const token = generateToken(user);
+  let newCode = null;
+  const res = mockRes();
+  newCode = await captureEmailCode(() =>
+    changeVerificationEmail(
+      mockReq({ user, principalType: "user", token, body: { email: "  New.Address@Example.COM " } }),
+      res,
+    ),
+  );
+
+  assert.equal(res.statusCode, 200, JSON.stringify(res.body));
+  assert.equal(res.body.email, "new.address@example.com");
+  assert.equal(res.body.user.emailVerified, false);
+  assert.equal(res.body.user.email, "new.address@example.com");
+  assert.match(newCode, /^\d{6}$/);
+
+  const stored = await User.findById(user._id).select("+emailVerificationCode");
+  assert.equal(stored.email, "new.address@example.com");
+  assert.equal(stored.emailVerificationCode, hashEmailCode(newCode));
+  assert.notEqual(stored.emailVerificationCode, hashEmailCode(oldCode), "old code must be gone");
+
+  // The old address/code pair no longer verifies anything.
+  const stale = mockRes();
+  await verifyEmail(mockReq({ body: { email: "old-address@example.com", code: oldCode } }), stale);
+  assert.equal(stale.statusCode, 400);
+  assert.equal(stale.body.code, "VERIFY_CODE_INVALID");
+
+  const fresh = mockRes();
+  await verifyEmail(mockReq({ body: { email: "new.address@example.com", code: newCode } }), fresh);
+  assert.equal(fresh.statusCode, 200, JSON.stringify(fresh.body));
 });
