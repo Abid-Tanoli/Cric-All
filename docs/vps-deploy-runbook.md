@@ -212,6 +212,9 @@ The script should report `docker exec ... mongodump`, write a non-zero archive,
 and never print the Mongo URL. Retention is now a **day window**
 (`BACKUP_KEEP_DAYS`, default 14 days), not a file count.
 
+Optional but recommended: an encrypted copy on another provider, plus the weekly
+`uploads_data` archive and the restore procedure — section 10.
+
 ### Restore drill into a throwaway database
 
 Never restore over the live database for a drill. Pick the newest archive and
@@ -328,3 +331,283 @@ no code change or redeploy is needed.
 
 The Git history itself is not rolled back; the saved files are an operational
 fallback, not a replacement for a revert commit.
+## 10. Off-site encrypted backups (optional — OFF by default)
+
+Everything in this section is opt-in. Until you set
+`OFFSITE_BACKUP_ENABLED=true` in `Backend/.env`, the nightly job behaves exactly
+as it does today and nothing leaves the VPS.
+
+**Why you want it:** the nightly `mongodump` archives and the uploaded images
+live on the same VPS. If the disk or the provider dies, you lose the database
+*and* its backups. This step keeps an encrypted copy somewhere else.
+
+**What gets uploaded**
+
+| Job | Timer | Local file | Uploaded object |
+| --- | --- | --- | --- |
+| Database | `cricall-backup.timer`, daily 02:15 | `Backend/backups/backup-<db>-<stamp>.archive.gz` | same name + `.enc` |
+| Uploads volume | `cricall-backup-uploads.timer`, Sunday 03:15 | `Backend/backups/uploads-<stamp>.tar.gz` | same name + `.enc` |
+
+`uploads_data` (team logos, player photos) is **not** inside `mongodump`; the
+database only stores file names. That is why it gets its own weekly archive.
+
+**How it is encrypted:** the script encrypts the file locally with AES-256-GCM
+(authenticated: a corrupted upload fails to decrypt instead of restoring
+damaged data) using a passphrase it reads from a file on the server, then
+uploads the encrypted file with `rclone`. The passphrase never appears in `.env`
+values, on a command line, in a log line or in git.
+
+**Why rclone and not `rclone crypt`/age/gpg:** one tool covers every free-tier
+remote (Google Drive, Backblaze B2, any SFTP box) with one config; the
+passphrase stays in a file you control instead of an obscured value inside
+`rclone.conf`; and there is no extra package to install besides rclone.
+
+Exit codes you will see: `0` = everything worked, `1` = the local backup itself
+failed, `3` = **local backup OK, off-site copy failed** (the local archive is
+kept; check the journal).
+
+---
+
+### 10.1 Install rclone on the VPS
+
+```bash
+curl https://rclone.org/install.sh | bash -s -- --bindir /usr/local/bin
+rclone version          # should print a version line
+```
+
+(On Debian/Ubuntu `apt install rclone` also works, but the version may be older;
+either is fine. Commands in this section that write to system paths need `root`,
+so prefix them with `su -` or your usual admin method.)
+
+### 10.2 Create the remote (the account setup — yours to do)
+
+Pick one provider. All three are free-tier friendly.
+
+**Backblaze B2 (simplest, no browser on the server needed)**
+
+1. In the Backblaze web console create a bucket, e.g. `cricall-offsite`, and
+   keep it **private**.
+2. Create an Application Key with access to that bucket only. Copy the
+   `keyID` and `applicationKey` — the application key is shown once.
+3. On the VPS run `rclone config` and answer: `n` (new remote) → name
+   `cricall-offsite` → storage `b2` → `account` = keyID → `key` =
+   applicationKey → leave the rest blank → `y` (keep this remote) → `q` (quit).
+
+**Google Drive (needs a browser on your laptop)**
+
+1. `rclone config` on the VPS → `n` → name `cricall-offsite` → storage `drive`
+   → leave `client_id`/`client_secret` blank (rclone's shared client works) →
+   scope `2` (read/write) → `n` to "Use auto config?" (there is no browser on
+   the server).
+2. It prints a command to run **on your laptop**: run it there, sign in, allow
+   access, then paste the resulting token back into the VPS prompt.
+3. Keep the remote, quit the config.
+4. In Drive, move the created `cricall-offsite` folder wherever you like; quota
+   is 15 GB on a free account, so watch `rclone size` in 10.7 if the uploads
+   archive is large.
+
+**Any SFTP/SSH box you own**
+
+`rclone config` → `n` → name `cricall-offsite` → storage `sftp` → host, user,
+port 22, key file (recommended) → keep, quit.
+
+### 10.3 Make the destination folder and check it
+
+```bash
+rclone mkdir cricall-offsite:cricall-backups
+rclone lsf cricall-offsite:cricall-backups     # empty for now, but no error
+```
+
+If this prints an error, fix the remote before continuing — nothing else will
+work.
+
+### 10.4 Generate and store the passphrase (do this carefully)
+
+```bash
+install -d -m 700 /root/.config/cricall
+openssl rand -base64 48 | tee /root/.config/cricall/offsite-passphrase >/dev/null
+chmod 600 /root/.config/cricall/offsite-passphrase
+wc -c /root/.config/cricall/offsite-passphrase    # just the byte count
+```
+
+Now copy that passphrase somewhere **off this server**: a password manager entry
+named "CricAll offsite backup passphrase", plus a paper copy in a drawer.
+Do **not** paste it into a ticket, chat, note-taking app or git. If you lose it,
+every encrypted backup is permanently unreadable — that is the point of it.
+
+The file must stay mode `600`; the script warns (and skips) if it is
+group/world readable, if it is missing, or if the passphrase is shorter than 12
+characters.
+
+### 10.5 Enable the env vars
+
+Edit `Backend/.env` (the file the backup reads) and add:
+
+```dotenv
+OFFSITE_BACKUP_ENABLED=true
+OFFSITE_REMOTE=cricall-offsite:cricall-backups
+OFFSITE_PASSPHRASE_FILE=/root/.config/cricall/offsite-passphrase
+OFFSITE_RETENTION_DAYS=30
+OFFSITE_UPLOADS_MAX_MB=2048
+```
+
+- `OFFSITE_RETENTION_DAYS` deletes remote objects older than that (default 30;
+  `0` = never delete remotely). Only `backup-*.enc` / `uploads-*.enc` are
+  touched.
+- `OFFSITE_UPLOADS_MAX_MB` skips the weekly image upload when the tarball is
+  bigger than this (default 2048 MB; `0` = no limit). The skip is logged and is
+  not an error.
+
+```bash
+chmod 600 /opt/cricall/Backend/.env    # adjust the path
+```
+
+This is on the host, not in Compose, so the backend containers do not need a
+rebuild or restart.
+
+### 10.6 Test with a manual run
+
+```bash
+cd /opt/cricall/Backend
+node src/scripts/backupDb.js; echo "exit=$?"
+```
+
+Expected lines (paths and sizes differ):
+
+```
+Backup written: /opt/cricall/Backend/backups/backup-cric-all-....archive.gz (12.34 MB)
+[offsite] uploaded backup-cric-all-....archive.gz.enc to cricall-offsite:cricall-backups
+[offsite] remote retention: removed backup-*.enc objects older than 30 day(s)
+exit=0
+```
+
+`exit=3` means the local backup worked and the upload did not. Read the
+`[offsite] ...` line: it names the failing step without showing the passphrase.
+Common causes: remote name typo, expired provider token (`rclone config
+reconnect`), passphrase file unreadable by the user running the job. Re-run
+after fixing; the local backup is untouched either way.
+
+Now check the journal exactly as systemd sees it:
+
+```bash
+systemctl daemon-reload              # only needed if you edited units
+systemctl status cricall-backup --no-pager
+journalctl --no-pager -u cricall-backup -n 40
+```
+
+Unit state should be `inactive (dead)` / `status=0/SUCCESS`; with a failed
+off-site step it shows `status=3` and the log line says the local backup is
+intact.
+
+Weekly images job (optional, same switch):
+
+```bash
+cd /opt/cricall/Backend
+node src/scripts/backupUploads.js; echo "exit=$?"
+cp backup/cricall-backup-uploads.service backup/cricall-backup-uploads.timer /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now cricall-backup-uploads.timer
+systemctl list-timers | grep cricall
+```
+
+To archive the volume on a box where it is mounted on the host instead of in a
+container, set `UPLOADS_SOURCE_DIR=/path/to/uploads`; otherwise the script runs
+`docker exec cricall-backend tar czf - -C /app/uploads .` (override the
+container/inside path with `UPLOADS_CONTAINER_NAME`, `UPLOADS_CONTAINER_PATH`).
+
+### 10.7 Confirm the file really appears remotely
+
+```bash
+rclone lsf cricall-offsite:cricall-backups --include "*.enc"
+rclone size cricall-offsite:cricall-backups
+rclone lsjson cricall-offsite:cricall-backups | head -c 400
+```
+
+You should see `backup-<db>-<stamp>.archive.gz.enc` for the run you just did and
+a plausible size (encrypted files are roughly the local archive size plus 40
+bytes). Then check it is really encrypted — the header must be `CRICALLBK1`
+followed by binary bytes, never the `gzip` magic (`\x1f\x8b`):
+
+```bash
+cd /tmp
+rclone copyto cricall-offsite:cricall-backups/<object>.enc ./check.enc
+head -c 10 ./check.enc; echo
+file ./check.enc            # expected: "data", not "gzip compressed data"
+rm -f ./check.enc
+```
+
+A second, stronger check is to decrypt it (next subsection) — if the passphrase
+works and `mongorestore` reads it, the upload is complete and intact.
+
+### 10.8 Restore from off-site
+
+Read these steps before you need them. `MONGO_URL` from `Backend/.env` is used to
+reach the database, and the restore runs `mongorestore` inside the
+`cricall-mongo` container (override with `MONGO_CONTAINER_NAME`; if you use
+Atlas and have no container, run the same `mongorestore` command on the host).
+
+```bash
+cd /opt/cricall/Backend
+
+# 1. See what is available remotely
+node src/scripts/restoreFromOffsite.js list
+
+# 2. Download + decrypt one object into ./restore-from-offsite/
+node src/scripts/restoreFromOffsite.js download backup-cric-all-2026-11-23T02-15-00-000Z.archive.gz.enc
+ls -lh restore-from-offsite/
+
+# 3. Restore it into a TEMP database — the live one is untouched
+node src/scripts/restoreFromOffsite.js restore-temp \
+  --archive restore-from-offsite/backup-cric-all-2026-11-23T02-15-00-000Z.archive.gz \
+  --temp-db cric-all-restore-temp
+
+# 4. Verify counts before believing it
+node src/scripts/restoreFromOffsite.js verify --db cric-all-restore-temp
+#    -> {"database":"cric-all-restore-temp","collections":N,"counts":{...}}
+#    Compare a few collections against production with the backend still up:
+#    node src/scripts/restoreFromOffsite.js verify --db cric-all
+
+# 5. Only now the real restore. Stop the backend first so nothing writes mid-restore.
+cd /opt/cricall && docker compose stop backend && cd Backend
+node src/scripts/restoreFromOffsite.js restore \
+  --archive restore-from-offsite/backup-cric-all-2026-11-23T02-15-00-000Z.archive.gz \
+  --target-db cric-all --confirm
+
+# 6. Bring the app back and verify
+cd /opt/cricall && docker compose start backend
+cd Backend && node src/scripts/restoreFromOffsite.js verify --db cric-all
+```
+
+Without `--confirm` step 5 refuses to run — that is deliberate. For a test
+restore, drop the temp database afterwards
+(`mongosh ... --eval 'db.getSiblingDB("cric-all-restore-temp").dropDatabase()'`,
+see section 7's drill for the credential prompt pattern) and delete
+`restore-from-offsite/` so the decrypted archive does not sit on disk.
+
+### 10.9 Quarterly restore test (checklist)
+
+Do this once a quarter, on a calm day, and tick the boxes:
+
+- [ ] `rclone lsf cricall-offsite:cricall-backups --include "*.enc"` lists about
+      30 nightly objects plus 4 weekly `uploads-*.enc` ones.
+- [ ] Newest `backup-*.enc` is from the last 26 hours, and the newest
+      `uploads-*.enc` from the last 8 days.
+- [ ] `rclone size` total is plausible (not 0, not gigabytes more than the
+      local `du -sh Backend/backups`).
+- [ ] Downloaded and decrypted the newest object (10.8 steps 1–2) without
+      errors.
+- [ ] Temp restore into `cric-all-restore-temp` succeeded (step 3).
+- [ ] `verify` counts for the temp database are within a few percent of
+      production for `users`, `matches`, `teams` (step 4). Investigate anything
+      wildly off before ticking.
+- [ ] Open one decrypted backup with `file` — it reports gzip, not plain text.
+- [ ] Passphrase copy is still in the password manager and readable (open it,
+      do not paste it anywhere).
+- [ ] `systemctl status cricall-backup cricall-backup-uploads --no-pager` shows
+      recent successful runs, and `journalctl -u cricall-backup -n 20` has no
+      `[offsite]` error lines.
+- [ ] Dropped the temp database and removed `restore-from-offsite/`.
+- [ ] Noted the result (date, object used, counts) in the ops log.
+
+If any box fails, keep the local backups, fix the cause, and redo the test in
+the same quarter. Never disable encryption or retention to make it pass.

@@ -15,6 +15,8 @@
     "db:export:cric-all": "node src/scripts/exportDbSnapshot.js --db=cric-all",
     "db:export:test": "node src/scripts/exportDbSnapshot.js --db=test",
     "db:backup": "node src/scripts/backupDb.js",
+    "db:backup:uploads": "node src/scripts/backupUploads.js",
+    "db:restore:offsite": "node src/scripts/restoreFromOffsite.js",
     "cleanup:testdata": "node src/scripts/cleanupTestData.js",
     "db:cleanup-uploads": "node src/scripts/cleanupOrphanedUploads.js",
     "db:cleanup-uploads:apply": "node src/scripts/cleanupOrphanedUploads.js --apply",

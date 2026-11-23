@@ -56,10 +56,25 @@ systemctl status cricall-backup        # check the last run
 The provided `cricall-backup.service` runs the script on the host, which shells
 out to `docker exec cricall-mongo mongodump`; the host needs Docker access.
 
-## Follow-up: off-VPS copy (not implemented)
+## Off-VPS encrypted copy (optional, off by default)
 
-These backups live only on the VPS's local disk alongside the container. A copy
-off the VPS (e.g. `rclone` to object storage or an rsync to a second machine)
-is a **follow-up the operator must configure**. Suggested extension point:
-append an upload step to `backupDb.js` or add a separate cron entry that ships
-`Backend/backups/*.archive.gz` off-box after the 02:15 backup completes.
+After a successful local backup, `backupDb.js` encrypts the archive with
+AES-256-GCM (passphrase read from `OFFSITE_PASSPHRASE_FILE`, mode 600) and
+uploads it with `rclone copyto` to whatever remote you configured: Google
+Drive, Backblaze B2, any SFTP box. `OFFSITE_BACKUP_ENABLED=true` is the only
+switch; leave it unset/false and nothing is uploaded and no new dependency is
+needed.
+
+- Remote retention is `OFFSITE_RETENTION_DAYS` (default 30; `0` never deletes).
+- An off-site failure does **not** delete or touch the local archive. The script
+  logs a clear, secret-free error and exits with code **3** (local backup OK,
+  off-site failed), so systemd shows the unit as failed.
+- `backupUploads.js` (`cricall-backup-uploads.timer`, weekly Sunday 03:15)
+  tars the `uploads_data` Docker volume — images are NOT in mongodump — and
+  uploads it the same way. It is skipped with a clear message when the tarball
+  exceeds `OFFSITE_UPLOADS_MAX_MB` (default 2048, `0` = no limit).
+- `restoreFromOffsite.js` lists/downloads/decrypts and restores into a temp
+  database first; the live restore needs `--confirm`.
+
+Setup, verification and the quarterly restore-test checklist:
+`docs/vps-deploy-runbook.md` section 10.

@@ -1,0 +1,14 @@
+[Unit]
+Description=CricAll weekly encrypted off-site archive of the uploads_data volume
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# Point to the repo checkout that contains the script. Docker must be available
+# on this host because the archive is streamed out of the backend container.
+WorkingDirectory=/opt/cricall/Backend
+ExecStart=/usr/bin/node /opt/cricall/Backend/src/scripts/backupUploads.js
+User=root
+# Exit code 3 = the archive was built but the off-site upload failed. The unit
+# shows as failed (a warning) and the local tarball is kept; see journalctl.
