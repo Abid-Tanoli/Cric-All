@@ -154,12 +154,11 @@ export const optionalProtect = async (req, res, next) => {
 };
 
 // Privileged actions (creating organizations/teams/matches, publishing,
-// inviting members) require a proven identity: a verified email OR a verified
-// phone number is enough — the two channels gate exactly the same actions, so
-// an account never needs both. Platform Admin principals (Admin collection)
-// are not verified accounts and pass straight through.
-export const isIdentityVerified = (user) =>
-  user?.emailVerified === true || user?.phoneVerified === true;
+// inviting members) require a proven EMAIL address. Phone/SMS verification is
+// deferred, so phoneVerified is deliberately ignored — it never unlocks a
+// gated action and the UI always shows the phone as "not verified".
+// Platform Admin principals (Admin collection) pass straight through.
+export const isIdentityVerified = (user) => user?.emailVerified === true;
 
 // Temporary kill switch (env flag REQUIRE_VERIFIED_ACCOUNT).
 //
@@ -175,14 +174,12 @@ export const requireVerifiedEmail = (req, res, next) => {
   if (!req.user) return res.status(401).json({ message: "Not authorized" });
   if (req.principalType === "admin") return next();
   // Flag off: an authenticated user may perform the action without having
-  // proven an email or phone yet. Set REQUIRE_VERIFIED_ACCOUNT back to true
-  // once real SMTP/SMS delivery is configured.
+  // proven a mailbox yet. Set REQUIRE_VERIFIED_ACCOUNT back to true once real
+  // SMTP delivery is configured.
   if (!isVerifiedAccountRequired()) return next();
   if (!isIdentityVerified(req.user)) {
     return res.status(403).json({
-      message: "Please verify your email address or phone number before performing this action.",
-      // Kept as EMAIL_NOT_VERIFIED for compatibility with existing clients;
-      // it now means "identity not verified" (either channel).
+      message: "Verify your email to continue.",
       code: "EMAIL_NOT_VERIFIED",
     });
   }

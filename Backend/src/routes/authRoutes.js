@@ -8,6 +8,7 @@ import {
   changePassword,
   verifyEmail,
   resendVerification,
+  changeVerificationEmail,
   verifyPhone,
   resendPhoneOtp,
   getProfile,
@@ -26,6 +27,7 @@ import {
   googleAuthSchema,
   verifyEmailSchema,
   resendVerificationSchema,
+  changeVerificationEmailSchema,
   verifyPhoneSchema,
   resendPhoneOtpSchema,
 } from "../validators/authValidators.js";
@@ -59,10 +61,11 @@ router.post("/change-password", changeLimit, noStore, protect, validate(changePa
 
 router.post("/verify-email", verifyLimit, validate(verifyEmailSchema), verifyEmail);
 router.post("/resend-verification", resendLimit, validate(resendVerificationSchema), resendVerification);
+// Authenticated "wrong email?" action; clears the old code and starts over.
+router.post("/change-verification-email", resendLimit, noStore, protect, validate(changeVerificationEmailSchema), changeVerificationEmail);
 
-// Phone verification: same rate-limit + per-account cool-down design as the
-// email endpoints; OTP guessing is additionally capped per account inside the
-// controller (5 wrong attempts burns the code).
+// Phone/SMS verification is deferred. These routes remain only so old clients
+// receive a clear "unavailable" answer; they never send an SMS.
 router.post("/verify-phone", verifyLimit, validate(verifyPhoneSchema), verifyPhone);
 router.post("/resend-phone-otp", resendLimit, validate(resendPhoneOtpSchema), resendPhoneOtp);
 

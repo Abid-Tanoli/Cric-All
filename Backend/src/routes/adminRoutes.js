@@ -46,6 +46,10 @@ import {
   replyToAdminIssue,
   updateAdminIssueStatus,
 } from "../controllers/issueReportController.js";
+import {
+  listUsers as listPlatformUsers,
+  markEmailVerified,
+} from "../controllers/adminUserVerificationController.js";
 
 const router = express.Router();
 
@@ -74,6 +78,17 @@ router.post("/reset-password/:token", resetLimit, resetPassword);
 router.get("/profile", auth.protect, getAdminProfile);
 
 router.get("/", auth.protect, auth.requireAdmin, listAdmins);
+
+// Support view of platform User accounts + audited manual email verification.
+// Declared before the admin `/:id` routes.
+router.get("/users", auth.protect, auth.requireAdmin, listPlatformUsers);
+router.post(
+  "/users/:id/mark-email-verified",
+  auth.protect,
+  auth.requireAdmin,
+  validateObjectId("id"),
+  markEmailVerified,
+);
 
 // Platform-admin player role repair. Declared before the admin `/:id` routes.
 router.get("/players/missing-role", auth.protect, auth.requireAdmin, listPlayersMissingRole);

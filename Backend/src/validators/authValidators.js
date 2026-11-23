@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { BATTING_POSITIONS } from "../constants/battingPositions.js";
 import { isValidPhone, normalizePhone } from "../utils/phone.js";
+import { isValidEmailSyntax, normalizeEmail } from "../utils/emailPolicy.js";
 
 // Auth request validation.
 //
@@ -9,12 +10,17 @@ import { isValidPhone, normalizePhone } from "../utils/phone.js";
 // 400 instead of a query operator, and unknown keys are stripped before the
 // body reaches a Mongo filter.
 
+// Strict local syntax only. Disposable-domain and MX policy are async (DNS)
+// and are enforced in the controller via checkEmailPolicy(), so DNS outages
+// cannot make a validator reject a signup. Typed string + refine also keeps
+// NoSQL operator objects out of the query layer.
 const email = z
   .string()
   .trim()
   .min(3)
   .max(254)
-  .refine((v) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v), "Please use a valid email format");
+  .refine(isValidEmailSyntax, "Please use a valid email format")
+  .transform(normalizeEmail);
 
 // Phone as typed by a human; validity is judged after normalization, so
 // "0300 1234567", "+92-300-1234567" and "00923001234567" are all acceptable.
@@ -130,11 +136,23 @@ export const googleAuthSchema = z.object({
   credential: z.string().min(10, "Google credential is required").max(4096),
 });
 
+// 6-digit code + the address it was sent to. No token links any more: the
+// raw code is only ever delivered by mail and stored as a SHA-256 hash.
 export const verifyEmailSchema = z.object({
-  token: z.string().min(16).max(128),
+  email,
+  code: z
+    .string()
+    .trim()
+    .regex(/^\d{6}$/, "The verification code is 6 digits"),
 });
 
 export const resendVerificationSchema = z.object({
+  email,
+});
+
+// Self-service "wrong email?" action: replaces the address, clears every
+// verification secret and restarts the code flow from scratch.
+export const changeVerificationEmailSchema = z.object({
   email,
 });
 
@@ -159,6 +177,7 @@ export default {
   googleAuthSchema,
   verifyEmailSchema,
   resendVerificationSchema,
+  changeVerificationEmailSchema,
   verifyPhoneSchema,
   resendPhoneOtpSchema,
 };
