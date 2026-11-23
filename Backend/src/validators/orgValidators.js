@@ -2,6 +2,7 @@ import { z } from "zod";
 import { ORG_ROLES } from "../permissions/orgPermissions.js";
 import { isValidPhone } from "../utils/phone.js";
 import { ORG_TYPES } from "../services/organizationService.js";
+import { locationLabels, locationRefs, objectIdString } from "./locationSchemas.js";
 
 // Organization, membership and invitation request validation.
 //
@@ -9,11 +10,6 @@ import { ORG_TYPES } from "../services/organizationService.js";
 // instead of a query operator. These schemas are `.strict()`, so an unexpected
 // key is rejected outright rather than silently dropped — a caller that meant
 // to set `owner` gets told, instead of having it quietly ignored.
-const objectIdString = z
-  .string()
-  .trim()
-  .regex(/^[0-9a-fA-F]{24}$/, "Must be a valid id");
-
 const orgName = z.string().trim().min(2, "Name must be at least 2 characters").max(150);
 
 const shortName = z.string().trim().max(20).default("");
@@ -36,30 +32,6 @@ const socialLinks = z
     (map) => Object.keys(map).length <= 15,
     "Too many social links"
   )
-  .default({});
-
-// LocationSelect sends both blocks; the controller and TeamOrganization store
-// them, so the strict request schema must accept them too.
-const locationRefs = z
-  .object({
-    countryId: objectIdString.nullable().default(null),
-    provinceId: objectIdString.nullable().default(null),
-    districtId: objectIdString.nullable().default(null),
-    cityId: objectIdString.nullable().default(null),
-    townId: objectIdString.nullable().default(null),
-  })
-  .strict()
-  .default({});
-
-const locationLabels = z
-  .object({
-    country: z.string().trim().max(120).default(""),
-    province: z.string().trim().max(120).default(""),
-    district: z.string().trim().max(120).default(""),
-    city: z.string().trim().max(120).default(""),
-    town: z.string().trim().max(120).default(""),
-  })
-  .strict()
   .default({});
 
 export const createOrganizationSchema = z
