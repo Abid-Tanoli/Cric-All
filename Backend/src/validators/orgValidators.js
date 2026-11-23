@@ -38,6 +38,30 @@ const socialLinks = z
   )
   .default({});
 
+// LocationSelect sends both blocks; the controller and TeamOrganization store
+// them, so the strict request schema must accept them too.
+const locationRefs = z
+  .object({
+    countryId: objectIdString.nullable().default(null),
+    provinceId: objectIdString.nullable().default(null),
+    districtId: objectIdString.nullable().default(null),
+    cityId: objectIdString.nullable().default(null),
+    townId: objectIdString.nullable().default(null),
+  })
+  .strict()
+  .default({});
+
+const locationLabels = z
+  .object({
+    country: z.string().trim().max(120).default(""),
+    province: z.string().trim().max(120).default(""),
+    district: z.string().trim().max(120).default(""),
+    city: z.string().trim().max(120).default(""),
+    town: z.string().trim().max(120).default(""),
+  })
+  .strict()
+  .default({});
+
 export const createOrganizationSchema = z
   .object({
     name: orgName,
@@ -78,6 +102,8 @@ export const createOrganizationSchema = z
       })
       .strict()
       .default({}),
+    locationRefs,
+    locationLabels,
     contact: z
       .object({
         phone: z.string().trim().max(40).default(""),

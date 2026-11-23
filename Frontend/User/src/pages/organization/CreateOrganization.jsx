@@ -17,6 +17,7 @@ import {
   teamRoleLabel,
 } from "../../../../Shared/orgTypes.js";
 import { OrgTypeDetails, OrgTypePicker } from "./OrgTypeFields";
+import { fieldError, orgFormErrors } from "./orgFormErrors";
 import { Banner, Field, card, eyebrow, input, primaryButton, secondaryButton } from "./orgStyles";
 
 const emptyForm = {
@@ -54,6 +55,7 @@ export default function CreateOrganization() {
   const [parent, setParent] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const [fieldErrors, setFieldErrors] = useState({});
   const [created, setCreated] = useState(null);
   const [retryBusy, setRetryBusy] = useState(false);
   const [retryError, setRetryError] = useState("");
@@ -102,6 +104,7 @@ export default function CreateOrganization() {
     event.preventDefault();
     setBusy(true);
     setErr("");
+    setFieldErrors({});
     try {
       const socialLinks = {};
       for (const [key, value] of form.socialLinks) {
@@ -148,6 +151,7 @@ export default function CreateOrganization() {
       });
     } catch (error) {
       setErr(error.message || "Could not create the organization");
+      setFieldErrors(orgFormErrors(error));
     } finally {
       setBusy(false);
     }
@@ -239,6 +243,13 @@ export default function CreateOrganization() {
     );
   }
 
+  const locationError =
+    fieldError(fieldErrors, "locationRefs") ||
+    fieldError(fieldErrors, "locationLabels") ||
+    fieldError(fieldErrors, "location");
+  const typeDetailsError = fieldError(fieldErrors, "typeDetails");
+  const socialLinksError = fieldError(fieldErrors, "socialLinks");
+
   return (
     <div className="min-h-screen bg-cric-bg px-4 py-8 text-cric-text">
       <form onSubmit={submit} className="mx-auto max-w-3xl space-y-4">
@@ -253,7 +264,7 @@ export default function CreateOrganization() {
           {err ? <div className="mt-4"><Banner kind="error">{err}</Banner></div> : null}
 
           <div className="mt-5 grid gap-4 md:grid-cols-2">
-            <Field label="Name *">
+            <Field label="Name *" error={fieldError(fieldErrors, "name")}>
               <input
                 value={form.name}
                 onChange={setTop("name")}
@@ -264,7 +275,7 @@ export default function CreateOrganization() {
                 maxLength={150}
               />
             </Field>
-            <Field label="Short name">
+            <Field label="Short name" error={fieldError(fieldErrors, "shortName")}>
               <input value={form.shortName} onChange={setTop("shortName")} className={input} maxLength={20} />
             </Field>
           </div>
@@ -293,6 +304,11 @@ export default function CreateOrganization() {
 
           <div className="mt-4">
             <OrgTypeDetails orgType={form.orgType} value={form.typeDetails} onChange={setDetail} />
+            {typeDetailsError ? (
+              <p role="alert" className="mt-1 text-xs font-bold text-red-600">
+                {typeDetailsError}
+              </p>
+            ) : null}
           </div>
 
           {form.orgType === "registered_club" ? (
@@ -313,7 +329,7 @@ export default function CreateOrganization() {
           ) : null}
 
           <div className="mt-4 grid gap-4 md:grid-cols-2">
-            <Field label="Website">
+            <Field label="Website" error={fieldError(fieldErrors, "website")}>
               <input value={form.website} onChange={setTop("website")} className={input} placeholder="https://…" />
             </Field>
             <Field label="Sub-organization of" hint={parents.length === 0 ? "You manage no parent org yet." : undefined}>
@@ -329,7 +345,7 @@ export default function CreateOrganization() {
           </div>
 
           <div className="mt-4">
-            <Field label="About">
+            <Field label="About" error={fieldError(fieldErrors, "description")}>
               <textarea
                 value={form.description}
                 onChange={setTop("description")}
@@ -350,21 +366,22 @@ export default function CreateOrganization() {
               value={form.locationRefs}
               labels={form.locationLabels}
               legacyHint={[form.location.city, form.location.country].filter(Boolean).join(", ")}
+              error={locationError}
               onChange={(refs, labels) =>
                 setForm((f) => ({ ...f, locationRefs: refs, locationLabels: labels }))
               }
             />
           </div>
           <div className="mt-4 grid gap-4 md:grid-cols-2">
-            <Field label="Area / neighbourhood (optional)">
+            <Field label="Area / neighbourhood (optional)" error={fieldError(fieldErrors, "location.area")}>
               <input value={form.location.area} onChange={setNested("location", "area")} className={input} />
             </Field>
-            <Field label="Contact phone">
+            <Field label="Contact phone" error={fieldError(fieldErrors, "contact.phone")}>
               <input value={form.contact.phone} onChange={setNested("contact", "phone")} className={input} />
             </Field>
           </div>
           <div className="mt-4">
-            <Field label="Public contact email">
+            <Field label="Public contact email" error={fieldError(fieldErrors, "contact.email")}>
               <input
                 type="email"
                 value={form.contact.email}
@@ -404,6 +421,11 @@ export default function CreateOrganization() {
               </div>
             ))}
           </div>
+          {socialLinksError ? (
+            <p role="alert" className="mt-1 text-xs font-bold text-red-600">
+              {socialLinksError}
+            </p>
+          ) : null}
           <button
             type="button"
             onClick={() => setForm((f) => ({ ...f, socialLinks: [...f.socialLinks, ["", ""]] }))}
