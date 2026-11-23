@@ -14,6 +14,7 @@ import {
   verificationBadge,
 } from "../../../../Shared/orgTypes.js";
 import { OrgTypeDetails, OrgTypePicker } from "./OrgTypeFields";
+import { fieldError, orgFormErrors } from "./orgFormErrors";
 import { PERMISSIONS, can } from "../../lib/orgUi";
 import {
   Banner,
@@ -77,6 +78,7 @@ export default function OrgSettings({ org, access, onSaved }) {
   const [form, setForm] = useState(() => emptyForm(org));
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const [fieldErrors, setFieldErrors] = useState({});
   const [notice, setNotice] = useState("");
 
   const permissions = access?.permissions || [];
@@ -125,6 +127,7 @@ export default function OrgSettings({ org, access, onSaved }) {
     event.preventDefault();
     setBusy(true);
     setErr("");
+    setFieldErrors({});
     setNotice("");
     try {
       const payload = {
@@ -159,6 +162,7 @@ export default function OrgSettings({ org, access, onSaved }) {
       onSaved?.(res.organization);
     } catch (error) {
       setErr(error.message || "Could not save the organization");
+      setFieldErrors(orgFormErrors(error));
     } finally {
       setBusy(false);
     }
@@ -167,6 +171,7 @@ export default function OrgSettings({ org, access, onSaved }) {
   const requestVerification = async () => {
     setBusy(true);
     setErr("");
+    setFieldErrors({});
     setNotice("");
     try {
       const res = await requestOrganizationVerification(org._id);
@@ -174,6 +179,7 @@ export default function OrgSettings({ org, access, onSaved }) {
       onSaved?.(res.organization);
     } catch (error) {
       setErr(error.message || "Could not request verification");
+      setFieldErrors(orgFormErrors(error));
     } finally {
       setBusy(false);
     }
@@ -185,6 +191,13 @@ export default function OrgSettings({ org, access, onSaved }) {
       <option value="hidden">Hidden</option>
     </select>
   );
+
+  const locationError =
+    fieldError(fieldErrors, "locationRefs") ||
+    fieldError(fieldErrors, "locationLabels") ||
+    fieldError(fieldErrors, "location");
+  const typeDetailsError = fieldError(fieldErrors, "typeDetails");
+  const socialLinksError = fieldError(fieldErrors, "socialLinks");
 
   return (
     <form onSubmit={save} className="space-y-4">
@@ -201,22 +214,31 @@ export default function OrgSettings({ org, access, onSaved }) {
 
         <fieldset disabled={!editable || busy} className="mt-5 space-y-4">
           <div className="grid gap-4 md:grid-cols-2">
-            <Field label="Name *">
+            <Field label="Name *" error={fieldError(fieldErrors, "name")}>
               <input value={form.name} onChange={setTop("name")} className={input} required minLength={2} maxLength={150} />
             </Field>
-            <Field label="Short name" hint="Shown next to the full name in lists.">
+            <Field
+              label="Short name"
+              hint="Shown next to the full name in lists."
+              error={fieldError(fieldErrors, "shortName")}
+            >
               <input value={form.shortName} onChange={setTop("shortName")} className={input} maxLength={20} />
             </Field>
           </div>
 
           <OrgTypePicker value={form.orgType} onChange={chooseType} />
           <OrgTypeDetails orgType={form.orgType} value={form.typeDetails} onChange={setDetail} />
+          {typeDetailsError ? (
+            <p role="alert" className="mt-1 text-xs font-bold text-red-600">
+              {typeDetailsError}
+            </p>
+          ) : null}
 
           <div className="grid gap-4 md:grid-cols-2">
-            <Field label="Website">
+            <Field label="Website" error={fieldError(fieldErrors, "website")}>
               <input value={form.website} onChange={setTop("website")} className={input} placeholder="https://…" />
             </Field>
-            <Field label="Founded (year)">
+            <Field label="Founded (year)" error={fieldError(fieldErrors, "foundedYear")}>
               <input
                 type="number"
                 value={form.foundedYear}
@@ -228,15 +250,15 @@ export default function OrgSettings({ org, access, onSaved }) {
             </Field>
           </div>
 
-          <Field label="About">
+          <Field label="About" error={fieldError(fieldErrors, "description")}>
             <textarea value={form.description} onChange={setTop("description")} rows={4} className={input} maxLength={2000} />
           </Field>
 
           <div className="grid gap-4 md:grid-cols-2">
-            <Field label="Logo URL">
+            <Field label="Logo URL" error={fieldError(fieldErrors, "logoUrl")}>
               <input value={form.logoUrl} onChange={setTop("logoUrl")} className={input} placeholder="https://…" />
             </Field>
-            <Field label="Cover image URL">
+            <Field label="Cover image URL" error={fieldError(fieldErrors, "coverUrl")}>
               <input value={form.coverUrl} onChange={setTop("coverUrl")} className={input} placeholder="https://…" />
             </Field>
           </div>
@@ -251,31 +273,32 @@ export default function OrgSettings({ org, access, onSaved }) {
             value={form.locationRefs}
             labels={form.locationLabels}
             legacyHint={[form.location.city, form.location.area, form.location.country].filter(Boolean).join(", ")}
+            error={locationError}
             onChange={(refs, labels) =>
               setForm((f) => ({ ...f, locationRefs: refs, locationLabels: labels }))
             }
           />
           <div className="grid gap-4 md:grid-cols-2">
-            <Field label="Area / neighbourhood (optional)">
+            <Field label="Area / neighbourhood (optional)" error={fieldError(fieldErrors, "location.area")}>
               <input value={form.location.area} onChange={setNested("location", "area")} className={input} />
             </Field>
-            <Field label="Address (optional)">
+            <Field label="Address (optional)" error={fieldError(fieldErrors, "location.address")}>
               <input value={form.location.address} onChange={setNested("location", "address")} className={input} />
             </Field>
           </div>
           <div className="grid gap-4 md:grid-cols-2">
-            <Field label="Contact phone">
+            <Field label="Contact phone" error={fieldError(fieldErrors, "contact.phone")}>
               <input value={form.contact.phone} onChange={setNested("contact", "phone")} className={input} />
             </Field>
           </div>
-          <Field label="Public contact email">
+          <Field label="Public contact email" error={fieldError(fieldErrors, "contact.email")}>
             <input type="email" value={form.contact.email} onChange={setNested("contact", "email")} className={input} />
           </Field>
 
           <div className="grid gap-4 md:grid-cols-3">
-            <Field label="Location visibility">{privacySelect("location")}</Field>
-            <Field label="Contact visibility">{privacySelect("contactInfo")}</Field>
-            <Field label="Social links visibility">{privacySelect("socialLinks")}</Field>
+            <Field label="Location visibility" error={fieldError(fieldErrors, "privacy.location")}>{privacySelect("location")}</Field>
+            <Field label="Contact visibility" error={fieldError(fieldErrors, "privacy.contactInfo")}>{privacySelect("contactInfo")}</Field>
+            <Field label="Social links visibility" error={fieldError(fieldErrors, "privacy.socialLinks")}>{privacySelect("socialLinks")}</Field>
           </div>
         </fieldset>
       </div>
@@ -328,6 +351,11 @@ export default function OrgSettings({ org, access, onSaved }) {
               </div>
             ))
           )}
+          {socialLinksError ? (
+            <p role="alert" className="mt-1 text-xs font-bold text-red-600">
+              {socialLinksError}
+            </p>
+          ) : null}
         </fieldset>
         <datalist id="social-presets">
           {SOCIAL_PRESETS.map((preset) => (

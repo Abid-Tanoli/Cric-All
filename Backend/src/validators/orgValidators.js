@@ -2,6 +2,7 @@ import { z } from "zod";
 import { ORG_ROLES } from "../permissions/orgPermissions.js";
 import { isValidPhone } from "../utils/phone.js";
 import { ORG_TYPES } from "../services/organizationService.js";
+import { locationLabels, locationRefs, objectIdString } from "./locationSchemas.js";
 
 // Organization, membership and invitation request validation.
 //
@@ -9,11 +10,6 @@ import { ORG_TYPES } from "../services/organizationService.js";
 // instead of a query operator. These schemas are `.strict()`, so an unexpected
 // key is rejected outright rather than silently dropped — a caller that meant
 // to set `owner` gets told, instead of having it quietly ignored.
-const objectIdString = z
-  .string()
-  .trim()
-  .regex(/^[0-9a-fA-F]{24}$/, "Must be a valid id");
-
 const orgName = z.string().trim().min(2, "Name must be at least 2 characters").max(150);
 
 const shortName = z.string().trim().max(20).default("");
@@ -78,6 +74,8 @@ export const createOrganizationSchema = z
       })
       .strict()
       .default({}),
+    locationRefs,
+    locationLabels,
     contact: z
       .object({
         phone: z.string().trim().max(40).default(""),
