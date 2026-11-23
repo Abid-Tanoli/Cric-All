@@ -1,0 +1,10 @@
+[Unit]
+Description=Run the CricAll uploads_data off-site archive once a week
+
+[Timer]
+# Weekly, Sunday 03:15 (an hour after the nightly database backup).
+OnCalendar=Sun *-*-* 03:15:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

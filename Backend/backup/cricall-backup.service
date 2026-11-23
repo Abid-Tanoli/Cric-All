@@ -10,3 +10,7 @@ Type=oneshot
 WorkingDirectory=/opt/cricall/Backend
 ExecStart=/usr/bin/node /opt/cricall/Backend/src/scripts/backupDb.js
 User=root
+# Exit code 3 means the local database backup SUCCEEDED but the optional
+# off-site copy failed. The archive stays in Backend/backups; check journalctl,
+# then keep OFFSITE_BACKUP_ENABLED=true or set it to false to silence it.
+# Off-site setup: docs/vps-deploy-runbook.md section 10.

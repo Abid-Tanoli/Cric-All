@@ -4,6 +4,7 @@ import { spawn } from "child_process";
 import { fileURLToPath } from "url";
 import dotenv from "dotenv";
 import { getMongoTarget } from "../utils/mongoTarget.js";
+import { runOffsiteUpload } from "./offsiteBackup.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -228,6 +229,17 @@ export async function main() {
   console.log(
     `Retention: keeping backups newer than ${keepDays()} day(s) (newest always kept); pruned ${pruned} old file(s)`
   );
+
+  // Optional off-site copy, OFF unless OFFSITE_BACKUP_ENABLED=true. It never
+  // throws and never removes or rewrites the local archive above; a failure only
+  // sets the distinct exit code 3 so systemd reports the off-site step as
+  // failed/warned while the local backup is still usable.
+  const offsite = await runOffsiteUpload({
+    localPath: archivePath,
+    include: "backup-*.enc",
+    kind: "database",
+  });
+  if (offsite.code !== 0) process.exitCode = offsite.code;
 
   if (process.argv.includes("--print-instructions")) {
     printSchedulingInstructions(path.resolve(__dirname, "..", ".."));
