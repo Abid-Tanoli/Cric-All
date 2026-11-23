@@ -62,7 +62,7 @@ export function Stat({ label: text, value, hint }) {
  * group of toggle buttons) is rendered as a labelled group instead, because
  * `for` has nothing valid to point at there.
  */
-export function Field({ label: text, children, hint }) {
+export function Field({ label: text, children, hint, error }) {
   const generatedId = useId();
   const single = Children.count(children) === 1 ? Children.toArray(children)[0] : null;
   const isSingleControl =
@@ -71,6 +71,12 @@ export function Field({ label: text, children, hint }) {
   if (isSingleControl) {
     // Respect an id the caller already set; only fill in a missing one.
     const controlId = single.props.id || generatedId;
+    const describedBy = [
+      hint ? `${controlId}-hint` : single.props["aria-describedby"],
+      error ? `${controlId}-error` : null,
+    ]
+      .filter(Boolean)
+      .join(" ");
     return (
       <div>
         <label className={label} htmlFor={controlId}>
@@ -78,11 +84,16 @@ export function Field({ label: text, children, hint }) {
         </label>
         {cloneElement(single, {
           id: controlId,
-          "aria-describedby": hint ? `${controlId}-hint` : single.props["aria-describedby"],
+          "aria-describedby": describedBy || undefined,
         })}
         {hint ? (
           <p id={`${controlId}-hint`} className="mt-1 text-[10px] font-semibold text-cric-muted">
             {hint}
+          </p>
+        ) : null}
+        {error ? (
+          <p id={`${controlId}-error`} role="alert" className="mt-1 text-xs font-bold text-red-600">
+            {error}
           </p>
         ) : null}
       </div>
@@ -93,7 +104,11 @@ export function Field({ label: text, children, hint }) {
     <div
       role="group"
       aria-labelledby={`${generatedId}-label`}
-      aria-describedby={hint ? `${generatedId}-hint` : undefined}
+      aria-describedby={
+        [hint ? `${generatedId}-hint` : null, error ? `${generatedId}-error` : null]
+          .filter(Boolean)
+          .join(" ") || undefined
+      }
     >
       <span id={`${generatedId}-label`} className={label}>
         {text}
@@ -102,6 +117,11 @@ export function Field({ label: text, children, hint }) {
       {hint ? (
         <p id={`${generatedId}-hint`} className="mt-1 text-[10px] font-semibold text-cric-muted">
           {hint}
+        </p>
+      ) : null}
+      {error ? (
+        <p id={`${generatedId}-error`} role="alert" className="mt-1 text-xs font-bold text-red-600">
+          {error}
         </p>
       ) : null}
     </div>

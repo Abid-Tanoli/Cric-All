@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { BATTING_POSITIONS } from '../constants/battingPositions.js';
+import { locationLabels, locationRefs } from './locationSchemas.js';
 
 // Phase 5: player profiles.
 //
@@ -183,6 +184,8 @@ export const SELF_SERVICE_PLAYER_FIELDS = [
   'ageGroup',
   'organization',
   'address',
+  'locationRefs',
+  'locationLabels',
   'birthInfo',
   'age',
   'imageUrl',
@@ -208,6 +211,8 @@ export const createPlayerSchema = z
     ageGroup: z.enum(AGE_GROUPS).optional(),
     organization: z.string().trim().max(200).optional(),
     address: addressSchema.optional(),
+    locationRefs,
+    locationLabels,
     birthInfo: z
       .object({
         date: z.coerce.date().optional(),

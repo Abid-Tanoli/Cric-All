@@ -146,10 +146,12 @@ export const registerUser = async (req, res) => {
           province: playerProfile.location?.province || "",
           country: "Pakistan"
         },
-        // Optional tree selection from the registration form. The Player model
-        // resolves labels and ancestors, so an unapproved "Other" suggestion
-        // the registrant just created works here without a second request.
+        // Optional tree selection from the registration form. Keep the labels
+        // the form sent as well as the ids; the Player model refreshes both
+        // from the tree on save, so an unapproved "Other" suggestion the
+        // registrant just created works here without a second request.
         ...(playerProfile.location?.locationRefs ? { locationRefs: playerProfile.location.locationRefs } : {}),
+        ...(playerProfile.location?.locationLabels ? { locationLabels: playerProfile.location.locationLabels } : {}),
       });
     }
 

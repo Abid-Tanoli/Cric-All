@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { BATTING_POSITIONS } from "../constants/battingPositions.js";
 import { isValidPhone, normalizePhone } from "../utils/phone.js";
+import { locationLabels, locationRefs } from "./locationSchemas.js";
 
 // Auth request validation.
 //
@@ -78,6 +79,11 @@ export const registerSchema = z
             district: z.string().max(120).optional(),
             city: z.string().max(120).optional(),
             province: z.string().max(120).optional(),
+            // The registration form nests the tree selection here. Reuse the
+            // same schemas as the other player write paths so validation does
+            // not strip the ids/labels before the controller can store them.
+            locationRefs,
+            locationLabels,
           })
           .optional(),
       })
