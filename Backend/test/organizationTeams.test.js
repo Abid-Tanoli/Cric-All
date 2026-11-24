@@ -22,7 +22,11 @@ import {
   listOrgTeams,
   removeOrgTeamPlayers,
   updateOrgTeam,
+  updateOrgTeamPlayerRole,
 } from "../src/controllers/orgTeamsController.js";
+import * as teamService from "../src/services/teamService.js";
+import * as playerService from "../src/services/playerService.js";
+import { sanitizeTeamPublic } from "../src/utils/publicProjection.js";
 import { requireOrgPermission } from "../src/middleware/orgAccess.js";
 import { PERMISSIONS } from "../src/permissions/orgPermissions.js";
 import {
@@ -30,6 +34,7 @@ import {
   TEAM_PLAYER_ROLES,
   createOrgTeamSchema,
   orgTeamAddPlayersSchema,
+  orgTeamPlayerRoleSchema,
   updateOrgTeamSchema,
 } from "../src/validators/teamValidators.js";
 import { BOWLING_STYLES, PLAYING_ROLES } from "../src/validators/playerValidators.js";
@@ -995,4 +1000,173 @@ test("squad: available-player search finds attachable players by name and phone,
   );
   assert.strictEqual(allowed, false);
   assert.strictEqual(denied.body.code, "ORG_PERMISSION_DENIED");
+});
+
+// ---------------------------------------------------------------------------
+// Squad data: the shirt number and the role/playingRole pair
+// ---------------------------------------------------------------------------
+
+test("squad: both assignPlayerToTeam services store the jersey number they are given", async () => {
+  const owner = await makeUser();
+  const org = await makeOrg(owner, "Jersey Org");
+  const teamId = await makeSquadTeam(owner, org, "Jersey XI");
+  const secondTeamId = await makeSquadTeam(owner, org, "Jersey Second XI");
+  const player = await Player.create({ name: "Jersey Player", team: teamId });
+
+  // teamService is the flavour the organization squad route uses.
+  const assigned = await teamService.assignPlayerToTeam(teamId, player._id, "Bowler", 27);
+  assert.strictEqual(assigned.jerseyNumber, 27);
+  assert.strictEqual((await Player.findById(player._id).lean()).jerseyNumber, 27);
+
+  // playerService is the flavour the player routes use. Moving teams rewrites
+  // the shirt number rather than keeping the old squad's.
+  await playerService.assignPlayerToTeam(player._id, secondTeamId, "Bowler", 9);
+  const moved = await Player.findById(player._id).lean();
+  assert.strictEqual(moved.jerseyNumber, 9);
+  assert.ok(moved.team.equals(secondTeamId));
+
+  // No argument means "do not touch what is already stored".
+  await teamService.assignPlayerToTeam(secondTeamId, player._id, "Bowler");
+  assert.strictEqual((await Player.findById(player._id).lean()).jerseyNumber, 9);
+
+  // A value outside the model's 0–999 range is refused before any write.
+  await assert.rejects(
+    () => teamService.assignPlayerToTeam(teamId, player._id, "Bowler", 1000),
+    /Jersey number must be a whole number between 0 and 999/,
+  );
+  const afterReject = await Player.findById(player._id).lean();
+  assert.strictEqual(afterReject.jerseyNumber, 9, "a rejected assignment changes nothing");
+  assert.ok(afterReject.team.equals(secondTeamId), "a rejected assignment does not move the player");
+});
+
+test("squad: add-new and bulk store the jersey number, and the squad payload carries it", async () => {
+  const owner = await makeUser();
+  const org = await makeOrg(owner, "Jersey Route Org");
+  const teamId = await makeSquadTeam(owner, org, "Jersey Route XI");
+
+  const add = async (body) => {
+    const res = mockRes();
+    await addOrgTeamPlayers(
+      mockReq({
+        user: owner,
+        principalType: "user",
+        params: { id: String(org._id), teamId },
+        body: parsed(orgTeamAddPlayersSchema, body),
+        org,
+        orgAccess: ownerAccess,
+      }),
+      res,
+    );
+    assert.strictEqual(res.statusCode, 200, JSON.stringify(res.body));
+    return res.body;
+  };
+
+  // Add-new: the strict schema accepts the number the PR #79 form sends.
+  const single = await add({ newPlayer: { name: "Shirt One", jerseyNumber: 7 } });
+  const shirtOne = await Player.findById(single.player._id).lean();
+  assert.strictEqual(shirtOne.jerseyNumber, 7);
+  const returnedRow = single.team.players.find((entry) => String(entry._id) === String(shirtOne._id));
+  assert.strictEqual(returnedRow.jerseyNumber, 7, "the response roster shows the new squad's numbers");
+
+  // Bulk: each pasted entry can carry its own number.
+  const bulk = await add({
+    newPlayers: [
+      { name: "Shirt Two", jerseyNumber: 11 },
+      { name: "Shirt Three" },
+    ],
+  });
+  assert.ok(bulk.team.players.some((entry) => entry.jerseyNumber === 11));
+
+  // The public team page's projection keeps the number...
+  const profile = await teamService.getTeamProfile(teamId);
+  const publicTeam = sanitizeTeamPublic(profile.team, {});
+  const publicShirtOne = publicTeam.players.find((entry) => String(entry._id) === String(shirtOne._id));
+  assert.strictEqual(publicShirtOne.jerseyNumber, 7);
+  // ...and an unset number stays null rather than disappearing or becoming 0.
+  const publicShirtThree = publicTeam.players.find((entry) => entry.name === "Shirt Three");
+  assert.strictEqual(publicShirtThree.jerseyNumber, null);
+});
+
+test("squad: jersey numbers are not unique within a team, matching every existing entry path", async () => {
+  // There is no jersey uniqueness rule anywhere in the app today: the Admin
+  // player form, the bulk importer and the squad role endpoint all allow two
+  // players to share a number. This pins that behaviour instead of inventing a
+  // new 409 that only one entry path would enforce.
+  const owner = await makeUser();
+  const org = await makeOrg(owner, "Jersey Dup Org");
+  const teamId = await makeSquadTeam(owner, org, "Jersey Dup XI");
+
+  const first = await Player.create({ name: "First Seven", team: teamId, jerseyNumber: 7 });
+  const res = mockRes();
+  await addOrgTeamPlayers(
+    mockReq({
+      user: owner,
+      principalType: "user",
+      params: { id: String(org._id), teamId },
+      body: parsed(orgTeamAddPlayersSchema, { newPlayer: { name: "Second Seven", jerseyNumber: 7 } }),
+      org,
+      orgAccess: ownerAccess,
+    }),
+    res,
+  );
+  assert.strictEqual(res.statusCode, 200, JSON.stringify(res.body));
+  assert.strictEqual(await Player.countDocuments({ team: teamId, jerseyNumber: 7 }), 2);
+
+  // Re-assigning a player's own number overwrites theirs and nobody else's.
+  await teamService.assignPlayerToTeam(teamId, first._id, "Bowler", 12);
+  assert.strictEqual((await Player.findById(first._id).lean()).jerseyNumber, 12);
+  assert.strictEqual(await Player.countDocuments({ team: teamId, jerseyNumber: 7 }), 1);
+});
+
+test("squad: a role change that is a classification updates role and playingRole together", async () => {
+  const owner = await makeUser();
+  const org = await makeOrg(owner, "Jersey Role Org");
+  const teamId = await makeSquadTeam(owner, org, "Jersey Role XI");
+  const player = await Player.create({
+    name: "Role Changer",
+    team: teamId,
+    role: "Batsman",
+    playingRole: "Batsman",
+  });
+
+  const update = async (body) => {
+    const res = mockRes();
+    await updateOrgTeamPlayerRole(
+      mockReq({
+        user: owner,
+        principalType: "user",
+        params: { id: String(org._id), teamId: String(teamId), playerId: String(player._id) },
+        body: parsed(orgTeamPlayerRoleSchema, body),
+        org,
+        orgAccess: ownerAccess,
+      }),
+      res,
+    );
+    assert.strictEqual(res.statusCode, 200, JSON.stringify(res.body));
+    return res.body.player;
+  };
+
+  // "Bowler" is both a legal free-text role and a playingRole enum value, so the
+  // public page (playingRole || role) must show the new value, not the old one.
+  const updated = await update({ role: "Bowler" });
+  assert.strictEqual(updated.role, "Bowler");
+  assert.strictEqual(updated.playingRole, "Bowler");
+  const stored = await Player.findById(player._id).lean();
+  assert.strictEqual(stored.playingRole, "Bowler");
+
+  // A free-text role has no enum equivalent: only `role` moves, and the last
+  // explicit classification is kept (there is no legal empty playingRole).
+  await update({ role: "Opening batsman" });
+  const freeText = await Player.findById(player._id).lean();
+  assert.strictEqual(freeText.role, "Opening batsman");
+  assert.strictEqual(freeText.playingRole, "Bowler");
+
+  // The same endpoint sets and clears the shirt number.
+  await update({ jerseyNumber: 27 });
+  assert.strictEqual((await Player.findById(player._id).lean()).jerseyNumber, 27);
+  await update({ jerseyNumber: null });
+  assert.strictEqual((await Player.findById(player._id).lean()).jerseyNumber, null);
+
+  // Out-of-range numbers never reach the service.
+  assert.strictEqual(orgTeamPlayerRoleSchema.safeParse({ jerseyNumber: 1000 }).success, false);
 });

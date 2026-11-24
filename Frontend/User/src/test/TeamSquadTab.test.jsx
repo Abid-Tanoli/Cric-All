@@ -56,6 +56,7 @@ const squadPlayer = {
   name: "Sana Mir",
   playingRole: "Bowler",
   battingPosition: "",
+  jerseyNumber: 27,
   stats: { runs: 10, wickets: 4, matches: 3 },
 };
 
@@ -106,6 +107,16 @@ describe("Team page Squad tab — manager actions", () => {
     expect(await screen.findByRole("button", { name: /add players/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /remove sana mir from the squad/i })).toBeInTheDocument();
     expect(getMyOrgAccess).toHaveBeenCalledWith("org-1");
+  });
+
+  it("prints the shirt number on the squad card", async () => {
+    renderTeam(team([squadPlayer, { ...squadPlayer, _id: "player-2", name: "No Number", jerseyNumber: null }]));
+    await openSquadTab();
+
+    expect(await screen.findByText("#27")).toBeInTheDocument();
+    // A player with no number shows no badge rather than "#null" / "#0".
+    expect(screen.queryByText("#null")).not.toBeInTheDocument();
+    expect(screen.getByText("No Number")).toBeInTheDocument();
   });
 
   it("shows a visitor the current empty text and no actions", async () => {
