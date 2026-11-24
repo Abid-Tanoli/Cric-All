@@ -18,6 +18,7 @@
     "db:backup:uploads": "node src/scripts/backupUploads.js",
     "db:restore:offsite": "node src/scripts/restoreFromOffsite.js",
     "cleanup:testdata": "node src/scripts/cleanupTestData.js",
+    "users:purge": "node src/scripts/purgeUsers.js",
     "db:cleanup-uploads": "node src/scripts/cleanupOrphanedUploads.js",
     "db:cleanup-uploads:apply": "node src/scripts/cleanupOrphanedUploads.js --apply",
     "db:backfill-event-org": "node src/scripts/backfillEventOrganization.js",
