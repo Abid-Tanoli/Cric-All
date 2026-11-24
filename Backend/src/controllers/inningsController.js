@@ -2,6 +2,7 @@ import Match from "../models/Match.js";
 import { getIO } from "../socket/socket.js";
 import { populateFullMatch } from "../utils/scoringHelpers.js";
 import { buildMatchResult } from "../utils/resultHelpers.js";
+import { runPostMatchPipeline } from "../services/postMatch.js";
 
 export const endInnings = async (req, res) => {
   try {
@@ -95,6 +96,13 @@ export const endInnings = async (req, res) => {
 
     await match.save({ validateModifiedOnly: true });
 
+    // This is the completion path the scoring UI uses, so the derived tables
+    // (team rankings, career figures, tournament points) are rebuilt here.
+    // The pipeline never throws: a recompute problem cannot fail the completion.
+    const postMatch = match.status === "completed"
+      ? await runPostMatchPipeline(match._id, { reason: "innings:ended" })
+      : null;
+
     await populateFullMatch(match);
 
     try {
@@ -117,7 +125,8 @@ export const endInnings = async (req, res) => {
       match,
       message: match.status === "completed"
         ? "Match completed successfully"
-        : "Innings ended successfully"
+        : "Innings ended successfully",
+      postMatch,
     });
   } catch (error) {
     console.error("Error ending innings:", error);
@@ -250,6 +259,10 @@ export const resetInnings = async (req, res) => {
     const innings = match.innings[inningsIndex];
     if (!innings) return res.status(400).json({ message: "Invalid innings index" });
 
+    // Wiping an innings of a completed match must also wipe its contribution
+    // from the derived tables, so remember how the match was closed.
+    const wasCompleted = match.status === "completed";
+
     innings.runs = 0;
     innings.wickets = 0;
     innings.balls = 0;
@@ -271,13 +284,17 @@ export const resetInnings = async (req, res) => {
     await match.save({ validateModifiedOnly: true });
     await populateFullMatch(match);
 
+    const postMatch = wasCompleted
+      ? await runPostMatchPipeline(match._id, { reason: "innings:reset" })
+      : null;
+
     try {
       const io = getIO();
       io.to(`match-${matchId}`).emit("match:reset", { matchId, inningsIndex });
       io.emit("match:updated", match);
     } catch (err) { }
 
-    res.status(200).json({ match, message: "Innings reset successfully" });
+    res.status(200).json({ match, message: "Innings reset successfully", postMatch });
   } catch (error) {
     res.status(400).json({ message: error.message });
   }

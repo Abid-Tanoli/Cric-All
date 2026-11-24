@@ -8,11 +8,10 @@ import {
   validateManualScorecard,
   formatOversLabel,
 } from "../services/manualScorecard.js";
-import { recomputeTournamentPoints } from "../services/tournamentService.js";
+import { runPostMatchPipeline } from "../services/postMatch.js";
 import { buildMatchInnings } from "../utils/matchInnings.js";
 import { recordAudit, SYSTEM_ACTOR } from "../utils/audit.js";
 import { getIO } from "../socket/socket.js";
-import { invalidateTournamentStatsCache } from "../services/tournamentStats.js";
 
 const idOf = (value) => String(value?._id || value || "");
 
@@ -179,10 +178,11 @@ const applyManualMatch = async (match, body, { req = null, requireComplete = tru
   applyInnings(match, data.innings, [ctx.teamA, ctx.teamB], requireComplete);
   await match.save();
 
-  if (ctx.tournament && requireComplete) {
-    await recomputeTournamentPoints(ctx.tournament._id);
-    invalidateTournamentStatsCache(ctx.tournament._id);
-  }
+  // One shared pipeline for every completion path: rankings, career figures
+  // and the tournament points table are rebuilt from the saved scorecard.
+  const postMatch = requireComplete
+    ? await runPostMatchPipeline(match._id, { reason: "manual:published" })
+    : null;
 
   await match.populate("teams", "name shortName logo");
   emitMatchUpdate(match, ctx.tournament?._id);
@@ -202,7 +202,7 @@ const applyManualMatch = async (match, body, { req = null, requireComplete = tru
     },
   });
 
-  return { ok: true, match };
+  return { ok: true, match, postMatch };
 };
 
 const emptyInnings = (innings) => {
@@ -476,11 +476,11 @@ export const createManualMatch = async (req, res) => {
     if (ctx.tournament) {
       ctx.tournament.matches.push(match._id);
       await ctx.tournament.save();
-      if (requireComplete) {
-        await recomputeTournamentPoints(ctx.tournament._id);
-        invalidateTournamentStatsCache(ctx.tournament._id);
-      }
     }
+
+    const postMatch = requireComplete
+      ? await runPostMatchPipeline(match._id, { reason: "manual:created" })
+      : null;
 
     await match.populate("teams", "name shortName logo");
     emitMatchUpdate(match, ctx.tournament?._id);
@@ -498,7 +498,7 @@ export const createManualMatch = async (req, res) => {
       },
     });
 
-    res.status(201).json({ match, message: requireComplete ? "Manual scorecard saved." : "Draft saved." });
+    res.status(201).json({ match, message: requireComplete ? "Manual scorecard saved." : "Draft saved.", postMatch });
   } catch (error) {
     console.error("Error creating manual match:", error);
     res.status(400).json({ message: error.message || "Failed to save the manual scorecard." });

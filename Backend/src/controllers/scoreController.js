@@ -2,8 +2,7 @@ import Match from "../models/Match.js";
 import Player from "../models/Player.js";
 import fetch from "node-fetch";
 import { getIO, emitBallRecorded, emitScoreUpdate, emitStrikeChanged, emitOverCompleted, emitBallWithCommentary, emitBallUpdate, emitWicketAlert, emitMilestoneAlert, emitInningsComplete, emitInningsEnd, emitMatchEnd, emitFieldClick, emitAICommentary } from "../socket/socket.js";
-import { updateTournamentPoints } from "../services/tournamentService.js";
-import { invalidateTournamentStatsCache } from "../services/tournamentStats.js";
+import { runPostMatchPipeline } from "../services/postMatch.js";
 import fieldPositionMapper from "../services/fieldPositionMapper.js";
 import aiCommentary, { isAiCommentaryEnabled } from "../services/aiCommentary.js";
 import CricketShot from "../models/CricketShot.js";
@@ -577,8 +576,12 @@ export const updateScore = async (req, res) => {
       console.log("Socket not available:", socketError.message);
     }
 
-    if (shouldEndInnings && match.tournament) {
-      updateTournamentPoints(match.tournament);
+    // The engine can end the match with this delivery (last ball, chase
+    // complete). That is a completion path even before the scorer presses
+    // end-innings, so the derived tables are refreshed here too. The pipeline
+    // is idempotent, so a later /end-innings call is harmless.
+    if (shouldEndInnings && match.status === "completed") {
+      await runPostMatchPipeline(match._id, { reason: "ball:match-ended" });
     }
 
     // Create Delivery record for wagon wheel
@@ -913,16 +916,14 @@ export const resolveTie = async (req, res) => {
       return res.status(400).json({ message: "Match is not pending tie resolution" });
     }
 
+    let postMatch = null;
     if (resolution === "declared_tie") {
       match.status = "completed";
       match.tieResolution = "declared_tie";
       match.result.description = "Match ended in a tie";
       await match.save({ validateModifiedOnly: true });
-      // Completion changes the public stats payload and the points table.
-      if (match.tournament) {
-        await updateTournamentPoints(match.tournament);
-        invalidateTournamentStatsCache(match.tournament);
-      }
+      // Completion changes rankings, career figures and the points table.
+      postMatch = await runPostMatchPipeline(match._id, { reason: "tie:declared" });
       await populateFullMatch(match);
     } else if (resolution === "super_over") {
       match.tieResolution = "super_over";
@@ -939,7 +940,7 @@ export const resolveTie = async (req, res) => {
       io.emit("match:updated", match);
     } catch (err) { console.error("Socket emit error (tieResolved):", err.message); }
 
-    res.status(200).json({ match, message: `Tie resolved as ${resolution}` });
+    res.status(200).json({ match, message: `Tie resolved as ${resolution}`, postMatch });
   } catch (error) {
     res.status(400).json({ message: "Failed to resolve tie", error: error.message });
   }
@@ -1437,6 +1438,13 @@ export const revertLastBall = async (req, res) => {
     await match.save({ validateModifiedOnly: true });
     await populateFullMatch(match);
 
+    // Undoing the ball that completed the match reopens it, so the match's
+    // contribution has to come back out of rankings, career figures and the
+    // points table.
+    const postMatch = matchWasEnded
+      ? await runPostMatchPipeline(match._id, { reason: "ball:reverted" })
+      : null;
+
     // 15. Roll back the per-ball documents so undo-then-rescore does not
     // duplicate commentary / wagon-wheel / partnership / analytics rows.
     try {
@@ -1543,7 +1551,7 @@ export const revertLastBall = async (req, res) => {
       io.emit("match:updated", match);
     } catch (err) { console.error("Socket emit error (ballReverted):", err.message); }
 
-    res.status(200).json({ match, message: "Last ball reverted successfully" });
+    res.status(200).json({ match, message: "Last ball reverted successfully", postMatch });
   } catch (error) {
     console.error("Revert Error:", error);
     res.status(400).json({ message: "Failed to revert ball", error: error.message });
@@ -1850,6 +1858,7 @@ export const resetMatch = async (req, res) => {
       innings.currentBowler = null;
     });
 
+    const wasCompleted = match.status === "completed";
     match.currentInnings = 0;
     match.status = "upcoming";
     match.tossWinner = null;
@@ -1861,13 +1870,17 @@ export const resetMatch = async (req, res) => {
     await match.save({ validateModifiedOnly: true });
     await populateFullMatch(match);
 
+    const postMatch = wasCompleted
+      ? await runPostMatchPipeline(match._id, { reason: "match:reset" })
+      : null;
+
     try {
       const io = getIO();
       io.to(`match-${matchId}`).emit("match:reset", { matchId, isMatchReset: true });
       io.emit("match:updated", match);
     } catch (err) { console.error("Socket emit error (reset):", err.message); }
 
-    res.status(200).json({ match, message: "Match reset successfully" });
+    res.status(200).json({ match, message: "Match reset successfully", postMatch });
   } catch (error) {
     console.error("Reset Match Error:", error);
     res.status(400).json({ message: error.message });
@@ -1953,8 +1966,14 @@ export const editBall = async (req, res) => {
     await match.save({ validateModifiedOnly: true });
     await populateFullMatch(match);
 
+    // Editing a delivery in a completed match changes the result figures, so
+    // rebuild the derived tables from the edited scorecard.
+    const postMatch = match.status === "completed"
+      ? await runPostMatchPipeline(match._id, { reason: "ball:edited" })
+      : null;
+
     try { const io = getIO(); io.to(`match-${matchId}`).emit('match:ballEdited', { matchId, inningsIndex, overNumber, ballNumber }); io.emit('match:updated', match); } catch (err) { console.error("Socket emit error (ballEdited):", err.message); }
-    res.status(200).json({ match, message: 'Ball updated successfully' });
+    res.status(200).json({ match, message: 'Ball updated successfully', postMatch });
 
     // Fire off async task to regenerate commentary for the edited ball only when
     // this match has AI commentary on and no manual summary was provided.

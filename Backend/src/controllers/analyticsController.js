@@ -6,6 +6,7 @@ import MatchAnalytics from "../models/MatchAnalytics.js";
 import Review from "../models/Review.js";
 import MatchOfficial from "../models/MatchOfficial.js";
 import { getIO, emitBallUpdate, emitMatchStatusChange, emitWicketAlert, emitMilestoneAlert, emitInningsComplete, emitDRSUpdate, emitUmpireSignal } from "../socket/socket.js";
+import { runPostMatchPipeline } from "../services/postMatch.js";
 
 export async function getMatchPartnerships(req, res) {
   try {
@@ -436,13 +437,20 @@ export async function updateMatchStatusOfficial(req, res) {
     
     const match = await Match.findById(matchId);
     if (!match) return res.status(404).json({ error: "Match not found" });
-    
+
+    const previousStatus = match.status;
     match.status = status;
     await match.save();
-    
+
+    // This is another way a match reaches `completed` (and leaves it again),
+    // so the derived tables are rebuilt the same way everywhere.
+    const postMatch = status === "completed" || previousStatus === "completed"
+      ? await runPostMatchPipeline(match._id, { reason: "match:official-status" })
+      : null;
+
     emitMatchStatusChange(matchId, { status, message });
-    
-    res.json({ success: true, match });
+
+    res.json({ success: true, match, postMatch });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
