@@ -48,7 +48,9 @@ export default function TeamProfile() {
         try {
           const chainRes = await api.get(`/organizations/${orgId}/chain`);
           setOrgChain(chainRes.data?.data || chainRes.data?.chain || []);
-        } catch {}
+        } catch {
+          // The org chain is decorative: the team page still renders without it.
+        }
         if (storedUser) {
           try {
             setOrgAccess(await getMyOrgAccess(orgId));
@@ -149,7 +151,6 @@ export default function TeamProfile() {
   
 
   const primaryColor = team.primaryColor || '#031d44';
-  const secondaryColor = team.secondaryColor || '#1e3a5f';
 
   return (
     <div className="min-h-screen bg-cric-bg text-cric-text font-sans">
