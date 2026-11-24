@@ -37,6 +37,19 @@ export function canonicalPlayerPhone(raw) {
   return normalizePhone(trimmed) || trimmed.toLowerCase();
 }
 
+// A squad shirt number is a whole number in the same 0–999 range the player and
+// squad validators accept. `null`/`""` mean "not set" and return undefined, so
+// assigning a player never wipes a jersey they already have. Throws for a value
+// the model would reject anyway, with a message the caller can show.
+export function parseJerseyNumber(raw) {
+  if (raw === undefined || raw === null || raw === "") return undefined;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < 0 || value > 999) {
+    throw new Error("Jersey number must be a whole number between 0 and 999");
+  }
+  return value;
+}
+
 export class DuplicatePlayerError extends Error {
   constructor(message, existing) {
     super(message);
@@ -93,6 +106,10 @@ export async function assignPlayerToTeam(playerId, teamId, role = "player", jers
   const team = await Team.findById(teamId);
   if (!team) throw new Error("Team not found");
 
+  // Validate before touching the old team's roster, so a rejected jersey leaves
+  // the player exactly where they were.
+  const jersey = parseJerseyNumber(jerseyNumber);
+
   const oldTeamId = player.team?.toString();
 
   if (oldTeamId && oldTeamId !== teamId) {
@@ -111,6 +128,7 @@ export async function assignPlayerToTeam(playerId, teamId, role = "player", jers
 
   player.team = teamId;
   player.role = role || player.role;
+  if (jersey !== undefined) player.jerseyNumber = jersey;
   await player.save();
 
   await Team.findByIdAndUpdate(teamId, { $addToSet: { players: playerId } });

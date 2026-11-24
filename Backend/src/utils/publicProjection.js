@@ -100,6 +100,9 @@ export const PLAYER_ROSTER_FIELDS = Object.freeze([
   "playingRole",
   "battingPosition",
   "imageUrl",
+  // The team page's squad card prints the shirt number, so it has to survive the
+  // roster projection; it is a squad fact, not private contact data.
+  "jerseyNumber",
 ]);
 
 /** Public Team fields. Excluded: `managedBy`, seed markers, `__v`. */
@@ -385,7 +388,7 @@ export function sanitizeRosterPlayer(doc) {
 }
 
 function emptyRoster() {
-  return { name: "", role: "", playingRole: "", battingPosition: "", imageUrl: "" };
+  return { name: "", role: "", playingRole: "", battingPosition: "", imageUrl: "", jerseyNumber: null };
 }
 
 // ---------------------------------------------------------------------------

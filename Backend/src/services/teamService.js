@@ -9,6 +9,8 @@ import Match from "../models/Match.js";
 import { getIO } from "../socket/socket.js";
 import { deleteStoredFile, deleteStoredFiles } from "../utils/photoStore.js";
 import { DEFAULT_TEAM_ROLE, TEAM_ROLES } from "./organizationService.js";
+import { parseJerseyNumber } from "./playerService.js";
+import { PLAYING_ROLES } from "../validators/playerValidators.js";
 import {
   PLAYER_ROSTER_SELECT,
   TEAM_PUBLIC_SELECT,
@@ -527,6 +529,10 @@ export async function assignPlayerToTeam(teamId, playerId, role = "player", jers
   const player = await Player.findById(playerId);
   if (!player) throw new Error("Player not found");
 
+  // Validated before anything is pulled from the player's old team, so a bad
+  // value cannot leave a half-moved player behind.
+  const jersey = parseJerseyNumber(jerseyNumber);
+
   const oldTeamId = player.team?.toString();
 
   if (oldTeamId && oldTeamId !== teamId) {
@@ -542,6 +548,7 @@ export async function assignPlayerToTeam(teamId, playerId, role = "player", jers
 
   player.team = teamId;
   player.role = role || player.role;
+  if (jersey !== undefined) player.jerseyNumber = jersey;
   await player.save();
 
   await Team.findByIdAndUpdate(teamId, { $addToSet: { players: playerId } });
@@ -578,12 +585,25 @@ export async function removePlayerFromTeam(teamId, playerId) {
 
 export async function updatePlayerRole(teamId, playerId, data) {
   const player = await Player.findById(playerId);
-  if (!player || player.team?.toString() !== teamId) {
+  // `teamId` arrives as an ObjectId from the controller, so comparing it to the
+  // stringified `player.team` directly made every call look like a stranger and
+  // returned 404 for a player who really was in the squad.
+  if (!player || String(player.team || "") !== String(teamId)) {
     throw new Error("Player not in this team");
   }
 
-  if (data.role) player.role = data.role;
-  if (data.jerseyNumber !== undefined) player.jerseyNumber = data.jerseyNumber;
+  // The public team page prints `playingRole || role`, so a role change that is
+  // also a valid classification must update both or the page keeps showing the
+  // old one. A free-text role has no enum equivalent and leaves `playingRole`
+  // alone (`""` is not a legal value for that field, and guessing a
+  // classification would be worse than keeping the last explicit one).
+  if (data.role) {
+    player.role = data.role;
+    if (PLAYING_ROLES.includes(data.role)) player.playingRole = data.role;
+  }
+  if (data.jerseyNumber !== undefined) {
+    player.jerseyNumber = data.jerseyNumber === null ? null : parseJerseyNumber(data.jerseyNumber);
+  }
   await player.save();
 
   return player;
