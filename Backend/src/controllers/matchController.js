@@ -18,7 +18,7 @@ import { getPlatformSettings } from "../models/SystemSettings.js";
 import { recordAudit } from "../utils/audit.js";
 import { buildMatchInnings, ensureMatchInnings } from "../utils/matchInnings.js";
 import { updateTournamentPoints } from "../services/tournamentService.js";
-import { invalidateTournamentStatsCache } from "../services/tournamentStats.js";
+import { runPostMatchPipeline } from "../services/postMatch.js";
 import { buildLocationFilterClauses } from "../services/locationService.js";
 import { invalidFilterResponse, parseFilter, resolveTeamIds } from "../services/orgTypeFilterService.js";
 
@@ -1165,6 +1165,7 @@ export const updateMatchStatus = async (req, res) => {
     }
 
     ensureMatchInnings(match);
+    const previousStatus = match.status;
     match.status = normalizedStatus;
     if (currentInnings !== undefined) {
       const inningsNumber = toNumber(currentInnings);
@@ -1186,11 +1187,13 @@ export const updateMatchStatus = async (req, res) => {
     await match.save({ validateModifiedOnly: true });
 
     // A live match can be closed from this endpoint (the scoring UI does this
-    // on the last ball). Rebuild standings and drop the public stats cache so
-    // the profile/tournament pages do not serve a pre-completion aggregate.
-    if (normalizedStatus === "completed" && match.tournament) {
-      await updateTournamentPoints(match.tournament);
-      invalidateTournamentStatsCache(match.tournament);
+    // on the last ball) and the same endpoint can reopen one. Both directions
+    // change the derived tables, so rebuild once through the shared pipeline:
+    // team rankings, player career figures and (when there is one) the points
+    // table. Its from-scratch nature makes reopening remove the contribution.
+    let postMatch = null;
+    if (normalizedStatus === "completed" || previousStatus === "completed") {
+      postMatch = await runPostMatchPipeline(match._id, { reason: "match:status" });
     }
 
     await match.populate("teams", "name shortName logo");
@@ -1206,7 +1209,8 @@ export const updateMatchStatus = async (req, res) => {
 
     res.status(200).json({
       match,
-      message: `Match status updated to ${normalizedStatus}`
+      message: `Match status updated to ${normalizedStatus}`,
+      postMatch,
     });
   } catch (error) {
     console.error("Error updating match status:", error);
@@ -1324,6 +1328,11 @@ export const abandonMatch = async (req, res) => {
 
     await match.save({ validateModifiedOnly: true });
 
+    // An abandoned match contributes to no table, but it is still a closure:
+    // rebuild through the same pipeline so nothing derived keeps a figure from
+    // the match (and the tournament points table stays consistent).
+    const postMatch = await runPostMatchPipeline(match._id, { reason: "match:abandoned" });
+
     recordAudit({
       req,
       action: "match.abandoned",
@@ -1341,7 +1350,7 @@ export const abandonMatch = async (req, res) => {
       console.log("Socket not available:", socketError.message);
     }
 
-    res.status(200).json({ match, message: "Match abandoned" });
+    res.status(200).json({ match, message: "Match abandoned", postMatch });
   } catch (error) {
     console.error("Error abandoning match:", error);
     res.status(400).json({ message: "Failed to abandon match", error: error.message });

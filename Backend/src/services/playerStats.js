@@ -94,19 +94,22 @@ const MATCH_SELECT = [
 ].join(" ");
 
 /**
- * Completed, published matches in which this player has a real contribution.
- * `limit` is applied after the summaries are built so career totals are never
- * truncated by the match-log page size.
+ * Completed, published matches in which any of these players has a real
+ * contribution. One query instead of one per player, so a post-match rebuild
+ * of two XIs stays a handful of round trips.
  */
-export async function loadPlayerMatchDocs(playerId) {
+export async function loadMatchDocsForPlayers(playerIds) {
+  const ids = [...new Set((playerIds || []).map(String).filter(Boolean))];
+  if (!ids.length) return [];
+
   return Match.find({
     status: { $in: COMPLETED_STATUSES },
     manualDraft: { $ne: true },
     isDraft: { $ne: true },
     $or: [
-      { "innings.batting.player": playerId },
-      { "innings.bowling.player": playerId },
-      { "innings.batting.fielder": playerId },
+      { "innings.batting.player": { $in: ids } },
+      { "innings.bowling.player": { $in: ids } },
+      { "innings.batting.fielder": { $in: ids } },
     ],
   })
     .select(MATCH_SELECT)
@@ -123,6 +126,15 @@ export async function loadPlayerMatchDocs(playerId) {
     .populate("result.winner", "name shortName logo")
     .sort({ startAt: -1, updatedAt: -1 })
     .lean();
+}
+
+/**
+ * Completed, published matches in which this player has a real contribution.
+ * `limit` is applied after the summaries are built so career totals are never
+ * truncated by the match-log page size.
+ */
+export async function loadPlayerMatchDocs(playerId) {
+  return loadMatchDocsForPlayers([playerId]);
 }
 
 function findBatting(match, playerId) {
