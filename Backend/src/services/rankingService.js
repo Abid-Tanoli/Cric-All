@@ -139,15 +139,30 @@ export async function computeAllRankings() {
     }
   }
 
+  await refreshRankingPositions();
+}
+
+/**
+ * Re-derive the overall and per-category rank numbers from the stored
+ * `TeamRanking` rows. Split out of `computeAllRankings` so a match completion
+ * (which rebuilds only the teams it involves) can still fix everybody's
+ * position on the board.
+ */
+export async function refreshRankingPositions() {
+  // `$merge` only runs when the cursor is consumed, so the pass is drained with
+  // toArray(); awaiting the raw cursor would return without writing a rank.
   await TeamRanking.collection.aggregate([
     {
       $setWindowFields: {
-        sortBy: { rating: -1, points: -1 },
-        output: { overallRank: { $rank: {} } },
+        // `$rank`/`$documentNumber` require exactly one sort key. The board is
+        // displayed rating-first and points second, so the rank follows rating
+        // and the read queries keep points as their own tie-break.
+        sortBy: { rating: -1 },
+        output: { overallRank: { $documentNumber: {} } },
       },
     },
     { $merge: { into: "teamrankings", on: "_id", whenMatched: "replace" } },
-  ]);
+  ]).toArray();
 
   const categories = await TeamCategory.find({ isActive: true });
   for (const cat of categories) {
@@ -158,12 +173,12 @@ export async function computeAllRankings() {
       {
         $setWindowFields: {
           partitionBy: "$category",
-          sortBy: { rating: -1, points: -1 },
-          output: { categoryRank: { $rank: {} } },
+          sortBy: { rating: -1 },
+          output: { categoryRank: { $documentNumber: {} } },
         },
       },
       { $merge: { into: "teamrankings", on: "_id", whenMatched: "replace" } },
-    ]);
+    ]).toArray();
   }
 }
 
