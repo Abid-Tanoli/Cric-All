@@ -111,6 +111,21 @@ export const addOrgTeamPlayers = (orgId, teamId, playerIds) =>
 export const addOrgTeamPlayer = (orgId, teamId, newPlayer) =>
   unwrap(api.post(`/organizations/${orgId}/teams/${teamId}/players`, { newPlayer }));
 
+// "Add several": one request for the whole pasted list. The server validates the
+// list before creating anybody, so a duplicate name answers 409 and leaves the
+// squad untouched.
+export const addOrgTeamNewPlayers = (orgId, teamId, newPlayers) =>
+  unwrap(api.post(`/organizations/${orgId}/teams/${teamId}/players`, { newPlayers }));
+
+// The "Add existing player" picker: free agents this account created plus players
+// on another team of the same organization, searchable by name or phone.
+export const searchOrgTeamAvailablePlayers = (orgId, teamId, search = "") =>
+  unwrap(
+    api.get(`/organizations/${orgId}/teams/${teamId}/players/available`, {
+      params: search ? { search } : {},
+    })
+  );
+
 export const removeOrgTeamPlayers = (orgId, teamId, playerIds) =>
   unwrap(api.delete(`/organizations/${orgId}/teams/${teamId}/players`, { data: { playerIds } }));
 
@@ -337,6 +352,8 @@ export default {
   deleteOrgTeam,
   addOrgTeamPlayers,
   addOrgTeamPlayer,
+  addOrgTeamNewPlayers,
+  searchOrgTeamAvailablePlayers,
   removeOrgTeamPlayers,
   updateOrgTeamPlayerRole,
   listOrgMatches,
