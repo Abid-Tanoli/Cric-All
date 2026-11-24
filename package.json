@@ -6,6 +6,7 @@
   "scripts": {
     "test": "npm --prefix Backend test && npm --prefix Frontend/Admin test && npm --prefix Frontend/User test",
     "test:backend": "npm --prefix Backend test",
+    "stats:recompute": "npm --prefix Backend run stats:recompute --",
     "test:admin": "npm --prefix Frontend/Admin test",
     "test:user": "npm --prefix Frontend/User test",
     "test:brand": "node --test Frontend/Shared/branding/test/brand.test.mjs",
