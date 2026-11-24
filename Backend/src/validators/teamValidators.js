@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { locationLabels, locationRefs } from "./locationSchemas.js";
+import { BATTING_STYLES, BOWLING_STYLES, PLAYING_ROLES } from "./playerValidators.js";
 
 // Phase 4: teams created and maintained by an organization.
 //
@@ -125,25 +126,22 @@ export const orgTeamPlayersSchema = z
 // The owner-side squad route also creates a player inline. Keeping this a
 // separate schema lets DELETE keep requiring at least one existing player while
 // POST accepts either existing ids, one new player, or both.
-export const TEAM_PLAYER_ROLES = [
-  "Batsman",
-  "Bowler",
-  "All-Rounder",
-  "Batting-All-Rounder",
-  "Bowling-All-Rounder",
-  "Wicket-Keeper",
-];
+// Re-exported rather than re-typed: the owner-side squad form offers the same
+// lists as the self-service player form, so both must validate against one
+// source. A locally copied list here would silently drift and start accepting a
+// bowling style the player form (and Player.js) does not.
+export const TEAM_PLAYER_ROLES = PLAYING_ROLES;
 
-// Mirrors Player.js. The owner-side squad form offers the same lists the
-// self-service player form does, so a new squad member is created with the role,
-// styles and shirts number the owner picked instead of a bare name.
+export const TEAM_BATTING_STYLES = BATTING_STYLES;
+export const TEAM_BOWLING_STYLES = BOWLING_STYLES;
+
 const orgTeamNewPlayerSchema = z
   .object({
     name: z.string().trim().min(1, "Player name is required").max(150),
     role: z.string().trim().max(120).optional(),
-    playingRole: z.enum(TEAM_PLAYER_ROLES).optional(),
-    battingStyle: z.enum(["Right-handed", "Left-handed"]).optional(),
-    bowlingStyle: z.string().trim().max(60).optional(),
+    playingRole: z.enum(PLAYING_ROLES).optional(),
+    battingStyle: z.enum(BATTING_STYLES).optional(),
+    bowlingStyle: z.enum(BOWLING_STYLES).optional(),
     jerseyNumber: z.coerce.number().int().min(0).max(999).optional(),
     phone: z.string().trim().max(40).optional(),
     locationRefs,
@@ -179,4 +177,6 @@ export default {
   orgTeamAddPlayersSchema,
   orgTeamPlayerRoleSchema,
   TEAM_PLAYER_ROLES,
+  TEAM_BATTING_STYLES,
+  TEAM_BOWLING_STYLES,
 };

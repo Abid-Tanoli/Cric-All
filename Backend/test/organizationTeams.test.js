@@ -26,10 +26,13 @@ import {
 import { requireOrgPermission } from "../src/middleware/orgAccess.js";
 import { PERMISSIONS } from "../src/permissions/orgPermissions.js";
 import {
+  TEAM_BOWLING_STYLES,
+  TEAM_PLAYER_ROLES,
   createOrgTeamSchema,
   orgTeamAddPlayersSchema,
   updateOrgTeamSchema,
 } from "../src/validators/teamValidators.js";
+import { BOWLING_STYLES, PLAYING_ROLES } from "../src/validators/playerValidators.js";
 
 let mongod;
 
@@ -813,8 +816,42 @@ test("squad: the form payload is rejected when a field is outside the model's en
 
   assert.strictEqual(invalid({ playingRole: "Goalkeeper" }).success, false);
   assert.strictEqual(invalid({ battingStyle: "Ambidextrous" }).success, false);
+  assert.strictEqual(invalid({ bowlingStyle: "Underarm" }).success, false);
   assert.strictEqual(invalid({ jerseyNumber: 1000 }).success, false);
   assert.strictEqual(invalid({ unknownField: "x" }).success, false, "the schema stays strict");
+});
+
+test("squad: bowling style is validated against the player form's enum in both payload shapes", () => {
+  // The squad form and the self-service player form must offer/accept exactly
+  // the same lists; these are the lists Player.js validates against.
+  assert.deepStrictEqual(TEAM_PLAYER_ROLES, PLAYING_ROLES);
+  assert.deepStrictEqual(TEAM_BOWLING_STYLES, BOWLING_STYLES);
+
+  const single = (bowlingStyle) =>
+    orgTeamAddPlayersSchema.safeParse({
+      newPlayer: { ...formPayload().newPlayer, bowlingStyle },
+    });
+  const bulk = (bowlingStyle) =>
+    orgTeamAddPlayersSchema.safeParse({ newPlayers: [{ name: "Bulk Bowler", bowlingStyle }] });
+
+  // Every value the form can submit is accepted by both shapes.
+  for (const style of BOWLING_STYLES) {
+    assert.strictEqual(single(style).success, true, `newPlayer should accept ${style}`);
+    assert.strictEqual(bulk(style).success, true, `newPlayers[] should accept ${style}`);
+  }
+
+  // Free text is no longer smuggled through: a wrong value is a 400 from the
+  // route's validate middleware, never a Mongoose validation error at save time.
+  for (const bad of ["Underarm", "Right-arm Fastish", "right-arm fast", ""]) {
+    const singleResult = single(bad);
+    assert.strictEqual(singleResult.success, false, `newPlayer should reject ${JSON.stringify(bad)}`);
+    assert.deepStrictEqual(
+      (singleResult.error.issues[0]?.path || []).slice(-1),
+      ["bowlingStyle"],
+      "the rejection names the offending field",
+    );
+    assert.strictEqual(bulk(bad).success, false, `newPlayers[] should reject ${JSON.stringify(bad)}`);
+  }
 });
 
 test("squad: add several checks the whole list before creating anyone", async () => {
