@@ -501,7 +501,17 @@ export default function TeamProfile() {
                           )}
                         </div>
                         <div className="min-w-0">
-                          <h3 className="font-bold text-cric-accent group-hover:text-cric-accent transition-colors truncate">{player.name}</h3>
+                          <div className="flex items-center gap-2 min-w-0">
+                            <h3 className="font-bold text-cric-accent group-hover:text-cric-accent transition-colors truncate">{player.name}</h3>
+                            {player.jerseyNumber != null && (
+                              <span
+                                className="shrink-0 rounded-md bg-cric-accent/10 px-1.5 py-0.5 text-[10px] font-black text-cric-accent"
+                                title="Jersey number"
+                              >
+                                #{player.jerseyNumber}
+                              </span>
+                            )}
+                          </div>
                           <span className={`mt-1 inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold ${getRoleColor(player.playingRole)}`}>
                             <span>{player.playingRole || player.role || 'Player'}</span>
                             <BattingPositionBadge value={player.battingPosition} />
