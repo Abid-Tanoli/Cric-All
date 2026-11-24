@@ -8,6 +8,7 @@ import { startTestDb, stopTestDb, mockReq, mockRes } from "./helpers/testDb.js";
 import User from "../src/models/User.js";
 import Team from "../src/models/Team.js";
 import Player from "../src/models/Player.js";
+import Location from "../src/models/Location.js";
 import TeamCategory from "../src/models/TeamCategory.js";
 import TeamOrganization from "../src/models/TeamOrganization.js";
 import Membership from "../src/models/Membership.js";
@@ -17,13 +18,18 @@ import {
   addOrgTeamPlayers,
   createOrgTeam,
   deleteOrgTeam,
+  listOrgTeamAvailablePlayers,
   listOrgTeams,
   removeOrgTeamPlayers,
   updateOrgTeam,
 } from "../src/controllers/orgTeamsController.js";
 import { requireOrgPermission } from "../src/middleware/orgAccess.js";
 import { PERMISSIONS } from "../src/permissions/orgPermissions.js";
-import { createOrgTeamSchema, updateOrgTeamSchema } from "../src/validators/teamValidators.js";
+import {
+  createOrgTeamSchema,
+  orgTeamAddPlayersSchema,
+  updateOrgTeamSchema,
+} from "../src/validators/teamValidators.js";
 
 let mongod;
 
@@ -40,6 +46,7 @@ beforeEach(async () => {
     User.deleteMany({}),
     Team.deleteMany({}),
     Player.deleteMany({}),
+    Location.deleteMany({}),
     TeamCategory.deleteMany({}),
     TeamOrganization.deleteMany({}),
     Membership.deleteMany({}),
@@ -674,4 +681,281 @@ test("squad: a player owned by another organization cannot be attached", async (
   );
   assert.strictEqual(attached.statusCode, 200, JSON.stringify(attached.body));
   assert.ok((await Player.findById(ownUnattached._id)).team.equals(teamId));
+});
+
+// ---------------------------------------------------------------------------
+// squad: the team page's "Add players" actions
+// ---------------------------------------------------------------------------
+
+async function makeSquadTeam(owner, org, name = "Page Squad XI") {
+  const created = mockRes();
+  await createOrgTeam(
+    mockReq({
+      user: owner,
+      principalType: "user",
+      params: { id: String(org._id) },
+      body: { name },
+      org,
+      orgAccess: ownerAccess,
+    }),
+    created,
+  );
+  assert.strictEqual(created.statusCode, 201, JSON.stringify(created.body));
+  return created.body.team._id;
+}
+
+// The exact body the team page form posts. `locationRefs`/`locationLabels` are
+// what LocationSelect hands back, including its null/empty defaults, and the
+// schema must accept it as-is — a strict schema that only took the fields the
+// API happened to already support would 400 every real form submission.
+const formPayload = (locationRefs = null) => ({
+  newPlayer: {
+    name: "  Sana Mir  ",
+    playingRole: "Bowler",
+    battingStyle: "Right-handed",
+    bowlingStyle: "Right-arm Off-break",
+    jerseyNumber: 27,
+    locationRefs: locationRefs || {
+      countryId: null,
+      provinceId: null,
+      districtId: null,
+      cityId: null,
+      townId: null,
+    },
+    locationLabels: {
+      country: "Pakistan",
+      province: "Punjab",
+      district: "",
+      city: "",
+      town: "",
+    },
+  },
+});
+
+test("squad: the real add-player form payload passes the strict validator and stores every field", async () => {
+  const owner = await makeUser();
+  const org = await makeOrg(owner, "Form Payload Org");
+  const teamId = await makeSquadTeam(owner, org);
+
+  // Real curated nodes: Player's pre-save hook resolves the selection against
+  // the location tree, which is exactly what a real form submission does too.
+  const country = await Location.create({ type: "country", name: "Pakistan", nameKey: "pakistan", slug: "pakistan" });
+  const province = await Location.create({
+    type: "province",
+    name: "Punjab",
+    nameKey: "punjab",
+    slug: "punjab",
+    parent: country._id,
+    ancestors: [country._id],
+  });
+
+  const body = parsed(
+    orgTeamAddPlayersSchema,
+    formPayload({
+      countryId: String(country._id),
+      provinceId: String(province._id),
+      districtId: null,
+      cityId: null,
+      townId: null,
+    }),
+  );
+  assert.strictEqual(body.newPlayer.name, "Sana Mir");
+  assert.strictEqual(body.newPlayer.jerseyNumber, 27);
+  assert.strictEqual(body.newPlayers.length, 0, "the bulk list defaults to empty");
+
+  const res = mockRes();
+  await addOrgTeamPlayers(
+    mockReq({
+      user: owner,
+      principalType: "user",
+      params: { id: String(org._id), teamId },
+      body,
+      org,
+      orgAccess: ownerAccess,
+    }),
+    res,
+  );
+  assert.strictEqual(res.statusCode, 200, JSON.stringify(res.body));
+
+  const stored = await Player.findById(res.body.player._id).lean();
+  assert.strictEqual(stored.name, "Sana Mir");
+  assert.strictEqual(stored.playingRole, "Bowler");
+  assert.strictEqual(stored.battingStyle, "Right-handed");
+  assert.strictEqual(stored.bowlingStyle, "Right-arm Off-break");
+  assert.strictEqual(stored.jerseyNumber, 27);
+  assert.strictEqual(String(stored.locationRefs.provinceId), String(province._id));
+  assert.strictEqual(stored.locationLabels.province, "Punjab");
+  assert.strictEqual(stored.address.province, "Punjab", "labels also fill the legacy address");
+  assert.ok(stored.team.equals(teamId));
+
+  // A bare new player (the scoring screen's inline create) still works.
+  const minimal = parsed(orgTeamAddPlayersSchema, { newPlayer: { name: "Bare Name" } });
+  const minimalRes = mockRes();
+  await addOrgTeamPlayers(
+    mockReq({
+      user: owner,
+      principalType: "user",
+      params: { id: String(org._id), teamId },
+      body: minimal,
+      org,
+      orgAccess: ownerAccess,
+    }),
+    minimalRes,
+  );
+  assert.strictEqual(minimalRes.statusCode, 200, JSON.stringify(minimalRes.body));
+});
+
+test("squad: the form payload is rejected when a field is outside the model's enums", async () => {
+  const invalid = (patch) =>
+    orgTeamAddPlayersSchema.safeParse({
+      newPlayer: { ...formPayload().newPlayer, ...patch },
+    });
+
+  assert.strictEqual(invalid({ playingRole: "Goalkeeper" }).success, false);
+  assert.strictEqual(invalid({ battingStyle: "Ambidextrous" }).success, false);
+  assert.strictEqual(invalid({ jerseyNumber: 1000 }).success, false);
+  assert.strictEqual(invalid({ unknownField: "x" }).success, false, "the schema stays strict");
+});
+
+test("squad: add several checks the whole list before creating anyone", async () => {
+  const owner = await makeUser();
+  const org = await makeOrg(owner, "Bulk Org");
+  const teamId = await makeSquadTeam(owner, org, "Bulk XI");
+  await Player.create({ name: "Existing Member", team: teamId, createdBy: owner._id });
+
+  // A name already on the squad, in the middle of the pasted list.
+  const clash = parsed(orgTeamAddPlayersSchema, {
+    newPlayers: [{ name: "First New" }, { name: "existing member" }, { name: "Third New" }],
+  });
+  const clashRes = mockRes();
+  await addOrgTeamPlayers(
+    mockReq({
+      user: owner,
+      principalType: "user",
+      params: { id: String(org._id), teamId },
+      body: clash,
+      org,
+      orgAccess: ownerAccess,
+    }),
+    clashRes,
+  );
+  assert.strictEqual(clashRes.statusCode, 409, JSON.stringify(clashRes.body));
+  assert.strictEqual(clashRes.body.code, "PLAYER_DUPLICATE");
+  assert.strictEqual(await Player.countDocuments({ name: "First New" }), 0, "nothing was created");
+
+  // The same name twice in one paste is refused for the same reason.
+  const repeated = parsed(orgTeamAddPlayersSchema, {
+    newPlayers: [{ name: "Twin" }, { name: "Twin" }],
+  });
+  const repeatedRes = mockRes();
+  await addOrgTeamPlayers(
+    mockReq({
+      user: owner,
+      principalType: "user",
+      params: { id: String(org._id), teamId },
+      body: repeated,
+      org,
+      orgAccess: ownerAccess,
+    }),
+    repeatedRes,
+  );
+  assert.strictEqual(repeatedRes.statusCode, 409);
+  assert.strictEqual(await Player.countDocuments({ name: "Twin" }), 0);
+
+  // A clean list creates everybody on the squad in one call.
+  const clean = parsed(orgTeamAddPlayersSchema, {
+    newPlayers: [{ name: "Bulk One", playingRole: "Batsman" }, { name: "Bulk Two" }, { name: "Bulk Three" }],
+  });
+  const res = mockRes();
+  await addOrgTeamPlayers(
+    mockReq({
+      user: owner,
+      principalType: "user",
+      params: { id: String(org._id), teamId },
+      body: clean,
+      org,
+      orgAccess: ownerAccess,
+    }),
+    res,
+  );
+  assert.strictEqual(res.statusCode, 200, JSON.stringify(res.body));
+  assert.strictEqual(
+    await Player.countDocuments({ team: teamId }),
+    4,
+    "the existing member plus the three new ones",
+  );
+  // The existing member was written straight to the collection by this test, so
+  // only the three created through the route are on the roster array.
+  assert.strictEqual((await Team.findById(teamId).lean()).players.length, 3, "the roster array was updated");
+  const created = await Player.find({ name: { $in: ["Bulk One", "Bulk Two", "Bulk Three"] } }).lean();
+  assert.strictEqual(created.length, 3);
+  for (const player of created) {
+    assert.ok(player.team.equals(teamId));
+    assert.ok(player.createdBy.equals(owner._id));
+  }
+  assert.ok(await AuditLog.findOne({ action: "team.players_added" }));
+});
+
+test("squad: available-player search finds attachable players by name and phone, tenant scoped", async () => {
+  const owner = await makeUser();
+  const org = await makeOrg(owner, "Picker Org");
+  const teamId = await makeSquadTeam(owner, org, "Picker XI");
+
+  const ownAgent = await Player.create({ name: "Ayesha Khan", phone: "923001234567", createdBy: owner._id });
+  // A player on another team *of this organization*: attachable, because moving
+  // between this club's teams is the owner's own business.
+  const secondTeam = await makeSquadTeam(owner, org, "Picker Second XI");
+  const inOrgPlayer = await Player.create({ name: "Bilal Shah", team: secondTeam });
+  const inSquad = await Player.create({ name: "Ayesha Squad", team: teamId, createdBy: owner._id });
+
+  const otherOwner = await makeUser();
+  const otherOrg = await makeOrg(otherOwner, "Picker Other Org");
+  const foreignTeam = await Team.create({ name: "Foreign Picker XI", organizationRef: otherOrg._id });
+  await Player.create({ name: "Ayesha Foreign", createdBy: otherOwner._id, team: foreignTeam._id });
+  const otherPersonsAgent = await Player.create({ name: "Ayesha Unattached", createdBy: otherOwner._id });
+
+  const search = async (term) => {
+    const res = mockRes();
+    await listOrgTeamAvailablePlayers(
+      mockReq({
+        user: owner,
+        principalType: "user",
+        params: { id: String(org._id), teamId },
+        query: term === undefined ? {} : { search: term },
+        org,
+        orgAccess: ownerAccess,
+      }),
+      res,
+    );
+    assert.strictEqual(res.statusCode, 200, JSON.stringify(res.body));
+    return res.body.items.map((item) => String(item._id));
+  };
+
+  const all = await search();
+  assert.deepStrictEqual(
+    all.sort(),
+    [String(ownAgent._id), String(inOrgPlayer._id)].sort(),
+    "own free agents plus players of this organization's other teams, excluding the team's own squad",
+  );
+  assert.ok(!all.includes(String(inSquad._id)), "the current squad is not offered");
+  assert.ok(!all.includes(String(otherPersonsAgent._id)), "somebody else's free agent is not attachable");
+
+  assert.deepStrictEqual(await search("Bilal"), [String(inOrgPlayer._id)]);
+  assert.deepStrictEqual(await search("300 123"), [String(ownAgent._id)], "phone search ignores spacing");
+  assert.deepStrictEqual(await search("Ayesha"), [String(ownAgent._id)]);
+
+  // The picker is behind the same guard as the write that consumes it.
+  const scoreHandler = await makeUser();
+  await addMember(org, scoreHandler, ["score_handler"]);
+  const denied = mockRes();
+  let allowed = false;
+  await requireOrgPermission(PERMISSIONS.MANAGE_PLAYERS)(
+    mockReq({ user: scoreHandler, principalType: "user", params: { id: String(org._id) } }),
+    denied,
+    () => {
+      allowed = true;
+    },
+  );
+  assert.strictEqual(allowed, false);
+  assert.strictEqual(denied.body.code, "ORG_PERMISSION_DENIED");
 });

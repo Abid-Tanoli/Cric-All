@@ -55,6 +55,7 @@ import {
   addOrgTeamPlayers,
   createOrgTeam,
   deleteOrgTeam,
+  listOrgTeamAvailablePlayers,
   listOrgTeams,
   removeOrgTeamPlayers,
   updateOrgTeam,
@@ -280,6 +281,10 @@ router.delete(
   deleteOrgTeam
 );
 
+// The picker behind "Add existing player": same manage_players guard as the
+// write it feeds. Registered before the playerId routes so the literal segment
+// can never be read as an id.
+router.get('/:id/teams/:teamId/players/available', ...squadWrite, listOrgTeamAvailablePlayers);
 router.post('/:id/teams/:teamId/players', ...squadWrite, validate(orgTeamAddPlayersSchema), addOrgTeamPlayers);
 router.delete('/:id/teams/:teamId/players', ...squadWrite, validate(orgTeamPlayersSchema), removeOrgTeamPlayers);
 router.put(
