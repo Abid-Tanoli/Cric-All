@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import LocationSelect from "../../../Shared/components/LocationSelect.jsx";
 import {
   addOrgTeamNewPlayers,
@@ -37,7 +37,7 @@ const primaryClass =
 const secondaryClass =
   "inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-cric-border bg-cric-bg px-5 py-3 text-[11px] font-black uppercase tracking-widest text-cric-text disabled:opacity-60";
 
-export default function SquadManager({ orgId, teamId, onChanged }) {
+export default function SquadManager({ orgId, teamId, onChanged, refreshSignal = 0 }) {
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState("new");
   const [busy, setBusy] = useState(false);
@@ -49,6 +49,14 @@ export default function SquadManager({ orgId, teamId, onChanged }) {
   const [search, setSearch] = useState("");
   const [candidates, setCandidates] = useState([]);
   const [candidatesLoaded, setCandidatesLoaded] = useState(false);
+  // The picker is invalidated by its own successful adds (`reloadKey`) and by a
+  // change elsewhere on the page such as a removal (`refreshSignal`); either one
+  // re-asks the server so the list can never show somebody who has just joined
+  // or left the squad. `appliedSearch` keeps the owner's current term and
+  // `requestSeq` drops a slow earlier response that would overwrite a newer one.
+  const [reloadKey, setReloadKey] = useState(0);
+  const appliedSearch = useRef("");
+  const requestSeq = useRef(0);
 
   const [bulkText, setBulkText] = useState("");
   const [bulkPreview, setBulkPreview] = useState(null);
@@ -60,35 +68,43 @@ export default function SquadManager({ orgId, teamId, onChanged }) {
 
   const loadCandidates = useCallback(
     async (term = "") => {
+      const seq = requestSeq.current + 1;
+      requestSeq.current = seq;
+      appliedSearch.current = term;
       setBusy(true);
       reset();
       try {
         const res = await searchOrgTeamAvailablePlayers(orgId, teamId, term);
+        if (seq !== requestSeq.current) return;
         setCandidates(Array.isArray(res?.items) ? res.items : []);
         setCandidatesLoaded(true);
       } catch (err) {
+        if (seq !== requestSeq.current) return;
         setError(err.message || "Could not search players");
         setCandidates([]);
       } finally {
-        setBusy(false);
+        if (seq === requestSeq.current) setBusy(false);
       }
     },
     [orgId, teamId]
   );
 
   // The picker opens with the attachable players already listed, so the owner
-  // does not have to guess a search term before seeing anybody.
+  // does not have to guess a search term before seeing anybody — and it re-reads
+  // the list whenever the squad changes, instead of leaving the rows fetched
+  // before the add/removal on screen.
   useEffect(() => {
-    if (!open || tab !== "existing" || candidatesLoaded) return;
-    loadCandidates("");
-  }, [open, tab, candidatesLoaded, loadCandidates]);
+    if (!open || tab !== "existing") return;
+    loadCandidates(appliedSearch.current);
+  }, [open, tab, reloadKey, refreshSignal, loadCandidates]);
 
   const done = async (message) => {
     setNotice(message);
     setForm({ ...EMPTY_SQUAD_PLAYER, locationRefs: { ...EMPTY_SQUAD_PLAYER.locationRefs }, locationLabels: { ...EMPTY_SQUAD_PLAYER.locationLabels } });
     setBulkText("");
     setBulkPreview(null);
-    setCandidatesLoaded(false);
+    // Any successful add invalidates the picker, whichever tab added the players.
+    setReloadKey((value) => value + 1);
     await onChanged?.();
   };
 
@@ -116,6 +132,8 @@ export default function SquadManager({ orgId, teamId, onChanged }) {
     reset();
     try {
       await addOrgTeamPlayers(orgId, teamId, [String(player._id)]);
+      // Drop the row immediately, then let the refetch confirm it server-side.
+      setCandidates((prev) => prev.filter((item) => String(item._id) !== String(player._id)));
       await done(`“${player.name}” was added to the squad.`);
     } catch (err) {
       setError(err.message || "Could not add that player");

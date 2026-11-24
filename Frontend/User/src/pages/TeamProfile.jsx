@@ -27,6 +27,9 @@ export default function TeamProfile() {
   const [orgAccess, setOrgAccess] = useState(null);
   const [removingId, setRemovingId] = useState(null);
   const [squadError, setSquadError] = useState('');
+  // Bumped after a removal so the "Add existing" picker re-reads its list — the
+  // player just removed is attachable again, and one added twice must not be.
+  const [squadRefresh, setSquadRefresh] = useState(0);
   const storedUser = useStoredUser();
   const { enabled: communityEnabled } = useCommunityConfig();
 
@@ -104,6 +107,7 @@ export default function TeamProfile() {
     setSquadError('');
     try {
       await removeOrgTeamPlayers(teamOrgId, id, [player._id]);
+      setSquadRefresh((value) => value + 1);
       await fetchTeam();
     } catch (error) {
       setSquadError(error.message || 'Could not remove that player from the squad');
@@ -455,7 +459,7 @@ export default function TeamProfile() {
             <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
               <h2 className="text-2xl font-black text-cric-accent">Squad ({players.length})</h2>
               {canManageSquad && players.length > 0 ? (
-                <SquadManager orgId={teamOrgId} teamId={id} onChanged={fetchTeam} />
+                <SquadManager orgId={teamOrgId} teamId={id} onChanged={fetchTeam} refreshSignal={squadRefresh} />
               ) : null}
             </div>
 
@@ -473,7 +477,7 @@ export default function TeamProfile() {
                     Type a name, pick somebody who is already on CricAll, or paste a list. No account is needed.
                   </p>
                   <div className="mt-5 flex justify-center">
-                    <SquadManager orgId={teamOrgId} teamId={id} onChanged={fetchTeam} />
+                    <SquadManager orgId={teamOrgId} teamId={id} onChanged={fetchTeam} refreshSignal={squadRefresh} />
                   </div>
                 </div>
               ) : (

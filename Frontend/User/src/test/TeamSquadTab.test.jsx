@@ -207,6 +207,56 @@ describe("Team page Squad tab — adding players", () => {
     await waitFor(() => expect(addOrgTeamPlayers).toHaveBeenCalledWith("org-1", "team-1", ["player-9"]));
   });
 
+  it("re-reads the available list after adding somebody, leaving no stale row", async () => {
+    // First load shows a free agent; once they are on the squad the server stops
+    // returning them. A picker that kept its first response would still offer
+    // "Add" for a player who is already in the squad.
+    searchOrgTeamAvailablePlayers
+      .mockResolvedValueOnce({
+        items: [{ _id: "player-9", name: "Bilal Shah", playingRole: "Batsman", team: null }],
+        total: 1,
+      })
+      .mockResolvedValue({ items: [], total: 0 });
+
+    renderTeam(team([]));
+    await openSquadTab();
+
+    fireEvent.click(await screen.findByRole("button", { name: /add players/i }));
+    fireEvent.click(screen.getByRole("tab", { name: "Add existing" }));
+    expect(await screen.findByText("Bilal Shah")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+
+    await waitFor(() => expect(addOrgTeamPlayers).toHaveBeenCalledWith("org-1", "team-1", ["player-9"]));
+    await waitFor(() => expect(searchOrgTeamAvailablePlayers).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.queryByText("Bilal Shah")).not.toBeInTheDocument());
+    expect(screen.queryByRole("button", { name: "Add" })).not.toBeInTheDocument();
+  });
+
+  it("re-reads the available list after players are created and removed elsewhere", async () => {
+    renderTeam(team([squadPlayer]));
+    await openSquadTab();
+
+    // A pasted list is created while the picker is not on screen.
+    fireEvent.click(await screen.findByRole("button", { name: /add players/i }));
+    fireEvent.click(screen.getByRole("tab", { name: "Add several" }));
+    fireEvent.change(screen.getByLabelText("One name per line"), { target: { value: "Ali Raza" } });
+    fireEvent.click(screen.getByRole("button", { name: "Preview" }));
+    expect(await screen.findByText("Will add 1 player")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Add 1 player" }));
+    await waitFor(() => expect(addOrgTeamNewPlayers).toHaveBeenCalledTimes(1));
+
+    // Entering the picker after that change fetches a fresh list.
+    fireEvent.click(screen.getByRole("tab", { name: "Add existing" }));
+    await waitFor(() => expect(searchOrgTeamAvailablePlayers).toHaveBeenCalledTimes(1));
+
+    // A removal elsewhere on the page bumps the signal, so the picker re-reads
+    // again instead of keeping rows fetched before the squad changed.
+    fireEvent.click(screen.getByRole("button", { name: /remove sana mir from the squad/i }));
+    await waitFor(() => expect(removeOrgTeamPlayers).toHaveBeenCalledWith("org-1", "team-1", ["player-1"]));
+    await waitFor(() => expect(searchOrgTeamAvailablePlayers).toHaveBeenCalledTimes(2));
+  });
+
   it("removes a player from the squad without deleting the profile", async () => {
     renderTeam(team([squadPlayer]));
     await openSquadTab();
