@@ -8,6 +8,10 @@ import PostsTab from '../community/PostsTab';
 import BattingPositionBadge from '@shared/components/BattingPositionBadge';
 import { locationLine } from '../../../Shared/utils/locationDisplay.js';
 import { orgTypeIcon, orgTypeLabel, teamRoleLabel, verificationBadge } from '../../../Shared/orgTypes.js';
+import SquadManager from '../components/SquadManager';
+import { getMyOrgAccess, removeOrgTeamPlayers } from '../services/organizationApi';
+import { PERMISSIONS, can } from '../lib/orgUi';
+import { useStoredUser } from './auth/auth';
 
 const idOf = (v) => v?._id || v?.id || v;
 
@@ -17,6 +21,16 @@ export default function TeamProfile() {
   const [orgChain, setOrgChain] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('about');
+  // The squad actions are shown only when the organization's own access
+  // endpoint says this account may manage players. The server re-checks every
+  // write, so this is a display decision, not the authorization.
+  const [orgAccess, setOrgAccess] = useState(null);
+  const [removingId, setRemovingId] = useState(null);
+  const [squadError, setSquadError] = useState('');
+  // Bumped after a removal so the "Add existing" picker re-reads its list — the
+  // player just removed is attachable again, and one added twice must not be.
+  const [squadRefresh, setSquadRefresh] = useState(0);
+  const storedUser = useStoredUser();
   const { enabled: communityEnabled } = useCommunityConfig();
 
   useEffect(() => {
@@ -34,7 +48,19 @@ export default function TeamProfile() {
         try {
           const chainRes = await api.get(`/organizations/${orgId}/chain`);
           setOrgChain(chainRes.data?.data || chainRes.data?.chain || []);
-        } catch {}
+        } catch {
+          // The org chain is decorative: the team page still renders without it.
+        }
+        if (storedUser) {
+          try {
+            setOrgAccess(await getMyOrgAccess(orgId));
+          } catch {
+            // Not a member, signed out, or a plain visitor: no squad actions.
+            setOrgAccess(null);
+          }
+        }
+      } else {
+        setOrgAccess(null);
       }
     } catch (e) {
       console.error(e);
@@ -74,6 +100,23 @@ export default function TeamProfile() {
 
   const { team, ranking, recentMatches, branches } = profile;
   const players = team.players || [];
+  const teamOrgId = idOf(team.organizationRef);
+  const canManageSquad = Boolean(teamOrgId) && can(orgAccess?.permissions || [], PERMISSIONS.MANAGE_PLAYERS);
+
+  const handleRemoveFromSquad = async (player) => {
+    if (!teamOrgId) return;
+    setRemovingId(player._id);
+    setSquadError('');
+    try {
+      await removeOrgTeamPlayers(teamOrgId, id, [player._id]);
+      setSquadRefresh((value) => value + 1);
+      await fetchTeam();
+    } catch (error) {
+      setSquadError(error.message || 'Could not remove that player from the squad');
+    } finally {
+      setRemovingId(null);
+    }
+  };
   const getRoleColor = (role) => {
     const colors = {
       Batsman: 'bg-orange-100 text-orange-800 border-orange-200',
@@ -108,7 +151,6 @@ export default function TeamProfile() {
   
 
   const primaryColor = team.primaryColor || '#031d44';
-  const secondaryColor = team.secondaryColor || '#1e3a5f';
 
   return (
     <div className="min-h-screen bg-cric-bg text-cric-text font-sans">
@@ -415,48 +457,84 @@ export default function TeamProfile() {
         {/* ──── Squad Tab ──── */}
         {activeTab === 'squad' && (
           <div>
-            <h2 className="text-2xl font-black text-cric-accent mb-6">Squad ({players.length})</h2>
+            <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+              <h2 className="text-2xl font-black text-cric-accent">Squad ({players.length})</h2>
+              {canManageSquad && players.length > 0 ? (
+                <SquadManager orgId={teamOrgId} teamId={id} onChanged={fetchTeam} refreshSignal={squadRefresh} />
+              ) : null}
+            </div>
+
+            {squadError ? (
+              <p role="alert" className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-700">
+                {squadError}
+              </p>
+            ) : null}
+
             {players.length === 0 ? (
-              <p className="text-cric-muted text-center py-12">No players in this team yet.</p>
+              canManageSquad ? (
+                <div className="rounded-2xl border border-dashed border-cric-border bg-cric-card px-4 py-10 text-center">
+                  <p className="text-lg font-black text-cric-text">Add your first players</p>
+                  <p className="mt-1 text-sm font-semibold text-cric-muted">
+                    Type a name, pick somebody who is already on CricAll, or paste a list. No account is needed.
+                  </p>
+                  <div className="mt-5 flex justify-center">
+                    <SquadManager orgId={teamOrgId} teamId={id} onChanged={fetchTeam} refreshSignal={squadRefresh} />
+                  </div>
+                </div>
+              ) : (
+                <p className="text-cric-muted text-center py-12">No players in this team yet.</p>
+              )
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                {players.map((player, idx) => (
-                  <Link
+                {players.map((player) => (
+                  <div
                     key={player._id}
-                    to={`/players/${player._id}`}
                     className="bg-cric-card rounded-2xl border border-slate-100 p-5 hover:shadow-lg transition-all group"
                   >
-                    <div className="flex items-center gap-4 mb-3">
-                      <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-cric-accent to-blue-900 flex items-center justify-center text-white font-black text-lg group-hover:scale-110 transition-transform">
-                        {player.imageUrl ? (
-                          <SafeImage src={player.imageUrl} alt="" className="w-full h-full object-cover rounded-xl" />
-                        ) : (
-                          player.name?.charAt(0)
-                        )}
+                    <Link to={`/players/${player._id}`} className="block min-w-0">
+                      <div className="flex items-center gap-4 mb-3">
+                        <div className="w-14 h-14 shrink-0 rounded-xl bg-gradient-to-br from-cric-accent to-blue-900 flex items-center justify-center text-white font-black text-lg group-hover:scale-110 transition-transform">
+                          {player.imageUrl ? (
+                            <SafeImage src={player.imageUrl} alt="" className="w-full h-full object-cover rounded-xl" />
+                          ) : (
+                            player.name?.charAt(0)
+                          )}
+                        </div>
+                        <div className="min-w-0">
+                          <h3 className="font-bold text-cric-accent group-hover:text-cric-accent transition-colors truncate">{player.name}</h3>
+                          <span className={`mt-1 inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold ${getRoleColor(player.playingRole)}`}>
+                            <span>{player.playingRole || player.role || 'Player'}</span>
+                            <BattingPositionBadge value={player.battingPosition} />
+                          </span>
+                        </div>
                       </div>
-                      <div>
-                        <h3 className="font-bold text-cric-accent group-hover:text-cric-accent transition-colors">{player.name}</h3>
-                        <span className={`mt-1 inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold ${getRoleColor(player.playingRole)}`}>
-                          <span>{player.playingRole || player.role || 'Player'}</span>
-                          <BattingPositionBadge value={player.battingPosition} />
-                        </span>
+                      <div className="grid grid-cols-3 gap-2 text-center">
+                        <div>
+                          <p className="text-lg font-black text-cric-text">{player.stats?.runs || 0}</p>
+                          <p className="text-[8px] font-bold text-cric-muted uppercase tracking-wider">Runs</p>
+                        </div>
+                        <div>
+                          <p className="text-lg font-black text-cric-text">{player.stats?.wickets || 0}</p>
+                          <p className="text-[8px] font-bold text-cric-muted uppercase tracking-wider">Wkts</p>
+                        </div>
+                        <div>
+                          <p className="text-lg font-black text-cric-text">{player.stats?.matches || 0}</p>
+                          <p className="text-[8px] font-bold text-cric-muted uppercase tracking-wider">Mat</p>
+                        </div>
                       </div>
-                    </div>
-                    <div className="grid grid-cols-3 gap-2 text-center">
-                      <div>
-                        <p className="text-lg font-black text-cric-text">{player.stats?.runs || 0}</p>
-                        <p className="text-[8px] font-bold text-cric-muted uppercase tracking-wider">Runs</p>
-                      </div>
-                      <div>
-                        <p className="text-lg font-black text-cric-text">{player.stats?.wickets || 0}</p>
-                        <p className="text-[8px] font-bold text-cric-muted uppercase tracking-wider">Wkts</p>
-                      </div>
-                      <div>
-                        <p className="text-lg font-black text-cric-text">{player.stats?.matches || 0}</p>
-                        <p className="text-[8px] font-bold text-cric-muted uppercase tracking-wider">Mat</p>
-                      </div>
-                    </div>
-                  </Link>
+                    </Link>
+                    {canManageSquad ? (
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveFromSquad(player)}
+                        disabled={removingId === player._id}
+                        aria-label={`Remove ${player.name} from the squad`}
+                        className="mt-4 inline-flex min-h-11 w-full items-center justify-center rounded-xl border border-cric-border bg-cric-bg px-3 py-2 text-[10px] font-black uppercase tracking-widest text-red-600 disabled:opacity-60"
+                      >
+                        {removingId === player._id ? 'Removing…' : 'Remove from squad'}
+                      </button>
+                    ) : null}
+                  </div>
                 ))}
               </div>
             )}

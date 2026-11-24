@@ -214,6 +214,84 @@ export const deleteOrgTeam = async (req, res) => {
   }
 };
 
+// Shared by the single-player and "add several" halves of the squad route, so
+// both write exactly the same fields. `role` stays the free-text display value;
+// `playingRole` is the classification every picker reads.
+function squadPlayerFields(input, team, userId) {
+  const chosenRole = String(input.role || "").trim();
+  const payload = {
+    name: input.name,
+    role: chosenRole || "player",
+    team: team._id,
+    createdBy: userId || null,
+  };
+  const playingRole = input.playingRole || (PLAYING_ROLES.has(chosenRole) ? chosenRole : "");
+  if (playingRole && PLAYING_ROLES.has(playingRole)) payload.playingRole = playingRole;
+  if (input.battingStyle) payload.battingStyle = input.battingStyle;
+  if (input.bowlingStyle) payload.bowlingStyle = input.bowlingStyle;
+  if (input.jerseyNumber != null) payload.jerseyNumber = input.jerseyNumber;
+  if (input.locationRefs) payload.locationRefs = input.locationRefs;
+  if (input.locationLabels) payload.locationLabels = input.locationLabels;
+
+  // Same mapping the self-service form makes: the legacy address block is filled
+  // from the curated labels so older screens still show a place.
+  const labels = input.locationLabels || {};
+  const address = {};
+  for (const key of ["town", "district", "city", "province", "country"]) {
+    if (labels[key]) address[key] = labels[key];
+  }
+  if (Object.keys(address).length) payload.address = address;
+
+  const storedPhone = playerService.canonicalPlayerPhone(input.phone);
+  if (storedPhone) payload.phone = storedPhone;
+  return payload;
+}
+
+/**
+ * GET /organizations/:id/teams/:teamId/players/available?search=
+ *
+ * The owner-side squad picker needs a list of people it may actually attach:
+ * free agents this account created, and players already on another team of the
+ * same organization. Searching by name or phone is done here rather than on the
+ * public free-agent endpoint because a phone number is not public data.
+ * Guarded by the same manage_players permission as the write it feeds.
+ */
+export const listOrgTeamAvailablePlayers = async (req, res) => {
+  try {
+    const team = await loadOwnedTeam(req, res);
+    if (!team) return;
+
+    const orgTeamIds = await Team.find({ organizationRef: req.org._id }).distinct("_id");
+    const query = {
+      team: { $ne: team._id },
+      $or: [
+        { team: { $in: orgTeamIds } },
+        { $and: [{ $or: [{ team: null }, { team: { $exists: false } }] }, { createdBy: req.user?._id || null }] },
+      ],
+    };
+
+    const term = String(req.query.search || "").trim();
+    if (term) {
+      const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const digits = term.replace(/\D/g, "");
+      const matches = [{ name: { $regex: escaped, $options: "i" } }];
+      if (digits.length >= 3) matches.push({ phone: { $regex: digits } });
+      query.$and = [...(query.$and || []), { $or: matches }];
+    }
+
+    const players = await Player.find(query)
+      .select("name phone playingRole role imageUrl team")
+      .populate("team", "name shortName")
+      .sort({ name: 1 })
+      .limit(50)
+      .lean();
+
+    res.status(200).json({ items: players, total: players.length });
+  } catch (error) {
+    res.status(500).json({ message: "Failed to search players", error: error.message });
+  }
+};
+
 export const addOrgTeamPlayers = async (req, res) => {
   try {
     const team = await loadOwnedTeam(req, res);
@@ -253,9 +331,12 @@ export const addOrgTeamPlayers = async (req, res) => {
 
     let createdPlayer = null;
     if (req.body.newPlayer) {
-      const { name, role, phone } = req.body.newPlayer;
       try {
-        await playerService.assertPlayerNotDuplicate({ name, team: team._id, phone });
+        await playerService.assertPlayerNotDuplicate({
+          name: req.body.newPlayer.name,
+          team: team._id,
+          phone: req.body.newPlayer.phone,
+        });
       } catch (dupErr) {
         if (dupErr.code === "PLAYER_DUPLICATE") {
           return res.status(409).json({
@@ -267,18 +348,52 @@ export const addOrgTeamPlayers = async (req, res) => {
         throw dupErr;
       }
 
-      const storedPhone = playerService.canonicalPlayerPhone(phone);
-      const chosenRole = String(role || "").trim();
-      createdPlayer = await Player.create({
-        name,
-        role: chosenRole || "player",
-        ...(PLAYING_ROLES.has(chosenRole) ? { playingRole: chosenRole } : {}),
-        ...(storedPhone ? { phone: storedPhone } : {}),
-        team: team._id,
-        createdBy: req.user?._id || null,
-      });
+      createdPlayer = await Player.create(
+        squadPlayerFields(req.body.newPlayer, team, req.user?._id)
+      );
       await Team.findByIdAndUpdate(team._id, { $addToSet: { players: createdPlayer._id } });
       assigned.push(createdPlayer._id);
+    }
+
+    // "Add several": validate every name against the database and against the
+    // request itself *before* creating anything, so a duplicate halfway down the
+    // pasted list cannot leave a half-built squad behind.
+    const bulkInput = req.body.newPlayers || [];
+    if (bulkInput.length) {
+      const seen = new Set();
+      for (const entry of bulkInput) {
+        const key = playerService.normalizePlayerName(entry.name);
+        if (seen.has(key)) {
+          return res.status(409).json({
+            message: `"${entry.name}" is listed more than once.`,
+            code: "PLAYER_DUPLICATE",
+            existing: { name: entry.name },
+          });
+        }
+        seen.add(key);
+        try {
+          await playerService.assertPlayerNotDuplicate({
+            name: entry.name,
+            team: team._id,
+            phone: entry.phone,
+          });
+        } catch (dupErr) {
+          if (dupErr.code === "PLAYER_DUPLICATE") {
+            return res.status(409).json({
+              message: dupErr.message,
+              code: dupErr.code,
+              existing: dupErr.existing,
+            });
+          }
+          throw dupErr;
+        }
+      }
+
+      for (const entry of bulkInput) {
+        const player = await Player.create(squadPlayerFields(entry, team, req.user?._id));
+        await Team.findByIdAndUpdate(team._id, { $addToSet: { players: player._id } });
+        assigned.push(player._id);
+      }
     }
 
     await recordAudit({
@@ -366,6 +481,7 @@ export default {
   updateOrgTeam,
   deleteOrgTeam,
   addOrgTeamPlayers,
+  listOrgTeamAvailablePlayers,
   removeOrgTeamPlayers,
   updateOrgTeamPlayerRole,
 };

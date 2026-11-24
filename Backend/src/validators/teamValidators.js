@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { locationLabels, locationRefs } from "./locationSchemas.js";
+import { BATTING_STYLES, BOWLING_STYLES, PLAYING_ROLES } from "./playerValidators.js";
 
 // Phase 4: teams created and maintained by an organization.
 //
@@ -124,11 +126,26 @@ export const orgTeamPlayersSchema = z
 // The owner-side squad route also creates a player inline. Keeping this a
 // separate schema lets DELETE keep requiring at least one existing player while
 // POST accepts either existing ids, one new player, or both.
+// Re-exported rather than re-typed: the owner-side squad form offers the same
+// lists as the self-service player form, so both must validate against one
+// source. A locally copied list here would silently drift and start accepting a
+// bowling style the player form (and Player.js) does not.
+export const TEAM_PLAYER_ROLES = PLAYING_ROLES;
+
+export const TEAM_BATTING_STYLES = BATTING_STYLES;
+export const TEAM_BOWLING_STYLES = BOWLING_STYLES;
+
 const orgTeamNewPlayerSchema = z
   .object({
     name: z.string().trim().min(1, "Player name is required").max(150),
     role: z.string().trim().max(120).optional(),
+    playingRole: z.enum(PLAYING_ROLES).optional(),
+    battingStyle: z.enum(BATTING_STYLES).optional(),
+    bowlingStyle: z.enum(BOWLING_STYLES).optional(),
+    jerseyNumber: z.coerce.number().int().min(0).max(999).optional(),
     phone: z.string().trim().max(40).optional(),
+    locationRefs,
+    locationLabels,
   })
   .strict();
 
@@ -136,10 +153,13 @@ export const orgTeamAddPlayersSchema = z
   .object({
     playerIds: z.array(objectIdString).max(120).default([]),
     newPlayer: orgTeamNewPlayerSchema.optional(),
+    // "Add several": the bulk form sends names only; one request, one audit
+    // entry, and every name is checked for duplicates before anything is saved.
+    newPlayers: z.array(orgTeamNewPlayerSchema).max(60).default([]),
   })
   .strict()
   .refine(
-    (value) => value.playerIds.length > 0 || Boolean(value.newPlayer),
+    (value) => value.playerIds.length > 0 || Boolean(value.newPlayer) || value.newPlayers.length > 0,
     { message: "Pick at least one player or add a new one", path: ["playerIds"] }
   );
 
@@ -156,4 +176,7 @@ export default {
   orgTeamPlayersSchema,
   orgTeamAddPlayersSchema,
   orgTeamPlayerRoleSchema,
+  TEAM_PLAYER_ROLES,
+  TEAM_BATTING_STYLES,
+  TEAM_BOWLING_STYLES,
 };
