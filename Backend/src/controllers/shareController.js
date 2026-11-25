@@ -1,6 +1,7 @@
 import CommunityPost from "../models/CommunityPost.js";
 import Team from "../models/Team.js";
 import Player from "../models/Player.js";
+import TeamOrganization from "../models/TeamOrganization.js";
 import { getCommunitySettings } from "../models/CommunitySettings.js";
 import { isReservedTestName } from "../utils/publicProjection.js";
 
@@ -148,6 +149,57 @@ export const shareTeam = async (req, res) => {
   } catch (err) {
     const frontendUrl = getFrontendUrl();
     res.type("html").send(genericPreview(`${frontendUrl}/teams/${req.params.id}`));
+  }
+};
+
+// GET /share/club/:slug
+//
+// Same small-preview pattern as teams/players: a private or missing club gets
+// the generic card instead of a preview, so the OG tags never confirm a club the
+// owner hid. `slug` (not an id) because that is the public handle.
+export const shareClub = async (req, res) => {
+  try {
+    const frontendUrl = getFrontendUrl();
+    const backendUrl = getBackendUrl();
+    const slug = String(req.params.slug || "").trim().toLowerCase();
+    const redirectUrl = `${frontendUrl}/club/${slug}`;
+
+    const org = slug
+      ? await TeamOrganization.findOne({
+          slug,
+          isActive: true,
+          isPublic: { $ne: false },
+        })
+          .select("name slug logoUrl coverUrl description")
+          .lean()
+      : null;
+    if (!org || isReservedTestName(org.name)) {
+      return res.type("html").send(genericPreview(redirectUrl));
+    }
+
+    const source = org.coverUrl || org.logoUrl || "";
+    let image = "";
+    if (source.startsWith("/uploads/")) {
+      image = `${backendUrl}${source}`;
+    } else if (source.startsWith("http")) {
+      image = source;
+    }
+
+    res.type("html").send(
+      buildShareHtml({
+        title: org.name,
+        description: org.description
+          ? org.description.substring(0, 200)
+          : `${org.name} on CricAll`,
+        image,
+        url: redirectUrl,
+        redirectUrl,
+      })
+    );
+  } catch (err) {
+    const frontendUrl = getFrontendUrl();
+    const slug = String(req.params.slug || "").trim().toLowerCase();
+    res.type("html").send(genericPreview(`${frontendUrl}/club/${slug}`));
   }
 };
 
