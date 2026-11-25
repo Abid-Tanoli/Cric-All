@@ -104,6 +104,7 @@ import mongoose from "mongoose";
 import Team from "../models/Team.js";
 import { isReservedTestName } from "../utils/publicProjection.js";
 import { ensureUploadsDir, storeImage, uploadsDir } from "../utils/photoStore.js";
+import { assertImageMagic } from "../utils/imagePipeline.js";
 import { getMongoTarget } from "../utils/mongoTarget.js";
 
 // No background index build while we read teams and update logos.
@@ -486,6 +487,7 @@ async function executePlan(plan, publicBase) {
   for (const row of plan.attach) {
     try {
       const buffer = await fs.promises.readFile(row.full);
+      assertImageMagic(buffer, row.mime);
       const { url } = await storeImage(buffer, row.mime, path.basename(row.file));
       const logoUrl = `${publicBase}${url}`;
       await Team.updateOne({ _id: row.teamId }, { $set: { logo: logoUrl } });

@@ -93,6 +93,7 @@ import Team from "../models/Team.js";
 import TeamOrganization from "../models/TeamOrganization.js";
 import { normalizePlayerName } from "../services/playerService.js";
 import { ensureUploadsDir, storeImage, uploadsDir } from "../utils/photoStore.js";
+import { assertImageMagic } from "../utils/imagePipeline.js";
 import { getMongoTarget } from "../utils/mongoTarget.js";
 
 // No background index build while we read the batch and update players.
@@ -414,6 +415,7 @@ async function executePlan(plan, publicBase) {
   for (const row of plan.willAttach) {
     try {
       const buffer = await fs.promises.readFile(row.full);
+      assertImageMagic(buffer, row.mime);
       const { url } = await storeImage(buffer, row.mime, path.basename(row.file));
       const imageUrl = `${base}${url}`;
       await Player.updateOne({ _id: row.playerId }, { $set: { imageUrl } });

@@ -2,6 +2,7 @@ import "dotenv/config";
 import express from "express";
 import http from "http";
 import cors from "cors";
+import path from "path";
 import helmet from "helmet";
 import cookieParser from "cookie-parser";
 import connectDB, { getDbState, isDbConnected } from "./utils/db.js";
@@ -37,7 +38,7 @@ import settingsRoutes from "./routes/settingsRoutes.js";
 import handlerRoutes from "./routes/handlerRoutes.js";
 import { startExternalSyncManager } from "./controllers/settingsController.js";
 import uploadRoutes from "./routes/uploadRoutes.js";
-import { uploadsDir, ensureUploadsDir } from "./utils/photoStore.js";
+import { uploadsDir, ensureUploadsDir, cacheControlForUpload } from "./utils/photoStore.js";
 
 initSentry();
 
@@ -75,7 +76,18 @@ app.use("/uploads", (req, res, next) => {
   res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
   next();
 });
-app.use("/uploads", express.static(uploadsDir));
+// Stored filenames are content-derived (or the older random-name scheme), so
+// the URL never points at different bytes. Cache aggressively and immutably;
+// replacing a photo always writes a new filename instead of overwriting one.
+app.use(
+  "/uploads",
+  express.static(uploadsDir, {
+    setHeaders(res, filePath) {
+      const cacheControl = cacheControlForUpload(path.basename(filePath));
+      if (cacheControl) res.setHeader("Cache-Control", cacheControl);
+    },
+  })
+);
 
 const server = http.createServer(app);
 

@@ -4,6 +4,7 @@ import Match from "../models/Match.js";
 import TournamentMedia from "../models/TournamentMedia.js";
 import TournamentArticle from "../models/TournamentArticle.js";
 import { storeImage, ensureUploadsDir } from "../utils/photoStore.js";
+import { assertImageMagic } from "../utils/imagePipeline.js";
 import {
   gatherTournamentStats,
   computeFormAndNext,
@@ -455,6 +456,9 @@ export const adminAddPhoto = async (req, res) => {
     const tournament = await requireTournament(req);
     if (!req.file) return res.status(400).json({ message: "No image file uploaded" });
 
+    // Keep this consumer's stored bytes unchanged; only validate them before
+    // the write (the shared WebP pipeline is for player/org photos).
+    assertImageMagic(req.file.buffer, req.file.mimetype);
     ensureUploadsDir();
     const { url, filename } = await storeImage(req.file.buffer, req.file.mimetype, req.file.originalname);
 
