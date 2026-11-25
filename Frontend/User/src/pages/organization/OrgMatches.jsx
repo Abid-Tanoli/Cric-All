@@ -6,17 +6,20 @@ import {
   addOrgTeamPlayer,
   createOrgMatch,
   getMatchDetail,
+  getMatchScorers,
   getMatchSquads,
+  listOrgMembers,
   listOrgMatches,
   listOrgTeamsManaged,
   setMatchPlayingXI,
+  setMatchScorers,
   setMatchSuperSub,
   setMatchTeamRoles,
   setMatchToss,
   setMatchTwelfthMan,
   updateOrgMatch,
 } from "../../services/organizationApi";
-import { formatDate } from "../../lib/orgUi";
+import { PERMISSIONS, can, formatDate, roleLabels } from "../../lib/orgUi";
 import {
   Banner,
   Field,
@@ -653,6 +656,158 @@ export function MatchSetup({ orgId, match, onClose, onSaved }) {
   );
 }
 
+/**
+ * Owner-facing scorer picker. Candidates are the club's active members whose
+ * roles grant score_match; the backend repeats that check on save. An empty
+ * selection is meaningful — it restores the club-wide scoring rule.
+ */
+export function ScorerAssignmentPanel({ orgId, match, onClose, onSaved }) {
+  const [members, setMembers] = useState([]);
+  const [selected, setSelected] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState("");
+
+  useEffect(() => {
+    let alive = true;
+    setLoading(true);
+    setErr("");
+    Promise.all([getMatchScorers(match._id), listOrgMembers(orgId, { limit: 200 })])
+      .then(([assignment, roster]) => {
+        if (!alive) return;
+        const eligible = (Array.isArray(roster?.items) ? roster.items : []).filter(
+          (row) => row.user && can(row.permissions || [], PERMISSIONS.SCORE_MATCH)
+        );
+        const assigned = (assignment?.assignedScorers || []).map(idOf);
+        setMembers(eligible);
+        setSelected(
+          assigned.filter((id) => eligible.some((row) => idOf(row.user) === id))
+        );
+      })
+      .catch((error) => {
+        if (alive) setErr(error.message || "Could not load scorers");
+      })
+      .finally(() => {
+        if (alive) setLoading(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [orgId, match._id]);
+
+  const toggle = (userId) => {
+    setSelected((prev) =>
+      prev.includes(userId) ? prev.filter((id) => id !== userId) : [...prev, userId]
+    );
+  };
+
+  const save = async (ids) => {
+    setSaving(true);
+    setErr("");
+    try {
+      const response = await setMatchScorers(match._id, ids);
+      onSaved?.(
+        (response?.assignedScorers || []).length
+          ? "Scorer assignment saved."
+          : "Scorer assignment cleared. Anyone with scoring access can score."
+      );
+    } catch (error) {
+      setErr(error.message || "Could not save the scorer assignment");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/50 p-3"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose?.();
+      }}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Assign scorers"
+        data-testid="scorer-modal"
+        className="flex max-h-[85vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-cric-border bg-cric-card shadow-xl"
+      >
+        <div className="flex items-start justify-between gap-3 border-b border-cric-border px-4 py-3">
+          <div>
+            <h3 className="text-sm font-black uppercase tracking-wide text-cric-text">Scorer</h3>
+            <p className="mt-1 text-xs font-semibold text-cric-muted">
+              Who may score this fixture?
+            </p>
+          </div>
+          <button type="button" onClick={onClose} className={secondaryButton} aria-label="Close scorer picker">
+            Close
+          </button>
+        </div>
+
+        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-4">
+          {err ? <Banner kind="error">{err}</Banner> : null}
+          {loading ? (
+            <p className="text-sm font-semibold text-cric-muted">Loading eligible scorers…</p>
+          ) : (
+            <>
+              {selected.length === 0 ? (
+                <p data-testid="scorer-unrestricted" className="rounded-lg bg-cric-bg px-3 py-2 text-xs font-bold text-cric-text">
+                  Anyone with scoring access
+                </p>
+              ) : (
+                <p className="rounded-lg bg-cric-bg px-3 py-2 text-xs font-bold text-cric-text">
+                  Assigned: {members.filter((row) => selected.includes(idOf(row.user))).map((row) => row.user.name).join(", ")}
+                </p>
+              )}
+              <p className="text-[11px] font-semibold text-cric-muted">
+                No one selected means anyone with scoring access can score.
+              </p>
+              {members.length === 0 ? (
+                <p className="text-sm font-semibold text-cric-muted">
+                  No eligible members yet. Invite a Scorer from Members first.
+                </p>
+              ) : (
+                <ul className="space-y-2" data-testid="scorer-candidates">
+                  {members.map((row) => {
+                    const userId = idOf(row.user);
+                    return (
+                      <li key={row._id || userId}>
+                        <label className="flex min-h-11 items-center gap-3 rounded-lg border border-cric-border bg-cric-bg px-3 py-2 text-sm text-cric-text">
+                          <input
+                            type="checkbox"
+                            aria-label={`assign ${row.user.name}`}
+                            checked={selected.includes(userId)}
+                            onChange={() => toggle(userId)}
+                          />
+                          <span className="min-w-0">
+                            <span className="block truncate font-black">{row.user.name}</span>
+                            <span className="block text-[10px] font-bold uppercase tracking-widest text-cric-muted">
+                              {roleLabels(row.roles || [])}
+                            </span>
+                          </span>
+                        </label>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </>
+          )}
+        </div>
+
+        <div className="flex flex-wrap gap-2 border-t border-cric-border px-4 py-3">
+          <button type="button" onClick={() => save(selected)} disabled={loading || saving} className={primaryButton}>
+            {saving ? "Saving…" : "Save"}
+          </button>
+          <button type="button" onClick={() => save([])} disabled={loading || saving} className={secondaryButton}>
+            Clear
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function MatchForm({ orgId, teams, events = [], initial, seriesId, defaults, onDone, onCancel }) {
   const [form, setForm] = useState(() => ({ ...emptyMatch, ...(defaults || {}), ...(initial || {}) }));
   const [busy, setBusy] = useState(false);
@@ -800,6 +955,7 @@ export default function OrgMatches({ orgId, events = [], canManage = true, canSc
   const [editing, setEditing] = useState(null);
   const [creating, setCreating] = useState(false);
   const [setupFor, setSetupFor] = useState(null);
+  const [scorerFor, setScorerFor] = useState(null);
   const [notice, setNotice] = useState(null);
   const [err, setErr] = useState("");
   const [copiedOverlayId, setCopiedOverlayId] = useState("");
@@ -993,6 +1149,13 @@ export default function OrgMatches({ orgId, events = [], canManage = true, canSc
                     </button>
                     {canManage ? (
                       <>
+                        <button
+                          type="button"
+                          onClick={() => setScorerFor(scorerFor?._id === match._id ? null : match)}
+                          className={secondaryButton}
+                        >
+                          Scorer
+                        </button>
                         <button type="button" onClick={() => setSetupFor(setupFor?._id === match._id ? null : match)} className={secondaryButton}>
                           Setup XI
                         </button>
@@ -1052,6 +1215,19 @@ export default function OrgMatches({ orgId, events = [], canManage = true, canSc
                     onSaved={(message) => {
                       setSetupFor(null);
                       setNotice({ kind: "success", text: message, matchId: match._id });
+                      refresh();
+                    }}
+                  />
+                ) : null}
+
+                {scorerFor?._id === match._id ? (
+                  <ScorerAssignmentPanel
+                    orgId={orgId}
+                    match={match}
+                    onClose={() => setScorerFor(null)}
+                    onSaved={(message) => {
+                      setScorerFor(null);
+                      setNotice({ kind: "success", text: message });
                       refresh();
                     }}
                   />

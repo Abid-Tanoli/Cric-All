@@ -178,6 +178,13 @@ export const getMatchDetail = (matchId) => unwrap(api.get(`/matches/${matchId}`)
 
 export const getMatchSquads = (matchId) => unwrap(api.get(`/matches/${matchId}/squads`));
 
+// Scorer assignment is a create_match action. The read route has the same
+// guard as the write, so a score_handler cannot inspect another fixture's list.
+export const getMatchScorers = (matchId) => unwrap(api.get(`/matches/${matchId}/scorers`));
+
+export const setMatchScorers = (matchId, scorerIds) =>
+  unwrap(api.put(`/matches/${matchId}/scorers`, { scorerIds }));
+
 export const setMatchPlayingXI = (matchId, teamId, players) =>
   unwrap(api.put(`/matches/${matchId}/playing-xi`, { teamId, players }));
 
@@ -378,6 +385,8 @@ export default {
   setOrgMatchSquads,
   getMatchDetail,
   getMatchSquads,
+  getMatchScorers,
+  setMatchScorers,
   setMatchPlayingXI,
   setMatchTeamRoles,
   setMatchToss,
