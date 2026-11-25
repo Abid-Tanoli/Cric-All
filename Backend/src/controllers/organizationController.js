@@ -1,6 +1,7 @@
 import TeamOrganization from "../models/TeamOrganization.js";
 import TeamCategory from "../models/TeamCategory.js";
 import Team from "../models/Team.js";
+import Match from "../models/Match.js";
 import Membership from "../models/Membership.js";
 import Invitation from "../models/Invitation.js";
 import { getPlatformSettings } from "../models/SystemSettings.js";
@@ -10,6 +11,13 @@ import { generateOrgSlug, upsertMembership } from "../services/membershipService
 import { permissionsForRoles } from "../permissions/orgPermissions.js";
 import { recordAudit } from "../utils/audit.js";
 import { buildLocationFilterClauses } from "../services/locationService.js";
+import { getTeamPlayerRankings } from "../services/rankingService.js";
+import {
+  RECENT_MATCH_LIMIT,
+  UPCOMING_MATCH_LIMIT,
+  UPCOMING_MATCH_STATUSES,
+  buildTopPerformers,
+} from "../services/teamService.js";
 import { invalidFilterResponse, parseFilter } from "../services/orgTypeFilterService.js";
 import {
   OrgTypeValidationError,
@@ -24,8 +32,11 @@ import {
   resolveUpdateFields,
 } from "../services/organizationService.js";
 import {
+  MATCH_CARD_SELECT,
   PLAYER_ROSTER_SELECT,
+  PUBLIC_MATCH_FILTER,
   TEAM_PUBLIC_SELECT,
+  hiddenTeamIds,
   resolveViewerContext,
   sanitizeOrganizationPublic,
   sanitizeOrganizationsPublic,
@@ -42,7 +53,7 @@ import {
 const SELF_SERVICE_FIELDS = [
   "name", "shortName", "logoUrl", "coverUrl", "description", "website",
   "type", "orgType", "typeDetails", "foundedYear", "location", "contact", "socialLinks", "privacy",
-  "locationRefs", "locationLabels",
+  "locationRefs", "locationLabels", "isPublic",
 ];
 const SUPERVISORY_FIELDS = [
   "isActive", "parent", "category", "verificationStatus",
@@ -371,6 +382,9 @@ export const updateOrganization = async (req, res) => {
     if (!platform) {
       const patch = {};
       for (const field of SELF_SERVICE_FIELDS) {
+        // The slug is handled below: copying it here would let a rename rewrite
+        // the public URL even though the caller never asked for it.
+        if (field === "slug") continue;
         if (req.body[field] !== undefined) patch[field] = req.body[field];
       }
       Object.assign(patch, {
@@ -378,7 +392,16 @@ export const updateOrganization = async (req, res) => {
         orgType: resolved.orgType,
       });
       if (resolved.typeDetails !== undefined) patch.typeDetails = resolved.typeDetails;
-      if (patch.name) patch.slug = await generateOrgSlug(patch.slug || patch.name, org._id);
+      // A slug is a public address: renaming the club must not silently break
+      // every shared /club/<slug> link. It changes only when the caller sends a
+      // new one explicitly, and this route already requires manage_org.
+      const requestedSlug =
+        req.body.slug === undefined ? "" : String(req.body.slug).trim().toLowerCase();
+      if (requestedSlug && requestedSlug !== org.slug) {
+        patch.slug = await generateOrgSlug(requestedSlug, org._id);
+      } else if (!org.slug && patch.name) {
+        patch.slug = await generateOrgSlug(patch.name, org._id);
+      }
       if (resetVerification) {
         patch.verificationStatus = "unverified";
         patch.verifiedBy = null;
@@ -392,6 +415,17 @@ export const updateOrganization = async (req, res) => {
         new: true,
         runValidators: true,
       }).populate("owner", "name email");
+      if (patch.isPublic !== undefined && Boolean(patch.isPublic) !== Boolean(org.isPublic)) {
+        await recordAudit({
+          req,
+          organization: org._id,
+          action: "org.visibility_changed",
+          targetType: "organization",
+          targetId: org._id,
+          targetLabel: updated.name,
+          metadata: { publicPage: Boolean(patch.isPublic) },
+        });
+      }
       await recordAudit({
         req,
         organization: org._id,
@@ -411,7 +445,17 @@ export const updateOrganization = async (req, res) => {
 
     const patch = { ...req.body, type: resolved.type, orgType: resolved.orgType };
     if (resolved.typeDetails !== undefined) patch.typeDetails = resolved.typeDetails;
-    if (patch.name || patch.slug) patch.slug = await generateOrgSlug(patch.slug || patch.name, req.params.id);
+    // Same rule as the self-service branch: a rename keeps the existing public
+    // address unless a new slug was explicitly sent.
+    const requestedSlug =
+      req.body.slug === undefined ? "" : String(req.body.slug).trim().toLowerCase();
+    if (requestedSlug && requestedSlug !== org.slug) {
+      patch.slug = await generateOrgSlug(requestedSlug, req.params.id);
+    } else if (!org.slug && patch.name) {
+      patch.slug = await generateOrgSlug(patch.name, req.params.id);
+    } else if (req.body.slug === undefined) {
+      delete patch.slug;
+    }
     const statusChanged = patch.verificationStatus && patch.verificationStatus !== org.verificationStatus;
     if (statusChanged) {
       patch.verifiedBy = req.user?._id || null;
@@ -430,6 +474,17 @@ export const updateOrganization = async (req, res) => {
       .populate("owner", "name email")
       .populate("category", "name slug icon");
     if (!updated) return res.status(404).json({ message: "Organization not found" });
+    if (patch.isPublic !== undefined && Boolean(patch.isPublic) !== Boolean(org.isPublic)) {
+      await recordAudit({
+        req,
+        organization: updated._id,
+        action: "org.visibility_changed",
+        targetType: "organization",
+        targetId: updated._id,
+        targetLabel: updated.name,
+        metadata: { publicPage: Boolean(patch.isPublic) },
+      });
+    }
     await recordAudit({
       req,
       organization: updated._id,
@@ -708,6 +763,141 @@ export const getOrganizationTeams = async (req, res) => {
     res.status(200).json(sanitizeTeamsPublic(teams, { viewer }));
   } catch (error) {
     res.status(500).json({ message: "Failed to fetch organization teams", error: error.message });
+  }
+};
+
+const PUBLIC_CLUB_TEAM_LIMIT = 60;
+
+/** One match card query for the club page, scoped to a set of public teams. */
+function clubMatchQuery(teamIds, hidden, extra = {}) {
+  const teams = { $in: teamIds };
+  if (hidden.length) teams.$nin = hidden;
+  return { ...PUBLIC_MATCH_FILTER, ...extra, teams };
+}
+
+/**
+ * Aggregate the club's players from each public team's ranking rows.
+ *
+ * `getTeamPlayerRankings` reads `Player.stats`, which is global per player, so
+ * a player who appears in two of the club's teams carries identical figures.
+ * Taking the maximum (rather than summing) avoids counting the same career
+ * twice. `buildTopPerformers` is the same pure function the team page uses, so
+ * the club page cannot invent a different definition of "top performer".
+ */
+async function buildClubTopPerformers(teamIds) {
+  const byPlayer = new Map();
+  for (const teamId of teamIds) {
+    const rows = await getTeamPlayerRankings(teamId, null);
+    for (const row of rows || []) {
+      const id = row?.player?._id ? String(row.player._id) : null;
+      if (!id) continue;
+      const current = byPlayer.get(id);
+      if (!current) {
+        byPlayer.set(id, { ...row });
+        continue;
+      }
+      current.teamMatches = Math.max(current.teamMatches || 0, row.teamMatches || 0);
+      current.teamRuns = Math.max(current.teamRuns || 0, row.teamRuns || 0);
+      current.teamWickets = Math.max(current.teamWickets || 0, row.teamWickets || 0);
+      current.teamBattingSr = Math.max(current.teamBattingSr || 0, row.teamBattingSr || 0);
+      current.teamBattingAvg = Math.max(current.teamBattingAvg || 0, row.teamBattingAvg || 0);
+      current.teamPlayerRating = Math.max(
+        current.teamPlayerRating || 0,
+        row.teamPlayerRating || 0,
+      );
+    }
+  }
+  return buildTopPerformers([...byPlayer.values()]);
+}
+
+/**
+ * Public club page read — `GET /organizations/public/:slug`.
+ *
+ * This is deliberately not `GET /organizations/:id`: a slug is the only handle
+ * a visitor has, and the answer has to be one strict public projection. A
+ * private club, an inactive one and an unknown slug all answer 404, so the
+ * endpoint never confirms that a club the owner hid exists.
+ *
+ * Excluded by construction: registration number/authority, verification
+ * internals (who verified it, when, notes), members and their emails/phones,
+ * owner/createdBy, audit data. `typeDetails` is reduced to the public display
+ * name by `sanitizeOrganizationPublic`.
+ */
+export const getPublicOrganizationBySlug = async (req, res) => {
+  try {
+    const slug = String(req.params.slug || "").trim().toLowerCase();
+    if (!slug) return res.status(404).json({ message: "Club not found" });
+
+    const org = await TeamOrganization.findOne({
+      slug,
+      isActive: true,
+      isPublic: { $ne: false },
+      ...reservedNamesMongoClause("name"),
+    })
+      .select(
+        "name shortName slug logoUrl coverUrl description website foundedYear location locationRefs locationLabels locationIds category type orgType typeDetails verificationStatus isActive isPublic socialLinks privacy createdAt updatedAt"
+      )
+      .populate("category", "name slug icon")
+      .lean();
+    if (!org) return res.status(404).json({ message: "Club not found" });
+
+    const teamQuery = {
+      organizationRef: org._id,
+      isActive: true,
+      ...publicTeamClause(),
+    };
+    const teams = await Team.find(teamQuery)
+      .select(TEAM_PUBLIC_SELECT)
+      .populate("players", PLAYER_ROSTER_SELECT)
+      .populate("categoryRef", "name slug icon")
+      .sort({ teamRole: 1, name: 1 })
+      .limit(PUBLIC_CLUB_TEAM_LIMIT)
+      .lean();
+
+    const teamIds = teams.map((team) => team._id);
+    let upcomingMatches = [];
+    let recentResults = [];
+    let topPerformers = buildTopPerformers([]);
+
+    if (teamIds.length) {
+      const hidden = await hiddenTeamIds();
+      const findCards = (extra, sort, limit) =>
+        Match.find(clubMatchQuery(teamIds, hidden, extra))
+          .select(MATCH_CARD_SELECT)
+          .populate("teams", "name shortName logo")
+          .sort(sort)
+          .limit(limit)
+          .lean();
+
+      const upcomingStatus = { status: { $in: UPCOMING_MATCH_STATUSES } };
+      const [recent, datedUpcoming, undatedUpcoming, performers] = await Promise.all([
+        findCards({ status: "completed" }, { startAt: -1 }, RECENT_MATCH_LIMIT),
+        findCards(
+          { ...upcomingStatus, startAt: { $ne: null } },
+          { startAt: 1 },
+          UPCOMING_MATCH_LIMIT
+        ),
+        findCards({ ...upcomingStatus, startAt: null }, { startAt: 1 }, UPCOMING_MATCH_LIMIT),
+        buildClubTopPerformers(teamIds),
+      ]);
+
+      recentResults = recent;
+      upcomingMatches = [...datedUpcoming, ...undatedUpcoming].slice(0, UPCOMING_MATCH_LIMIT);
+      topPerformers = performers;
+    }
+
+    res.status(200).json({
+      organization: sanitizeOrganizationPublic(
+        { ...org, branchCount: teams.length },
+        { canViewPrivate: false }
+      ),
+      teams: sanitizeTeamsPublic(teams, { canViewPrivate: false }),
+      upcomingMatches,
+      recentResults,
+      topPerformers,
+    });
+  } catch (error) {
+    res.status(500).json({ message: "Failed to fetch club", error: error.message });
   }
 };
 

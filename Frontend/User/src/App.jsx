@@ -27,6 +27,7 @@ const LeagueTeams = lazy(() => import("./pages/LeagueTeams"));
 const LeagueDetails = lazy(() => import("./pages/LeagueDetails"));
 const IncubationTeams = lazy(() => import("./pages/IncubationTeams"));
 const TeamProfile = lazy(() => import("./pages/TeamProfile"));
+const ClubProfile = lazy(() => import("./pages/ClubProfile"));
 const Rankings = lazy(() => import("./pages/Rankings"));
 const Live = lazy(() => import("./pages/Live"));
 const News = lazy(() => import("./pages/News"));
@@ -201,6 +202,7 @@ function AppShell() {
             <Route path="/teams/leagues/:leagueId" element={<ErrorBoundary><LeagueDetails /></ErrorBoundary>} />
             <Route path="/teams/incubation" element={<ErrorBoundary><IncubationTeams /></ErrorBoundary>} />
             <Route path="/teams/:id" element={<ErrorBoundary><TeamProfile /></ErrorBoundary>} />
+            <Route path="/club/:slug" element={<ErrorBoundary><ClubProfile /></ErrorBoundary>} />
             <Route path="/rankings" element={<ErrorBoundary><Rankings /></ErrorBoundary>} />
             <Route path="/news" element={<ErrorBoundary><News /></ErrorBoundary>} />
             <Route path="/blogs" element={<ErrorBoundary><Blogs /></ErrorBoundary>} />

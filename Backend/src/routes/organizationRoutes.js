@@ -38,6 +38,7 @@ import {
 import {
   listOrganizations,
   getOrganization,
+  getPublicOrganizationBySlug,
   createOrganization,
   updateOrganization,
   deleteOrganization,
@@ -163,6 +164,11 @@ router.get('/my', ...manage, getMyOrganizations);
 router.get('/', optionalProtect, listOrganizations);
 router.get('/tree', optionalProtect, getOrganizationTree);
 router.get('/roots', optionalProtect, getRootOrganizations);
+// Public club page by human-readable slug. Registered before `/:id`, otherwise
+// "public" could be read as an id (and rejected by validateObjectId). No auth
+// middleware: this is the anonymous read, and the controller returns a strict
+// public projection. Private/inactive/unknown slugs all answer 404.
+router.get('/public/:slug', getPublicOrganizationBySlug);
 
 router.post('/', ...manage, requireOrgAdminType, validate(createOrganizationSchema), createOrganization);
 router.put('/:id', ...manage, validateObjectId('id'), requireOrgPermission(PERMISSIONS.MANAGE_ORG), validate(updateOrganizationSchema), updateOrganization);

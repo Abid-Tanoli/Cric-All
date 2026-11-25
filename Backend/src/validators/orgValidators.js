@@ -37,6 +37,9 @@ const socialLinks = z
 export const createOrganizationSchema = z
   .object({
     name: orgName,
+    // Opt the public club page out without touching team visibility. Default
+    // true keeps every pre-existing organization listed after deploy.
+    isPublic: z.boolean().optional().default(true),
     slug: z
       .string()
       .trim()

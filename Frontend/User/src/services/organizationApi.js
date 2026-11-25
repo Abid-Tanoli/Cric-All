@@ -14,6 +14,11 @@ export const getOrganization = (orgId) => unwrap(api.get(`/organizations/${orgId
 
 export const getOrganizationTeams = (orgId) => unwrap(api.get(`/organizations/${orgId}/teams`));
 
+// Public club page. Addressed by slug, not id, and answers 404 for a private,
+// inactive or unknown club — the caller renders a not-found page for those.
+export const getPublicClub = (slug) =>
+  unwrap(api.get(`/organizations/public/${encodeURIComponent(slug)}`));
+
 export const createOrganization = (payload) => unwrap(api.post("/organizations", payload));
 
 export const updateOrganization = (orgId, payload) => unwrap(api.put(`/organizations/${orgId}`, payload));
@@ -346,6 +351,7 @@ export default {
   listMyOrganizations,
   getOrganization,
   getOrganizationTeams,
+  getPublicClub,
   createOrganization,
   updateOrganization,
   deleteOrganization,

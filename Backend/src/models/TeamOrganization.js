@@ -138,6 +138,14 @@ const teamOrganizationSchema = new mongoose.Schema({
     type: Boolean,
     default: true,
   },
+  // Whether the public club page (/club/:slug) is reachable. Default true so
+  // every existing club has a page the moment the feature ships; an owner can
+  // switch it off in organization settings, and the public read then answers
+  // 404 rather than confirming the club exists.
+  isPublic: {
+    type: Boolean,
+    default: true,
+  },
   // Self-management (Phase 2): the account that created/owns this org.
   // Ownerless orgs (created by the platform Admin app before Phase 2) stay
   // supervisory-only until an owner is assigned via setOrgOwner.js.

@@ -25,9 +25,32 @@ export function normalizeRoles(roles) {
   return [...new Set(roles.filter((role) => ORG_ROLES.includes(role)))];
 }
 
+// Slugs that would shadow an API or app route (`/organizations/my`, `/public`,
+// ...). A club called "Public" still gets a page — it just cannot own this word
+// as its handle, so the generated slug becomes `public-2`.
+export const RESERVED_ORG_SLUGS = Object.freeze(
+  new Set([
+    "admin",
+    "all",
+    "api",
+    "club",
+    "my",
+    "new",
+    "organizations",
+    "org",
+    "private",
+    "public",
+    "roots",
+    "search",
+    "share",
+    "tree",
+  ])
+);
+
 /** Free, unique public slug for a new organization. */
 export async function generateOrgSlug(name, excludeId = null) {
   return uniqueSlug(name, async (candidate) => {
+    if (RESERVED_ORG_SLUGS.has(candidate)) return true;
     const query = { slug: candidate };
     if (excludeId) query._id = { $ne: OID(excludeId) };
     return Boolean(await TeamOrganization.exists(query));

@@ -185,7 +185,9 @@ export const ORGANIZATION_PUBLIC_FIELDS = Object.freeze([
   "orgType",
   "verificationStatus",
   "isActive",
+  "isPublic",
   "parent",
+  "socialLinks",
   "typeDetails",
   "memberCount",
   "branchCount",
@@ -645,10 +647,16 @@ export function sanitizeOrganizationPublic(doc, opts = {}) {
   const out = pick(plain, ORGANIZATION_PUBLIC_FIELDS, TeamOrganization.schema);
   out.orgType = orgType;
   out.typeDetails = publicTypeDetails(orgType, plain.typeDetails);
-  // Registration identifiers and private contact/social data never enter the
-  // whitelist; the location flag is honoured here so a hidden address stays
-  // hidden even though the location block itself is public by default.
+  // Registration identifiers, contact phone/email and account internals never
+  // enter the whitelist. The two flags that do gate public data are honoured
+  // here — a hidden address or a hidden social block stays hidden.
   if (plain.privacy?.location === "hidden") out.location = {};
+  if (!out.socialLinks || typeof out.socialLinks !== "object") out.socialLinks = {};
+  if (plain.privacy?.socialLinks === "hidden") {
+    out.socialLinks = Object.fromEntries(
+      Object.keys(out.socialLinks || {}).map((key) => [key, ""]),
+    );
+  }
   delete out.__v;
   return out;
 }
