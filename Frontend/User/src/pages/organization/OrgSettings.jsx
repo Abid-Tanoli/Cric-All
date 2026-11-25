@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   requestOrganizationVerification,
   updateOrganization,
@@ -33,6 +34,9 @@ const SOCIAL_PRESETS = ["facebook", "instagram", "x", "youtube", "linkedin", "ti
 
 const emptyForm = (org) => ({
   name: org?.name || "",
+  // Public by default: an organization created before the club page shipped
+  // has no stored value and must still be reachable.
+  isPublic: org?.isPublic !== false,
   shortName: org?.shortName || "",
   type: org?.type || "other",
   orgType: orgTypeOf(org),
@@ -132,6 +136,7 @@ export default function OrgSettings({ org, access, onSaved }) {
     try {
       const payload = {
         name: form.name.trim(),
+        isPublic: form.isPublic,
         shortName: form.shortName.trim(),
         type: form.type,
         orgType: form.orgType,
@@ -163,6 +168,29 @@ export default function OrgSettings({ org, access, onSaved }) {
     } catch (error) {
       setErr(error.message || "Could not save the organization");
       setFieldErrors(orgFormErrors(error));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // The toggle writes immediately rather than waiting for Save: it is a single
+  // privacy decision and its audit entry is most useful at the moment it is made.
+  const togglePublicPage = async (event) => {
+    const next = event.target.checked;
+    setBusy(true);
+    setErr("");
+    setNotice("");
+    try {
+      const res = await updateOrganization(org._id, { isPublic: next });
+      setForm((current) => ({ ...current, isPublic: res.organization?.isPublic !== false }));
+      setNotice(
+        next
+          ? "The public club page is visible again."
+          : "The public club page is now private. Visitors get a not-found page.",
+      );
+      onSaved?.(res.organization);
+    } catch (error) {
+      setErr(error.message || "Could not change the public page setting");
     } finally {
       setBusy(false);
     }
@@ -362,6 +390,37 @@ export default function OrgSettings({ org, access, onSaved }) {
             <option key={preset} value={preset} />
           ))}
         </datalist>
+      </div>
+
+      <div className={card}>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h2 className={sectionTitle}>Public club page</h2>
+            <p className="mt-1 text-xs font-semibold text-cric-muted">
+              {org?.slug ? (
+                <>
+                  Lives at{" "}
+                  <Link to={`/club/${org.slug}`} className="font-bold text-cric-accent hover:underline">
+                    /club/{org.slug}
+                  </Link>
+                  . Private details (registration number, contact, members) are never shown.
+                </>
+              ) : (
+                "A public address is assigned automatically."
+              )}
+            </p>
+          </div>
+          <label className="flex items-center gap-2 text-xs font-bold text-cric-text">
+            <input
+              type="checkbox"
+              checked={form.isPublic}
+              onChange={togglePublicPage}
+              disabled={!editable || busy}
+              className="h-4 w-4"
+            />
+            Show the club page publicly
+          </label>
+        </div>
       </div>
 
       {editable && (

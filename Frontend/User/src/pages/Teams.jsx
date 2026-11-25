@@ -178,11 +178,11 @@ export default function Teams() {
 
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                 {catTeams.map(team => (
-                  <Link
+                  <div
                     key={team._id}
-                    to={`/teams/${team._id}`}
                     className="bg-cric-card rounded-2xl border border-slate-100 overflow-hidden hover:shadow-xl transition-all group"
                   >
+                    <Link to={`/teams/${team._id}`} className="block">
                     <div
                       className="h-20 flex items-center justify-center relative"
                       style={{ background: `linear-gradient(135deg, ${team.teamColorPrimary || '#031d44'}, ${team.teamColorSecondary || '#003087'})` }}
@@ -224,7 +224,18 @@ export default function Teams() {
                         )}
                       </div>
                     </div>
-                  </Link>
+                    </Link>
+                    {team.organizationRef?.slug ? (
+                      <div className="border-t border-slate-100 px-4 py-2">
+                        <Link
+                          to={`/club/${team.organizationRef.slug}`}
+                          className="text-[10px] font-black uppercase tracking-wider text-cric-accent hover:underline"
+                        >
+                          🏟 {team.organizationRef.name || "Club"} page
+                        </Link>
+                      </div>
+                    ) : null}
+                  </div>
                 ))}
               </div>
             </div>

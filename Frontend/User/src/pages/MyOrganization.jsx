@@ -240,6 +240,16 @@ export default function MyOrganization() {
             <Link to="/organization/new" className={primaryButton}>
               + New organization
             </Link>
+            {active?.slug ? (
+              <Link to={`/club/${active.slug}`} className={secondaryButton}>
+                View public page
+              </Link>
+            ) : null}
+            {active ? (
+              <span className="self-center rounded-full border border-cric-border bg-cric-bg px-3 py-1 text-[10px] font-black uppercase tracking-widest text-cric-muted">
+                {active.isPublic === false ? "Club page: private" : "Club page: public"}
+              </span>
+            ) : null}
             {active && can(access?.permissions || [], PERMISSIONS.SCORE_MATCH) ? (
               <IssueReportButton orgId={active._id} />
             ) : null}
