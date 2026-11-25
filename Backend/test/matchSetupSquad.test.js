@@ -579,3 +579,19 @@ test("setPlayingXI and setTwelfthMan reject a nominated Super Sub with clear cod
   });
   assert.equal(xiWithoutSub.statusCode, 200, "a valid XI is still accepted");
 });
+
+test("updateToss rejects a winner outside the fixture's two teams", async () => {
+  const match = await makeMatch();
+  const outsider = await Team.create({ name: "Third XI", isPublic: true });
+
+  const res = await call(updateToss, {
+    params: { matchId: String(match._id) },
+    body: { tossWinnerId: String(outsider._id), decision: "bat" },
+  });
+
+  assert.equal(res.statusCode, 400);
+  assert.equal(res.body.code, "MATCH_TOSS_WINNER_INVALID_TEAM");
+  const unchanged = await Match.findById(match._id).lean();
+  assert.equal(idOf(unchanged.tossWinner), "", "the invalid winner was not stored");
+  assert.equal(unchanged.status, "upcoming", "the fixture was not moved to toss_done");
+});

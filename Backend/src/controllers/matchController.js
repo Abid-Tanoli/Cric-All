@@ -1590,6 +1590,19 @@ export const updateToss = async (req, res) => {
       return res.status(404).json({ message: "Match not found" });
     }
 
+    // A toss winner has to be one of the two sides in this fixture. Requests
+    // that omit the field keep the old behaviour; an explicit id from outside
+    // the match used to be silently treated as team 2.
+    if (tossWinnerId !== undefined && tossWinnerId !== null && tossWinnerId !== "") {
+      const teamIds = (match.teams || []).map(idOf);
+      if (!teamIds.includes(idOf(tossWinnerId))) {
+        return res.status(400).json({
+          message: "Toss winner must be one of the two teams in this match.",
+          code: "MATCH_TOSS_WINNER_INVALID_TEAM",
+        });
+      }
+    }
+
     match.tossWinner = tossWinnerId;
     match.tossDecision = decision;
     if (!["live", "innings_break", "innings-break", "completed", "pending_tie_resolution", "super_over"].includes(match.status)) {
