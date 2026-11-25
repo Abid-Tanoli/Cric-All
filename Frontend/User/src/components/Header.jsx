@@ -5,6 +5,7 @@ import InstallAppButton from "./InstallAppButton";
 import { resendVerification } from "../pages/auth/auth";
 import { featureFlags } from "../config/features";
 import { useCommunityConfig } from "../community/CommunityConfigContext";
+import { useCommunityHasPosts } from "../hooks/useCommunityHasPosts";
 import { useCricketProviderStatus, isProviderConfigured } from "../hooks/useCricketProviderStatus";
 import BrandMark from "@shared/branding/BrandMark";
 
@@ -15,7 +16,10 @@ export default function Header({ user, hasOrg, onShowLogin, onShowRegister, onLo
   const [resendState, setResendState] = useState("");
   // Community is a RUNTIME switch (backend setting), not a build flag: the link
   // only appears once GET /community/config confirms it is enabled.
+  // An empty feed is hidden too, so visitors are not sent to a blank section;
+  // /community itself stays reachable by URL.
   const { enabled: communityEnabled } = useCommunityConfig();
+  const showCommunity = useCommunityHasPosts(communityEnabled);
   // International is also a RUNTIME switch: without a configured provider on the
   // server the page only shows a "provider unavailable" banner, so the link is
   // hidden until GET /international/status says one exists.
@@ -32,7 +36,7 @@ export default function Header({ user, hasOrg, onShowLogin, onShowRegister, onLo
     ...(flags.international && isProviderConfigured(providerStatus) ? [{ name: "International", path: "/international" }] : []),
     { name: "Teams", path: "/teams" },
     { name: "Players", path: "/players" },
-    ...(communityEnabled ? [{ name: "Community", path: "/community" }] : []),
+    ...(showCommunity ? [{ name: "Community", path: "/community" }] : []),
     ...(flags.highlights ? [{ name: "Highlights", path: "/highlights" }] : []),
     ...(flags.cricketNews ? [{ name: "News", path: "/cricket-news" }] : []),
     ...(flags.videos ? [{ name: "Videos", path: "/videos" }] : []),

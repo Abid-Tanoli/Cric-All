@@ -1,10 +1,13 @@
 import React from 'react'
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { ThemeProvider } from '../context/ThemeContext'
 import Header from '../components/Header'
 import { resetCricketProviderStatusCache } from '../hooks/useCricketProviderStatus'
+import { resetCommunityHasPostsCache } from '../hooks/useCommunityHasPosts'
+import CommunityConfigContext from '../community/CommunityConfigContext'
+import { getFeed } from '../services/communityApi'
 
 // The International entry needs BOTH the build flag and a provider configured on
 // the server, so the status call is mocked instead of reaching the API.
@@ -13,13 +16,26 @@ vi.mock('../services/cricApi', () => ({
   getCricketProviderStatus: vi.fn(async () => ({ configured: provider.configured })),
 }))
 
-const renderHeader = () =>
+vi.mock('../services/communityApi', () => ({
+  getCommunityConfig: vi.fn(),
+  getFeed: vi.fn(),
+}))
+
+const header = (
+  <ThemeProvider>
+    <MemoryRouter>
+      <Header user={null} hasOrg={false} onLogout={() => {}} />
+    </MemoryRouter>
+  </ThemeProvider>
+)
+
+const renderHeader = () => render(header)
+
+const renderHeaderWithCommunity = (enabled) =>
   render(
-    <ThemeProvider>
-      <MemoryRouter>
-        <Header user={null} hasOrg={false} onLogout={() => {}} />
-      </MemoryRouter>
-    </ThemeProvider>
+    <CommunityConfigContext.Provider value={{ status: 'ready', enabled, postMode: 'auto', refresh: () => {} }}>
+      {header}
+    </CommunityConfigContext.Provider>
   )
 
 describe('Header navigation feature flags (Task 3)', () => {
@@ -71,5 +87,58 @@ describe('Header navigation feature flags (Task 3)', () => {
     renderHeader()
     expect(screen.getByText('Highlights')).toBeInTheDocument()
     expect(screen.getByText('News')).toBeInTheDocument()
+  })
+})
+
+describe('Header community link', () => {
+  beforeEach(() => {
+    resetCommunityHasPostsCache()
+    resetCricketProviderStatusCache()
+    provider.configured = false
+    getFeed.mockReset()
+  })
+
+  it('shows the link when the community has at least one post', async () => {
+    getFeed.mockResolvedValue({ posts: [{ _id: 'post-1' }], nextCursor: null, hasMore: false })
+    renderHeaderWithCommunity(true)
+    expect(await screen.findByRole('link', { name: 'Community' })).toHaveAttribute('href', '/community')
+  })
+
+  it('hides the link when the community is on but has no posts', async () => {
+    getFeed.mockResolvedValue({ posts: [], nextCursor: null, hasMore: false })
+    renderHeaderWithCommunity(true)
+    await waitFor(() => expect(getFeed).toHaveBeenCalledTimes(1))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(screen.queryByRole('link', { name: 'Community' })).not.toBeInTheDocument()
+  })
+
+  it('asks for one post only, and once per page load', async () => {
+    getFeed.mockResolvedValue({ posts: [{ _id: 'post-1' }], nextCursor: null, hasMore: false })
+    const first = renderHeaderWithCommunity(true)
+    await screen.findByRole('link', { name: 'Community' })
+    first.unmount()
+    renderHeaderWithCommunity(true)
+    expect(await screen.findByRole('link', { name: 'Community' })).toBeInTheDocument()
+    expect(getFeed).toHaveBeenCalledTimes(1)
+    expect(getFeed).toHaveBeenCalledWith({ limit: 1 })
+  })
+
+  it('keeps the link when the check fails and asks again on the next mount', async () => {
+    getFeed.mockRejectedValueOnce(new Error('network'))
+    const first = renderHeaderWithCommunity(true)
+    expect(await screen.findByRole('link', { name: 'Community' })).toBeInTheDocument()
+    first.unmount()
+    getFeed.mockResolvedValue({ posts: [], nextCursor: null, hasMore: false })
+    renderHeaderWithCommunity(true)
+    await waitFor(() => expect(getFeed).toHaveBeenCalledTimes(2))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(screen.queryByRole('link', { name: 'Community' })).not.toBeInTheDocument()
+  })
+
+  it('requests nothing while the community is switched off', async () => {
+    renderHeaderWithCommunity(false)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(getFeed).not.toHaveBeenCalled()
+    expect(screen.queryByRole('link', { name: 'Community' })).not.toBeInTheDocument()
   })
 })
