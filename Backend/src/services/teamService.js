@@ -14,11 +14,15 @@ import { PLAYING_ROLES } from "../validators/playerValidators.js";
 import {
   PLAYER_ROSTER_SELECT,
   TEAM_PUBLIC_SELECT,
+  MATCH_CARD_SELECT,
+  PUBLIC_MATCH_FILTER,
   publicTeamClause,
   reservedNamesMongoClause,
+  hiddenTeamIds,
   isHiddenTeamDoc,
   canViewTeamPrivate,
 } from "../utils/publicProjection.js";
+import { getTeamPlayerRankings } from "./rankingService.js";
 
 // Pure diff used to decide which team media uploads are no longer referenced
 // after an update. Returns the subset of old URLs that are gone from `newMedia`.
@@ -132,6 +136,143 @@ export async function listTeams(filters = {}) {
   return teamsQuery;
 }
 
+// ---------------------------------------------------------------------------
+// PR 7 — public team overview blocks
+// ---------------------------------------------------------------------------
+//
+// The team page used to show ten completed matches and nothing else: a visitor
+// could not see the next fixture, a match in progress, or who the side's best
+// players are, even though the backend already loaded the rankings.
+
+/** Statuses that mean "not started yet". `scheduled` is not in Match's enum
+ * today, but fixtures written by importers carry it, so it is accepted here. */
+export const UPCOMING_MATCH_STATUSES = Object.freeze(["upcoming", "scheduled"]);
+
+/** Statuses that mean "on the field right now". A completed toss, an innings
+ * break and a super over are all still a live fixture to a visitor. */
+export const LIVE_MATCH_STATUSES = Object.freeze([
+  "live",
+  "toss_done",
+  "innings-break",
+  "innings_break",
+  "super_over",
+]);
+
+export const UPCOMING_MATCH_LIMIT = 5;
+export const RECENT_MATCH_LIMIT = 10;
+export const BEST_PLAYERS_LIMIT = 5;
+
+/** A strike-rate leader needs this many matches — or every match the team has
+ * played, when the team has played fewer (see `buildTopPerformers`). */
+export const BEST_STRIKE_RATE_MIN_MATCHES = 3;
+
+/** The compact player row the team page renders in a performer card. Derived
+ * from the ranking row, never a whole Player document. */
+function performerSummary(row) {
+  const player = row?.player || {};
+  return {
+    _id: player._id || null,
+    name: player.name || "",
+    imageUrl: player.imageUrl || "",
+    playingRole: player.playingRole || player.role || "",
+    jerseyNumber: player.jerseyNumber ?? null,
+    matches: row.teamMatches || 0,
+    runs: row.teamRuns || 0,
+    wickets: row.teamWickets || 0,
+    strikeRate: row.teamBattingSr || 0,
+    average: row.teamBattingAvg || 0,
+    rating: row.teamPlayerRating || 0,
+  };
+}
+
+/** Highest `value` among the rows, ignoring rows that do not clear `positive`. */
+function bestRowBy(rows, value, { requirePositive = true } = {}) {
+  return rows.reduce((best, row) => {
+    if (requirePositive && !(value(row) > 0)) return best;
+    if (!best || value(row) > value(best)) return row;
+    return best;
+  }, null);
+}
+
+/**
+ * Pure: turns the team's ranking rows into the top-performers block.
+ *
+ * The rows are the same ones `/players/team/:teamId` serves (see
+ * `rankingService.getTeamPlayerRankings`, which reads `Player.stats` — the source
+ * the leaderboards use). A team with no completed match has no rows behind it,
+ * and that is a normal state: the block comes back with nulls and an empty list
+ * rather than throwing or inventing a leader.
+ *
+ * The strike-rate leader is the only place a minimum-matches rule is needed —
+ * one big innings should not outrank a season. The threshold is three matches,
+ * or every match the team has played if it has played fewer, so a new side with
+ * two matches still gets a leader among the players who played both.
+ */
+export function buildTopPerformers(rankings = []) {
+  const rows = (Array.isArray(rankings) ? rankings : []).filter(
+    (row) => row && row.player && row.player._id,
+  );
+  if (rows.length === 0) {
+    return {
+      topRunScorer: null,
+      topWicketTaker: null,
+      bestStrikeRate: null,
+      bestStrikeRateMinMatches: BEST_STRIKE_RATE_MIN_MATCHES,
+      bestPlayers: [],
+    };
+  }
+
+  const mostMatches = rows.reduce((max, row) => Math.max(max, row.teamMatches || 0), 0);
+  const minMatches = Math.min(BEST_STRIKE_RATE_MIN_MATCHES, mostMatches);
+  const strikeRateCandidates =
+    minMatches > 0
+      ? rows.filter(
+          (row) => (row.teamMatches || 0) >= minMatches && (row.teamRuns || 0) > 0,
+        )
+      : [];
+
+  // Best players keep the leaderboard's own ordering idea (runs, plus 25 per
+  // wicket) because that rating is what the rankings screens sort by. A row with
+  // no match behind it is not a ranking: a squad that has never played returns no
+  // best players rather than five zeros.
+  const ranked = rows
+    .filter((row) => (row.teamMatches || 0) > 0)
+    .sort(
+    (a, b) =>
+      (b.teamPlayerRating || 0) - (a.teamPlayerRating || 0) ||
+      (b.teamRuns || 0) - (a.teamRuns || 0) ||
+      (b.teamWickets || 0) - (a.teamWickets || 0) ||
+      String(a.player.name || "").localeCompare(String(b.player.name || "")),
+    );
+
+  const runLeader = bestRowBy(rows, (row) => row.teamRuns || 0);
+  const wicketLeader = bestRowBy(rows, (row) => row.teamWickets || 0);
+  const strikeRateLeader = bestRowBy(strikeRateCandidates, (row) => row.teamBattingSr || 0);
+
+  return {
+    topRunScorer: runLeader ? performerSummary(runLeader) : null,
+    topWicketTaker: wicketLeader ? performerSummary(wicketLeader) : null,
+    bestStrikeRate: strikeRateLeader ? performerSummary(strikeRateLeader) : null,
+    bestStrikeRateMinMatches: minMatches,
+    bestPlayers: ranked.slice(0, BEST_PLAYERS_LIMIT).map(performerSummary),
+  };
+}
+
+/**
+ * Every match read on the team page goes through this scope: this team's
+ * fixtures, never a draft scorecard, and — for a caller who may not see the team
+ * in full — never a fixture against a team the owner has hidden. The same
+ * `hiddenTeamIds` set every public listing uses, so the rule cannot drift.
+ */
+async function publicMatchScope(teamId, viewer, team) {
+  const clauses = [{ teams: teamId }];
+  if (!canViewTeamPrivate(viewer, team)) {
+    const hidden = await hiddenTeamIds();
+    if (hidden.length) clauses.push({ teams: { $nin: hidden } });
+  }
+  return clauses;
+}
+
 // Round 5: `.populate("players")` with no argument loaded whole Player
 // documents — date of birth, address, gallery, videos and the creating account —
 // into `GET /api/teams/:id`, which is unauthenticated. The roster is now a
@@ -154,13 +295,29 @@ export async function getTeamProfile(teamId, viewer = null) {
 
   const ranking = await TeamRanking.findOne({ team: teamId });
 
-  const recentMatches = await Match.find({
-    teams: teamId,
-    status: "completed",
-  })
-    .populate("teams", "name shortName logo")
-    .sort({ startAt: -1 })
-    .limit(10);
+  const matchScope = await publicMatchScope(teamId, viewer, team);
+  const findMatchCards = (extraQuery, sort, limit) =>
+    Match.find({ ...PUBLIC_MATCH_FILTER, ...extraQuery, $and: matchScope })
+      .select(MATCH_CARD_SELECT)
+      .populate("teams", "name shortName logo")
+      .sort(sort)
+      .limit(limit);
+
+  const upcomingStatus = { status: { $in: UPCOMING_MATCH_STATUSES } };
+  // Dated fixtures first, undated ones only fill the slots the dated ones leave.
+  // Two queries rather than one sort: MongoDB orders a missing date before a
+  // real one, which would push actual dates out of a five-row window.
+  const [recentMatches, datedUpcoming, undatedUpcoming, liveMatches] = await Promise.all([
+    findMatchCards({ status: "completed" }, { startAt: -1 }, RECENT_MATCH_LIMIT),
+    findMatchCards({ ...upcomingStatus, startAt: { $ne: null } }, { startAt: 1 }, UPCOMING_MATCH_LIMIT),
+    findMatchCards({ ...upcomingStatus, startAt: null }, { startAt: 1 }, UPCOMING_MATCH_LIMIT),
+    findMatchCards(
+      { status: { $in: LIVE_MATCH_STATUSES } },
+      { startAt: 1 },
+      UPCOMING_MATCH_LIMIT,
+    ),
+  ]);
+  const upcomingMatches = [...datedUpcoming, ...undatedUpcoming].slice(0, UPCOMING_MATCH_LIMIT);
 
   let branches = [];
   if (team.organizationRef) {
@@ -183,10 +340,21 @@ export async function getTeamProfile(teamId, viewer = null) {
   const playerRankings = await TeamPlayerRanking.find({ team: teamId })
     .populate("player", "name imageUrl role playingRole battingPosition");
 
+  // PR 7: the top-performers block is derived from the ranking source the
+  // leaderboards read, not from the stored TeamPlayerRanking rows above — those
+  // are only written by the post-match pipeline, so an older team can have none
+  // and the block would be silently blank. Player.stats is kept up to date after
+  // every match, so it is the trustworthy source.
+  const rankingRows = await getTeamPlayerRankings(teamId, viewer);
+  const topPerformers = buildTopPerformers(rankingRows || []);
+
   return {
     team,
     ranking: ranking || null,
     recentMatches,
+    upcomingMatches,
+    liveMatches,
+    topPerformers,
     branches,
     playerRankings,
   };

@@ -239,6 +239,40 @@ const TEAM_LOCATION_FIELDS = Object.freeze([
 /** Team fields gated by `privacy.contactInfo`. */
 const TEAM_CONTACT_FIELDS = Object.freeze(["phone", "email", "website"]);
 
+/**
+ * Team fields gated by `privacy.media`. The gallery and the video list are one
+ * block on the public team page and one flag on the model, so they are blanked
+ * together: a team that hides its media hides photos and clips alike. Blanked
+ * (not dropped) for the same reason as `address`/`socialLinks` — the public key
+ * set stays stable.
+ */
+const TEAM_MEDIA_FIELDS = Object.freeze(["media", "videos"]);
+
+/**
+ * Public shape of one match card on a team page (`GET /teams/:id`).
+ *
+ * A team page needs a fixture's identity, when it starts, where it is played,
+ * the two innings it prints as the score line, and the result sentence — not the
+ * ball-by-ball history, the commentary blob, the playing XI, the assigned
+ * scorers or the scorer's working notes. Selecting these paths is what keeps
+ * those out by construction; see `MATCH_CARD_FIELDS` for the same list.
+ */
+export const MATCH_CARD_FIELDS = Object.freeze([
+  "title",
+  "status",
+  "startAt",
+  "venue",
+  "matchType",
+  "totalOvers",
+  "teams",
+  "innings",
+  "result",
+  "resultText",
+]);
+
+export const MATCH_CARD_SELECT =
+  "title status startAt venue matchType totalOvers teams innings.team innings.runs innings.wickets innings.overs result resultText";
+
 // ---------------------------------------------------------------------------
 // Viewer context
 // ---------------------------------------------------------------------------
@@ -547,6 +581,15 @@ export function sanitizeTeamPublic(doc, opts = {}) {
     );
   }
 
+  // PR 7: the gallery and the video list are gated together by `privacy.media`.
+  // The flag defaults to "public", so a team written before it existed (and a
+  // team that never touched it) keeps showing its media.
+  if (privacy.media === "hidden") {
+    for (const field of TEAM_MEDIA_FIELDS) {
+      if (field in out) out[field] = [];
+    }
+  }
+
   // A public roster is a roster projection, not a set of player profiles: the
   // team page and the fixture squad editor only render name/role/photo, and the
   // narrower shape means a team's player list cannot become a second player
@@ -777,6 +820,8 @@ export default {
   PLAYER_PUBLIC_FIELDS,
   PLAYER_ROSTER_FIELDS,
   TEAM_PUBLIC_FIELDS,
+  MATCH_CARD_FIELDS,
+  MATCH_CARD_SELECT,
   ORGANIZATION_PUBLIC_FIELDS,
   ORGANIZATION_PUBLIC_SELECT,
   PLAYER_PUBLIC_SELECT,

@@ -52,6 +52,9 @@ const privacy = z
     contactInfo: z.enum(["public", "hidden"]).default("public"),
     socialLinks: z.enum(["public", "hidden"]).default("public"),
     location: z.enum(["public", "hidden"]).default("public"),
+    // PR 7: gallery photos and videos. Defaults to "public", so a client that
+    // never sends the key keeps the team's media on the public page.
+    media: z.enum(["public", "hidden"]).default("public"),
   })
   .strict();
 

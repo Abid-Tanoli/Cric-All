@@ -118,7 +118,11 @@ const teamSchema = new mongoose.Schema(
     privacy: {
       contactInfo: { type: String, enum: ["public", "hidden"], default: "public" },
       socialLinks: { type: String, enum: ["public", "hidden"], default: "public" },
-      location: { type: String, enum: ["public", "hidden"], default: "public" }
+      location: { type: String, enum: ["public", "hidden"], default: "public" },
+      // Gallery photos and videos on the public team page. Defaults to "public"
+      // so adding the flag changes nothing for teams that already exist;
+      // `sanitizeTeamPublic` blanks both lists when it is "hidden".
+      media: { type: String, enum: ["public", "hidden"], default: "public" }
     },
     // `isPublic` controls whether an organization-owned team appears in the
     // cross-tenant public catalogue. New teams are public by default; owners
