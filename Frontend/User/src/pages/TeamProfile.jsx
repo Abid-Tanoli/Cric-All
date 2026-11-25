@@ -37,6 +37,22 @@ export default function TeamProfile() {
     fetchTeam();
   }, [id]);
 
+  // Optional share polish: the tab title and description use the team name once
+  // it has loaded, so a shared link reads "Crescent XI" rather than the generic
+  // directory title the router set on the way in.
+  useEffect(() => {
+    const loadedTeam = profile?.team;
+    if (!loadedTeam?.name) return;
+    document.title = `${loadedTeam.name} | CricAll`;
+    const description = document.querySelector('meta[name="description"]');
+    if (description) {
+      description.setAttribute(
+        'content',
+        `Fixtures, results, squad and top performers for ${loadedTeam.name}, a cricket team on CricAll.`,
+      );
+    }
+  }, [profile]);
+
   const fetchTeam = async () => {
     try {
       const res = await api.get(`/teams/${id}`);
@@ -98,7 +114,13 @@ export default function TeamProfile() {
     );
   }
 
-  const { team, ranking, recentMatches, branches } = profile;
+  // PR 7: the page now reads the overview blocks the backend returns alongside
+  // the squad. Defaulted so an older cached response still renders.
+  const { team, ranking, branches } = profile;
+  const recentMatches = profile.recentMatches || [];
+  const upcomingMatches = profile.upcomingMatches || [];
+  const liveMatches = profile.liveMatches || [];
+  const topPerformers = profile.topPerformers || EMPTY_PERFORMERS;
   const players = team.players || [];
   const teamOrgId = idOf(team.organizationRef);
   const canManageSquad = Boolean(teamOrgId) && can(orgAccess?.permissions || [], PERMISSIONS.MANAGE_PLAYERS);
@@ -291,6 +313,118 @@ export default function TeamProfile() {
         {activeTab === 'about' && (
           <div className="space-y-6">
 
+            {/* ── Overview (PR 7): live, upcoming, recent results, performers ── */}
+            <div className="space-y-6">
+              {liveMatches.length > 0 && (
+                <section
+                  aria-labelledby="team-live-heading"
+                  className="rounded-2xl border border-red-200 bg-red-50 p-5"
+                >
+                  <h3 id="team-live-heading" className="mb-4 text-xs font-black uppercase tracking-widest text-red-700">
+                    Live now
+                  </h3>
+                  <div className="space-y-3">
+                    {liveMatches.map((match) => (
+                      <TeamMatchRow key={match._id} match={match} teamId={id} live />
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              <section className="bg-cric-card rounded-2xl shadow-sm border border-slate-100 p-5">
+                <h3 className="mb-4 text-xs font-black text-cric-muted uppercase tracking-widest">Upcoming matches</h3>
+                {upcomingMatches.length === 0 ? (
+                  <p className="py-2 text-sm font-semibold text-cric-muted">No upcoming matches yet.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {upcomingMatches.map((match) => (
+                      <TeamMatchRow key={match._id} match={match} teamId={id} />
+                    ))}
+                  </div>
+                )}
+              </section>
+
+              <section className="bg-cric-card rounded-2xl shadow-sm border border-slate-100 p-5">
+                <h3 className="mb-4 text-xs font-black text-cric-muted uppercase tracking-widest">Recent results</h3>
+                {recentMatches.length === 0 ? (
+                  <p className="py-2 text-sm font-semibold text-cric-muted">No completed matches yet.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {recentMatches.map((match) => (
+                      <TeamMatchRow key={match._id} match={match} teamId={id} result />
+                    ))}
+                  </div>
+                )}
+              </section>
+
+              <section className="bg-cric-card rounded-2xl shadow-sm border border-slate-100 p-5">
+                <h3 className="mb-4 text-xs font-black text-cric-muted uppercase tracking-widest">Top performers</h3>
+                {!topPerformers.topRunScorer && !topPerformers.topWicketTaker && !topPerformers.bestStrikeRate ? (
+                  <p className="py-2 text-sm font-semibold text-cric-muted">
+                    No individual performances recorded yet.
+                  </p>
+                ) : (
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                    <PerformerCard
+                      label="Top run scorer"
+                      performer={topPerformers.topRunScorer}
+                      detail={(player) => `${player.runs} runs in ${player.matches} matches`}
+                    />
+                    <PerformerCard
+                      label="Top wicket taker"
+                      performer={topPerformers.topWicketTaker}
+                      detail={(player) => `${player.wickets} wickets in ${player.matches} matches`}
+                    />
+                    <PerformerCard
+                      label="Best strike rate"
+                      performer={topPerformers.bestStrikeRate}
+                      detail={(player) =>
+                        `${formatDecimal(player.strikeRate)} SR over ${player.matches} matches`
+                      }
+                    />
+                  </div>
+                )}
+              </section>
+
+              <section className="bg-cric-card rounded-2xl shadow-sm border border-slate-100 p-5">
+                <h3 className="mb-4 text-xs font-black text-cric-muted uppercase tracking-widest">Best players</h3>
+                {topPerformers.bestPlayers.length === 0 ? (
+                  <p className="py-2 text-sm font-semibold text-cric-muted">No ranked players yet.</p>
+                ) : (
+                  <ol className="space-y-2">
+                    {topPerformers.bestPlayers.map((performer, index) => (
+                      <li
+                        key={performer._id || index}
+                        className="flex items-center gap-3 rounded-xl border border-cric-border bg-cric-bg px-4 py-3"
+                      >
+                        <span className="w-5 shrink-0 text-center text-sm font-black text-cric-muted">
+                          {index + 1}
+                        </span>
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-cric-accent font-black text-white">
+                          {performer.imageUrl ? (
+                            <SafeImage src={performer.imageUrl} alt="" className="h-full w-full object-cover" />
+                          ) : (
+                            (performer.name || '?').charAt(0).toUpperCase()
+                          )}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <Link
+                            to={`/players/${performer._id}`}
+                            className="block truncate font-bold text-cric-accent"
+                          >
+                            {performer.name || 'Player'}
+                          </Link>
+                          <p className="text-[11px] font-semibold text-cric-muted">
+                            {performer.runs} runs • {performer.wickets} wkts • {performer.matches} mat
+                          </p>
+                        </div>
+                      </li>
+                    ))}
+                  </ol>
+                )}
+              </section>
+            </div>
+
             {/* Organization Chain Card */}
             {orgChain.length > 0 && (
               <div className="bg-cric-card rounded-2xl shadow-sm border border-slate-100 p-6">
@@ -420,7 +554,7 @@ export default function TeamProfile() {
             )}
 
             {/* Gallery */}
-            {team.media && team.media.some(m => m.url) && (
+            {team.privacy?.media !== 'hidden' && team.media && team.media.some(m => m.url) && (
               <div className="bg-cric-card rounded-2xl shadow-sm border border-slate-100 p-6">
                 <h3 className="text-xs font-black text-cric-muted uppercase tracking-widest mb-4">Gallery</h3>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -435,7 +569,7 @@ export default function TeamProfile() {
             )}
 
             {/* Videos */}
-            {team.videos && team.videos.some(v => v.url) && (
+            {team.privacy?.media !== 'hidden' && team.videos && team.videos.some(v => v.url) && (
               <div className="bg-cric-card rounded-2xl shadow-sm border border-slate-100 p-6">
                 <h3 className="text-xs font-black text-cric-muted uppercase tracking-widest mb-4">Videos</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -600,28 +734,12 @@ export default function TeamProfile() {
         {activeTab === 'matches' && (
           <div className="bg-cric-card rounded-2xl shadow-sm border border-slate-100 p-8">
             <h2 className="text-2xl font-black text-cric-accent mb-6">Recent Matches</h2>
-            {(!recentMatches || recentMatches.length === 0) ? (
-              <p className="text-cric-muted text-center py-8">No matches recorded yet.</p>
+            {recentMatches.length === 0 ? (
+              <p className="text-cric-muted text-center py-8">No completed matches yet.</p>
             ) : (
               <div className="space-y-3">
                 {recentMatches.map(match => (
-                  <Link
-                    key={match._id}
-                    to={`/match/${match._id}`}
-                    className="flex items-center justify-between bg-cric-bg rounded-xl px-6 py-4 border border-cric-border hover:border-blue-300 transition-all"
-                  >
-                    <div>
-                      <p className="font-bold text-cric-text">{match.title}</p>
-                      <p className="text-xs text-cric-muted">
-                        {match.teams?.map(t => t.name).join(' vs ')} • {new Date(match.startAt).toLocaleDateString()}
-                      </p>
-                    </div>
-                    <span className={`px-3 py-1 rounded-full text-xs font-bold ${
-                      match.result?.winner?.toString() === id ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                    }`}>
-                      {match.result?.winner?.toString() === id ? 'Won' : 'Lost'}
-                    </span>
-                  </Link>
+                  <TeamMatchRow key={match._id} match={match} teamId={id} result />
                 ))}
               </div>
             )}
@@ -661,6 +779,128 @@ export default function TeamProfile() {
         )}
       </div>
     </div>
+  );
+}
+
+const EMPTY_PERFORMERS = {
+  topRunScorer: null,
+  topWicketTaker: null,
+  bestStrikeRate: null,
+  bestPlayers: [],
+};
+
+/** Date and time in the visitor's own locale; an undated fixture says so. */
+function formatMatchWhen(startAt) {
+  if (!startAt) return 'Date to be confirmed';
+  const when = new Date(startAt);
+  if (Number.isNaN(when.getTime())) return 'Date to be confirmed';
+  return when.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+}
+
+function formatDecimal(value) {
+  return Number.isFinite(Number(value)) ? Number(value).toFixed(2) : '0.00';
+}
+
+/** "154/6 (20)" for one team's innings in a match, or "" when it did not bat. */
+function scoreLineFor(match, teamId) {
+  if (!teamId) return '';
+  const innings = (match.innings || []).filter(
+    (entry) => String(idOf(entry.team)) === String(teamId),
+  );
+  if (innings.length === 0) return '';
+  return innings
+    .map((entry) => {
+      const overs = entry.overs ? ` (${entry.overs})` : '';
+      return `${entry.runs ?? 0}/${entry.wickets ?? 0}${overs}`;
+    })
+    .join(' & ');
+}
+
+/**
+ * One fixture card: opponent, when, where, both sides' scores, the result
+ * sentence and a W/L badge. Stacked for a 375px screen and unchanged on desktop.
+ */
+function TeamMatchRow({ match, teamId, live = false, result = false }) {
+  const teams = match.teams || [];
+  const opponents = teams.filter((entry) => String(idOf(entry)) !== String(teamId));
+  const opponentNames = opponents.map((entry) => entry?.name).filter(Boolean);
+  const title = match.title || teams.map((entry) => entry?.name).filter(Boolean).join(' vs ');
+  const ourScore = scoreLineFor(match, teamId);
+  const theirScore = scoreLineFor(match, opponents[0] ? idOf(opponents[0]) : null);
+  const winnerId = idOf(match.result?.winner);
+  const won = Boolean(winnerId) && String(winnerId) === String(teamId);
+  const lost = Boolean(winnerId) && !won;
+  const resultText = match.result?.description || match.resultText || '';
+  const meta = [
+    opponentNames.length ? `vs ${opponentNames.join(', ')}` : '',
+    match.venue || '',
+  ].filter(Boolean).join(' • ');
+
+  return (
+    <Link
+      to={`/match/${idOf(match)}`}
+      className="block rounded-xl border border-cric-border bg-cric-bg px-4 py-3 transition-all hover:border-cric-accent"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-cric-muted">
+            {live ? 'In progress' : formatMatchWhen(match.startAt)}
+          </p>
+          <p className="mt-1 truncate font-bold text-cric-text">{title}</p>
+          {meta ? <p className="truncate text-xs text-cric-muted">{meta}</p> : null}
+          {(ourScore || theirScore) && (
+            <p className="mt-1 text-xs font-bold text-cric-text">
+              {ourScore || '—'} <span className="font-semibold text-cric-muted">vs</span> {theirScore || '—'}
+            </p>
+          )}
+          {resultText ? <p className="mt-1 text-xs text-cric-muted">{resultText}</p> : null}
+        </div>
+        {live ? (
+          <span className="shrink-0 rounded-full bg-red-600 px-2 py-1 text-[10px] font-black uppercase tracking-wider text-white">
+            Live
+          </span>
+        ) : result ? (
+          <span
+            className={`shrink-0 rounded-full px-3 py-1 text-xs font-bold ${
+              won ? 'bg-green-100 text-green-800' : lost ? 'bg-red-100 text-red-800' : 'bg-slate-100 text-slate-700'
+            }`}
+          >
+            {won ? 'Won' : lost ? 'Lost' : 'No result'}
+          </span>
+        ) : null}
+      </div>
+    </Link>
+  );
+}
+
+/** A performer card: photo or initials, name, one key number, link to the player. */
+function PerformerCard({ label, performer, detail }) {
+  if (!performer || !performer._id) {
+    return (
+      <div className="rounded-xl border border-dashed border-cric-border bg-cric-bg px-4 py-5 text-center">
+        <p className="text-[10px] font-black uppercase tracking-widest text-cric-muted">{label}</p>
+        <p className="mt-2 text-xs font-semibold text-cric-muted">No data yet</p>
+      </div>
+    );
+  }
+  return (
+    <Link
+      to={`/players/${performer._id}`}
+      className="flex items-center gap-3 rounded-xl border border-cric-border bg-cric-bg px-4 py-3 transition-all hover:border-cric-accent"
+    >
+      <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-cric-accent font-black text-white">
+        {performer.imageUrl ? (
+          <SafeImage src={performer.imageUrl} alt="" className="h-full w-full object-cover" />
+        ) : (
+          (performer.name || '?').charAt(0).toUpperCase()
+        )}
+      </div>
+      <div className="min-w-0">
+        <p className="text-[10px] font-black uppercase tracking-widest text-cric-muted">{label}</p>
+        <p className="truncate font-bold text-cric-text">{performer.name || 'Player'}</p>
+        <p className="text-xs text-cric-muted">{detail(performer)}</p>
+      </div>
+    </Link>
   );
 }
 

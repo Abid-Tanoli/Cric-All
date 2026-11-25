@@ -629,6 +629,7 @@ export default function TeamForm({ editMode, currentTeam, onSave, onCancel }) {
                 ['contactInfo', 'Contact Info (phone, email, website)'],
                 ['socialLinks', 'Social Links'],
                 ['location', 'Location / Home Ground'],
+                ['media', 'Gallery & Videos'],
               ].map(([key, label]) => (
                 <div key={key}>
                   <label className="text-[10px] font-black uppercase text-cric-muted block mb-1">{label}</label>
