@@ -176,6 +176,21 @@ docker compose --profile local-mongo ps
 
 Wait for the backend to become healthy/ready before continuing.
 
+### 6.1 Organization image uploads
+
+Owners/managers/coaches/captains and content roles can now post player photos
+to `POST /api/organizations/:id/uploads/image`. The backend validates magic
+bytes, rejects animated or oversized-pixel files, rotates/resizes to 1600px,
+re-encodes to WebP (< 300 KB target) and writes a 400px thumbnail to the same
+`uploads_data` volume. Originals are never stored; filenames are content
+hashes, so `/uploads/...` is served with long immutable cache headers.
+
+Set `ORG_UPLOAD_QUOTA_MB` in `Backend/.env` (default `200` MiB per organization;
+`0`/invalid falls back to the default). Exceeding it returns HTTP 413. Deleting
+or replacing a photo removes its `OrgUpload` row and frees the bytes. Existing
+`CLOUDINARY_URL` / `S3_BUCKET` behaviour is unchanged — uploads still refuse to
+write when one of those is configured without an installed adapter.
+
 ## 7. Verify the live deployment
 
 ### Ports
