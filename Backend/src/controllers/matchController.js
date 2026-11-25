@@ -1,6 +1,7 @@
 import Match from "../models/Match.js";
 import Team from "../models/Team.js";
 import User from "../models/User.js";
+import Membership from "../models/Membership.js";
 import Player from "../models/Player.js";
 import mongoose from "mongoose";
 import Event from "../models/Event.js";
@@ -14,6 +15,7 @@ import {
   isDraftMatchDoc,
   PUBLIC_MATCH_FILTER,
 } from "../utils/publicProjection.js";
+import { PERMISSIONS, roleHasPermission } from "../permissions/orgPermissions.js";
 import { getPlatformSettings } from "../models/SystemSettings.js";
 import { recordAudit } from "../utils/audit.js";
 import { buildMatchInnings, ensureMatchInnings } from "../utils/matchInnings.js";
@@ -745,6 +747,36 @@ export const setMatchScorers = async (req, res) => {
       return res.status(400).json({ message: "One or more scorers do not exist" });
     }
 
+    // A club fixture may only be run by its own members. Platform admins keep
+    // their existing ability to assign anybody to a match with no tenant; an
+    // org-owned match uses the same tenant for the candidate list, whoever is
+    // calling. Permission checks use the role map, never a hand-written list.
+    if (match.organizationRef && unique.length) {
+      const memberships = await Membership.find({
+        organization: match.organizationRef,
+        user: { $in: unique },
+        status: "active",
+      }).select("user roles").lean();
+      const byUser = new Map(memberships.map((row) => [String(row.user), row]));
+
+      const outsiders = unique.filter((id) => !byUser.has(id));
+      if (outsiders.length) {
+        return res.status(422).json({
+          message: "Scorers must be active members of this organization.",
+          code: "MATCH_SCORER_NOT_MEMBER",
+        });
+      }
+      const unprivileged = unique.filter(
+        (id) => !roleHasPermission(byUser.get(id).roles || [], PERMISSIONS.SCORE_MATCH)
+      );
+      if (unprivileged.length) {
+        return res.status(422).json({
+          message: "Scorers must have the Score Match permission in this organization.",
+          code: "MATCH_SCORER_NO_SCORE_PERMISSION",
+        });
+      }
+    }
+
     match.assignedScorers = users.map((user) => user._id);
     await match.save({ validateModifiedOnly: true });
 
@@ -780,6 +812,29 @@ export const setMatchScorers = async (req, res) => {
       message: "Failed to assign scorers",
       error: error.message
     });
+  }
+};
+
+/**
+ * Read-only companion to the assignment route. The User app needs the current
+ * ids (with names for the checkbox labels) before it can pre-check a panel.
+ * The route is guarded with the same create_match rule as the PUT, so a
+ * score_handler cannot use it to discover who is assigned.
+ */
+export const getMatchScorers = async (req, res) => {
+  try {
+    const match = await Match.findById(req.params.id)
+      .select("assignedScorers")
+      .populate("assignedScorers", "name email");
+    if (!match) return res.status(404).json({ message: "Match not found" });
+
+    return res.status(200).json({
+      matchId: match._id,
+      assignedScorers: match.assignedScorers,
+    });
+  } catch (error) {
+    console.error("Error reading scorers:", error);
+    return res.status(400).json({ message: "Failed to read scorers", error: error.message });
   }
 };
 
