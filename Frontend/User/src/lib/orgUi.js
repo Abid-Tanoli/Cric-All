@@ -42,7 +42,7 @@ export const ORG_ROLE_LABELS = Object.freeze({
   coach: "Coach",
   captain: "Captain",
   vice_captain: "Vice Captain",
-  score_handler: "Score Handler",
+  score_handler: "Scorer",
   social_media_handler: "Social Media Handler",
   content_manager: "Content Manager",
   team_manager: "Team Manager",
@@ -101,6 +101,11 @@ export function grantableInviteRoles(grantable) {
 
 export const roleLabel = (role) => ORG_ROLE_LABELS[role] || role;
 export const roleLabels = (roles = []) => roles.map(roleLabel).join(", ") || "No role";
+
+// Role pickers say "Scorer (Score Handler)" so the invited role is unmistakable;
+// the code string sent to the API stays `score_handler`.
+export const rolePickerLabel = (role) =>
+  role === "score_handler" ? "Scorer (Score Handler)" : roleLabel(role);
 
 export const invitationStatusStyles = Object.freeze({
   pending: "bg-amber-100 text-amber-800 border-amber-300",

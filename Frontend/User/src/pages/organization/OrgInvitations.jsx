@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useState } from "react";
 import { createOrgInvitation, listOrgInvitations, revokeOrgInvitation } from "../../services/organizationApi";
 import {
   ORG_ROLE_DESCRIPTIONS,
-  ORG_ROLE_LABELS,
   PERMISSIONS,
   can,
   daysUntil,
@@ -10,6 +9,7 @@ import {
   grantableRoles,
   invitationStatusStyles,
   roleLabel,
+  rolePickerLabel,
 } from "../../lib/orgUi";
 import { Banner, Field, card, cardSubtle, dangerButton, eyebrow, input, primaryButton, sectionTitle } from "./orgStyles";
 
@@ -154,7 +154,7 @@ export default function OrgInvitations({ orgId, access }) {
         </div>
 
         <div className="mt-4">
-          <Field label="Roles they will get" hint={roles.map(roleLabel).join(", ")}>
+          <Field label="Roles they will get" hint={roles.map(rolePickerLabel).join(", ")}>
             <div className="flex flex-wrap gap-2">
               {grantable.map((role) => (
                 <button
@@ -168,7 +168,7 @@ export default function OrgInvitations({ orgId, access }) {
                       : "border-cric-border bg-cric-bg text-cric-muted hover:text-cric-text"
                   }`}
                 >
-                  {ORG_ROLE_LABELS[role]}
+                  {rolePickerLabel(role)}
                 </button>
               ))}
             </div>

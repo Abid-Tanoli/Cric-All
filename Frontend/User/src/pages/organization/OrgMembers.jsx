@@ -16,6 +16,7 @@ import {
   isOwner,
   roleLabel,
   roleLabels,
+  rolePickerLabel,
 } from "../../lib/orgUi";
 import { Banner, Field, card, cardSubtle, dangerButton, eyebrow, input, primaryButton, sectionTitle } from "./orgStyles";
 
@@ -75,7 +76,7 @@ function RoleEditor({ member, grantable, canManage, isSelf, onSave, busy }) {
                 : "border-cric-border bg-cric-bg text-cric-muted hover:text-cric-text"
             }`}
           >
-            {ORG_ROLE_LABELS[role]}
+            {roleLabel(role)}
           </button>
         ))}
       </div>
@@ -408,7 +409,7 @@ export default function OrgMembers({ orgId, access, currentUserId, onChanged }) 
                 required
               />
             </Field>
-            <Field label="Roles" hint={inviteRoles.map(roleLabel).join(", ")}>
+            <Field label="Roles" hint={inviteRoles.map(rolePickerLabel).join(", ")}>
               <div className="flex flex-wrap gap-2">
                 {grantable
                   .filter((role) => role !== "owner")
@@ -428,7 +429,7 @@ export default function OrgMembers({ orgId, access, currentUserId, onChanged }) 
                           : "border-cric-border bg-cric-bg text-cric-muted hover:text-cric-text"
                       }`}
                     >
-                      {ORG_ROLE_LABELS[role]}
+                      {rolePickerLabel(role)}
                     </button>
                   ))}
               </div>

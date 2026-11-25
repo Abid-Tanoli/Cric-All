@@ -287,3 +287,115 @@ test("the officials endpoint wires a scorer to scoring access and never fakes an
   assert.equal(field.name, handlerA.name);
   assert.notEqual(field.name, String(handlerA._id));
 });
+
+test("only active scoring members of this organization can be assigned", async () => {
+  const { owner, handlerA, handlerB, org, match } = await club();
+  const outsider = await makeUser(); // exists, but has no membership anywhere
+  const viewer = await makeUser();
+  await addMember(org, viewer, ["player"]);
+
+  const asOutsider = await call(
+    "PUT",
+    `/matches/${match._id}/scorers`,
+    generateToken(owner),
+    { scorerIds: [String(outsider._id)] }
+  );
+  assert.equal(asOutsider.status, 422, JSON.stringify(asOutsider.body));
+  assert.equal(asOutsider.body.code, "MATCH_SCORER_NOT_MEMBER");
+
+  const asViewer = await call(
+    "PUT",
+    `/matches/${match._id}/scorers`,
+    generateToken(owner),
+    { scorerIds: [String(viewer._id)] }
+  );
+  assert.equal(asViewer.status, 422, JSON.stringify(asViewer.body));
+  assert.equal(asViewer.body.code, "MATCH_SCORER_NO_SCORE_PERMISSION");
+
+  // A rejected batch leaves the stored assignment untouched.
+  const unchanged = await Match.findById(match._id).lean();
+  assert.deepEqual(unchanged.assignedScorers, []);
+
+  const valid = await call(
+    "PUT",
+    `/matches/${match._id}/scorers`,
+    generateToken(owner),
+    { scorerIds: [String(handlerA._id), String(handlerB._id)] }
+  );
+  assert.equal(valid.status, 200, JSON.stringify(valid.body));
+  assert.equal(valid.body.assignedScorers.length, 2);
+});
+
+test("a manager may assign scorers, but not members of another organization", async () => {
+  const { org, match, handlerA } = await club();
+  const manager = await makeUser();
+  await addMember(org, manager, ["manager"]);
+
+  const otherOwner = await makeUser();
+  const otherOrg = await makeOrg(otherOwner, `OPENCODE_TEST_Other Club ${counter}`);
+  const otherScorer = await makeUser();
+  await addMember(otherOrg, otherScorer, ["score_handler"]);
+
+  const crossTenant = await call(
+    "PUT",
+    `/matches/${match._id}/scorers`,
+    generateToken(manager),
+    { scorerIds: [String(otherScorer._id)] }
+  );
+  assert.equal(crossTenant.status, 422, JSON.stringify(crossTenant.body));
+  assert.equal(crossTenant.body.code, "MATCH_SCORER_NOT_MEMBER");
+
+  const ownMember = await call(
+    "PUT",
+    `/matches/${match._id}/scorers`,
+    generateToken(manager),
+    { scorerIds: [String(handlerA._id)] }
+  );
+  assert.equal(ownMember.status, 200, JSON.stringify(ownMember.body));
+});
+
+test("a platform admin can still assign anybody to a match with no organization", async () => {
+  const admin = await Admin.create({
+    name: "Platform Admin",
+    email: `platform-nonorg-${counter}@openctest.dev`,
+    password: "password-123",
+    role: "admin",
+  });
+  const outsider = await makeUser();
+  const teams = [
+    await Team.create({ name: `OPENCODE_TEST Admin XI A ${counter}` }),
+    await Team.create({ name: `OPENCODE_TEST Admin XI B ${counter}` }),
+  ];
+  const match = await Match.create({
+    title: "OPENCODE_TEST Non-org match",
+    matchType: "T20",
+    teams,
+    status: "live",
+  });
+
+  const res = await call(
+    "PUT",
+    `/matches/${match._id}/scorers`,
+    generateToken(admin),
+    { scorerIds: [String(outsider._id)] }
+  );
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.equal(String(res.body.assignedScorers[0]._id), String(outsider._id));
+});
+
+test("owners can read the current assignment with names; scorers cannot", async () => {
+  const { owner, handlerA, match } = await club();
+  await call("PUT", `/matches/${match._id}/scorers`, generateToken(owner), {
+    scorerIds: [String(handlerA._id)],
+  });
+
+  const read = await call("GET", `/matches/${match._id}/scorers`, generateToken(owner));
+  assert.equal(read.status, 200, JSON.stringify(read.body));
+  assert.equal(read.body.assignedScorers.length, 1);
+  assert.equal(String(read.body.assignedScorers[0]._id), String(handlerA._id));
+  assert.equal(read.body.assignedScorers[0].name, handlerA.name);
+
+  const denied = await call("GET", `/matches/${match._id}/scorers`, generateToken(handlerA));
+  assert.equal(denied.status, 403, JSON.stringify(denied.body));
+  assert.equal(denied.body.requiredPermission, "create_match");
+});

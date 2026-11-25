@@ -10,6 +10,7 @@ import {
   deleteMatch,
   setMOM,
   setMatchScorers,
+  getMatchScorers,
   getMatchStats,
   getMatchLiveStats,
   getMatchSummary,
@@ -175,6 +176,7 @@ router.put("/:id/mom", ...scoring("id"), setMOM);
 // action, so it uses the same gate as the squad routes (create_match: platform
 // admins plus the club's owner/admin/manager). The consequence of the
 // assignment is enforced by the score_match guard.
+router.get("/:id/scorers", ...squad("id"), getMatchScorers);
 router.put("/:id/scorers", ...squad("id"), setMatchScorers);
 router.put("/:matchId/playing-xi", ...squad("matchId"), setPlayingXI);
 router.put("/:matchId/openers", ...squad("matchId"), setOpeners);

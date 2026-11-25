@@ -13,6 +13,17 @@ import { PERMISSIONS, can } from "../../lib/orgUi";
 
 const idOf = (value) => String(value?._id || value || "");
 
+// The signed-in account is cached at login. When it is missing we let the
+// server be the authority rather than guessing and blocking a valid scorer.
+const signedInUserId = () => {
+  try {
+    const user = JSON.parse(localStorage.getItem("bq_user") || "null");
+    return idOf(user?._id || user?.id);
+  } catch {
+    return "";
+  }
+};
+
 function AccessMessage({ title, children, orgId }) {
   return (
     <div className="min-h-[65vh] bg-cric-bg px-4 py-10 text-cric-text">
@@ -38,6 +49,7 @@ export default function OrgMatchScoring() {
   const [access, setAccess] = useState(null);
   const [orgMatches, setOrgMatches] = useState([]);
   const [matchDetail, setMatchDetail] = useState(null);
+  const [assignmentBlocked, setAssignmentBlocked] = useState(false);
   const [toasts, setToasts] = useState([]);
   const [overlayCopied, setOverlayCopied] = useState(false);
 
@@ -75,6 +87,7 @@ export default function OrgMatchScoring() {
     const load = async () => {
       setLoading(true);
       setError("");
+      setAssignmentBlocked(false);
       try {
         const organizationAccess = await getMyOrgAccess(orgId);
         if (!active) return;
@@ -101,7 +114,23 @@ export default function OrgMatchScoring() {
           setLoading(false);
           return;
         }
+
         if (!active) return;
+
+        // Mirror the server's SCORE_MATCH rule before opening the screen: an
+        // assigned fixture is not open to every score_handler in the club.
+        const assigned = (detail.assignedScorers || []).map(idOf);
+        const roles = organizationAccess?.roles || [];
+        const supervisory = Boolean(organizationAccess?.isPlatformAdmin) ||
+          roles.some((role) => ["owner", "admin", "manager"].includes(role));
+        const userId = signedInUserId();
+        if (assigned.length && userId && !supervisory && !assigned.includes(userId)) {
+          setAccess(organizationAccess);
+          setOrgMatches(matches);
+          setAssignmentBlocked(true);
+          setLoading(false);
+          return;
+        }
         setAccess(organizationAccess);
         setOrgMatches(matches);
         setMatchDetail(detail);
@@ -171,6 +200,13 @@ export default function OrgMatchScoring() {
     return (
       <AccessMessage orgId={orgId} title="No scoring access">
         You need the organization’s Score Match permission to score this fixture. Ask an organization owner or admin to grant access.
+      </AccessMessage>
+    );
+  }
+  if (assignmentBlocked) {
+    return (
+      <AccessMessage orgId={orgId} title="Not assigned as scorer">
+        You are not assigned as scorer for this match, ask the club owner
       </AccessMessage>
     );
   }
