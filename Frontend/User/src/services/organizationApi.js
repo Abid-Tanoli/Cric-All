@@ -119,6 +119,21 @@ export const addOrgTeamNewPlayers = (orgId, teamId, newPlayers) =>
 
 // The "Add existing player" picker: free agents this account created plus players
 // on another team of the same organization, searchable by name or phone.
+// Organization-owned photo upload. The server compresses to WebP, writes a
+// 400px thumbnail and returns absolute URLs; callers store the /uploads path.
+export const uploadOrgImage = (orgId, file) => {
+  const form = new FormData();
+  form.append("image", file);
+  return unwrap(
+    api.post(`/organizations/${orgId}/uploads/image`, form, {
+      headers: { "Content-Type": "multipart/form-data" },
+    })
+  );
+};
+
+export const deleteOrgImage = (orgId, filename) =>
+  unwrap(api.delete(`/organizations/${orgId}/uploads/image/${encodeURIComponent(filename)}`));
+
 export const searchOrgTeamAvailablePlayers = (orgId, teamId, search = "") =>
   unwrap(
     api.get(`/organizations/${orgId}/teams/${teamId}/players/available`, {

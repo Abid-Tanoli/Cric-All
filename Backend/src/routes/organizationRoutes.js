@@ -118,6 +118,11 @@ import {
 } from '../controllers/membershipController.js';
 import issueReportRateLimit from '../middleware/issueReportRateLimit.js';
 import { sponsorLogoUpload } from '../middleware/sponsorUpload.js';
+import { imageUploadSingle } from '../middleware/imageUpload.js';
+import {
+  deleteOrganizationImage,
+  uploadOrganizationImage,
+} from '../controllers/orgUploadController.js';
 import {
   listOrgSponsors,
   createSponsor,
@@ -144,6 +149,9 @@ const router = express.Router();
 // Self-service: verified platform admins OR verified User accounts. Which one
 // may act is decided per-organization by requireOrgPermission.
 const manage = [protect, requireVerifiedEmail];
+// Owner/manager/coach/captain (manage_players) and content roles
+// (publish_content) may attach photos; player/staff may not. Per org + user.
+const orgImageUploadRateLimit = rateLimiter({ windowMs: 60_000, max: 10 });
 
 // NOTE: /my must be registered before /:id, otherwise "my" matches the
 // ObjectId parameter route and gets rejected by validateObjectId.
@@ -294,6 +302,19 @@ router.put(
   validate(orgTeamPlayerRoleSchema),
   updateOrgTeamPlayerRole
 );
+
+// --- organization-owned photos (content-hashed WebP + thumbnail) -----------
+// Same tenancy model as the squad routes: req.org is resolved by the guard,
+// and the controller never trusts an organization id from the body. DELETE is
+// offered so replacing/removing a photo can return its quota bytes.
+const orgImageWrite = [
+  ...manage,
+  validateObjectId('id'),
+  requireAnyOrgPermission(PERMISSIONS.MANAGE_PLAYERS, PERMISSIONS.PUBLISH_CONTENT),
+  orgImageUploadRateLimit,
+];
+router.post('/:id/uploads/image', ...orgImageWrite, imageUploadSingle('image'), uploadOrganizationImage);
+router.delete('/:id/uploads/image/:filename', ...orgImageWrite, deleteOrganizationImage);
 
 // --- matches and events this organization runs (Phase 6) --------------------
 // Reading needs membership; scheduling needs create_match. Writing a ball or a

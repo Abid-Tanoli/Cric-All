@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import LocationSelect from "../../../Shared/components/LocationSelect.jsx";
+import ImageUploadField from "./ImageUploadField.jsx";
 import {
   addOrgTeamNewPlayers,
   addOrgTeamPlayer,
@@ -306,6 +307,14 @@ export default function SquadManager({ orgId, teamId, onChanged, refreshSignal =
               </select>
             </div>
           </div>
+          <ImageUploadField
+            orgId={orgId}
+            id="squad-player-photo"
+            label="Player photo"
+            value={form.imageUrl}
+            onChange={(imageUrl) => setForm((prev) => ({ ...prev, imageUrl }))}
+            disabled={busy}
+          />
           <div className="rounded-xl border border-cric-border bg-cric-bg p-3">
             <p className={labelClass}>Location</p>
             <LocationSelect

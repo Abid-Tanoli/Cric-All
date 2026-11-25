@@ -20,6 +20,7 @@ export const EMPTY_SQUAD_PLAYER = {
   battingStyle: "",
   bowlingStyle: "",
   jerseyNumber: "",
+  imageUrl: "",
   locationRefs: { ...EMPTY_LOCATION_REFS },
   locationLabels: { ...EMPTY_LOCATION_LABELS },
 };
@@ -42,6 +43,11 @@ export function buildNewPlayerPayload(form = {}) {
   if (form.playingRole) payload.playingRole = form.playingRole;
   if (form.battingStyle) payload.battingStyle = form.battingStyle;
   if (form.bowlingStyle) payload.bowlingStyle = form.bowlingStyle;
+  // The upload field returns a local /uploads path; anything else is dropped
+  // client-side as well as rejected by the server's strict schema.
+  if (typeof form.imageUrl === "string" && /^\/uploads\/[A-Za-z0-9._-]+$/.test(form.imageUrl)) {
+    payload.imageUrl = form.imageUrl;
+  }
 
   const jersey = String(form.jerseyNumber ?? "").trim();
   if (jersey !== "") {

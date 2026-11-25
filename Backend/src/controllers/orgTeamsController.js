@@ -231,6 +231,7 @@ function squadPlayerFields(input, team, userId) {
   if (input.battingStyle) payload.battingStyle = input.battingStyle;
   if (input.bowlingStyle) payload.bowlingStyle = input.bowlingStyle;
   if (input.jerseyNumber != null) payload.jerseyNumber = input.jerseyNumber;
+  if (input.imageUrl) payload.imageUrl = input.imageUrl;
   if (input.locationRefs) payload.locationRefs = input.locationRefs;
   if (input.locationLabels) payload.locationLabels = input.locationLabels;
 

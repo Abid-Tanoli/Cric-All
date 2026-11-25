@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { locationLabels, locationRefs } from "./locationSchemas.js";
 import { BATTING_STYLES, BOWLING_STYLES, PLAYING_ROLES } from "./playerValidators.js";
+import { isUploadedFilename } from "../utils/photoStore.js";
 
 // Phase 4: teams created and maintained by an organization.
 //
@@ -135,9 +136,20 @@ export const TEAM_PLAYER_ROLES = PLAYING_ROLES;
 export const TEAM_BATTING_STYLES = BATTING_STYLES;
 export const TEAM_BOWLING_STYLES = BOWLING_STYLES;
 
+// A photo may only point at a file this server wrote. Absolute URLs (even
+// `https://evil.test/uploads/x.webp`) and traversal are refused here, not just
+// in the browser, so a crafted POST cannot plant an off-site image URL.
+const ownUploadUrl = z
+  .string()
+  .trim()
+  .max(600)
+  .regex(/^\/uploads\/[A-Za-z0-9._-]+$/, "Photo must be a local /uploads/ URL")
+  .refine((value) => isUploadedFilename(value.slice("/uploads/".length)), "Photo must be a local /uploads/ URL");
+
 const orgTeamNewPlayerSchema = z
   .object({
     name: z.string().trim().min(1, "Player name is required").max(150),
+    imageUrl: ownUploadUrl.optional(),
     role: z.string().trim().max(120).optional(),
     playingRole: z.enum(PLAYING_ROLES).optional(),
     battingStyle: z.enum(BATTING_STYLES).optional(),

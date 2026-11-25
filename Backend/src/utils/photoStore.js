@@ -59,12 +59,62 @@ export async function storeImage(buffer, mimetype, originalName = "") {
   return { url: `/uploads/${filename}`, filename };
 }
 
-// Matches storeImage's own scheme (`<13-digit epoch>-<12 hex>-<base>.<ext>`).
+/**
+ * Writes the output of the shared image pipeline. The name is derived from the
+ * encoded bytes, so a given image always has one immutable URL and a re-upload
+ * of the same content is a no-op on disk. The original upload is never stored.
+ */
+export async function storeProcessedImage(main, thumbnail) {
+  if (!Buffer.isBuffer(main) || !Buffer.isBuffer(thumbnail) || !main.length || !thumbnail.length) {
+    const error = new Error("Processed image is empty");
+    error.status = 400;
+    throw error;
+  }
+  if (hasCloudStorage()) {
+    throw new Error(
+      "Cloud storage is configured but the upload adapter is not installed. " +
+      "Install the required SDK (e.g. cloudinary) or remove CLOUDINARY_URL/S3_BUCKET to use local storage."
+    );
+  }
+
+  const hash = crypto.createHash("sha256").update(main).digest("hex");
+  const filename = `${hash}.webp`;
+  const thumbnailFilename = `${hash}-thumb.webp`;
+  ensureUploadsDir();
+  await Promise.all([
+    fs.promises.writeFile(path.join(uploadsDir, filename), main),
+    fs.promises.writeFile(path.join(uploadsDir, thumbnailFilename), thumbnail),
+  ]);
+  return {
+    url: `/uploads/${filename}`,
+    filename,
+    thumbnailUrl: `/uploads/${thumbnailFilename}`,
+    thumbnailFilename,
+    bytes: main.length + thumbnail.length,
+  };
+}
+
+// Matches both schemes this server writes:
+//   - legacy storeImage: `<13-digit epoch>-<12 hex>-<base>.<ext>`
+//   - processed uploads: `<sha256-of-output-bytes>.webp` (+ `-thumb`)
 // Only files this server wrote are ever eligible for deletion.
-const SAFE_UPLOAD_FILE_NAME = /^\d{13}-[0-9a-f]{12}-[a-zA-Z0-9_-]{0,40}\.(jpg|png|webp|svg)$/;
+const LEGACY_UPLOAD_FILE_NAME = /^\d{13}-[0-9a-f]{12}-[a-zA-Z0-9_-]{0,40}\.(jpg|png|webp|svg)$/;
+const CONTENT_HASH_FILE_NAME = /^[0-9a-f]{64}(?:-thumb)?\.webp$/;
 
 export function isUploadedFilename(name = "") {
-  return SAFE_UPLOAD_FILE_NAME.test(name);
+  return LEGACY_UPLOAD_FILE_NAME.test(name) || CONTENT_HASH_FILE_NAME.test(name);
+}
+
+/** Cache policy for stored filenames; null for files we did not write. */
+export function cacheControlForUpload(filename = "") {
+  return isUploadedFilename(filename) ? "public, max-age=31536000, immutable" : null;
+}
+
+/** Companion 400px thumbnail name for a processed upload (if it has one). */
+export function thumbnailNameFor(filename = "") {
+  return CONTENT_HASH_FILE_NAME.test(filename) && !filename.includes("-thumb")
+    ? filename.replace(/\.webp$/, "-thumb.webp")
+    : null;
 }
 
 // Extracts the bare filename from a stored URL (absolute or /uploads-relative)
@@ -92,6 +142,16 @@ export async function deleteStoredFile(url) {
   if (!target.startsWith(uploadsDir + path.sep)) return false;
   try {
     await fs.promises.unlink(target);
+    // Processed images have a companion thumbnail; remove it with the main file
+    // so a deleted photo also frees its quota bytes.
+    const thumbName = thumbnailNameFor(filename);
+    if (thumbName) {
+      await fs.promises
+        .unlink(path.normalize(path.join(uploadsDir, thumbName)))
+        .catch((error) => {
+          if (error.code !== "ENOENT") throw error;
+        });
+    }
     return true;
   } catch (error) {
     if (error.code === "ENOENT") return false;
