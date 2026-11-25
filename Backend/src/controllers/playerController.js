@@ -2,7 +2,8 @@
 import Team from "../models/Team.js";
 import Match from "../models/Match.js";
 import { emitToAll } from "../socket/socket.js";
-import { deleteStoredFile, deleteStoredFiles } from "../utils/photoStore.js";
+import { deleteStoredFile } from "../utils/photoStore.js";
+import { releaseOrgUpload, releaseOrgUploads } from "../services/orgUploadService.js";
 import { recordAudit } from "../utils/audit.js";
 import * as playerService from "../services/playerService.js";
 import { applyPlayerFieldPolicy, resolvePlayerWriteAccess } from "../middleware/playerAccess.js";
@@ -325,8 +326,10 @@ export const updatePlayer = async (req, res) => {
       { new: true }
     ).populate("team", "name");
 
-    // Remove the previous portrait once it is replaced or cleared.
+    // Remove the previous portrait once it is replaced or cleared. Org-owned
+    // uploads also lose their OrgUpload row, which returns the quota bytes.
     if (oldImageUrl && payload.imageUrl !== undefined && oldImageUrl !== payload.imageUrl) {
+      await releaseOrgUpload(oldImageUrl, access.organization).catch(() => {});
       await deleteStoredFile(oldImageUrl).catch(() => {});
     }
 
@@ -387,6 +390,7 @@ export const deletePlayer = async (req, res) => {
     }
     await Player.findByIdAndDelete(req.params.id);
     if (player.imageUrl) {
+      await releaseOrgUpload(player.imageUrl, access.organization).catch(() => {});
       await deleteStoredFile(player.imageUrl).catch(() => {});
     }
 
@@ -438,7 +442,8 @@ export const bulkDeletePlayers = async (req, res) => {
     const result = await Player.deleteMany({ _id: { $in: playerIds } });
     const removedImageUrls = players.map((p) => p.imageUrl).filter(Boolean);
     if (removedImageUrls.length) {
-      await deleteStoredFiles(removedImageUrls).catch(() => {});
+      // Includes the OrgUpload ledger row, which returns the org's quota bytes.
+      await releaseOrgUploads(removedImageUrls).catch(() => {});
     }
 
     emitToAll("players:updated");
