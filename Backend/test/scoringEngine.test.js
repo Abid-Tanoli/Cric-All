@@ -461,3 +461,44 @@ test("a striker dismissed on the last ball of an over leaves the non-striker on 
   assert.equal(doc.innings[0].onStrikeBatsman, "batter-2");
   assert.equal(doc.innings[0].currentBatsman2, "batter-3");
 });
+
+// The DLS target code was removed: nothing called it and its resource table was
+// wrong. What stored documents can already hold must keep loading.
+test("the engine offers no DLS target calculation", () => {
+  const engine = createEngine();
+  assert.equal(engine.calculateDLSTarget, undefined);
+  assert.equal(engine._dlsResourceTable, undefined);
+});
+
+test("dlsActive is still a valid match state", () => {
+  assert.ok(ScoringEngine.getMatchStates().includes("dlsActive"));
+  const engine = createEngine();
+  assert.deepEqual(engine.setMatchState("dlsActive"), { matchState: "dlsActive" });
+  assert.equal(engine.match.matchState, "dlsActive");
+});
+
+test("a stored match with DLS fields still loads, shows them and can be scored", () => {
+  const engine = createEngine();
+  const [first, second] = engine.match.innings;
+  const stored = {
+    ...engine.match,
+    matchState: "dlsActive",
+    currentInnings: 1,
+    innings: [
+      { ...first, runs: 150, status: "completed" },
+      { ...second, target: 121, dlsTarget: 121, status: "live" },
+    ],
+  };
+
+  const reloaded = new ScoringEngine(JSON.parse(JSON.stringify(stored)));
+  const board = reloaded.generateScoreboard();
+  assert.equal(board.matchState, "dlsActive");
+  assert.equal(board.innings[1].target, 121);
+  assert.equal(board.innings[1].dlsTarget, 121);
+  assert.equal(board.innings[0].dlsTarget, null);
+
+  const result = reloaded.processDelivery(delivery({ inningsIndex: 1, runs: 4 }));
+  assert.equal(result.innings.runs, 4);
+  assert.equal(result.innings.target, 121, "the stored target is left alone");
+  assert.equal(result.innings.dlsTarget, 121);
+});
