@@ -62,3 +62,10 @@ test("updateOrganizationSchema accepts the same location blocks from OrgSettings
   assert.deepEqual(result.data.locationRefs, payload.locationRefs);
   assert.deepEqual(result.data.locationLabels, payload.locationLabels);
 });
+
+test("updateOrganizationSchema never adds a field the caller did not send", () => {
+  assert.deepEqual(updateOrganizationSchema.parse({}), {});
+  assert.deepEqual(updateOrganizationSchema.parse({ isPublic: false }), { isPublic: false });
+  assert.deepEqual(updateOrganizationSchema.parse({ isActive: false }), { isActive: false });
+  assert.equal(updateOrganizationSchema.safeParse({ owner: "x" }).success, false);
+});

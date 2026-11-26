@@ -223,7 +223,7 @@ router.post(
 
 router.get('/:id', optionalProtect, validateObjectId('id'), getOrganization);
 router.get('/:id/children', optionalProtect, validateObjectId('id'), getOrganizationChildren);
-router.get('/:id/chain', validateObjectId('id'), getOrganizationChain);
+router.get('/:id/chain', optionalProtect, validateObjectId('id'), getOrganizationChain);
 // Round 5: public by design (organization profile pages read it), but the teams
 // it returns are sanitized, and the response shape depends on whether the caller
 // manages the owning organization. `optionalProtect` identifies them when it can

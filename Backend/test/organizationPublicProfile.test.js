@@ -26,13 +26,19 @@ import Membership from "../src/models/Membership.js";
 import AuditLog from "../src/models/AuditLog.js";
 import TeamOrganization from "../src/models/TeamOrganization.js";
 import {
+  getOrganizationChain,
+  getOrganizationChildren,
+  getOrganizationTree,
   getPublicOrganizationBySlug,
+  getRootOrganizations,
   updateOrganization,
 } from "../src/controllers/organizationController.js";
 import {
   generateOrgSlug,
   RESERVED_ORG_SLUGS,
 } from "../src/services/membershipService.js";
+import validate from "../src/middleware/validate.js";
+import { updateOrganizationSchema } from "../src/validators/orgValidators.js";
 import { backfillOrgSlugs } from "../src/scripts/backfillOrgSlugs.js";
 
 let mongod;
@@ -370,6 +376,87 @@ test("the owner can switch the public page off and the change is audited", async
 
   // And the public page is now a 404.
   assert.equal((await readClub("toggle-club")).statusCode, 404);
+});
+
+test("the visibility toggle changes nothing else on the stored club", async () => {
+  const owner = await makeUser();
+  const org = await makeOrg({
+    slug: "full-club",
+    orgType: "school",
+    type: "school",
+    description: "Our story",
+    logoUrl: "https://img.example/logo.png",
+    foundedYear: 1998,
+    socialLinks: { instagram: "https://instagram.com/full" },
+    privacy: { contactInfo: "hidden", socialLinks: "hidden", location: "hidden" },
+    typeDetails: { institutionName: "Full School" },
+  });
+  await Membership.create({ organization: org._id, user: owner._id, roles: ["owner"] });
+  const before = await TeamOrganization.findById(org._id).lean();
+
+  // Through the real request validator: the wipe happened there, so calling the
+  // controller directly could never catch it.
+  const req = mockReq({
+    user: owner,
+    principalType: "user",
+    params: { id: String(org._id) },
+    org,
+    body: { isPublic: false },
+  });
+  const res = mockRes();
+  validate(updateOrganizationSchema)(req, res, () => {});
+  await updateOrganization(req, res);
+  assert.equal(res.statusCode, 200, JSON.stringify(res.body));
+
+  const { updatedAt: _a, isPublic: beforePublic, ...kept } = before;
+  const { updatedAt: _b, isPublic: afterPublic, ...now } = await TeamOrganization.findById(org._id).lean();
+  assert.equal(beforePublic, true);
+  assert.equal(afterPublic, false);
+  assert.deepEqual(now, kept);
+});
+
+test("the anonymous hierarchy reads expose no private organization fields", async () => {
+  const secret = {
+    contact: { phone: "03001112223", email: "secret@openctest.dev" },
+    typeDetails: { registrationNumber: "REG-SECRET" },
+    verificationNote: "NOTE-SECRET",
+    orgType: "registered_club",
+  };
+  const parent = await makeOrg({ slug: "parent-club", ...secret });
+  const child = await makeOrg({ slug: "child-club", parent: parent._id, ...secret });
+  await makeTeam(child, { email: "team-secret@openctest.dev", privacy: { contactInfo: "hidden" } });
+
+  for (const [handler, id] of [
+    [getRootOrganizations, parent._id],
+    [getOrganizationChildren, parent._id],
+    [getOrganizationChain, child._id],
+    [getOrganizationTree, parent._id],
+  ]) {
+    const res = mockRes();
+    await handler(mockReq({ params: { id: String(id) } }), res);
+    const text = JSON.stringify(res.body);
+    assert.equal(res.statusCode, 200, text);
+    assert.match(text, /Crescent Club/, handler.name);
+    assert.doesNotMatch(text, /03001112223|secret@openctest|REG-SECRET|NOTE-SECRET/, handler.name);
+  }
+
+  const admin = mockRes();
+  await getOrganizationChain(
+    mockReq({ params: { id: String(child._id) }, user: { _id: parent._id }, principalType: "admin" }),
+    admin
+  );
+  assert.match(JSON.stringify(admin.body), /REG-SECRET/);
+});
+
+test("a match on the field is listed as live, not upcoming", async () => {
+  const org = await makeOrg({ slug: "live-club" });
+  const team = await makeTeam(org, { name: "Live XI" });
+  const rival = await makeTeam(null, { name: "Live Rivals" });
+  const live = await makeMatch(team, rival, { status: "live" });
+
+  const res = await readClub("live-club");
+  assert.deepEqual(res.body.liveMatches.map((match) => String(match._id)), [String(live._id)]);
+  assert.deepEqual(res.body.upcomingMatches, []);
 });
 
 test("renaming a club keeps its existing public slug", async () => {
