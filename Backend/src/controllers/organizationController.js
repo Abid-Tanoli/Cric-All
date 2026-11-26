@@ -13,6 +13,7 @@ import { recordAudit } from "../utils/audit.js";
 import { buildLocationFilterClauses } from "../services/locationService.js";
 import { getTeamPlayerRankings } from "../services/rankingService.js";
 import {
+  LIVE_MATCH_STATUSES,
   RECENT_MATCH_LIMIT,
   UPCOMING_MATCH_LIMIT,
   UPCOMING_MATCH_STATUSES,
@@ -855,6 +856,7 @@ export const getPublicOrganizationBySlug = async (req, res) => {
       .lean();
 
     const teamIds = teams.map((team) => team._id);
+    let liveMatches = [];
     let upcomingMatches = [];
     let recentResults = [];
     let topPerformers = buildTopPerformers([]);
@@ -870,7 +872,7 @@ export const getPublicOrganizationBySlug = async (req, res) => {
           .lean();
 
       const upcomingStatus = { status: { $in: UPCOMING_MATCH_STATUSES } };
-      const [recent, datedUpcoming, undatedUpcoming, performers] = await Promise.all([
+      const [recent, datedUpcoming, undatedUpcoming, live, performers] = await Promise.all([
         findCards({ status: "completed" }, { startAt: -1 }, RECENT_MATCH_LIMIT),
         findCards(
           { ...upcomingStatus, startAt: { $ne: null } },
@@ -878,9 +880,11 @@ export const getPublicOrganizationBySlug = async (req, res) => {
           UPCOMING_MATCH_LIMIT
         ),
         findCards({ ...upcomingStatus, startAt: null }, { startAt: 1 }, UPCOMING_MATCH_LIMIT),
+        findCards({ status: { $in: LIVE_MATCH_STATUSES } }, { startAt: 1 }, UPCOMING_MATCH_LIMIT),
         buildClubTopPerformers(teamIds),
       ]);
 
+      liveMatches = live;
       recentResults = recent;
       upcomingMatches = [...datedUpcoming, ...undatedUpcoming].slice(0, UPCOMING_MATCH_LIMIT);
       topPerformers = performers;
@@ -892,6 +896,7 @@ export const getPublicOrganizationBySlug = async (req, res) => {
         { canViewPrivate: false }
       ),
       teams: sanitizeTeamsPublic(teams, { canViewPrivate: false }),
+      liveMatches,
       upcomingMatches,
       recentResults,
       topPerformers,
@@ -900,6 +905,17 @@ export const getPublicOrganizationBySlug = async (req, res) => {
     res.status(500).json({ message: "Failed to fetch club", error: error.message });
   }
 };
+
+/**
+ * The anonymous hierarchy reads (roots, children, chain) used to return whole
+ * documents: contact details, registration numbers and review notes. Only the
+ * supervisory Admin app gets those.
+ */
+function organizationsForViewer(orgs, viewer) {
+  return viewer.isPlatformAdmin
+    ? orgs
+    : sanitizeOrganizationsPublic(orgs, { canViewPrivate: false });
+}
 
 export const getRootOrganizations = async (req, res) => {
   try {
@@ -915,7 +931,7 @@ export const getRootOrganizations = async (req, res) => {
     }
 
     const orgs = await TeamOrganization.find(query).sort({ name: 1 });
-    res.status(200).json(orgs);
+    res.status(200).json(organizationsForViewer(orgs, viewer));
   } catch (error) {
     res.status(500).json({ message: "Failed to fetch root organizations", error: error.message });
   }
@@ -923,6 +939,7 @@ export const getRootOrganizations = async (req, res) => {
 
 export const getOrganizationChain = async (req, res) => {
   try {
+    const viewer = await resolveViewerContext(req);
     const chain = [];
     let current = await TeamOrganization.findById(req.params.id).populate("category", "name slug");
     const seen = new Set();
@@ -931,7 +948,7 @@ export const getOrganizationChain = async (req, res) => {
       chain.unshift(current);
       current = current.parent ? await TeamOrganization.findById(current.parent) : null;
     }
-    res.status(200).json(chain);
+    res.status(200).json(organizationsForViewer(chain, viewer));
   } catch (error) {
     res.status(500).json({ message: "Failed to fetch organization chain", error: error.message });
   }
@@ -943,7 +960,7 @@ export const getOrganizationChildren = async (req, res) => {
     const query = { parent: req.params.id, isActive: true };
     if (!viewer.isPlatformAdmin) Object.assign(query, reservedNamesMongoClause("name"));
     const children = await TeamOrganization.find(query).sort({ name: 1 });
-    res.status(200).json(children);
+    res.status(200).json(organizationsForViewer(children, viewer));
   } catch (error) {
     res.status(500).json({ message: "Failed to fetch children", error: error.message });
   }

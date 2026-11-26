@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../services/api";
+import { setMetaAttribute } from "../hooks/usePageMeta";
 import SafeImage from "../../../Shared/components/SafeImage.jsx";
 import NotFound from "./NotFound";
 import { locationLine } from "../../../Shared/utils/locationDisplay.js";
@@ -45,6 +46,7 @@ export default function ClubProfile() {
   const [club, setClub] = useState(null);
   const [loading, setLoading] = useState(true);
   const [missing, setMissing] = useState(false);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -71,12 +73,20 @@ export default function ClubProfile() {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [slug]);
+  }, [slug, attempt]);
 
   useEffect(() => {
     if (!club?.organization?.name) return;
     const org = club.organization;
     document.title = `${org.name} | CricAll`;
+    // Without this the canonical link still points at the previously visited
+    // page, and search engines treat the club page as a duplicate of it.
+    setMetaAttribute(
+      'link[rel="canonical"]',
+      "href",
+      { tag: "link", attribute: "rel", value: "canonical" },
+      `${window.location.origin}/club/${org.slug || slug}`,
+    );
     const description = document.querySelector('meta[name="description"]');
     if (description) {
       description.setAttribute(
@@ -86,7 +96,7 @@ export default function ClubProfile() {
           : `Fixtures, results and top performers for ${org.name}, a cricket club on CricAll.`,
       );
     }
-  }, [club]);
+  }, [club, slug]);
 
   if (loading) {
     return (
@@ -101,10 +111,29 @@ export default function ClubProfile() {
     );
   }
 
-  if (missing || !club?.organization) return <NotFound />;
+  if (missing) return <NotFound />;
+
+  // A network or server failure is not "this club does not exist".
+  if (!club?.organization) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-cric-bg px-4">
+        <div role="alert" className="text-center">
+          <p className="text-sm font-semibold text-cric-text">Could not load this club.</p>
+          <button
+            type="button"
+            onClick={() => setAttempt((current) => current + 1)}
+            className="mt-4 rounded-full bg-cric-accent px-5 py-2 text-xs font-black uppercase tracking-wider text-white"
+          >
+            Try again
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   const org = club.organization;
   const teams = club.teams || [];
+  const liveMatches = club.liveMatches || [];
   const upcomingMatches = club.upcomingMatches || [];
   const recentResults = club.recentResults || [];
   const topPerformers = club.topPerformers || EMPTY_PERFORMERS;
@@ -232,6 +261,16 @@ export default function ClubProfile() {
             </div>
           )}
         </Section>
+
+        {liveMatches.length ? (
+          <Section title="Live now">
+            <div className="space-y-3">
+              {liveMatches.map((match) => (
+                <TeamMatchRow key={match._id} match={match} club live />
+              ))}
+            </div>
+          </Section>
+        ) : null}
 
         <Section title="Upcoming matches">
           {upcomingMatches.length === 0 ? (

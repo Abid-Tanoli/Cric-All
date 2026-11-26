@@ -240,7 +240,7 @@ export default function MyOrganization() {
             <Link to="/organization/new" className={primaryButton}>
               + New organization
             </Link>
-            {active?.slug ? (
+            {active?.slug && active.isPublic !== false ? (
               <Link to={`/club/${active.slug}`} className={secondaryButton}>
                 View public page
               </Link>

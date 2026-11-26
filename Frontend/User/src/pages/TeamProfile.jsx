@@ -69,7 +69,9 @@ export default function TeamProfile() {
       if (orgId) {
         try {
           const chainRes = await api.get(`/organizations/${orgId}/chain`);
-          setOrgChain(chainRes.data?.data || chainRes.data?.chain || []);
+          // The endpoint answers a bare array.
+          const chain = chainRes.data?.data || chainRes.data?.chain || chainRes.data;
+          setOrgChain(Array.isArray(chain) ? chain : []);
         } catch {
           // The org chain is decorative: the team page still renders without it.
         }
@@ -199,7 +201,7 @@ export default function TeamProfile() {
               {orgChain.map((org, idx) => (
                 <React.Fragment key={org._id}>
                   {idx > 0 && <span className="text-blue-300/40">→</span>}
-                  {org.slug ? (
+                  {org.slug && org.isPublic !== false ? (
                     <Link
                       to={`/club/${org.slug}`}
                       className="text-blue-200/80 hover:text-white hover:underline"
@@ -448,7 +450,7 @@ export default function TeamProfile() {
                   {orgChain.map((org, idx) => (
                     <React.Fragment key={org._id}>
                       <div className="bg-cric-bg rounded-lg px-3 py-1.5 font-bold text-cric-text text-xs">
-                        {org.slug ? (
+                        {org.slug && org.isPublic !== false ? (
                           <Link to={`/club/${org.slug}`} className="hover:text-cric-accent hover:underline">
                             {org.name}
                           </Link>

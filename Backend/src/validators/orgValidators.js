@@ -111,7 +111,21 @@ export const createOrganizationSchema = z
   })
   .strict();
 
-export const updateOrganizationSchema = createOrganizationSchema.partial();
+// An update must contain only what the caller sent. `.partial()` is not enough:
+// zod 4 still applies `.default()` to a missing key, so `PUT { isPublic: false }`
+// used to arrive as a full body of empty values and wipe the stored profile
+// (logo, description, socials, privacy, ...). The create-time default is removed
+// from every top-level field before it is made optional.
+export const updateOrganizationSchema = z
+  .object(
+    Object.fromEntries(
+      Object.entries(createOrganizationSchema.shape).map(([key, field]) => [
+        key,
+        (field instanceof z.ZodDefault ? field.removeDefault() : field).optional(),
+      ])
+    )
+  )
+  .strict();
 
 /** Reason recorded when a platform admin approves or rejects an org request. */
 export const verificationDecisionSchema = z

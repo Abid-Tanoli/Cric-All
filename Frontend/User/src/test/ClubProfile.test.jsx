@@ -190,4 +190,31 @@ describe("ClubProfile", () => {
 
     await waitFor(() => expect(screen.getByText("Page Not Found")).toBeInTheDocument());
   });
+
+  it("shows a live match in its own section", async () => {
+    api.get.mockResolvedValue({
+      data: {
+        ...CLUB,
+        liveMatches: [{ _id: "match-live", title: "Gulberg Stars XI vs Live Side", teams: [] }],
+      },
+    });
+    renderClub();
+
+    await waitFor(() => expect(screen.getByText("Live now")).toBeInTheDocument());
+    expect(screen.getByText("Gulberg Stars XI vs Live Side").closest("a")).toHaveAttribute(
+      "href",
+      "/match/match-live"
+    );
+  });
+
+  it("offers a retry on a server error instead of claiming the club does not exist", async () => {
+    api.get.mockRejectedValueOnce({ response: { status: 500 } });
+    api.get.mockResolvedValueOnce({ data: CLUB });
+    renderClub();
+
+    const retry = await screen.findByRole("button", { name: "Try again" });
+    expect(screen.queryByText("Page Not Found")).not.toBeInTheDocument();
+    retry.click();
+    await waitFor(() => expect(screen.getByText("Gulberg Stars")).toBeInTheDocument());
+  });
 });
