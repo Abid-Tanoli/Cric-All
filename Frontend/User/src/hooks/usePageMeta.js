@@ -65,7 +65,7 @@ export function metaKeyForPath(pathname) {
   return null;
 }
 
-function setMetaAttribute(selector, attribute, selectorCreate, content) {
+export function setMetaAttribute(selector, attribute, selectorCreate, content) {
   let element = document.querySelector(selector);
   if (!element && selectorCreate) {
     element = document.createElement(selectorCreate.tag);
