@@ -7,6 +7,21 @@ import OrgTypeFilter, { orgTypeFromSearchParams } from "../components/OrgTypeFil
 import { initSocket } from "../services/socket";
 import LiveMatchesSection from "../components/cricapi/LiveMatchesSection";
 import LoadingWithTimeout from "../components/LoadingWithTimeout";
+import { getTeamById } from "../utils/matchHelpers";
+
+// A match is live because of its status, never because of its date. Scoring can
+// run past midnight, a match can be started on another day than it was scheduled
+// for, and a break between innings is still a match in progress.
+const LIVE_STATUSES = ["live", "in_progress", "innings-break", "innings_break", "super_over"];
+const isLiveMatch = (match) => LIVE_STATUSES.includes(match.status);
+const isInningsBreak = (match) => String(match.status || "").startsWith("innings");
+
+const EMPTY_TEXT = {
+  all: "No live matches, recent results or upcoming fixtures right now",
+  results: "No results from yesterday",
+  live: "No live matches right now",
+  upcoming: "No matches scheduled for today or tomorrow",
+};
 
 export default function Live() {
   const [matches, setMatches] = useState([]);
@@ -90,8 +105,18 @@ export default function Live() {
 
   const tomorrowMatches = matches.filter(m => {
     const matchDate = new Date(m.startAt);
-    return matchDate >= tomorrow && matchDate < new Date(tomorrow.getTime() + 86400000);
+    return matchDate >= tomorrow && matchDate < new Date(tomorrow.getTime() + 86400000) && !isLiveMatch(m);
   });
+
+  const liveMatches = matches.filter(isLiveMatch);
+  const resultMatches = yesterdayMatches.filter(m => m.status === 'completed');
+  const todayUpcomingMatches = todayMatches.filter(m => m.status === 'upcoming' || m.status === 'scheduled');
+
+  const showResults = (activeTab === 'all' || activeTab === 'results') && resultMatches.length > 0;
+  const showLive = (activeTab === 'all' || activeTab === 'live') && liveMatches.length > 0;
+  const showTodayUpcoming = (activeTab === 'all' || activeTab === 'upcoming') && todayUpcomingMatches.length > 0;
+  const showTomorrow = (activeTab === 'all' || activeTab === 'upcoming') && tomorrowMatches.length > 0;
+  const nothingToShow = !showResults && !showLive && !showTodayUpcoming && !showTomorrow;
 
   const formatTime = (date) => {
     const d = new Date(date);
@@ -154,14 +179,14 @@ export default function Live() {
         )}
 
         {/* YESTERDAY - RESULTS */}
-        {(activeTab === 'all' || activeTab === 'results') && yesterdayMatches.filter(m => m.status === 'completed').length > 0 && (
+        {showResults && (
           <div className="mb-10">
             <h2 className="text-xl font-black text-cric-text uppercase tracking-tight mb-4 flex items-center gap-2">
               <span className="w-2 h-6 bg-green-600 rounded-full"></span>
               Results
             </h2>
             <div className="space-y-4">
-              {yesterdayMatches.filter(m => m.status === 'completed').map(match => (
+              {resultMatches.map(match => (
                 <Link
                   key={match._id}
                   to={`/match/${match._id}`}
@@ -211,15 +236,15 @@ export default function Live() {
           </div>
         )}
 
-        {/* TODAY - LIVE MATCHES */}
-        {(activeTab === 'all' || activeTab === 'live') && todayMatches.filter(m => m.status === 'live' || m.status === 'in_progress').length > 0 && (
+        {/* LIVE MATCHES */}
+        {showLive && (
           <div className="mb-10">
             <h2 className="text-xl font-black text-cric-text uppercase tracking-tight mb-4 flex items-center gap-2">
               <span className="w-2 h-6 bg-red-600 rounded-full animate-pulse"></span>
               Live Now
             </h2>
             <div className="space-y-4">
-              {todayMatches.filter(m => m.status === 'live' || m.status === 'in_progress').map(match => (
+              {liveMatches.map(match => (
                 <Link
                   key={match._id}
                   to={`/match/${match._id}`}
@@ -228,15 +253,19 @@ export default function Live() {
                   <div className="p-5">
                     <div className="flex items-center justify-between mb-4">
                       <span className="text-[10px] font-bold text-cric-muted uppercase tracking-wider">
-                        {match.matchSubcategory || match.series}
+                        {[
+                          match.matchSubcategory || match.series || match.tournament?.name || match.matchType,
+                          match.startAt && formatDate(match.startAt),
+                        ].filter(Boolean).join(' • ')}
                       </span>
                       <span className="px-3 py-1 bg-red-600 text-white rounded-full text-[9px] font-bold uppercase animate-pulse">
-                        LIVE
+                        {isInningsBreak(match) ? 'Innings Break' : 'LIVE'}
                       </span>
                     </div>
                     <div className="space-y-3">
                       {match.innings?.map((inn, idx) => {
-                        const team = match.teams?.[idx] || {};
+                        // The side batting first is not always teams[0].
+                        const team = getTeamById(match, inn.team) || match.teams?.[idx] || {};
                         const isBatting = match.innings?.[idx]?.batting?.filter(b => !b.isOut).length > 0;
                         return (
                           <div key={idx} className="flex items-center justify-between">
@@ -254,7 +283,7 @@ export default function Live() {
                     </div>
                     {match.tossWinner && (
                       <p className="mt-3 text-xs text-cric-muted font-bold">
-                        Toss: {match.teams?.find(t => t._id === match.tossWinner)?.shortName || 'Team'} elected to {match.tossDecision}
+                        Toss: {getTeamById(match, match.tossWinner)?.shortName || getTeamById(match, match.tossWinner)?.name || 'Team'} elected to {match.tossDecision}
                       </p>
                     )}
                     <div className="mt-3 flex gap-2 text-xs text-cric-accent font-bold">
@@ -272,14 +301,14 @@ export default function Live() {
         )}
 
         {/* TODAY - UPCOMING */}
-        {(activeTab === 'all' || activeTab === 'upcoming') && todayMatches.filter(m => m.status === 'upcoming' || m.status === 'scheduled').length > 0 && (
+        {showTodayUpcoming && (
           <div className="mb-10">
             <h2 className="text-xl font-black text-cric-text uppercase tracking-tight mb-4 flex items-center gap-2">
               <span className="w-2 h-6 bg-blue-600 rounded-full"></span>
               Today's Upcoming
             </h2>
             <div className="space-y-3">
-              {todayMatches.filter(m => m.status === 'upcoming' || m.status === 'scheduled').map(match => (
+              {todayUpcomingMatches.map(match => (
                 <Link
                   key={match._id}
                   to={`/match/${match._id}`}
@@ -314,7 +343,7 @@ export default function Live() {
         )}
 
         {/* TOMORROW */}
-        {(activeTab === 'all' || activeTab === 'upcoming') && tomorrowMatches.length > 0 && (
+        {showTomorrow && (
           <div className="mb-10">
             <h2 className="text-xl font-black text-cric-text uppercase tracking-tight mb-4 flex items-center gap-2">
               <span className="w-2 h-6 bg-cric-muted rounded-full"></span>
@@ -346,11 +375,17 @@ export default function Live() {
           </div>
         )}
 
-        {/* NO MATCHES */}
-        {matches.length === 0 && (
+        {/* NO MATCHES (or none for this tab): never leave the page blank */}
+        {nothingToShow && (
           <div className="text-center py-20 bg-cric-card rounded-2xl border border-cric-border">
-            <p className="text-sm font-black text-cric-muted uppercase tracking-widest">No matches available</p>
-            <p className="text-xs text-cric-muted mt-2">Check back later for upcoming matches</p>
+            <p className="text-sm font-black text-cric-muted uppercase tracking-widest">
+              {matches.length === 0 ? "No matches available" : EMPTY_TEXT[activeTab]}
+            </p>
+            {matches.length === 0 ? (
+              <p className="text-xs text-cric-muted mt-2">Check back later for upcoming matches</p>
+            ) : (
+              <Link to="/" className="mt-3 inline-block text-xs font-bold text-cric-accent hover:underline">See all matches</Link>
+            )}
           </div>
         )}
       </div>

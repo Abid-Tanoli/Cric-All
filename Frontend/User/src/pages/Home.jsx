@@ -368,7 +368,7 @@ export function Home() {
             <div className="bg-cric-card rounded-xl border border-cric-border p-4 text-cric-text">
               <h3 className="text-[10px] font-black text-cric-muted uppercase tracking-widest mb-3">Join CricAll</h3>
               <p className="text-sm font-bold leading-relaxed text-cric-text">
-                Players can create profiles. Schools, colleges, universities, industries, clubs, leagues and organizations can join as handlers.
+                Players can create profiles. Clubs, schools, colleges, universities, companies and NGOs can register as organizations.
               </p>
               <p className="mt-2 text-xs font-semibold leading-relaxed text-cric-muted/80">
                 You manage your own teams, squads, playing XI, matches and tournaments. CricAll provides the scoring and ranking platform.
@@ -385,22 +385,9 @@ export function Home() {
                   onClick={() => { setShowRegister(true); }}
                   className="mt-4 w-full rounded-xl bg-cric-accent px-4 py-3 text-[10px] font-black uppercase tracking-widest text-white hover:bg-orange-600"
                 >
-                  Join as Player or Handler
+                  Join as Player or Organization
                 </button>
               )}
-            </div>
-
-            {/* Trending */}
-            <div className="bg-cric-card rounded-xl border border-cric-border p-4">
-              <h3 className="text-[10px] font-black text-cric-muted uppercase tracking-widest mb-3">Trending</h3>
-              <div className="space-y-2">
-                {["#BCL2025", "#LiveScores", "#CricketUpdates", "#CricAll"].map(tag => (
-                  <div key={tag} className="flex items-center gap-2 p-2 rounded-lg hover:bg-cric-bg cursor-pointer transition-all">
-                    <svg className="w-3.5 h-3.5 text-cric-accent" fill="currentColor" viewBox="0 0 24 24"><path d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14"/></svg>
-                    <span className="text-xs font-bold text-cric-text">{tag}</span>
-                  </div>
-                ))}
-              </div>
             </div>
 
             {/* Series sidebar */}

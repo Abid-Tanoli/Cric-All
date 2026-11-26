@@ -4,6 +4,7 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import SeriesList from "../pages/SeriesList";
 import { api } from "../services/api";
+import { resetCricketProviderStatusCache } from "../hooks/useCricketProviderStatus";
 
 // Regression coverage for the public /series board.
 //
@@ -16,9 +17,18 @@ import { api } from "../services/api";
 
 vi.mock("../services/api", () => ({ api: { get: vi.fn() } }));
 
+// The provider block depends on what the server reports, so the status call is
+// mocked instead of reaching the API.
+const provider = vi.hoisted(() => ({ configured: false }));
+vi.mock("../services/cricApi", () => ({
+  getCricketProviderStatus: vi.fn(async () => ({ configured: provider.configured })),
+}));
+
 const ONGOING_ID = "tournament-ongoing";
 const COMPLETED_ID = "tournament-completed";
 const EVENT_ID = "event-series";
+const PROVIDER_HEADING = /Current Live Series/i;
+const providerSeries = [{ id: "prov-1", name: "Provider Trophy" }];
 
 const localEvent = {
   _id: EVENT_ID,
@@ -58,7 +68,7 @@ function mockApi() {
   api.get.mockImplementation((url) => {
     if (url === "/events") return Promise.resolve({ data: [localEvent] });
     if (url === "/tournaments") return Promise.resolve({ data: [ongoingTournament, completedTournament] });
-    if (url === "/international/series") return Promise.resolve({ data: { data: [] } });
+    if (url === "/international/series") return Promise.resolve({ data: { data: providerSeries } });
     if (url === "/international/status") return Promise.resolve({ data: { data: null } });
     return Promise.reject(new Error(`unexpected url ${url}`));
   });
@@ -71,6 +81,8 @@ const renderPage = () => render(
 );
 
 beforeEach(() => {
+  provider.configured = false;
+  resetCricketProviderStatusCache();
   api.get.mockReset();
   mockApi();
 });
@@ -129,6 +141,40 @@ describe("SeriesList local events and tournaments", () => {
     fireEvent.click(screen.getByRole("button", { name: /^tournament \(\d+\)$/i }));
     expect(screen.getByText(ongoingTournament.name)).toBeInTheDocument();
     expect(screen.getByText(completedTournament.name)).toBeInTheDocument();
+    expect(screen.queryByText(localEvent.name)).not.toBeInTheDocument();
+  });
+});
+
+describe("SeriesList external provider block", () => {
+  const requested = () => api.get.mock.calls.map(([url]) => url);
+
+  it("is hidden and not requested when no live provider is configured", async () => {
+    renderPage();
+
+    expect(await screen.findByText(ongoingTournament.name)).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: PROVIDER_HEADING })).not.toBeInTheDocument();
+    expect(requested()).not.toContain("/international/series");
+    expect(requested()).not.toContain("/international/status");
+  });
+
+  it("comes back with its series once a provider is configured", async () => {
+    provider.configured = true;
+    renderPage();
+
+    expect(await screen.findByRole("heading", { name: PROVIDER_HEADING })).toBeInTheDocument();
+    expect(await screen.findByText("Provider Trophy")).toBeInTheDocument();
+    expect(screen.getByText(localEvent.name)).toBeInTheDocument();
+    // Learning the provider status must not reload the local board.
+    expect(requested().filter((url) => url === "/events")).toHaveLength(1);
+  });
+
+  it("keeps the search box useful by filtering the local board", async () => {
+    renderPage();
+    await screen.findByText(ongoingTournament.name);
+
+    fireEvent.change(screen.getByLabelText(/Search Series & Tournaments/i), { target: { value: "champions" } });
+    expect(screen.getByText(completedTournament.name)).toBeInTheDocument();
+    expect(screen.queryByText(ongoingTournament.name)).not.toBeInTheDocument();
     expect(screen.queryByText(localEvent.name)).not.toBeInTheDocument();
   });
 });

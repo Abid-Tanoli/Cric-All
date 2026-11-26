@@ -5,6 +5,7 @@ import SeriesCard from "../components/cricapi/SeriesCard";
 import Loader from "../components/cricapi/Loader";
 import ErrorState from "../components/cricapi/ErrorState";
 import OrgTypeFilter, { orgTypeFromSearchParams } from "../components/OrgTypeFilter";
+import { useCricketProviderStatus, isProviderConfigured } from "../hooks/useCricketProviderStatus";
 import { buildTournamentAwards } from "../utils/tournamentAwards";
 
 const LOCAL_TYPES = ["single-match", "series", "tri-series", "tournament", "world-cup", "champions-trophy", "league"];
@@ -43,6 +44,9 @@ const normalizeLocalItem = (item, source) => ({
 export default function SeriesList() {
   const [searchParams] = useSearchParams();
   const orgType = orgTypeFromSearchParams(searchParams);
+  // Without a configured provider the external block can only be empty or show
+  // an error, so it is neither requested nor rendered.
+  const showProvider = isProviderConfigured(useCricketProviderStatus());
   const [events, setEvents] = useState([]);
   const [providerSeries, setProviderSeries] = useState([]);
   const [providerLoading, setProviderLoading] = useState(true);
@@ -54,70 +58,74 @@ export default function SeriesList() {
   const [statusFilter, setStatusFilter] = useState("");
   const [search, setSearch] = useState("");
 
-  const loadData = useCallback(async () => {
+  const loadProvider = useCallback(async () => {
     setProviderLoading(true);
+    setProviderError(null);
+    try {
+      const [rapidRes, statusRes] = await Promise.all([
+        api.get("/international/series", { timeout: 8000 }),
+        api.get("/international/status", { timeout: 5000 }).catch(() => ({ data: { data: null } })),
+      ]);
+      setProviderSeries(Array.isArray(rapidRes.data?.data) ? rapidRes.data.data : []);
+      setApiStatus(statusRes.data.data || null);
+    } catch (error) {
+      setProviderError(error.response?.data?.message || error.message || "Live cricket provider is unavailable.");
+      setProviderSeries([]);
+    } finally {
+      setProviderLoading(false);
+    }
+  }, []);
+
+  const loadLocal = useCallback(async () => {
     setLocalLoading(true);
     setLocalError(null);
-    setProviderError(null);
+    // Events and tournaments are separate collections. Loading tournaments
+    // only when /events happened to be empty meant every tournament vanished
+    // from /series as soon as the site had one event. Fetch both and merge.
+    const [eventsResult, tournamentsResult] = await Promise.allSettled([
+      api.get("/events", { params: { limit: 100 }, timeout: 8000 }),
+      api.get("/tournaments", { params: { limit: 100, ...(orgType ? { orgType } : {}) }, timeout: 8000 }),
+    ]);
 
-    const loadProvider = async () => {
-      try {
-        const [rapidRes, statusRes] = await Promise.all([
-          api.get("/international/series", { timeout: 8000 }),
-          api.get("/international/status", { timeout: 5000 }).catch(() => ({ data: { data: null } })),
-        ]);
-        setProviderSeries(Array.isArray(rapidRes.data?.data) ? rapidRes.data.data : []);
-        setApiStatus(statusRes.data.data || null);
-      } catch (error) {
-        setProviderError(error.response?.data?.message || error.message || "Live cricket provider is unavailable.");
-        setProviderSeries([]);
-      } finally {
-        setProviderLoading(false);
+    const eventsData = eventsResult.status === "fulfilled"
+      ? listFrom(eventsResult.value, "events")
+      : [];
+    const tournamentsData = tournamentsResult.status === "fulfilled"
+      ? listFrom(tournamentsResult.value, "tournaments")
+      : [];
+
+    const merged = [];
+    const seen = new Set();
+    for (const [source, rows] of [["event", eventsData], ["tournament", tournamentsData]]) {
+      for (const row of rows) {
+        if (!row || typeof row !== "object") continue;
+        const key = String(row._id || row.slug || row.id || row.name || "");
+        if (!key || seen.has(key)) continue;
+        seen.add(key);
+        merged.push(normalizeLocalItem(row, source));
       }
-    };
+    }
+    setEvents(merged);
 
-    const loadLocal = async () => {
-      // Events and tournaments are separate collections. Loading tournaments
-      // only when /events happened to be empty meant every tournament vanished
-      // from /series as soon as the site had one event. Fetch both and merge.
-      const [eventsResult, tournamentsResult] = await Promise.allSettled([
-        api.get("/events", { params: { limit: 100 }, timeout: 8000 }),
-        api.get("/tournaments", { params: { limit: 100, ...(orgType ? { orgType } : {}) }, timeout: 8000 }),
-      ]);
-
-      const eventsData = eventsResult.status === "fulfilled"
-        ? listFrom(eventsResult.value, "events")
-        : [];
-      const tournamentsData = tournamentsResult.status === "fulfilled"
-        ? listFrom(tournamentsResult.value, "tournaments")
-        : [];
-
-      const merged = [];
-      const seen = new Set();
-      for (const [source, rows] of [["event", eventsData], ["tournament", tournamentsData]]) {
-        for (const row of rows) {
-          if (!row || typeof row !== "object") continue;
-          const key = String(row._id || row.slug || row.id || row.name || "");
-          if (!key || seen.has(key)) continue;
-          seen.add(key);
-          merged.push(normalizeLocalItem(row, source));
-        }
-      }
-      setEvents(merged);
-
-      if (eventsResult.status === "rejected" && tournamentsResult.status === "rejected") {
-        const error = eventsResult.reason;
-        setLocalError(error?.response?.data?.message || error?.message || "Failed to load local events.");
-      }
-      setLocalLoading(false);
-    };
-
-    await Promise.allSettled([loadProvider(), loadLocal()]);
+    if (eventsResult.status === "rejected" && tournamentsResult.status === "rejected") {
+      const error = eventsResult.reason;
+      setLocalError(error?.response?.data?.message || error?.message || "Failed to load local events.");
+    }
+    setLocalLoading(false);
   }, [orgType]);
 
+  const loadData = useCallback(() => {
+    if (showProvider) loadProvider();
+    loadLocal();
+  }, [showProvider, loadProvider, loadLocal]);
+
   useEffect(() => {
-    loadData();
-  }, [loadData]);
+    loadLocal();
+  }, [loadLocal]);
+
+  useEffect(() => {
+    if (showProvider) loadProvider();
+  }, [showProvider, loadProvider]);
 
   const searchedCricSeries = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -125,7 +133,11 @@ export default function SeriesList() {
     return providerSeries.filter((series) => series.name.toLowerCase().includes(term));
   }, [providerSeries, search]);
 
+  // The search box used to filter the provider block only. It covers the local
+  // board too, so it still does something when that block is hidden.
+  const searchTerm = search.trim().toLowerCase();
   const localEvents = events.filter((event) => (
+    (!searchTerm || [event.name, event.shortName].some((value) => String(value || "").toLowerCase().includes(searchTerm))) &&
     (!filter || event.eventType === filter) &&
     (!statusFilter || event.status === statusFilter)
   ));
@@ -147,17 +159,22 @@ export default function SeriesList() {
       <div className="bg-gradient-to-r from-cric-accent via-[#0a2d5e] to-cric-accent py-8 text-white">
         <div className="mx-auto max-w-7xl px-4">
           <h1 className="mb-2 text-3xl font-black uppercase tracking-tight">Series & Tournaments</h1>
-          <p className="text-sm text-blue-200">Live cricket series, tournaments, fixtures, and your local CricAll events.</p>
+          <p className="text-sm text-blue-200">
+            {showProvider
+              ? "Live cricket series, tournaments, fixtures, and your local CricAll events."
+              : "Series, tournaments and leagues run on CricAll."}
+          </p>
         </div>
       </div>
 
       <main className="mx-auto max-w-7xl space-y-10 px-4 py-6">
         <section className="rounded-2xl bg-cric-card p-4 shadow-sm ring-1 ring-cric-border">
-          <label className="mb-2 block text-[10px] font-black uppercase tracking-widest text-cric-muted">Search Live Series & Tournaments</label>
+          <label htmlFor="series-search" className="mb-2 block text-[10px] font-black uppercase tracking-widest text-cric-muted">Search Series & Tournaments</label>
           <input
+            id="series-search"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search Pakistan, Australia, PAK AUS..."
+            placeholder="Search by name..."
             className="w-full rounded-xl border border-cric-border bg-cric-bg px-4 py-3 text-sm font-bold text-cric-text outline-none focus:border-blue-500"
           />
           <div className="mt-3 max-w-xs">
@@ -165,35 +182,37 @@ export default function SeriesList() {
           </div>
         </section>
 
-        <section>
-          <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
-            <div>
-              <h2 className="text-xl font-black uppercase tracking-tight text-cric-accent">Current Live Series & Tournaments</h2>
-              <p className="text-xs font-semibold text-cric-muted">Uses CricAll backend live cricket provider data.</p>
+        {showProvider && (
+          <section>
+            <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+              <div>
+                <h2 className="text-xl font-black uppercase tracking-tight text-cric-accent">Current Live Series & Tournaments</h2>
+                <p className="text-xs font-semibold text-cric-muted">Uses CricAll backend live cricket provider data.</p>
+              </div>
+              <button onClick={loadData} className="rounded-xl bg-cric-accent px-4 py-2 text-[10px] font-black uppercase tracking-widest text-white">
+                Refresh
+              </button>
             </div>
-            <button onClick={loadData} className="rounded-xl bg-cric-accent px-4 py-2 text-[10px] font-black uppercase tracking-widest text-white">
-              Refresh
-            </button>
-          </div>
 
-          {providerLoading && !providerSeries.length ? (
-            <Loader label="Loading live series..." />
-          ) : (providerError || apiStatus?.lastError) && !providerSeries.length ? (
-            <ErrorState
-              title="Live cricket data unavailable"
-              message={apiStatus?.lastError || providerError}
-              onRetry={loadData}
-            />
-          ) : searchedCricSeries.length ? (
-            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-              {searchedCricSeries.map((series) => <SeriesCard key={series.id} series={series} />)}
-            </div>
-          ) : (
-            <div className="rounded-2xl bg-cric-card p-8 text-center text-sm font-bold text-cric-muted ring-1 ring-cric-border">
-              No live series or tournaments found for this search.
-            </div>
-          )}
-        </section>
+            {providerLoading && !providerSeries.length ? (
+              <Loader label="Loading live series..." />
+            ) : (providerError || apiStatus?.lastError) && !providerSeries.length ? (
+              <ErrorState
+                title="Live cricket data unavailable"
+                message={apiStatus?.lastError || providerError}
+                onRetry={loadData}
+              />
+            ) : searchedCricSeries.length ? (
+              <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+                {searchedCricSeries.map((series) => <SeriesCard key={series.id} series={series} />)}
+              </div>
+            ) : (
+              <div className="rounded-2xl bg-cric-card p-8 text-center text-sm font-bold text-cric-muted ring-1 ring-cric-border">
+                No live series or tournaments found for this search.
+              </div>
+            )}
+          </section>
+        )}
 
         <section>
           <div className="mb-4">
