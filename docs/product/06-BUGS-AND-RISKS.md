@@ -8,11 +8,11 @@
 
 | ID | Masla | Saboot | Halat |
 |---|---|---|---|
-| **B1** | NRR ulta jab `teams[1]` pehle batting kare: jeetne wali ka -3, harne wali ka +3. `tournamentService.js` innings ko team ki jagah tarteeb se jorta hai | CHALAYA; live match mein bhi tarteeb ulti | NAYA |
-| **B2** | NRR har innings ko poore overs deta hai: 10 over mein 101 ka chase +0.05, hona chahiye +5.10 | CHALAYA | NAYA |
-| **B3** | Abandoned match par points nahi | CHALAYA | NAYA |
-| **B4** | Update se data mitna: zod 4 `.partial()` ke bawajood `.default()` lagata hai. Idaray: logo, description, socials, privacy khali. **Master par hai, deploy ho chuka** | CHALAYA | Idara: TAYYAR, `fix/org-update-data-loss` pushed. **Team/player: NAYA (T0.2)** |
-| **B5** | Idaray ki private fields bina login: `/organizations/roots`, `/tree`, `/:id/children`, `/:id/chain` | LIVE (`roots` ki field names; abhi phone/email khali) | TAYYAR, `fix/org-update-data-loss` pushed |
+| **B1** | NRR ulta jab `teams[1]` pehle batting kare: jeetne wali ka -3, harne wali ka +3 | CHALAYA | TAYYAR `fix/nrr-points` (pushed) |
+| **B2** | NRR har innings ko poore overs deta tha: 10 over mein 101 ka chase +0.05, hona chahiye +5.10. Naya qaida: asal balls, all out par poora quota (ICC; Abid ka faisla 26 Nov) | CHALAYA | TAYYAR `fix/nrr-points` (pushed) |
+| **B3** | Abandoned match par points nahi | CHALAYA | TAYYAR `fix/nrr-points` (pushed) |
+| **B4** | Update se data mitna: zod 4 `.partial()` ke bawajood `.default()` lagata hai. Idara, team (chhupi team public ho jati), player (location) | CHALAYA | Idara: MERGED PR #86. Team/player: TAYYAR `fix/update-defaults` (pushed) |
+| **B5** | Idaray ki private fields bina login: `/organizations/roots`, `/tree`, `/:id/children`, `/:id/chain` | LIVE | MERGED PR #86, deploy baqi |
 | **B6** | Ball dohri lag sakti hai (retry); offline nahi | PARHA | NAYA |
 
 **Jab tak B4 deploy na ho, live par na karein:** club page ka public toggle, team edit, Admin ka activate/deactivate. Deploy ke baad (25 Nov 14:33 UTC tak) kisi idaray ka record nahi badla tha.
@@ -23,11 +23,11 @@
 |---|---|---|---|
 | B7 | Ball 3 jagah likhi jati hai; `Delivery`/`Ball` fail ho to sirf log, scoring chalti rahe | PARHA | NAYA |
 | B8 | Home par live score ghalat team ke saamne (30/0 KHA ka, BAL par dikha) | LIVE | NAYA (0.2 ne `/live` theek kiya) |
-| B9 | `/live` purani tareekh ka live match nahi dikhata | LIVE, REPORT | TAYYAR `fix/public-site-leftover-copy` |
+| B9 | `/live` purani tareekh ka live match nahi dikhata | LIVE, REPORT | TAYYAR `fix/public-site-leftover-copy` (pushed) |
 | B10 | Aaj khatam hua match `/live` ke kisi tab mein nahi; Results sirf kal ke | REPORT | NAYA |
 | B11 | ~~Players list mein 126 mein se 26 nahi~~ **Bug nahi:** API page 1 par 100, page 2 par 26 deti hai (`totalPages=2`). Frontend ka page 2 dekhna baqi. Role filter ka masla alag se dekhna | CHALAYA (API) | Jaanch baqi |
-| B12 | Koi bhi anonymous socket sab ko `match:updateList` bhej sakta tha; khali JOIN se crash | PARHA / REPORT | TAYYAR `fix/socket-broadcast-and-dead-dls` |
-| B13 | Ghalat DLS code (istemal nahi hota) | PARHA | TAYYAR (usi branch) |
+| B12 | Koi bhi anonymous socket sab ko `match:updateList` bhej sakta tha; khali JOIN se crash | PARHA | TAYYAR `fix/socket-broadcast-and-dead-dls` (pushed) |
+| B13 | Ghalat DLS code (istemal nahi hota) | PARHA | TAYYAR (usi branch, pushed) |
 | B14 | Team page par club link kabhi nahi banta; private club ke dead links; club page par live match nahi; server error "Not Found" | PARHA, tests | TAYYAR, `fix/org-update-data-loss` pushed |
 | B15 | Player merge `officialAwards`, `customAwards`, `replacedBowlerBlock` nahi badalta | REPORT | NAYA |
 | B16 | Admin ka player Delete references check nahi karta; match delete balls peeche chhorta hai | REPORT | NAYA |
@@ -37,7 +37,7 @@
 | B20 | Phone se verification band; email lazmi | PARHA | FAISLA F3 |
 | B21 | Urdu naam ka slug `organization`, `organization-2` | PARHA (test mein yehi umeed) | NAYA |
 | B22 | `tournamentAwards` ka ek audit test poore run mein 1 dafa fail, akela 2 dafa pass | CHALAYA | NAYA (waqti lagta hai, wajah nahi dekhi) |
-| B23 | Manual form innings team ki tarteeb se rakhta hai; SF2 live par ulti dikhti hai | REPORT | NAYA |
+| B23 | Manual scorecard form innings **team ki tarteeb** se save karta hai, batting ki nahi (`manualScorecardController.js:53`). SF2: Khan Associates ne pehle batting ki, magar `innings[0]` Young Star hai, is liye scorecard ulta dikh sakta hai. NRR par asar nahi (T1.1 ke baad hisaab `innings.team` se) | CHALAYA (live API) | NAYA, alag task |
 | B24 | Naranji par safed text 2.84:1; 1,089 jagah text ≤ 11px | CHALAYA | NAYA |
 | B25 | Blog: `blogsController.js:15` `category` se filter karta hai magar `Blog.js` mein `category` field nahi; `Blog.isLive` sirf badge hai, publish ka asal gate nahi | PARHA | NAYA (T5.8 se pehle) |
 
@@ -62,6 +62,8 @@
 
 | Branch | Kya | Tests |
 |---|---|---|
-| `fix/org-update-data-loss` (pushed `6ca0ad5`) | B4 (idara), B5, B14 | Branch par: backend 6 suites 99/99, User 4 files 26/26, build theek. Pehle poore run mein: User 318, Admin 166 pass; backend ke 3 server wale suites server par 87/87; B22 alag |
-| `fix/public-site-leftover-copy` | 0.2 | REPORT: 341 pass |
-| `fix/socket-broadcast-and-dead-dls` | 0.3 | REPORT: 1080/1080 pass |
+| `fix/org-update-data-loss` | B4 (idara), B5, B14 | **MERGED** PR #86; branch delete |
+| `fix/public-site-leftover-copy` (pushed `698da4f`) | B9, copy | User 341/341, build theek |
+| `fix/update-defaults` (pushed `3409991`) | B4 team/player | Backend 1074/1075 (1 skip), smoke 4/4 |
+| `fix/nrr-points` (pushed `406d877`) | B1, B2, B3 | Backend 1083/1084 (1 skip), smoke 4/4 |
+| `fix/socket-broadcast-and-dead-dls` (pushed `5a25ff3`) | B12, B13 | Socket/scoring 38/38 |

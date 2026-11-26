@@ -25,10 +25,10 @@ Tri-series ki tareekh par tarteeb: [07-TRI-SERIES.md](07-TRI-SERIES.md) §3.
 ### M0 Bharosa
 | ID | Kaam | Branch | Files | Mukammal jab | Size | Depend |
 |---|---|---|---|---|---|---|
-| T0.1 | Idara update se data na mite; leak band; club page fixes (B4, B5, B14) | `fix/org-update-data-loss` | **Pushed** `6ca0ad5` (2 commits, 12 files). PR Abid banayenge | CI hara, deploy, 08 ki deploy jaanch (data na mite, `roots` waghera mein private field nahi) | S | — |
-| T0.2 | Team/player update se data na mite (B4). **T0.1 ke saath ek hi deploy**; files alag | `fix/update-defaults` | `validators/teamValidators.js`, `playerValidators.js` + naya helper. T0.1 ki files nahi chhoni | `safeParse({})` = `{}`; chhupi team chhupi rahe | S | — |
-| T0.3 | Purani copy, `/live` (B9) | `fix/public-site-leftover-copy` | Likha hua | Review, merge | S | — |
-| T0.4 | Socket, DLS (B12, B13) | `fix/socket-broadcast-and-dead-dls` | Likha hua | Review, merge | S | — |
+| T0.1 | Idara update se data na mite; leak band; club page fixes (B4, B5, B14) | `fix/org-update-data-loss` | **MERGED** PR #86 (`5c12bc2`, 26 Nov). Deploy baqi | Deploy ke baad 08 §5 ki jaanch; phir COMPLETED.md | S | — |
+| T0.2 | Team/player update se data na mite (B4). **T0.1 ke saath ek hi deploy**; files alag | `fix/update-defaults` | **Pushed** `3409991`. Poora backend 1074/1075 (1 skip), smoke 4/4. PR baqi | `safeParse({})` = `{}`; chhupi team chhupi rahe; Admin stats update se location na mite | S | — |
+| T0.3 | Purani copy, `/live` (B9) | `fix/public-site-leftover-copy` | **Pushed** `698da4f`. User 341/341, build theek. PR baqi | Live par `/live` aur Home ki copy dekhein | S | — |
+| T0.4 | Socket, DLS (B12, B13) | `fix/socket-broadcast-and-dead-dls` | **Pushed** `5a25ff3`. Socket/scoring 38/38. PR baqi | Live score bina login chale | S | — |
 | T0.5 | Home aur `/live` par score sahi team (B8, B10) | `fix/home-score-team` | `Home.jsx`, `Live.jsx` | Innings `innings.team` se juri | S | T0.3 |
 | T0.6 | Data safai, 24 rows | — | Malik ki manzoori, backup, maujooda scripts | Har row par faisla | S | T0.9 |
 | T0.7 | Player merge ke baqi fields (B15), delete guards (B16) | `fix/player-merge-awards` | `scripts/applyPlayerNames.js`, controllers | Test: award wala player sahi mile | M | — |
@@ -38,7 +38,7 @@ Tri-series ki tareekh par tarteeb: [07-TRI-SERIES.md](07-TRI-SERIES.md) §3.
 ### M1 Sahi hisaab (tri-series)
 | ID | Kaam | Branch | Files | Mukammal jab | Size | Depend |
 |---|---|---|---|---|---|---|
-| T1.1 | NRR, abandoned points, ek helper (B1–B3) | `fix/nrr-points` | `services/tournamentService.js`, naya `services/netRunRate.js`, `rankingService.js` | 08 §2 NRR ke tamam imtihan; `stats:recompute` ka dry-run **sirf local copy par**; production par apply se pehle diff Abid ne dekha | M | — |
+| T1.1 | NRR, abandoned points, ek helper (B1–B3) | `fix/nrr-points` | **Pushed** `406d877`. Poora backend 1083/1084 (1 skip), smoke 4/4. **ICC all-out qaida: TAY, rakhna hai** (Abid, 26 Nov). PR baqi | Deploy ke baad `stats:recompute` dry-run diff Abid ko, phir backup + `--apply` | M | — |
 | T1.2 | `clientBallId`, dohri ball band (B6) | `feat/idempotent-balls` | `scoreController.js`, `scoreValidators.js`, `Match.js`, `useMatchScoring.js` | 08 §2; e2e pass | M | — |
 | T1.3 | Custom overs, ball type, quota (B17) | `feat/custom-overs` | TRD §4.2 | 7-over match shuru se akhir tak | M | — |
 | T1.4 | Points setting owner UI mein | `feat/points-config-ui` | `OrgTournamentDetail.jsx`, `orgCompetitionsController.js` | 3 hindse save, table badle | S | T1.1 |
@@ -154,4 +154,4 @@ DONE WHEN: <"Mukammal jab" column>
 | UI/UX naap | 03, M2–M4 |
 
 ## 7. Progress
-Merge ke baad halat `TAYYAR → MERGED`; deploy aur jaanch ke baad row COMPLETED.md mein. `LIVE` halat yahan nahi rehti. Aaj (26 Nov): T0.1 TAYYAR, branch pushed, PR baqi · T0.3, T0.4 TAYYAR (push nahi) · baqi NAYA.
+Merge ke baad halat `TAYYAR → MERGED`; deploy aur jaanch ke baad row COMPLETED.md mein. `LIVE` halat yahan nahi rehti. Aaj (26 Nov): T0.1 MERGED (deploy baqi) · T0.2, T0.3, T0.4, T1.1 pushed, PR baqi · baqi NAYA.
