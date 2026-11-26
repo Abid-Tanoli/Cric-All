@@ -6,6 +6,7 @@ import TeamOrganization from "../models/TeamOrganization.js";
 import Player from "../models/Player.js";
 import Match from "../models/Match.js";
 import mongoose from "mongoose";
+import { inningsTeamId, matchRunTotals, netRunRate as computeNetRunRate } from "./netRunRate.js";
 import {
   playerSelectFor,
   sanitizePlayerPublic,
@@ -45,8 +46,8 @@ export async function computeTeamRanking(teamId) {
   let totalRunsScored = 0;
   let totalRunsConceded = 0;
   let totalWicketsTaken = 0;
-  let totalOversBatting = 0;
-  let totalOversBowling = 0;
+  let ballsBatting = 0;
+  let ballsBowling = 0;
   const formResults = [];
 
   for (const match of matches) {
@@ -69,25 +70,19 @@ export async function computeTeamRanking(teamId) {
       formResults.push("L");
     }
 
-    for (const innings of match.innings || []) {
-      const inningsTeamId = innings.team?.toString();
-      if (inningsTeamId === teamId) {
-        totalRunsScored += innings.runs || 0;
-        totalWicketsTaken += innings.wickets || 0;
-        if (typeof innings.balls === 'number' && innings.balls > 0) {
-          totalOversBatting += innings.balls / 6;
-        } else {
-          totalOversBatting += innings.overs || 0;
-        }
-      } else {
-        totalRunsConceded += innings.runs || 0;
-        if (typeof innings.balls === 'number' && innings.balls > 0) {
-          totalOversBowling += innings.balls / 6;
-        } else {
-          totalOversBowling += innings.overs || 0;
-        }
-      }
+    // No-result matches stay out of NRR (ICC playing conditions).
+    if (match.result?.resultType === "no result" || match.result?.resultType === "abandoned") continue;
+    const totals = matchRunTotals(match).get(String(teamId));
+    if (totals) {
+      totalRunsScored += totals.runsFor;
+      totalRunsConceded += totals.runsAgainst;
+      ballsBatting += totals.ballsFor;
+      ballsBowling += totals.ballsAgainst;
     }
+    // Kept as before: this field has always summed the team's own innings wickets.
+    match.innings?.forEach((innings, index) => {
+      if (inningsTeamId(match, innings, index) === String(teamId)) totalWicketsTaken += innings.wickets || 0;
+    });
   }
 
   stats.points = stats.matches_won * 2 + stats.matches_drawn + stats.matches_no_result;
@@ -101,9 +96,12 @@ export async function computeTeamRanking(teamId) {
   totalRunsScored = stats.matches_played > 0 ? totalRunsScored : 0;
   totalRunsConceded = stats.matches_played > 0 ? totalRunsConceded : 0;
 
-  const battingOvers = totalOversBatting || 1;
-  const bowlingOvers = totalOversBowling || 1;
-  const netRunRate = (totalRunsScored / battingOvers) - (totalRunsConceded / bowlingOvers);
+  const netRunRate = computeNetRunRate({
+    runsFor: totalRunsScored,
+    ballsFor: ballsBatting,
+    runsAgainst: totalRunsConceded,
+    ballsAgainst: ballsBowling,
+  });
 
   const ranking = await TeamRanking.findOneAndUpdate(
     { team: teamId },

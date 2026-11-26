@@ -449,7 +449,10 @@ test("the official-status endpoint rebuilds the derived tables too", async () =>
   assert.equal(batter.stats.runs, 75);
 });
 
-test("abandoning a match keeps the derived tables at zero", async () => {
+// T1.1: an abandoned match is a no-result. Team rankings still only count
+// completed matches, but the tournament table gives both sides the no-result
+// points (pointsConfig.noResult, default 1) and leaves NRR untouched.
+test("abandoning a match gives no-result points in the table and nothing in rankings", async () => {
   const seeded = await seedMatch({ status: "live" });
   const res = mockRes();
 
@@ -463,7 +466,10 @@ test("abandoning a match keeps the derived tables at zero", async () => {
   const ranking = await rankingFor(seeded.teamA._id);
   assert.equal(ranking?.matchesPlayed || 0, 0);
   const row = await pointsRowFor(seeded.tournament._id, seeded.teamA._id);
-  assert.equal(row.points, 0);
+  assert.equal(row.points, 1);
+  assert.equal(row.noResult, 1);
+  assert.equal(row.matchesPlayed, 1);
+  assert.equal(row.netRunRate, 0);
 });
 
 test("npm run stats:recompute is a dry run by default and writes with --apply", async () => {
