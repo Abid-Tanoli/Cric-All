@@ -1,6 +1,7 @@
 import Tournament from "../models/Tournament.js";
 import Match from "../models/Match.js";
 import { invalidateTournamentStatsCache } from "./tournamentStats.js";
+import { addRunTotals, inningsTeamId, matchRunTotals, netRunRate } from "./netRunRate.js";
 
 export const DEFAULT_POINTS = { win: 2, tie: 1, noResult: 1 };
 
@@ -25,8 +26,9 @@ export const pointsConfigOf = (tournament, key) => {
  * re-saved rebuilds the same rows, so a completed match can never double-count.
  *
  * Tie and no-result are distinct rows (`tied` / `noResult`), each earning the
- * configured tie / noResult points. NRR uses a full-quota overs model per
- * match (each team is charged the match's total overs).
+ * configured tie / noResult points; an abandoned match is a no-result. NRR,
+ * runs and wickets come from netRunRate.js: innings are matched by team, overs
+ * by legal balls, and a side bowled out is charged its full quota.
  */
 export const recomputeTournamentPoints = async (tournamentId) => {
   // A publish/completion changes the public stats payload; drop the cached copy
@@ -58,11 +60,18 @@ export const recomputeTournamentPoints = async (tournamentId) => {
   const rowFor = (teamId) =>
     newPointsTable.find((row) => sameId(row.team, teamId));
 
-  const finishedMatches = (tournament.matches || []).filter(
-    (match) => match?.status === "completed" && Array.isArray(match?.teams) && match.teams.length === 2,
+  // A match counts once it is over: completed, or abandoned (a no-result).
+  // "postponed" and anything still to play count for nothing.
+  const countedMatches = (tournament.matches || []).filter(
+    (match) =>
+      (match?.status === "completed" || match?.status === "abandoned") &&
+      Array.isArray(match?.teams) &&
+      match.teams.length === 2,
   );
 
-  for (const match of finishedMatches) {
+  const runTotals = new Map();
+
+  for (const match of countedMatches) {
     const team1 = match.teams[0];
     const team2 = match.teams[1];
     const t1 = rowFor(team1);
@@ -74,27 +83,35 @@ export const recomputeTournamentPoints = async (tournamentId) => {
 
     const resultType = match.result?.resultType;
     const isTie = resultType === "tie";
-    const isNoResult = resultType === "no result" || resultType === "no_result";
+    const isNoResult =
+      match.status === "abandoned" ||
+      resultType === "no result" ||
+      resultType === "no_result" ||
+      resultType === "abandoned";
 
-    if (isTie || isNoResult) {
-      const points = pointsConfigOf(tournament, isTie ? "tie" : "noResult");
-      if (isTie) {
-        t1.tied += 1;
-        t2.tied += 1;
-        t1.seriesForm.push("T");
-        t2.seriesForm.push("T");
-      } else {
-        t1.noResult += 1;
-        t2.noResult += 1;
-        t1.seriesForm.push("NR");
-        t2.seriesForm.push("NR");
+    if (isNoResult) {
+      // Both sides share the no-result points; the match is left out of NRR
+      // and of runs for/against, as in ICC playing conditions.
+      const points = pointsConfigOf(tournament, "noResult");
+      for (const row of [t1, t2]) {
+        row.noResult += 1;
+        row.points += points;
+        row.seriesForm.push("NR");
       }
-      t1.points += points;
-      t2.points += points;
+      continue;
+    }
+
+    if (isTie) {
+      const points = pointsConfigOf(tournament, "tie");
+      for (const row of [t1, t2]) {
+        row.tied += 1;
+        row.points += points;
+        row.seriesForm.push("T");
+      }
     } else if (match.result?.winner) {
+      // A tie settled by a super over has a winner and lands here.
       const winPoints = pointsConfigOf(tournament, "win");
-      const winner = match.result.winner;
-      const teamWins = sameId(winner, team1);
+      const teamWins = sameId(match.result.winner, team1);
       const winningRow = teamWins ? t1 : t2;
       const losingRow = teamWins ? t2 : t1;
       winningRow.won += 1;
@@ -104,34 +121,25 @@ export const recomputeTournamentPoints = async (tournamentId) => {
       losingRow.seriesForm.push("L");
     }
 
-    const inn1 = match.innings?.[0];
-    const inn2 = match.innings?.[1];
-    if (inn1 && inn2) {
-      t1.for += toNumber(inn1.runs);
-      t1.against += toNumber(inn2.runs);
-      t1.wicketsFor += toNumber(inn2.wickets);
-      t1.wicketsAgainst += toNumber(inn1.wickets);
-
-      t2.for += toNumber(inn2.runs);
-      t2.against += toNumber(inn1.runs);
-      t2.wicketsFor += toNumber(inn1.wickets);
-      t2.wicketsAgainst += toNumber(inn2.wickets);
-    }
-
-    // Full-quota overs model: each side is charged the match's total overs.
-    const overs = Math.max(toNumber(match.totalOvers, 20), 1);
-    t1.__oversFaced = (t1.__oversFaced || 0) + overs;
-    t2.__oversFaced = (t2.__oversFaced || 0) + overs;
+    // Runs, wickets and NRR follow `innings.team` (see netRunRate.js), not the
+    // order of the innings array.
+    const totals = matchRunTotals(match);
+    addRunTotals(runTotals, totals);
+    (match.innings || []).forEach((innings, index) => {
+      const batting = rowFor(inningsTeamId(match, innings, index));
+      if (!batting) return;
+      const fielding = batting === t1 ? t2 : t1;
+      batting.wicketsAgainst += toNumber(innings.wickets);
+      fielding.wicketsFor += toNumber(innings.wickets);
+    });
   }
 
   newPointsTable.forEach((row) => {
-    const oversFaced = row.__oversFaced || 0;
-    row.netRunRate =
-      oversFaced > 0
-        ? Number(((row.for / oversFaced) - (row.against / oversFaced)).toFixed(3))
-        : 0;
+    const totals = runTotals.get(idOf(row.team));
+    row.for = totals?.runsFor || 0;
+    row.against = totals?.runsAgainst || 0;
+    row.netRunRate = totals ? netRunRate(totals) : 0;
     row.seriesForm = (row.seriesForm || []).slice(-5);
-    delete row.__oversFaced;
   });
 
   tournament.pointsTable = newPointsTable;

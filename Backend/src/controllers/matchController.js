@@ -1383,9 +1383,10 @@ export const abandonMatch = async (req, res) => {
 
     await match.save({ validateModifiedOnly: true });
 
-    // An abandoned match contributes to no table, but it is still a closure:
-    // rebuild through the same pipeline so nothing derived keeps a figure from
-    // the match (and the tournament points table stays consistent).
+    // An abandoned match is a no-result: the tournament table gives both sides
+    // the no-result points (and leaves NRR alone); team rankings and player
+    // stats count completed matches only. Rebuild through the same pipeline so
+    // every derived table agrees.
     const postMatch = await runPostMatchPipeline(match._id, { reason: "match:abandoned" });
 
     recordAudit({
