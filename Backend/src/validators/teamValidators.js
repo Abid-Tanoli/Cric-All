@@ -2,6 +2,7 @@ import { z } from "zod";
 import { locationLabels, locationRefs } from "./locationSchemas.js";
 import { BATTING_STYLES, BOWLING_STYLES, PLAYING_ROLES } from "./playerValidators.js";
 import { isUploadedFilename } from "../utils/photoStore.js";
+import { partialWithoutDefaults } from "./partialUpdate.js";
 
 // Phase 4: teams created and maintained by an organization.
 //
@@ -115,9 +116,9 @@ export const createOrgTeamSchema = z
   })
   .strict();
 
-export const updateOrgTeamSchema = createOrgTeamSchema
-  .omit({ players: true })
-  .partial()
+// Only the keys the caller sent: see partialUpdate.js for why `.partial()` alone
+// is not enough with zod 4.
+export const updateOrgTeamSchema = partialWithoutDefaults(createOrgTeamSchema.omit({ players: true }))
   .extend({ isActive: z.boolean().optional() })
   .strict();
 

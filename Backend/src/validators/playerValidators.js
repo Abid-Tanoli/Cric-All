@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { BATTING_POSITIONS } from '../constants/battingPositions.js';
 import { locationLabels, locationRefs } from './locationSchemas.js';
+import { partialWithoutDefaults } from './partialUpdate.js';
 
 // Phase 5: player profiles.
 //
@@ -264,8 +265,9 @@ const statsSchema = z
 // both inconsistently produced profiles that disagreed with themselves.
 const ageOrBirthInfo = (body) => !(body.age != null && body.birthInfo?.date);
 
-export const updatePlayerSchema = createPlayerSchema
-  .partial()
+// Only the keys the caller sent (see partialUpdate.js): a plain `.partial()`
+// added `locationRefs: {}` and `locationLabels: {}` to every update.
+export const updatePlayerSchema = partialWithoutDefaults(createPlayerSchema)
   .extend({
     // Accepted by the shape, then stripped by applyPlayerFieldPolicy unless the
     // caller is entitled to it. See middleware/playerAccess.js.
@@ -313,8 +315,7 @@ export const adminPlayerSchema = createPlayerSchema
  * three kinds of caller, so the route picks the schema from the principal and
  * applyPlayerFieldPolicy decides what actually lands in the document.
  */
-export const adminUpdatePlayerSchema = createPlayerSchema
-  .partial()
+export const adminUpdatePlayerSchema = partialWithoutDefaults(createPlayerSchema)
   .extend({
     stats: statsSchema.optional(),
     team: optionalTeamId.optional(),
