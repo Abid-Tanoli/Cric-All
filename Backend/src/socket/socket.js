@@ -7,6 +7,32 @@ let io;
 const matchRoom = (matchId) => `match-${matchId}`;
 const shouldLogSocket = () => process.env.LOG_SOCKET === "true";
 
+// Live feeds are anonymous and read-only, so joins are never refused for want of
+// a login - but one socket may only hold so many client-chosen rooms. A match
+// takes four rooms (see matchRooms), so this is 20 matches at once.
+export const MAX_ROOMS_PER_SOCKET = 80;
+const MAX_ROOM_ID_LENGTH = 128;
+
+/**
+ * Room ids come straight from an anonymous client. Anything but a short
+ * string/number is ignored: an array would join every entry in one call (and so
+ * step around the limit), and an object is never a room we emit to.
+ */
+const toRoomId = (value) => {
+  if (typeof value !== "string" && typeof value !== "number") return null;
+  const id = String(value);
+  return id && id.length <= MAX_ROOM_ID_LENGTH ? id : null;
+};
+
+const matchRooms = (matchId) => [
+  // Canonical room: match-${matchId}
+  matchRoom(matchId),
+  // Legacy aliases (kept for backward compat with existing clients)
+  String(matchId),
+  `imatch_${matchId}`,
+  `m_${matchId}`,
+];
+
 export const initSocket = (server) => {
   io = new Server(server, {
     cors: {
@@ -34,33 +60,55 @@ export const initSocket = (server) => {
       }
     });
 
-    socket.on("joinRoom", (roomId) => {
-      socket.join(roomId);
+    // Client-chosen rooms this socket holds, oldest first.
+    const heldRooms = new Set();
+
+    // Past the limit the oldest room is dropped rather than the new join refused.
+    // Some live components join a match and never leave it, so a visitor who
+    // opens many matches in one session would otherwise stop getting updates on
+    // the page in front of them.
+    const joinRooms = (rooms) => {
+      for (const room of rooms) {
+        heldRooms.delete(room); // a re-join counts as recent again
+        heldRooms.add(room);
+        socket.join(room);
+      }
+      for (const room of heldRooms) {
+        if (heldRooms.size <= MAX_ROOMS_PER_SOCKET) break;
+        heldRooms.delete(room);
+        socket.leave(room);
+      }
+    };
+
+    const leaveRooms = (rooms) => {
+      for (const room of rooms) {
+        heldRooms.delete(room);
+        socket.leave(room);
+      }
+    };
+
+    socket.on("joinRoom", (value) => {
+      const roomId = toRoomId(value);
+      if (!roomId) return;
+      joinRooms([roomId]);
       if (shouldLogSocket()) {
         slog.info({ room: roomId }, "socket join room");
       }
     });
 
-    socket.on("leaveRoom", (roomId) => {
-      socket.leave(roomId);
+    socket.on("leaveRoom", (value) => {
+      const roomId = toRoomId(value);
+      if (roomId) leaveRooms([roomId]);
     });
 
-    const joinAllMatchRooms = (matchId) => {
-      if (!matchId) return;
-      // Canonical room: match-${matchId}
-      socket.join(matchRoom(matchId));
-      // Legacy aliases (kept for backward compat with existing clients)
-      socket.join(String(matchId));
-      socket.join(`imatch_${matchId}`);
-      socket.join(`m_${matchId}`);
+    const joinAllMatchRooms = (value) => {
+      const matchId = toRoomId(value);
+      if (matchId) joinRooms(matchRooms(matchId));
     };
 
-    const leaveAllMatchRooms = (matchId) => {
-      if (!matchId) return;
-      socket.leave(matchRoom(matchId));
-      socket.leave(String(matchId));
-      socket.leave(`imatch_${matchId}`);
-      socket.leave(`m_${matchId}`);
+    const leaveAllMatchRooms = (value) => {
+      const matchId = toRoomId(value);
+      if (matchId) leaveRooms(matchRooms(matchId));
     };
 
     // ── Canonical join/leave (preferred) ───────────────────────
@@ -77,20 +125,18 @@ export const initSocket = (server) => {
     // ── Legacy aliases (migrate clients to "join-match") ───────
     const legacyJoinHandlers = ["JOIN_IMATCH", "JOIN_MATCH", "JOIN"];
     const legacyLeaveHandlers = ["LEAVE_IMATCH", "LEAVE_MATCH", "LEAVE"];
+    // `payload?.` and not a destructured parameter: a client can send null, which
+    // a default does not cover, and a throw here takes the whole process down.
     legacyJoinHandlers.forEach((ev) => {
-      socket.on(ev, ({ matchId, id } = {}) => joinAllMatchRooms(matchId || id));
+      socket.on(ev, (payload) => joinAllMatchRooms(payload?.matchId || payload?.id));
     });
     legacyLeaveHandlers.forEach((ev) => {
-      socket.on(ev, ({ matchId, id } = {}) => leaveAllMatchRooms(matchId || id));
+      socket.on(ev, (payload) => leaveAllMatchRooms(payload?.matchId || payload?.id));
     });
 
     socket.on("join-teams", () => { socket.join("teams"); });
     socket.on("join-players", () => { socket.join("players"); });
     socket.on("join-cricket-live", () => { socket.join("cricket-live"); });
-
-    socket.on("match:updateList", () => {
-      io.emit("match:updateList");
-    });
 
     socket.on("disconnect", (reason) => {
       if (shouldLogSocket()) {

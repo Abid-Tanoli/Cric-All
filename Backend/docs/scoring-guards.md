@@ -69,11 +69,12 @@ edit a squad.
 
 | Event(s) | Handler | Authorization / effect |
 | --- | --- | --- |
-| `joinRoom`, `join-match`, `JOIN_IMATCH`, `JOIN_MATCH`, `JOIN` | joins requested match room aliases | No authentication or tenant check; read subscription only |
+| `joinRoom`, `join-match`, `JOIN_IMATCH`, `JOIN_MATCH`, `JOIN` | joins requested match room aliases | No authentication or tenant check; read subscription only. Max `MAX_ROOMS_PER_SOCKET` rooms per socket, oldest dropped first; non-scalar ids ignored |
 | `leaveRoom`, `leave-match`, `LEAVE_IMATCH`, `LEAVE_MATCH`, `LEAVE` | leaves room aliases | No authentication; read subscription only |
 | `join-teams`, `join-players`, `join-cricket-live` | joins public feed rooms | No authentication; read subscription only |
-| `match:updateList` | broadcasts list refresh | No authentication; no database mutation |
 | `disconnect` | logging only | No write |
+
+`match:updateList` is server-to-client only; a client sending it has no effect.
 
 There is no inbound ball/scoring Socket.IO event or write handler. Score,
 innings, and toss mutations are HTTP-only and pass through `requireMatchScoreAccess`.
