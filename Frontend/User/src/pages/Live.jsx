@@ -203,7 +203,7 @@ export default function Live() {
                     </div>
                     <div className="space-y-3">
                       {match.innings?.map((inn, idx) => {
-                        const team = match.teams?.[idx] || {};
+                        const team = getTeamById(match, inn.team) || match.teams?.[idx] || {};
                         return (
                           <div key={idx} className="flex items-center justify-between">
                             <div className="flex items-center gap-3">
