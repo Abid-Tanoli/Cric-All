@@ -1158,6 +1158,7 @@ export function rewriteInningsPlayerReferences(innings, fromId, toId) {
   swap(innings, "onStrikeBatsman", fromId, toId);
   swap(innings, "currentBowler", fromId, toId);
   swap(innings?.twelfthManBowlBlock, "player", fromId, toId);
+  swap(innings?.replacedBowlerBlock, "player", fromId, toId);
   swapArray(innings, "battingOrder", fromId, toId);
   eachArray(innings?.batting, (row) => {
     swap(row, "player", fromId, toId);

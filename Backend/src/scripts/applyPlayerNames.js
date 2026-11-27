@@ -48,6 +48,12 @@ const ADDITIVE_PLAYER_STATS = [
 const ADDITIVE_RANKING_FIELDS = [
   "teamRuns", "teamFifties", "teamHundreds", "teamWickets", "teamMatches",
 ];
+const LEGACY_AWARD_PLAYER_FIELDS = ["playerOfTournament", "bestBatsman", "bestBowler"];
+// Single-player fields on Tournament.officialAwards. `topPlayers` (an ordered
+// podium) and `customAwards[].player` are handled separately.
+const OFFICIAL_AWARD_PLAYER_FIELDS = [
+  "playerOfTournament", "bestBatsman", "bestBowler", "bestFielder", "emergingPlayer",
+];
 
 export function isTestTarget(databaseName, nodeEnv = process.env.NODE_ENV) {
   const db = String(databaseName || "");
@@ -507,9 +513,30 @@ async function updateEventsAndTournaments(sourceId, targetId, counts) {
         }
       }
       if (model === Tournament && document.awards) {
-        for (const field of ["playerOfTournament", "bestBatsman", "bestBowler"]) {
+        for (const field of LEGACY_AWARD_PLAYER_FIELDS) {
           if (idOf(document.awards[field]) === sourceId) {
             document.awards[field] = targetId;
+            changed = true;
+          }
+        }
+      }
+      if (model === Tournament && document.officialAwards) {
+        const official = document.officialAwards;
+        for (const field of OFFICIAL_AWARD_PLAYER_FIELDS) {
+          if (idOf(official[field]) === sourceId) {
+            official[field] = targetId;
+            changed = true;
+          }
+        }
+        // The podium may not name one player twice. If the target is already
+        // on it, keep the first occurrence so the order of the others holds.
+        if (Array.isArray(official.topPlayers) && official.topPlayers.some((player) => idOf(player) === sourceId)) {
+          official.topPlayers = [...new Set(official.topPlayers.map(idOf).map((id) => id === sourceId ? targetId : id))];
+          changed = true;
+        }
+        for (const award of official.customAwards || []) {
+          if (idOf(award.player) === sourceId) {
+            award.player = targetId;
             changed = true;
           }
         }
@@ -717,9 +744,10 @@ export async function previewMergeReferences(sourcePlayerIds) {
       "tournamentSquads.wicketKeepers",
       "tournamentSquads.playerChanges.outPlayer",
       "tournamentSquads.playerChanges.inPlayer",
-      "awards.playerOfTournament",
-      "awards.bestBatsman",
-      "awards.bestBowler",
+      ...LEGACY_AWARD_PLAYER_FIELDS.map((field) => `awards.${field}`),
+      ...OFFICIAL_AWARD_PLAYER_FIELDS.map((field) => `officialAwards.${field}`),
+      "officialAwards.topPlayers",
+      "officialAwards.customAwards.player",
     ]);
     await countFields(TeamPlayerRanking, playerId, ["player"]);
   }

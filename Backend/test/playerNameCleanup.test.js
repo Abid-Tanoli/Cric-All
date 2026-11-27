@@ -920,6 +920,199 @@ test("merge changes only the matching player field in every direct-reference col
   assert.ok(preview.some((entry) => entry.collection === CommunityPost.collection.collectionName && entry.field === "subject.ref"));
 });
 
+test("merge rewrites official awards and replaced-bowler blocks field by field, then removes the placeholder", async () => {
+  const { team } = await seedBase();
+  const [target, source, ...others] = await Player.create([
+    { name: "Existing Player", team: team._id, stats: { runs: 10, wickets: 0, matches: 1 } },
+    { name: "Placeholder (TBC)", team: team._id, stats: { runs: 29, wickets: 1, matches: 1 } },
+    ...Array.from({ length: 12 }, (_, index) => ({ name: `Award Other ${index + 1}`, team: team._id })),
+  ]);
+  const sourceId = String(source._id);
+  const targetId = String(target._id);
+  const baselineAwards = () => ({
+    awards: {
+      playerOfTournament: others[9]._id,
+      bestBatsman: others[10]._id,
+      bestBowler: others[11]._id,
+    },
+    officialAwards: {
+      playerOfTournament: others[0]._id,
+      topPlayers: [others[0]._id, others[1]._id, others[2]._id],
+      bestBatsman: others[3]._id,
+      bestBowler: others[4]._id,
+      bestFielder: others[5]._id,
+      emergingPlayer: others[6]._id,
+      citations: { bestBowler: "Four wickets in the final", emergingPlayer: "Youngest in the squad" },
+      customAwards: [
+        { title: "Best Catch", player: others[7]._id, citation: "Boundary catch" },
+        { title: "Fair Play", player: others[8]._id, citation: "" },
+      ],
+      published: true,
+      publishedAt: new Date("2026-10-12T00:00:00.000Z"),
+      note: "Presented at the closing ceremony",
+    },
+  });
+  // One tournament per award field. In each one only that field points at the
+  // placeholder, so the merge must rewrite exactly that path and nothing else.
+  const variants = {
+    playerOfTournament: (awards) => { awards.officialAwards.playerOfTournament = source._id; },
+    bestBatsman: (awards) => { awards.officialAwards.bestBatsman = source._id; },
+    bestBowler: (awards) => { awards.officialAwards.bestBowler = source._id; },
+    bestFielder: (awards) => { awards.officialAwards.bestFielder = source._id; },
+    emergingPlayer: (awards) => { awards.officialAwards.emergingPlayer = source._id; },
+    topPlayers: (awards) => {
+      awards.officialAwards.playerOfTournament = source._id;
+      awards.officialAwards.topPlayers = [source._id, others[1]._id, target._id];
+    },
+    customAwards: (awards) => { awards.officialAwards.customAwards[1].player = source._id; },
+  };
+  const expectedAfter = {
+    playerOfTournament: (awards) => { awards.officialAwards.playerOfTournament = targetId; },
+    bestBatsman: (awards) => { awards.officialAwards.bestBatsman = targetId; },
+    bestBowler: (awards) => { awards.officialAwards.bestBowler = targetId; },
+    bestFielder: (awards) => { awards.officialAwards.bestFielder = targetId; },
+    emergingPlayer: (awards) => { awards.officialAwards.emergingPlayer = targetId; },
+    // The podium may not list one player twice, so the merged target keeps its
+    // first place and the later duplicate is dropped.
+    topPlayers: (awards) => {
+      awards.officialAwards.playerOfTournament = targetId;
+      awards.officialAwards.topPlayers = [targetId, String(others[1]._id)];
+    },
+    customAwards: (awards) => { awards.officialAwards.customAwards[1].player = targetId; },
+  };
+  const tournaments = {};
+  for (const [field, apply] of Object.entries(variants)) {
+    const awards = baselineAwards();
+    apply(awards);
+    tournaments[field] = await Tournament.create({
+      name: `Award isolation ${sequence} ${field}`,
+      startDate: new Date("2026-09-01T00:00:00.000Z"),
+      endDate: new Date("2026-10-11T00:00:00.000Z"),
+      teams: [team._id],
+      tournamentSquads: [{ team: team._id, players: [target._id, others[0]._id] }],
+      ...awards,
+    });
+  }
+  const untouchedTournament = await Tournament.create({
+    name: `Award isolation ${sequence} untouched`,
+    startDate: new Date("2026-09-01T00:00:00.000Z"),
+    endDate: new Date("2026-10-11T00:00:00.000Z"),
+    teams: [team._id],
+    ...baselineAwards(),
+  });
+
+  const bowlingInnings = (overNumber, replacedPlayer) => ({
+    team: team._id,
+    currentBowler: others[1]._id,
+    twelfthManBowlBlock: { overNumber: overNumber - 1, player: others[2]._id },
+    replacedBowlerBlock: { overNumber, player: replacedPlayer },
+  });
+  const match = await Match.create({
+    title: "Replaced bowler match",
+    teams: [team._id],
+    innings: [bowlingInnings(7, source._id), bowlingInnings(12, others[3]._id)],
+    superOvers: [{
+      superOverNumber: 1,
+      innings: [bowlingInnings(1, others[4]._id), bowlingInnings(1, source._id)],
+    }],
+  });
+
+  const snapshot = (document) => {
+    const plain = JSON.parse(JSON.stringify(document));
+    delete plain.updatedAt;
+    delete plain.__v;
+    return plain;
+  };
+  const tournamentsBefore = Object.fromEntries(await Promise.all(Object.entries(tournaments)
+    .map(async ([field, tournament]) => [field, snapshot(await Tournament.findById(tournament._id).lean())])));
+  const untouchedBefore = snapshot(await Tournament.findById(untouchedTournament._id).lean());
+  const matchBefore = snapshot(await Match.findById(match._id).lean());
+
+  const preview = await previewMergeReferences([sourceId]);
+  const tournamentCollection = Tournament.collection.collectionName;
+  for (const field of [
+    "officialAwards.playerOfTournament",
+    "officialAwards.topPlayers",
+    "officialAwards.bestBatsman",
+    "officialAwards.bestBowler",
+    "officialAwards.bestFielder",
+    "officialAwards.emergingPlayer",
+    "officialAwards.customAwards.player",
+  ]) {
+    assert.ok(
+      preview.some((entry) => entry.collection === tournamentCollection && entry.field === field),
+      `dry-run preview lists ${field}`,
+    );
+  }
+  for (const field of ["innings[].replacedBowlerBlock.player", "superOvers[].innings[].replacedBowlerBlock.player"]) {
+    assert.ok(
+      preview.some((entry) => entry.collection === Match.collection.collectionName && entry.field === field),
+      `dry-run preview lists ${field}`,
+    );
+  }
+
+  const integrity = await checkPlayerMergeIntegrity({ playerId: sourceId });
+  const listedAwardFields = integrity.otherReferences
+    .filter((entry) => entry.collection === tournamentCollection)
+    .flatMap((entry) => entry.fields.map((field) => field.replace(/\[\d+\]/g, "")));
+  for (const field of [
+    "officialAwards.playerOfTournament",
+    "officialAwards.topPlayers",
+    "officialAwards.bestBatsman",
+    "officialAwards.bestBowler",
+    "officialAwards.bestFielder",
+    "officialAwards.emergingPlayer",
+    "officialAwards.customAwards.player",
+  ]) {
+    assert.ok(listedAwardFields.includes(field), `integrity check lists ${field}`);
+  }
+  const matchReport = integrity.matches.find((entry) => entry.matchId === String(match._id));
+  for (const field of ["innings[0].replacedBowlerBlock.player", "superOvers[0].innings[1].replacedBowlerBlock.player"]) {
+    assert.ok(
+      matchReport.references.some((entry) => entry.collection === Match.collection.collectionName && entry.field === field),
+      `integrity check lists ${field}`,
+    );
+  }
+
+  const { plan, errors } = await planNameChanges({
+    rows: [answerRow(source, team, "Existing Player")],
+    players: await Player.find({}),
+    teams: await Team.find({}),
+    matches: await Match.find({}),
+  });
+  assert.deepEqual(errors, []);
+  const [result] = await applyPlan(plan);
+
+  for (const [field, tournament] of Object.entries(tournaments)) {
+    const expected = structuredClone(tournamentsBefore[field]);
+    expectedAfter[field](expected);
+    assert.deepEqual(
+      snapshot(await Tournament.findById(tournament._id).lean()),
+      expected,
+      `only officialAwards.${field} changes`,
+    );
+  }
+  assert.deepEqual(snapshot(await Tournament.findById(untouchedTournament._id).lean()), untouchedBefore);
+
+  const expectedMatch = structuredClone(matchBefore);
+  expectedMatch.innings[0].replacedBowlerBlock.player = targetId;
+  expectedMatch.superOvers[0].innings[1].replacedBowlerBlock.player = targetId;
+  assert.deepEqual(snapshot(await Match.findById(match._id).lean()), expectedMatch);
+
+  assert.equal(result.result, "merged and deleted placeholder");
+  assert.equal(await Player.findById(sourceId), null);
+  const mergedTarget = await Player.findById(targetId);
+  assert.equal(mergedTarget.stats.runs, 39);
+  assert.equal(mergedTarget.stats.wickets, 1);
+  // Only the audit log may still name the placeholder; that history is kept on purpose.
+  const collections = await mongoose.connection.db.listCollections({}, { nameOnly: true }).toArray();
+  for (const { name } of collections) {
+    if (name === AuditLog.collection.collectionName) continue;
+    const documents = await mongoose.connection.db.collection(name).find({}).toArray();
+    assert.ok(!JSON.stringify(documents).includes(sourceId), `${name} no longer references the placeholder`);
+  }
+});
+
 test("integrity checker is read-only and groups all player references with suspicious ball rows", async () => {
   const { team } = await seedBase();
   const [target, source, otherPlayer] = await Player.create([
