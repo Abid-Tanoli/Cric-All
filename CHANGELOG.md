@@ -11,6 +11,9 @@ Groups: **Added** (new), **Changed** (behaviour changed), **Fixed** (bug), **Sec
 
 Nothing merged after `1708a5b` (PR #85) yet. Work in progress is tracked in [docs/product/05-IMPLEMENTATION-PLAN.md](docs/product/05-IMPLEMENTATION-PLAN.md) (T0.1–T0.4).
 
+### Fixed
+- `/live` lists a match that finished today under Results, newest first; Results used to show yesterday's matches only (B10, T0.5)
+
 ## 2026-11-25
 
 ### Added
