@@ -70,6 +70,13 @@ const GLOBAL_REFERENCES = [
       "awards.playerOfTournament",
       "awards.bestBatsman",
       "awards.bestBowler",
+      "officialAwards.playerOfTournament",
+      "officialAwards.topPlayers",
+      "officialAwards.bestBatsman",
+      "officialAwards.bestBowler",
+      "officialAwards.bestFielder",
+      "officialAwards.emergingPlayer",
+      "officialAwards.customAwards.player",
     ],
   },
   {
