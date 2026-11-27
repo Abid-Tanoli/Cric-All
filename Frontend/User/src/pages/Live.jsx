@@ -7,7 +7,7 @@ import OrgTypeFilter, { orgTypeFromSearchParams } from "../components/OrgTypeFil
 import { initSocket } from "../services/socket";
 import LiveMatchesSection from "../components/cricapi/LiveMatchesSection";
 import LoadingWithTimeout from "../components/LoadingWithTimeout";
-import { getTeamById } from "../utils/matchHelpers";
+import { getTeamById, teamOfInnings } from "../utils/matchHelpers";
 
 // A match is live because of its status, never because of its date. Scoring can
 // run past midnight, a match can be started on another day than it was scheduled
@@ -203,7 +203,7 @@ export default function Live() {
                     </div>
                     <div className="space-y-3">
                       {match.innings?.map((inn, idx) => {
-                        const team = match.teams?.[idx] || {};
+                        const team = teamOfInnings(match, inn, idx) || {};
                         return (
                           <div key={idx} className="flex items-center justify-between">
                             <div className="flex items-center gap-3">
@@ -265,7 +265,7 @@ export default function Live() {
                     <div className="space-y-3">
                       {match.innings?.map((inn, idx) => {
                         // The side batting first is not always teams[0].
-                        const team = getTeamById(match, inn.team) || match.teams?.[idx] || {};
+                        const team = teamOfInnings(match, inn, idx) || {};
                         const isBatting = match.innings?.[idx]?.batting?.filter(b => !b.isOut).length > 0;
                         return (
                           <div key={idx} className="flex items-center justify-between">

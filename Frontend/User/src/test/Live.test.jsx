@@ -110,6 +110,22 @@ describe("Live page", () => {
     expect(screen.getByText("Toss: KHA elected to bat")).toBeInTheDocument();
   });
 
+  it("credits each innings to the team that batted it on a result card", async () => {
+    renderLive([{
+      ...oldResult,
+      startAt: daysFromNow(-1),
+      innings: [
+        { team: khan, runs: 235, wickets: 10, overs: 20, balls: 120 },
+        { team: baldia, runs: 232, wickets: 10, overs: 20, balls: 120 },
+      ],
+    }]);
+    await screen.findByRole("heading", { name: "Results" });
+
+    const row = (name) => screen.getByText(name).parentElement.parentElement;
+    expect(within(row("KHA")).getByText(/235\/10/)).toBeInTheDocument();
+    expect(within(row("BAL")).getByText(/232\/10/)).toBeInTheDocument();
+  });
+
   it("explains itself instead of rendering a blank page when nothing is current", async () => {
     renderLive([oldResult]);
 

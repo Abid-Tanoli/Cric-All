@@ -12,6 +12,7 @@ import CreatePlayerProfile from "../components/CreatePlayerProfile";
 import { featureFlags } from "../config/features";
 import { useCricketProviderStatus, isProviderConfigured } from "../hooks/useCricketProviderStatus";
 import { teamShortName } from "../utils/teamDisplay";
+import { inningsOfTeam } from "../utils/matchHelpers";
 import AdSlot from "../components/ads/AdSlot";
 
 const statusBadge = (match) => {
@@ -128,7 +129,7 @@ export function Home() {
       )}
       <div className="space-y-1">
         {(m.teams || []).map((team, idx) => {
-          const inn = m.innings?.[idx];
+          const inn = inningsOfTeam(m, team, idx);
           return (
             <div key={team?._id || idx} className="flex items-center justify-between">
               <div className="flex items-center gap-2 min-w-0 flex-1">
@@ -242,7 +243,7 @@ export function Home() {
                           {statusBadge(m)}
                         </div>
                         {(m.teams || []).slice(0, 2).map((team, idx) => {
-                          const inn = m.innings?.[idx];
+                          const inn = inningsOfTeam(m, team, idx);
                           return (
                             <div key={team?._id || idx} className="flex items-center justify-between py-0.5">
                               <span className="text-sm font-bold text-cric-text truncate">{teamShortName(team)}</span>

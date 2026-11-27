@@ -1,5 +1,6 @@
 import { useRef } from "react";
 import { toPng } from "html-to-image";
+import { inningsOfTeam } from "../utils/matchHelpers";
 
 const MatchSummaryCard = ({ match }) => {
   const cardRef = useRef(null);
@@ -8,8 +9,9 @@ const MatchSummaryCard = ({ match }) => {
 
   const team1 = match.teams?.[0];
   const team2 = match.teams?.[1];
-  const inn1 = match.innings?.[0];
-  const inn2 = match.innings?.[1];
+  // Innings are in batting order, which is not always the order of teams.
+  const inn1 = inningsOfTeam(match, team1, 0);
+  const inn2 = inningsOfTeam(match, team2, 1);
   const result = match.result;
 
   const handleDownload = async () => {

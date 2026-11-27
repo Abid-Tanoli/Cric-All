@@ -10,6 +10,7 @@ import KnockoutRounds from "../components/KnockoutRounds";
 import { STAGE_ORDER } from "../components/knockoutBracket";
 import { buildTournamentAwards } from "../utils/tournamentAwards";
 import { teamShortName } from "../utils/teamDisplay";
+import { teamOfInnings } from "../utils/matchHelpers";
 
 export default function Series() {
   const { seriesId } = useParams();
@@ -488,7 +489,7 @@ export default function Series() {
                         </div>
                         <div className="space-y-2">
                           {match.innings?.slice(0, 2).map((inn, idx) => {
-                            const team = typeof inn.team === "object" ? inn.team : match.teams?.[idx] || {};
+                            const team = teamOfInnings(match, inn, idx) || {};
                             return (
                               <div key={idx} className="flex items-center justify-between">
                                 <div className="flex items-center gap-3">
@@ -534,7 +535,7 @@ export default function Series() {
                         </div>
                         <div className="space-y-2">
                           {match.innings?.map((inn, idx) => {
-                            const team = match.teams?.[idx] || {};
+                            const team = teamOfInnings(match, inn, idx) || {};
                             return (
                               <div key={idx} className="flex items-center justify-between">
                                 <div className="flex items-center gap-3">

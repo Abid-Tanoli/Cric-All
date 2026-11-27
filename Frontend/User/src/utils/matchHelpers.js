@@ -96,6 +96,23 @@ export const getTeamById = (match, teamId) => {
   return match.teams.find((t) => sameId(t, teamId)) || null;
 };
 
+// The innings a team batted. Innings are stored in batting order, which is not
+// always the order of `teams` (the side that bats first can be teams[1]). Fall
+// back to the position only when the innings do not say which team batted.
+export const inningsOfTeam = (match, team, index) => {
+  const innings = Array.isArray(match?.innings) ? match.innings : [];
+  if (!innings.some((inn) => inn?.team)) return innings[index] || null;
+  return innings.find((inn) => sameId(inn?.team, team)) || null;
+};
+
+// The team that batted an innings: the one the innings names, else the team at
+// the same position for innings that do not say.
+export const teamOfInnings = (match, innings, index) =>
+  getTeamById(match, innings?.team) ||
+  (innings?.team && typeof innings.team === "object" ? innings.team : null) ||
+  match?.teams?.[index] ||
+  null;
+
 export const collectPlayers = (match) => {
   if (!match?.teams) return [];
   const all = [];
