@@ -719,9 +719,11 @@ export async function runCleanup({
   if (!backup) {
     out("");
     out(`Refusing to delete: no backup newer than 30 minutes in ${backupDir}.`);
-    out("Create one first, then run this again:");
-    out("  docker compose exec backend npm run db:backup");
-    out("  # or, on the host: cd Backend && npm run db:backup");
+    // The backend image has neither docker nor mongodump, so the backup is
+    // always taken on the host and, for a container run, copied in.
+    out("Create one on the host (from the repository folder), then run this again:");
+    out("  cd Backend && npm run db:backup && cd ..");
+    out(`  # inside Docker, also copy it in: docker compose cp Backend/backups/<newest backup-*.archive.gz> backend:${backupDir}/`);
     return { exitCode: 1, plan, summary: null };
   }
 

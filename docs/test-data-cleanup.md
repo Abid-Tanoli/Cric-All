@@ -18,6 +18,10 @@ listed, never deleted.
 
 ## 1. Preview (writes nothing)
 
+Run every `docker compose` command from the repository folder on the server
+(the one that holds `docker-compose.yml`, for example `/opt/cricall`). From any
+other folder Compose answers `no configuration file provided: not found`.
+
 ```bash
 docker compose exec backend npm run cleanup:testdata
 ```
@@ -30,13 +34,33 @@ articles) that would be removed with them.
 ## 2. Take a fresh backup
 
 The apply step refuses to run without a `backup-*.archive.gz` younger than 30
-minutes in `BACKUP_DIR` (default `Backend/backups`).
+minutes in `BACKUP_DIR` (default `Backend/backups`, which is `/app/backups`
+inside the backend container).
+
+Take the backup on the host, not inside the container: `db:backup` needs
+`docker` or `mongodump`, and the backend image has neither. It reads the Mongo
+URL from `Backend/.env`, so no password is typed.
 
 ```bash
-docker compose exec backend npm run db:backup
+cd Backend
+npm run db:backup
+ls -lh backups/backup-*.archive.gz | tail -n 3
+cd ..
 ```
 
-The script prints this exact command if no fresh backup is found.
+Do not continue unless the newest archive exists and has a plausible size.
+
+The host's `Backend/backups` is not mounted into the container, so copy the
+newest archive in before applying (within the 30 minutes):
+
+```bash
+docker compose exec backend mkdir -p /app/backups
+docker compose cp "$(ls -1t Backend/backups/backup-*.archive.gz | head -n 1)" backend:/app/backups/
+docker compose exec backend ls -lt /app/backups
+```
+
+If `Backend/.env` sets `BACKUP_DIR`, the container checks that path instead;
+copy the archive there.
 
 ## 3. Apply with the dry-run total
 
