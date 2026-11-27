@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { number, idOf, sameId, playerName, formatOvers, formatBowlerOvers, strikeRate, economyRate, getCrr, ballRuns } from "../utils/matchHelpers";
+import { number, idOf, sameId, playerName, formatOvers, formatBowlerOvers, strikeRate, economyRate, getCrr, ballRuns, teamOfInnings } from "../utils/matchHelpers";
 
 export default function SummaryTab({ match, allPlayers }) {
   const computeMVP = () => {
@@ -129,7 +129,7 @@ export default function SummaryTab({ match, allPlayers }) {
       {(firstInnings || secondInnings) && (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
           {[firstInnings, secondInnings].filter(Boolean).map((inn, idx) => {
-            const t = match?.teams?.[idx === 0 ? 0 : 1] || match?.teams?.[idx];
+            const t = teamOfInnings(match, inn, idx);
             const topBatter = [...(inn.batting || [])].sort((a, b) => number(b.runs) - number(a.runs))[0];
             const topBowler = [...(inn.bowling || [])].sort((a, b) => number(b.wickets) - number(a.wickets))[0];
             return (

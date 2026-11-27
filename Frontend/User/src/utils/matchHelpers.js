@@ -105,6 +105,14 @@ export const inningsOfTeam = (match, team, index) => {
   return innings.find((inn) => sameId(inn?.team, team)) || null;
 };
 
+// The team that batted an innings: the one the innings names, else the team at
+// the same position for innings that do not say.
+export const teamOfInnings = (match, innings, index) =>
+  getTeamById(match, innings?.team) ||
+  (innings?.team && typeof innings.team === "object" ? innings.team : null) ||
+  match?.teams?.[index] ||
+  null;
+
 export const collectPlayers = (match) => {
   if (!match?.teams) return [];
   const all = [];

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { api } from "../services/api";
 import MatchSummaryCard from "../components/MatchSummaryCard";
+import { teamOfInnings } from "../utils/matchHelpers";
 
 export default function Summary() {
   const { matchId } = useParams();
@@ -116,7 +117,7 @@ export default function Summary() {
             <div key={idx} className="bg-[#141b24] rounded-[2.5rem] border border-white/5 overflow-hidden shadow-xl">
               <div className="p-8 border-b border-white/5 flex justify-between items-center">
                 <h3 className="text-xl font-black font-raj text-white uppercase italic tracking-tight">
-                    {match.teams?.[idx]?.name}
+                    {teamOfInnings(match, inn, idx)?.name}
                 </h3>
                 <div className="text-sm font-bold text-cric-muted uppercase tracking-widest">{inn.status}</div>
               </div>
