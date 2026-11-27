@@ -145,9 +145,28 @@ tap → IndexedDB queue (clientBallId, seq, payload, baseVersion)
 | `navigator.storage.persist()` maangein | Browser queue na mitaye |
 | Token khatam ho jaye | Queue mehfooz, login ke baad chale. `api.js` 401 par token hatata hai: **queue na hate** |
 | Logout, queue baqi | Roko, samjhao |
-| Local hisaab | Server ka engine Node mein hai. **Pehle 1 din ki jaanch:** engine ko browser mein bina Mongoose chala sakte hain ya nahi. Na ho to offline mein sirf runs/wickets/overs ka chhota hisaab, sync par server ka sach |
+| Local hisaab | **Server ka engine hi browser mein chalega** (jaanch T3.2, neeche §5.3.1). Screen ke liye local hisaab, sync par server ka jawab sach |
 
 Library: `idb` (chhoti); Dexie nahi.
+
+#### 5.3.1 Jaanch: engine browser mein? (T3.2, 28 Nov 2026)
+
+**Jawab: haan, bina Mongoose aur bina tabdeeli ke.** "Sirf runs/wickets/overs ka chhota hisaab" wala fallback nahi chahiye.
+
+Saboot:
+- `ScoringEngine.js` sirf `ballAccounting.js` aur `utils/resultHelpers.js` import karta hai. `controllerAdapter.js` in ke ilawa `bowlerRules.js` aur `utils/cricketHelpers.js`. Dono utils kuch import nahi karte. Kahin bhi Mongoose, Node module, `process`, `Buffer` ya `require` nahi.
+- esbuild `--platform=browser` ne adapter samet poora engine bina error bundle kiya: 32.9 KB minified, ~10 KB gzip.
+- Wohi bundle Node globals ke baghair V8 sandbox (`vm`) mein chalaya: 1, 4, wide, 6, bowled → 12/1, 4 legal balls, extras mein 1 wide. Wicket undo → 12/0, 3 balls. Server jaisa hisaab.
+- Adapter plain object leta hai: `JSON.parse(JSON.stringify(...))`, `toObject()` sirf ho to. API ka match JSON seedha chal jata hai. IDs `String(a) === String(b)` se milte hain.
+
+T3.5 ke liye dhyan:
+1. **Ek hi copy.** Engine `Frontend/Shared/scoring/` mein le jayein, ya Vite alias se `Backend/src/services/scoring` import karein (`fs.allow: ['..']` pehle se hai). Server aur client ka hisaab kabhi alag na ho.
+2. Engine `this.match` ko badalta hai (48 jagah): client har ball se pehle clone kare, adapter ki tarah.
+3. Bowler ke qaide (lagatar overs, quota, replaced bowler) adapter mein hain aur plain data par chalte hain: client screen par bata sakta hai, aakhri faisla server ka.
+4. Sync ka jawab (200 / `duplicate: true`, T1.2) hi sach: local state us se badal dein.
+5. Pehle T3.1 (`recordBall` alag): phir local engine ko jodna ek jagah ka kaam.
+
+Browser pane mein page khol kar nahi chalaya (wahan `file://` nahi khulta). Asal phone par T3.5 mein dekhna baqi.
 
 ### 5.4 Scorer bulana (R18)
 QR/link = maujooda invitation (`score_handler`) + us match par khud assign. Bina account token wala link **nahi** (audit ka faisla).
