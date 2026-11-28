@@ -60,7 +60,11 @@ const ballSchema = new mongoose.Schema({
   pitchLength: { type: String, default: "" },
   pitchShotType: { type: String, default: "" },
   pitchX: { type: Number, default: null },
-  pitchY: { type: Number, default: null }
+  pitchY: { type: Number, default: null },
+  // The scorer app's id for this ball. A retry with the same id is answered
+  // from what is stored instead of being recorded again (B6). Absent on balls
+  // from older clients.
+  clientBallId: { type: String }
 });
 
 const overSchema = new mongoose.Schema({
@@ -168,6 +172,9 @@ const inningsSchema = new mongoose.Schema({
     player: { type: mongoose.Schema.Types.ObjectId, ref: "Player", default: null },
   },
   oversHistory: [overSchema],
+  // clientActionId of the last undos applied to this innings, newest last, so
+  // a retried undo does not take back a second ball. Kept short on purpose.
+  revertedActionIds: { type: [String], default: undefined },
   batting: [batsmanStatsSchema],
   bowling: [bowlerStatsSchema],
   fallOfWickets: [{

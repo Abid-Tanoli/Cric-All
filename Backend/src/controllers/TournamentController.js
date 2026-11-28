@@ -1,5 +1,6 @@
 import Tournament from "../models/Tournament.js";
 import Match from "../models/Match.js";
+import { deleteMatchData } from "../services/matchData.js";
 import Team from "../models/Team.js";
 import Player from "../models/Player.js";
 import { getIO } from "../socket/socket.js";
@@ -593,6 +594,8 @@ export const deleteTournament = async (req, res) => {
     // Delete all associated matches
     if (tournament.matches && tournament.matches.length > 0) {
       await Match.deleteMany({ _id: { $in: tournament.matches } });
+      // Their balls and other per-match rows go with them (B16).
+      await deleteMatchData(tournament.matches);
     }
 
     // Remove hub artefacts (media rows + local photo files, articles) so
