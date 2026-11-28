@@ -35,6 +35,7 @@ export default function ManageScore() {
     allowFormatEdit: true,
     allowRuleEdit: true,
     allowSquadSetup: true,
+    allowReset: true,
     SettingsComponent: MatchSettings,
     ConfirmModal,
     onToggleMenu: layout?.toggleSidebar,

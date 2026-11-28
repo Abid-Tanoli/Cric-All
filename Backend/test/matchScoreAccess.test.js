@@ -388,6 +388,121 @@ test("a removed membership loses scoring access", async () => {
 });
 
 // ---------------------------------------------------------------------------
+// Reset is fixture management, not scoring (B19, T1.6)
+// ---------------------------------------------------------------------------
+
+// Both reset routes, with a body each controller accepts, so an allowed call
+// reaches its controller and answers 200 rather than a 400 that would prove
+// nothing about the guard.
+const RESET_REQUESTS = [
+  ["POST", "/reset-innings", { inningsIndex: 0 }],
+  ["POST", "/reset-match", {}],
+];
+
+/** A live org match whose first innings already has runs on the board. */
+async function makeScoredOrgMatch(org, extra = {}) {
+  counter += 1;
+  const teams = [
+    await Team.create({ name: `Reset XI A ${counter}`, organizationRef: org._id }),
+    await Team.create({ name: `Reset XI B ${counter}`, organizationRef: org._id }),
+  ];
+  return Match.create({
+    title: "Reset XI A vs Reset XI B",
+    venue: "Ground",
+    matchType: "T20",
+    startAt: new Date(),
+    teams,
+    organizationRef: org._id,
+    organization: org.name,
+    status: "live",
+    innings: [
+      { team: teams[0], status: "live", runs: 47, wickets: 2, balls: 30 },
+      { team: teams[1], status: "upcoming" },
+    ],
+    ...extra,
+  });
+}
+
+test("a score_handler is refused both reset routes and the match keeps its score", async () => {
+  const owner = await makeUser();
+  const handler = await makeUser();
+  const org = await makeOrg(owner, "Reset Refused Club");
+  await addMember(org, handler, ["score_handler"]);
+  const match = await makeScoredOrgMatch(org);
+  const token = generateToken(handler);
+
+  for (const [method, path, body] of RESET_REQUESTS) {
+    const res = await call(method, `/matches/${match._id}${path}`, token, body);
+    assert.strictEqual(res.status, 403, `score_handler got ${res.status} on ${method} ${path}: ${JSON.stringify(res.body)}`);
+    assert.strictEqual(res.body?.requiredPermission, "create_match");
+    assert.match(res.body?.message || "", /reset/i, `${path} refusal should say why: ${res.body?.message}`);
+  }
+
+  const after = await Match.findById(match._id).lean();
+  assert.strictEqual(after.status, "live", "a refused reset must not touch the match");
+  assert.strictEqual(after.innings[0].runs, 47, "a refused reset must not wipe the innings");
+  assert.strictEqual(after.innings[0].wickets, 2);
+});
+
+test("a score_handler assigned to the match is still refused reset", async () => {
+  // Assignment widens who may score a fixture; it must not widen who may wipe it.
+  const owner = await makeUser();
+  const handler = await makeUser();
+  const org = await makeOrg(owner, "Reset Assigned Club");
+  await addMember(org, handler, ["score_handler"]);
+  const match = await makeScoredOrgMatch(org, { assignedScorers: [handler._id] });
+  const token = generateToken(handler);
+
+  const scoring = await call("PUT", `/matches/${match._id}/toss`, token, { toss: {} });
+  assert.notStrictEqual(scoring.status, 403, "the assigned scorer must still be able to score");
+
+  for (const [method, path, body] of RESET_REQUESTS) {
+    const res = await call(method, `/matches/${match._id}${path}`, token, body);
+    assert.strictEqual(res.status, 403, `assigned score_handler got ${res.status} on ${method} ${path}`);
+  }
+});
+
+test("owner, admin and manager can still reset an innings and a match", async () => {
+  const owner = await makeUser();
+  const org = await makeOrg(owner, "Reset Allowed Club");
+  const admin = await makeUser();
+  const manager = await makeUser();
+  await addMember(org, admin, ["admin"]);
+  await addMember(org, manager, ["manager"]);
+
+  for (const [user, label] of [[owner, "owner"], [admin, "admin"], [manager, "manager"]]) {
+    const match = await makeScoredOrgMatch(org);
+    const token = generateToken(user);
+
+    const innings = await call("POST", `/matches/${match._id}/reset-innings`, token, { inningsIndex: 0 });
+    assert.strictEqual(innings.status, 200, `${label} got ${innings.status} on reset-innings: ${JSON.stringify(innings.body)}`);
+    assert.strictEqual((await Match.findById(match._id).lean()).innings[0].runs, 0, `${label}'s innings reset did not apply`);
+
+    const whole = await call("POST", `/matches/${match._id}/reset-match`, token, {});
+    assert.strictEqual(whole.status, 200, `${label} got ${whole.status} on reset-match: ${JSON.stringify(whole.body)}`);
+    assert.strictEqual((await Match.findById(match._id).lean()).status, "upcoming", `${label}'s match reset did not apply`);
+  }
+});
+
+test("a platform admin can still reset any organization's match", async () => {
+  const owner = await makeUser();
+  const org = await makeOrg(owner, "Reset Platform Club");
+  const match = await makeScoredOrgMatch(org);
+  const admin = await Admin.create({
+    name: "Platform Admin",
+    email: "reset-platform-admin@openctest.dev",
+    password: "password-123",
+    role: "admin",
+  });
+  const token = generateToken(admin);
+
+  for (const [method, path, body] of RESET_REQUESTS) {
+    const res = await call(method, `/matches/${match._id}${path}`, token, body);
+    assert.strictEqual(res.status, 200, `platform admin got ${res.status} on ${method} ${path}: ${JSON.stringify(res.body)}`);
+  }
+});
+
+// ---------------------------------------------------------------------------
 // Platform admins and org-less matches
 // ---------------------------------------------------------------------------
 test("a platform admin may score any organization's match", async () => {

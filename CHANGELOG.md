@@ -17,6 +17,9 @@ Nothing merged after `1708a5b` (PR #85) yet. Work in progress is tracked in [doc
 ### Added
 - Readable UI tokens (4.5:1 colours, 16px text, 48px+ targets) and opt-in `BigButton`, `Card`, `Sheet`, `Field` components in `Frontend/Shared/ui`; nothing uses them yet (T2.2, B24)
 
+### Security
+- Scorers can no longer reset an innings or a match: the Reset buttons are hidden from them, and the reset API now needs the owner, admin or manager role (`create_match`) and answers 403 to a score handler (B19, T1.6)
+
 ## 2026-11-25
 
 ### Added
