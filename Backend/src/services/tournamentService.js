@@ -206,6 +206,26 @@ export function generateRoundRobinRounds(teams) {
 }
 
 /**
+ * T1.5: the rounds of every leg. Leg 2 replays leg 1 with each pair's order
+ * swapped and its round numbers continuing after leg 1's.
+ */
+export function roundRobinLegs(roundRows, legs = 1) {
+  const perLeg = roundRows.length;
+  const out = [];
+  for (let leg = 1; leg <= legs; leg += 1) {
+    for (const rr of roundRows) {
+      out.push({
+        round: rr.round + (leg - 1) * perLeg,
+        leg,
+        bye: rr.bye,
+        matches: leg === 1 ? rr.matches : rr.matches.map((m) => ({ team1: m.team2, team2: m.team1 })),
+      });
+    }
+  }
+  return out;
+}
+
+/**
  * Seeded knockout bracket with byes to the next power of two.
  * Round 1 keeps concrete teams (top seeds that get a bye do not appear in
  * round 1); later rounds are placeholders (team1/team2 null, `isTbd: true`).
@@ -299,11 +319,17 @@ export function knockoutStageLabel(stage, ordinal) {
 
 /**
  * Propose fixtures for a tournament without touching the DB.
- * options: { format: 'round-robin'|'group'|'knockout', startAt, gapHours, venue }
+ * options: { format: 'round-robin'|'group'|'knockout', startAt, gapHours, venue,
+ *   legs: 1|2, withFinal }
+ * `legs: 2` plays every league/group pair twice (T1.5). `withFinal` ends a
+ * league with the final as a to-be-decided row: its teams come from the points
+ * table, so it is created later, never by apply.
  * Returns a summary meant for both preview and apply.
  */
 export function planTournamentFixtures(tournament, options = {}) {
   const format = options.format || "round-robin";
+  const legs = Number(options.legs) === 2 ? 2 : 1;
+  const withFinal = options.withFinal === true || options.withFinal === "true";
   const base = options.startAt ? new Date(options.startAt) : new Date();
   const gapHours = toNumber(options.gapHours, 2);
   const venue = options.venue || tournament.venue || "";
@@ -376,8 +402,11 @@ export function planTournamentFixtures(tournament, options = {}) {
     if (!groups.length) {
       warnings.push("No groups assigned yet — assign groups before generating group fixtures.");
     }
+    if (withFinal) {
+      warnings.push("A final after a group stage comes from the knockout fixtures, not from this option.");
+    }
     for (const group of groups) {
-      const roundRows = generateRoundRobinRounds(group.teams || []);
+      const roundRows = roundRobinLegs(generateRoundRobinRounds(group.teams || []), legs);
       for (const rr of roundRows) {
         for (const match of rr.matches) {
           pushr(rr.round, group.name || "Group", match);
@@ -399,6 +428,7 @@ export function planTournamentFixtures(tournament, options = {}) {
     }
     return {
       format: "group",
+      legs,
       type: tournament.type,
       totalMatches: planned.filter((p) => !p.isTbd).length,
       tbdMatches: planned.filter((p) => p.isTbd).length,
@@ -409,7 +439,7 @@ export function planTournamentFixtures(tournament, options = {}) {
   }
 
   // league / round-robin default
-  const roundRows = generateRoundRobinRounds(tournament.teams || []);
+  const roundRows = roundRobinLegs(generateRoundRobinRounds(tournament.teams || []), legs);
   for (const rr of roundRows) {
     for (const match of rr.matches) {
       pushr(rr.round, "", match);
@@ -428,8 +458,26 @@ export function planTournamentFixtures(tournament, options = {}) {
       });
     }
   }
+  if (withFinal && (tournament.teams || []).length >= 2) {
+    // 1st v 2nd on the points table once the league is over; shown, not created.
+    planned.push({
+      matchNumber: (matchNumber += 1),
+      round: (roundRows.at(-1)?.round || 0) + 1,
+      group: "",
+      team1: null,
+      team2: null,
+      startAt: nextStart(),
+      venue,
+      isTbd: true,
+      stage: "final",
+      stageLabel: "Final",
+      seeds: ["1st on the points table", "2nd on the points table"],
+    });
+  }
   return {
     format: "round-robin",
+    legs,
+    final: withFinal,
     type: tournament.type,
     totalMatches: planned.filter((p) => !p.isTbd).length,
     tbdMatches: planned.filter((p) => p.isTbd).length,

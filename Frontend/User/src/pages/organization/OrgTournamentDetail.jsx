@@ -704,8 +704,74 @@ function GroupsTab({ orgId, tournamentId, detail, canManage, onSaved, onError })
   );
 }
 
-function FixturesTab({ orgId, tournamentId, detail, fixtures, canManage, canFixture, onSaved, onError }) {
-  const [options, setOptions] = useState({ format: "round-robin", startAt: "", gapHours: 2, venue: "" });
+// T1.5: the final of a league is 1st v 2nd on the points table, so it can only
+// be created once every league match is over.
+const FINISHED_STATUSES = new Set(["completed", "abandoned"]);
+
+function leagueFinal(detail, fixtures) {
+  const league = (fixtures || []).filter((f) => !f.stage);
+  const hasFinal = (fixtures || []).some((f) => f.stage === "final");
+  const leagueDone = league.length > 0 && league.every((f) => FINISHED_STATUSES.has(f.status));
+  const top = [...(detail.pointsTable || [])]
+    .filter((row) => idOf(row.team))
+    .sort((a, b) => (b.points || 0) - (a.points || 0) || (b.netRunRate || 0) - (a.netRunRate || 0))
+    .slice(0, 2);
+  let blocked = "";
+  if (hasFinal) blocked = "The final is already in the fixtures.";
+  else if (!leagueDone) blocked = "Every league match must be finished first.";
+  else if (top.length < 2) blocked = "The points table needs two teams. Recompute it from the Points tab.";
+  return { top, blocked };
+}
+
+function CreateFinal({ orgId, tournamentId, detail, fixtures, onSaved, onError }) {
+  const [startTime, setStartTime] = useState("");
+  const [busy, setBusy] = useState(false);
+  const { top, blocked } = leagueFinal(detail, fixtures);
+
+  const create = async () => {
+    setBusy(true);
+    onError("");
+    try {
+      await createOrgTournamentMatch(orgId, tournamentId, {
+        team1: idOf(top[0].team),
+        team2: idOf(top[1].team),
+        ...(startTime ? { startTime: new Date(startTime).toISOString() } : {}),
+        stage: "final",
+        stageLabel: "Final",
+      });
+      onSaved("Final added: 1st v 2nd on the points table.");
+    } catch (error) {
+      onError(competitionErrorMessage(error, "Could not add the final."));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className={card}>
+      <p className={eyebrow}>League final</p>
+      <h3 className={`${sectionTitle} mt-1`}>Create the final</h3>
+      <p className="mt-2 text-xs font-semibold text-cric-muted">
+        {top.length === 2
+          ? `${teamName(top[0].team)} v ${teamName(top[1].team)} (1st and 2nd on the points table)`
+          : "1st v 2nd on the points table"}
+      </p>
+      <div className="mt-3 grid max-w-md gap-3 sm:grid-cols-2">
+        <Field label="Final starts">
+          <input type="datetime-local" value={startTime} onChange={(event) => setStartTime(event.target.value)} className={input} />
+        </Field>
+      </div>
+      {blocked ? <p className="mt-2 text-xs font-semibold text-cric-muted">{blocked}</p> : null}
+      <button type="button" onClick={create} disabled={busy || Boolean(blocked)} className={`${primaryButton} mt-3`}>
+        {busy ? "Adding…" : "Create the final"}
+      </button>
+    </div>
+  );
+}
+
+export function FixturesTab({ orgId, tournamentId, detail, fixtures, canManage, canFixture, onSaved, onError }) {
+  const [options, setOptions] = useState({ format: "round-robin", startAt: "", gapHours: 2, venue: "", legs: 1, withFinal: false });
+  const roundRobinStyle = options.format === "round-robin" || options.format === "group";
   const [preview, setPreview] = useState(null);
   const [busy, setBusy] = useState(false);
   const [setupFor, setSetupFor] = useState(null);
@@ -832,7 +898,29 @@ function FixturesTab({ orgId, tournamentId, detail, fixtures, canManage, canFixt
                   maxLength={200}
                 />
               </Field>
+              {roundRobinStyle ? (
+                <Field label="Rounds">
+                  <select
+                    value={options.legs}
+                    onChange={(event) => setOptions((prev) => ({ ...prev, legs: Number(event.target.value) }))}
+                    className={input}
+                  >
+                    <option value={1}>Single round (each pair once)</option>
+                    <option value={2}>Double round (each pair twice)</option>
+                  </select>
+                </Field>
+              ) : null}
             </div>
+            {options.format === "round-robin" ? (
+              <label className="mt-3 flex items-center gap-2 text-xs font-semibold">
+                <input
+                  type="checkbox"
+                  checked={options.withFinal}
+                  onChange={(event) => setOptions((prev) => ({ ...prev, withFinal: event.target.checked }))}
+                />
+                Add a final (1st v 2nd on the points table)
+              </label>
+            ) : null}
             <div className="mt-3 flex flex-wrap gap-2">
               <button type="button" onClick={previewFixtures} disabled={busy} className={secondaryButton}>
                 Preview
@@ -844,6 +932,7 @@ function FixturesTab({ orgId, tournamentId, detail, fixtures, canManage, canFixt
             {preview ? (
               <p className="mt-3 text-xs font-semibold text-cric-muted">
                 {preview.format}: {preview.totalMatches} concrete match(es), {preview.tbdMatches} TBD
+                {preview.final ? " · plus the final (1st v 2nd), created below once the league is over" : ""}
                 {preview.warnings?.length ? ` — ${preview.warnings.join(" ")}` : ""}
               </p>
             ) : (
@@ -937,6 +1026,17 @@ function FixturesTab({ orgId, tournamentId, detail, fixtures, canManage, canFixt
               {busy ? "Saving…" : "Add fixture"}
             </button>
           </form>
+
+          {detail.type === "league" ? (
+            <CreateFinal
+              orgId={orgId}
+              tournamentId={tournamentId}
+              detail={detail}
+              fixtures={fixtures}
+              onSaved={onSaved}
+              onError={onError}
+            />
+          ) : null}
         </>
       ) : null}
 

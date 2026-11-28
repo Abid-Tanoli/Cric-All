@@ -1276,6 +1276,8 @@ export const previewTournamentFixtures = async (req, res) => {
       startAt: req.body.startAt,
       gapHours: req.body.gapHours,
       venue: req.body.venue,
+      legs: req.body.legs,
+      withFinal: req.body.withFinal,
     });
 
     res.status(200).json({ preview: plan, message: "Fixture preview generated" });
@@ -1298,17 +1300,23 @@ export const applyTournamentFixtures = async (req, res) => {
       startAt: req.body.startAt,
       gapHours: req.body.gapHours,
       venue: req.body.venue,
+      legs: req.body.legs,
+      withFinal: req.body.withFinal,
     });
 
-    // Any existing fixture with the same unordered pair blocks regeneration for
-    // that pair, whatever its status — so live/completed matches are never
-    // duplicated and never touched.
+    // A pair's existing fixtures, whatever their stage or status, cover that
+    // many of its planned meetings: the k-th planned meeting is created only if
+    // the pair has fewer than k already. So a re-apply never duplicates,
+    // live/completed matches are never touched, and a double round (T1.5) can
+    // add the second leg.
     const existingMatches = await Match.find({ tournament: id }).select("teams").lean();
-    const existingPairs = new Set(
-      existingMatches
-        .filter((m) => Array.isArray(m.teams) && m.teams.length >= 2)
-        .map((m) => fixturePairKey(m.teams[0], m.teams[1])),
-    );
+    const existingCount = new Map();
+    for (const m of existingMatches) {
+      if (!Array.isArray(m.teams) || m.teams.length < 2) continue;
+      const pairKey = fixturePairKey(m.teams[0], m.teams[1]);
+      existingCount.set(pairKey, (existingCount.get(pairKey) || 0) + 1);
+    }
+    const plannedCount = new Map();
 
     const resolvedMatchType = normalizeMatchType(tournament.format || "T20");
     const created = [];
@@ -1317,7 +1325,9 @@ export const applyTournamentFixtures = async (req, res) => {
     for (const planned of plan.matches || []) {
       if (planned.isTbd || planned.bye) continue;
       const key = fixturePairKey(planned.team1, planned.team2);
-      if (existingPairs.has(key)) {
+      const meeting = (plannedCount.get(key) || 0) + 1;
+      plannedCount.set(key, meeting);
+      if ((existingCount.get(key) || 0) >= meeting) {
         skipped.push({
           matchNumber: planned.matchNumber,
           team1: planned.team1,
@@ -1351,7 +1361,6 @@ export const applyTournamentFixtures = async (req, res) => {
         organizationRef: tournament.organizationRef || null,
       });
       await match.save();
-      existingPairs.add(key);
       created.push(match._id);
     }
 
@@ -1366,7 +1375,7 @@ export const applyTournamentFixtures = async (req, res) => {
       targetType: "tournament",
       targetId: tournament._id,
       targetLabel: tournament.name,
-      metadata: { created: created.length, skipped: skipped.length, format: plan.format },
+      metadata: { created: created.length, skipped: skipped.length, format: plan.format, legs: plan.legs || 1 },
     });
 
     try {
