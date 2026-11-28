@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import Match from "../models/Match.js";
+import { deleteMatchData } from "../services/matchData.js";
 import Event from "../models/Event.js";
 import Team from "../models/Team.js";
 import Tournament from "../models/Tournament.js";
@@ -384,6 +385,8 @@ export const deleteOrgMatch = async (req, res) => {
     }
 
     await Match.deleteOne({ _id: match._id });
+    // Officials, commentary and any other per-match rows go with it (B16).
+    await deleteMatchData([match._id]);
     if (match.event) {
       await Event.updateOne({ _id: match.event }, { $pull: { matches: match._id } });
     }

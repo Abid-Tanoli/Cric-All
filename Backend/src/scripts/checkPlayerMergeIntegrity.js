@@ -25,9 +25,9 @@ import Partnership from "../models/Partnership.js";
 import Player from "../models/Player.js";
 import Review from "../models/Review.js";
 import Team from "../models/Team.js";
-import TeamPlayerRanking from "../models/TeamPlayerRanking.js";
 import Tournament from "../models/Tournament.js";
 import { getMongoTarget } from "../utils/mongoTarget.js";
+import { DIRECT_PLAYER_REFERENCES, GLOBAL_PLAYER_REFERENCES } from "../services/playerReferences.js";
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const BACKEND_ROOT = path.resolve(SCRIPT_DIR, "../..");
@@ -35,69 +35,9 @@ dotenv.config({ path: path.join(BACKEND_ROOT, ".env"), quiet: true });
 
 const OBJECT_ID_PATTERN = /^[a-f\d]{24}$/i;
 
-const DIRECT_REFERENCES = [
-  { model: Delivery, fields: ["batsmanId", "bowlerId", "nonStrikerId", "fielderId"] },
-  { model: Ball, fields: ["batsman", "bowler", "fieldedBy"] },
-  { model: Partnership, fields: ["batsman1Id", "batsman2Id"] },
-  { model: Review, fields: ["playerReviewed"] },
-];
-
-const GLOBAL_REFERENCES = [
-  {
-    model: Team,
-    fields: ["players", "captain", "viceCaptain"],
-  },
-  {
-    model: Event,
-    fields: [
-      "eventSquads.players",
-      "eventSquads.captain",
-      "eventSquads.viceCaptain",
-      "eventSquads.wicketKeepers",
-      "eventSquads.playerChanges.outPlayer",
-      "eventSquads.playerChanges.inPlayer",
-    ],
-  },
-  {
-    model: Tournament,
-    fields: [
-      "tournamentSquads.players",
-      "tournamentSquads.captain",
-      "tournamentSquads.viceCaptain",
-      "tournamentSquads.wicketKeepers",
-      "tournamentSquads.playerChanges.outPlayer",
-      "tournamentSquads.playerChanges.inPlayer",
-      "awards.playerOfTournament",
-      "awards.bestBatsman",
-      "awards.bestBowler",
-      "officialAwards.playerOfTournament",
-      "officialAwards.topPlayers",
-      "officialAwards.bestBatsman",
-      "officialAwards.bestBowler",
-      "officialAwards.bestFielder",
-      "officialAwards.emergingPlayer",
-      "officialAwards.customAwards.player",
-    ],
-  },
-  {
-    model: Player,
-    fields: ["relations.player"],
-  },
-  {
-    model: TeamPlayerRanking,
-    fields: ["player"],
-  },
-  {
-    model: Blog,
-    fields: ["relatedId"],
-    extraFilter: { relatedType: "Player" },
-  },
-  {
-    model: CommunityPost,
-    fields: ["subject.ref"],
-    extraFilter: { "subject.type": "player" },
-  },
-];
+// Shared with the player delete guard so the two lists cannot drift apart.
+const DIRECT_REFERENCES = DIRECT_PLAYER_REFERENCES;
+const GLOBAL_REFERENCES = GLOBAL_PLAYER_REFERENCES;
 
 const idOf = (value) => String(value?._id || value || "");
 const isObjectId = (value) =>

@@ -1,4 +1,5 @@
 import Match from "../models/Match.js";
+import { deleteMatchData } from "../services/matchData.js";
 import Team from "../models/Team.js";
 import User from "../models/User.js";
 import Membership from "../models/Membership.js";
@@ -590,6 +591,8 @@ export const deleteMatch = async (req, res) => {
     const wasManual = match.source === "manual";
     const tournamentId = idOf(match.tournament) || null;
     await Match.findByIdAndDelete(req.params.id);
+    // Its balls, deliveries, commentary and other per-match rows go with it (B16).
+    await deleteMatchData([match._id]);
 
     // Keep the tournament's fixture list and points table consistent with the
     // delete (previously an orphaned id lingered in Tournament.matches).

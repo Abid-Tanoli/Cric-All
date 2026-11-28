@@ -11,6 +11,9 @@ Groups: **Added** (new), **Changed** (behaviour changed), **Fixed** (bug), **Sec
 
 Nothing merged after `1708a5b` (PR #85) yet. Work in progress is tracked in [docs/product/05-IMPLEMENTATION-PLAN.md](docs/product/05-IMPLEMENTATION-PLAN.md) (T0.1–T0.4).
 
+### Fixed
+- Deleting a player with cricket records (matches, balls, squads, awards) is refused with 409 and a merge hint; deleting a match, or the event or tournament that holds it, also removes its balls, deliveries and other per-match rows; Admin shows the refusal instead of failing silently or reporting success (B16, T0.7)
+
 ## 2026-11-25
 
 ### Added
