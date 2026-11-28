@@ -1229,7 +1229,98 @@ function SquadsTab({ orgId, tournamentId, detail, squads, canFixture, onSaved, o
   );
 }
 
-function PointsTab({ orgId, tournamentId, detail, canManage, onSaved, onError }) {
+const POINT_FIELDS = [
+  { key: "win", label: "Win" },
+  { key: "tie", label: "Tie" },
+  { key: "noResult", label: "No result" },
+];
+// Same defaults as Tournament.pointsConfig on the server.
+const DEFAULT_POINTS = { win: 2, tie: 1, noResult: 1 };
+
+function savedPoints(detail) {
+  const cfg = detail?.pointsConfig || {};
+  const pick = (key) => {
+    const value = Number(cfg[key]);
+    return cfg[key] !== undefined && cfg[key] !== null && Number.isFinite(value) && value >= 0 ? value : DEFAULT_POINTS[key];
+  };
+  return { win: pick("win"), tie: pick("tie"), noResult: pick("noResult") };
+}
+
+// T1.4: the owner sets the points per result; saving rebuilds the table on the
+// server, and the refreshed detail shows it.
+function PointsSettings({ orgId, tournamentId, detail, canManage, onSaved, onError }) {
+  const saved = savedPoints(detail);
+  const savedKey = `${saved.win}/${saved.tie}/${saved.noResult}`;
+  const [values, setValues] = useState(() => ({ win: String(saved.win), tie: String(saved.tie), noResult: String(saved.noResult) }));
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    setValues({ win: String(saved.win), tie: String(saved.tie), noResult: String(saved.noResult) });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [savedKey]);
+
+  if (!canManage) {
+    return (
+      <p className="mt-2 text-xs font-semibold text-cric-muted">
+        Points per result: Win {saved.win} · Tie {saved.tie} · No result {saved.noResult}
+      </p>
+    );
+  }
+
+  const invalid = POINT_FIELDS.some(({ key }) => {
+    const value = values[key];
+    return value === "" || !Number.isInteger(Number(value)) || Number(value) < 0;
+  });
+  const changed = POINT_FIELDS.some(({ key }) => Number(values[key]) !== saved[key]);
+
+  const save = async (event) => {
+    event.preventDefault();
+    if (invalid || !changed) return;
+    setBusy(true);
+    onError("");
+    try {
+      await updateOrgTournament(orgId, tournamentId, {
+        pointsConfig: { win: Number(values.win), tie: Number(values.tie), noResult: Number(values.noResult) },
+      });
+      onSaved("Points per result saved. The points table has been recomputed.");
+    } catch (error) {
+      onError(competitionErrorMessage(error, "Could not save the points per result."));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <form onSubmit={save} aria-label="Points per result" className="mt-4">
+      <p className={eyebrow}>Points per result</p>
+      <div className="mt-2 grid max-w-md grid-cols-3 gap-3">
+        {POINT_FIELDS.map(({ key, label }) => (
+          <Field key={key} label={label}>
+            <input
+              type="number"
+              inputMode="numeric"
+              min="0"
+              step="1"
+              value={values[key]}
+              onChange={(event) => setValues((prev) => ({ ...prev, [key]: event.target.value }))}
+              className={input}
+            />
+          </Field>
+        ))}
+      </div>
+      {invalid ? (
+        <p role="alert" className="mt-2 text-xs font-semibold text-red-600">
+          Use whole numbers, 0 or more.
+        </p>
+      ) : null}
+      <button type="submit" disabled={busy || invalid || !changed} className={`${primaryButton} mt-3`}>
+        {busy ? "Saving…" : "Save points"}
+      </button>
+    </form>
+  );
+}
+
+export function PointsTab({ orgId, tournamentId, detail, canManage, onSaved, onError }) {
   const [busy, setBusy] = useState(false);
   const rows = useMemo(
     () =>
@@ -1265,6 +1356,14 @@ function PointsTab({ orgId, tournamentId, detail, canManage, onSaved, onError })
           </button>
         ) : null}
       </div>
+      <PointsSettings
+        orgId={orgId}
+        tournamentId={tournamentId}
+        detail={detail}
+        canManage={canManage}
+        onSaved={onSaved}
+        onError={onError}
+      />
       <div className="mt-4 overflow-x-auto">
         <table className="w-full min-w-[520px] text-left text-xs">
           <thead>

@@ -11,6 +11,9 @@ Groups: **Added** (new), **Changed** (behaviour changed), **Fixed** (bug), **Sec
 
 Nothing merged after `1708a5b` (PR #85) yet. Work in progress is tracked in [docs/product/05-IMPLEMENTATION-PLAN.md](docs/product/05-IMPLEMENTATION-PLAN.md) (T0.1–T0.4).
 
+### Added
+- Club owners set the points for a win, a tie and a no result on a tournament's Points tab; saving recomputes the points table straight away (T1.4)
+
 ## 2026-11-25
 
 ### Added

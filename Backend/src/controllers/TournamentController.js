@@ -543,26 +543,34 @@ export const updateTournament = async (req, res) => {
     }
 
     await tournament.save();
-    await tournament.populate("teams", "name shortName logo");
+
+    // T1.4: new points per result rebuild the standings straight away, so the
+    // table matches the numbers the owner just saved.
+    let saved = tournament;
+    if (req.body.pointsConfig !== undefined) {
+      await recomputeTournamentPoints(tournament._id);
+      saved = (await Tournament.findById(tournament._id)) || tournament;
+    }
+    await saved.populate("teams", "name shortName logo");
 
     recordAudit({
       req,
       action: "tournament.updated",
       targetType: "tournament",
-      targetId: tournament._id,
-      targetLabel: tournament.name,
+      targetId: saved._id,
+      targetLabel: saved.name,
       metadata: { fields: Object.keys(req.body || {}) },
     });
 
     try {
       const io = getIO();
-      io.emit("tournament:updated", tournament);
+      io.emit("tournament:updated", saved);
     } catch (socketError) {
       console.log("Socket not available:", socketError.message);
     }
 
     res.status(200).json({
-      tournament,
+      tournament: saved,
       message: "Tournament updated successfully"
     });
   } catch (error) {
