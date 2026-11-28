@@ -1,9 +1,23 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import PlayerCard from "../components/PlayerCard";
+import PlayerCard, { playerRoleOf } from "../components/PlayerCard";
 import { api } from "../services/api";
 import LocationFilters, { locationQueryFromSearchParams } from "../components/LocationFilters";
 import OrgTypeFilter, { orgTypeFromSearchParams } from "../components/OrgTypeFilter";
+
+// The API returns at most 100 players a page. Search and the role filter run on
+// the loaded list, so the directory loads every page (B11: with 126 players,
+// page 2's 26 were never shown). Past MAX_PAGES it needs server-side paging.
+const PAGE_SIZE = 100;
+const MAX_PAGES = 20;
+
+// "All-Rounder" also matches the batting and bowling all-rounder roles.
+function matchesRole(player, wanted) {
+  if (!wanted) return true;
+  const role = playerRoleOf(player).toLowerCase();
+  const target = wanted.toLowerCase();
+  return target === "all-rounder" ? role.includes("all-rounder") : role === target;
+}
 
 export default function Players() {
   const [searchParams] = useSearchParams();
@@ -20,42 +34,48 @@ export default function Players() {
   const [search, setSearch] = useState("");
   const [filterTeam, setFilterTeam] = useState(teamIdFromUrl || "");
   const [filterRole, setFilterRole] = useState("");
+  const latestRequest = useRef(0);
 
   useEffect(() => {
     // Fetch Teams for the filter dropdown
     api.get("/teams")
       .then(res => setTeams(Array.isArray(res.data) ? res.data : []))
       .catch(err => console.error("Failed to fetch teams:", err));
-
-    // Initial fetch of players
-    fetchPlayers();
   }, []);
 
+  // Runs on mount too. Role and search filter the loaded list, so they do not refetch.
   useEffect(() => {
     fetchPlayers();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filterTeam, filterRole, locationKey, orgType]);
+  }, [filterTeam, locationKey, orgType]);
 
   const fetchPlayers = async () => {
+    const requestId = ++latestRequest.current;
     setLoading(true);
     try {
-      const params = { limit: 100 };
+      const params = { limit: PAGE_SIZE };
       if (filterTeam) params.team = filterTeam;
       if (orgType) params.orgType = orgType;
       Object.assign(params, locationQuery);
-      const res = await api.get("/players", { params });
-      const data = res.data;
-      setPlayers(Array.isArray(data.players) ? data.players : (Array.isArray(data) ? data : []));
+      const all = [];
+      for (let page = 1; page <= MAX_PAGES; page += 1) {
+        const { data } = await api.get("/players", { params: { ...params, page } });
+        if (requestId !== latestRequest.current) return; // a newer filter took over
+        if (Array.isArray(data)) { all.push(...data); break; }
+        const batch = Array.isArray(data?.players) ? data.players : [];
+        all.push(...batch);
+        if (batch.length === 0 || page >= (Number(data?.totalPages) || 1)) break;
+      }
+      setPlayers(all);
     } catch (err) {
       console.error("Failed to fetch players:", err);
     } finally {
-      setLoading(false);
+      if (requestId === latestRequest.current) setLoading(false);
     }
   };
 
   const filteredPlayers = players.filter(p =>
-    p.name?.toLowerCase().includes(search.toLowerCase()) &&
-    (!filterRole || p.role?.toLowerCase() === filterRole.toLowerCase())
+    p.name?.toLowerCase().includes(search.toLowerCase()) && matchesRole(p, filterRole)
   );
 
   return (

@@ -3,6 +3,9 @@ import { Link } from "react-router-dom";
 import SafeImage from "../../../Shared/components/SafeImage.jsx";
 import BattingPositionBadge from "@shared/components/BattingPositionBadge";
 
+// playingRole is the field the app saves; `role` is free text older records carry.
+export const playerRoleOf = (player) => player?.playingRole || player?.role || "";
+
 const PlayerCard = ({ player }) => {
   return (
     <div className="group relative bg-cric-card rounded-3xl shadow-sm hover:shadow-2xl border border-cric-border overflow-hidden transition-all duration-500 hover:-translate-y-1">
@@ -26,7 +29,7 @@ const PlayerCard = ({ player }) => {
           <div className="flex-1 min-w-0">
               <h4 className="font-black text-cric-text uppercase tracking-tighter truncate leading-tight group-hover:text-cric-accent transition-colors">{player.name}</h4>
               <div className="mb-1 flex flex-wrap items-center gap-1.5">
-                <p className="text-[9px] font-black text-cric-muted uppercase tracking-widest">{player.role || "Prospect"}</p>
+                <p className="text-[9px] font-black text-cric-muted uppercase tracking-widest">{playerRoleOf(player) || "Prospect"}</p>
                 <BattingPositionBadge value={player.battingPosition} />
               </div>
               <p className="text-[8px] font-bold text-cric-accent bg-cric-bg px-2 py-0.5 rounded-full inline-block uppercase tracking-wider">
