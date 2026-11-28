@@ -33,7 +33,31 @@ export const MATCH_TYPES = [
   'Test',
   'Tape Ball',
   'Super Over',
+  // T1.3 (B17): the overs come from `totalOvers` instead of the type.
+  'Custom',
 ];
+
+export const BALL_TYPES = ['hard', 'tape', 'tennis'];
+
+// T1.3: `totalOvers` travels only with matchType "Custom". Every other type
+// still fixes its own overs on save, so a "T20" cannot quietly be a 5-over match.
+const oversFields = {
+  totalOvers: z.number().int().min(1).max(50).optional(),
+  maxBowlerOvers: z.number().int().min(1).max(50).nullable().optional(),
+  ballType: z.enum(BALL_TYPES).nullable().optional(),
+};
+
+function checkOvers(body, ctx) {
+  if (body.totalOvers !== undefined && body.matchType !== 'Custom') {
+    ctx.addIssue({ code: 'custom', path: ['totalOvers'], message: 'Overs can be set only with the Custom match type' });
+  }
+  if (body.matchType === 'Custom' && body.totalOvers === undefined) {
+    ctx.addIssue({ code: 'custom', path: ['totalOvers'], message: 'A Custom match needs its number of overs (1-50)' });
+  }
+  if (body.maxBowlerOvers != null && body.totalOvers !== undefined && body.maxBowlerOvers > body.totalOvers) {
+    ctx.addIssue({ code: 'custom', path: ['maxBowlerOvers'], message: 'A bowler cannot bowl more overs than the match has' });
+  }
+}
 
 // The only statuses self-service may set. A fixture can be scheduled or called
 // off; it cannot be declared live or finished, because those states are written
@@ -81,8 +105,10 @@ export const createOrgMatchSchema = z
     series: z.string().trim().max(200).optional(),
     seriesMatchNumber: z.number().int().min(1).max(500).optional(),
     useAiCommentary: z.boolean().optional(),
+    ...oversFields,
   })
-  .strict();
+  .strict()
+  .superRefine(checkOvers);
 
 export const updateOrgMatchSchema = z
   .object({
@@ -100,9 +126,11 @@ export const updateOrgMatchSchema = z
     series: z.string().trim().max(200).optional(),
     seriesMatchNumber: z.number().int().min(1).max(500).nullable().optional(),
     useAiCommentary: z.boolean().optional(),
+    ...oversFields,
   })
   .strict()
-  .refine((body) => Object.keys(body).length > 0, { message: 'Nothing to update' });
+  .refine((body) => Object.keys(body).length > 0, { message: 'Nothing to update' })
+  .superRefine(checkOvers);
 
 // Scoring-screen toggle. Kept separate from the fixture schemas: a score_handler
 // may flip this for one match but still cannot edit the fixture itself.

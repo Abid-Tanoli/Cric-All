@@ -36,6 +36,10 @@ const MATCH_TYPE_ALIASES = { T6: "6 Overs", T8: "8 Overs" };
 export const normalizeMatchType = (format) =>
   MATCH_TYPE_ALIASES[format] || format || "T20";
 
+/** T1.3: a fixture's overs. A "Custom" tournament gives its own; others follow the format. */
+export const fixtureOvers = (tournament, matchType) =>
+  matchType === "Custom" ? Number(tournament?.totalOvers) || 20 : OVER_BY_FORMAT[matchType] || 20;
+
 /**
  * Pure conflict check for a manual fixture. Returns a reason object or null.
  *
@@ -255,7 +259,8 @@ export async function createTournamentFixture({
     matchNumber,
     venue: venue || tournament.venue,
     matchType: resolvedMatchType,
-    totalOvers: OVER_BY_FORMAT[resolvedMatchType] || 20,
+    totalOvers: fixtureOvers(tournament, resolvedMatchType),
+    ballType: tournament.ballType || null,
     // "league" is not a valid matchCategory enum value - it used to make every
     // real manual create fail validation. Keep the enum-valid default and put
     // the tournament label in matchSubcategory.

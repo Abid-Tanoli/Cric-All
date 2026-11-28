@@ -10,6 +10,9 @@ const FORMATS = {
   '6 Overs': { maxOvers: 6, maxWickets: 10, superOver: false, maxBowlerOvers: 2, powerplayEnabled: false, powerplayOvers: 0 },
   '8 Overs': { maxOvers: 8, maxWickets: 10, superOver: false, maxBowlerOvers: 2, powerplayEnabled: false, powerplayOvers: 0 },
   'Super Over': { maxOvers: 1, maxWickets: 2, superOver: true, maxBowlerOvers: 1, powerplayEnabled: false, powerplayOvers: 0 },
+  // T1.3: the overs are the match's own `totalOvers`; the bowler quota falls
+  // back to ceil(overs / 5) in bowlerRules.js.
+  Custom: { maxOvers: null, oversFromMatch: true, maxWickets: 10, superOver: true, maxBowlerOvers: null, powerplayEnabled: false, powerplayOvers: 0 },
 };
 
 const MATCH_STATES = [
@@ -602,10 +605,18 @@ class ScoringEngine {
   // INNINGS COMPLETE
   // ══════════════════════════════════════════════════════════════════════════════
 
+  /** The overs an innings may last, or null when only wickets/declaration end it. */
+  _oversLimit() {
+    if (this.format.maxOvers !== null) return this.format.maxOvers;
+    if (!this.format.oversFromMatch) return null;
+    const overs = Number(this.match.totalOvers);
+    return Number.isInteger(overs) && overs > 0 ? overs : null;
+  }
+
   _checkInningsComplete(innings, inningsIndex) {
     if (innings.status === 'completed') return true;
     if (innings.wickets >= this.format.maxWickets) return true;
-    const mo = this.format.maxOvers;
+    const mo = this._oversLimit();
     if (mo !== null) { const co = Math.floor(innings.balls / 6); if (co >= mo && innings.balls % 6 === 0) return true; }
     if (inningsIndex === 1 && innings.target && innings.runs >= innings.target) return true;
     if (innings.isDeclared) return true;
@@ -869,7 +880,7 @@ class ScoringEngine {
   declareInnings(inningsIndex) {
     const inn = this.match.innings[inningsIndex];
     if (!inn) throw new Error('Innings not found');
-    if (this.format.maxOvers !== null) throw new Error('Declaration only allowed in Test matches');
+    if (this._oversLimit() !== null) throw new Error('Declaration only allowed in Test matches');
     inn.isDeclared = true;
     inn.status = 'completed';
     this.events.push({ type: 'declaration', innings: inningsIndex, runs: inn.runs, wickets: inn.wickets });

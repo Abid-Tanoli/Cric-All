@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import {
+  BALL_TYPE_OPTIONS,
   SERIES_FORMATS,
   SERIES_STATUSES,
   TOURNAMENT_FORMATS,
@@ -34,6 +35,8 @@ const emptyTournament = {
   venue: "",
   teams: [],
   twelfthManEnabled: false,
+  totalOvers: "",
+  ballType: "",
 };
 
 const emptySeries = {
@@ -99,6 +102,8 @@ export function TournamentForm({ initial, availableTeams = [], onSave, onCancel 
           venue: initial.venue || "",
           teams: uniqueIds(initial.teams || []),
           twelfthManEnabled: initial.rules?.twelfthManEnabled === true,
+          totalOvers: initial.totalOvers ?? "",
+          ballType: initial.ballType || "",
         }
       : {}),
   }));
@@ -158,7 +163,21 @@ export function TournamentForm({ initial, availableTeams = [], onSave, onCancel 
           <select value={form.format} onChange={set("format")} className={input}>
             {TOURNAMENT_FORMATS.map((format) => (
               <option key={format} value={format}>
-                {format}
+                {format === "Custom" ? "Custom overs" : format}
+              </option>
+            ))}
+          </select>
+        </Field>
+        {form.format === "Custom" ? (
+          <Field label="Overs per innings *" hint="Every fixture of this tournament is played over this many overs.">
+            <input type="number" inputMode="numeric" min={1} max={50} step={1} value={form.totalOvers} onChange={set("totalOvers")} className={input} required />
+          </Field>
+        ) : null}
+        <Field label="Ball type">
+          <select value={form.ballType} onChange={set("ballType")} className={input}>
+            {BALL_TYPE_OPTIONS.map((ball) => (
+              <option key={ball.value} value={ball.value}>
+                {ball.label}
               </option>
             ))}
           </select>

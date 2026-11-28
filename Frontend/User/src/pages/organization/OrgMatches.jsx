@@ -32,9 +32,76 @@ import {
   sectionTitle,
 } from "./orgStyles";
 
-const MATCH_TYPES = ["T10", "T20", "6 Overs", "8 Overs", "ODI", "Test", "Tape Ball", "Super Over"];
+// "Custom" (T1.3): the owner types the overs; every other type fixes its own.
+const MATCH_TYPES = ["T10", "T20", "6 Overs", "8 Overs", "ODI", "Test", "Tape Ball", "Super Over", "Custom"];
+const MATCH_TYPE_LABELS = { Custom: "Custom overs" };
+const BALL_TYPES = [
+  { value: "", label: "Not set" },
+  { value: "hard", label: "Hard ball" },
+  { value: "tape", label: "Tape ball" },
+  { value: "tennis", label: "Tennis ball" },
+];
 
-const emptyMatch = { teamA: "", teamB: "", matchType: "T20", venue: "", startAt: "", eventId: "", useAiCommentary: false };
+/** "Custom · 7 overs" for a Custom match, the type itself otherwise. */
+export const formatLabel = (match) =>
+  match?.matchType === "Custom" && match.totalOvers ? `Custom · ${match.totalOvers} overs` : match?.matchType || "";
+
+const emptyMatch = {
+  teamA: "", teamB: "", matchType: "T20", venue: "", startAt: "", eventId: "", useAiCommentary: false,
+  totalOvers: "", maxBowlerOvers: "", ballType: "",
+};
+
+const wholeNumber = (value) => (value === "" || value == null ? null : Number(value));
+
+/** Client-side copy of the server's overs rules; "" when the form is fine. */
+function oversProblem(form) {
+  const overs = wholeNumber(form.totalOvers);
+  const quota = wholeNumber(form.maxBowlerOvers);
+  if (form.matchType === "Custom" && (!Number.isInteger(overs) || overs < 1 || overs > 50)) {
+    return "Enter the overs: a whole number from 1 to 50.";
+  }
+  if (quota !== null && (!Number.isInteger(quota) || quota < 1 || quota > 50)) {
+    return "Max overs per bowler must be a whole number from 1 to 50.";
+  }
+  if (form.matchType === "Custom" && quota !== null && quota > overs) {
+    return "A bowler cannot bowl more overs than the match has.";
+  }
+  return "";
+}
+
+/** The overs keys the API accepts for this form (totalOvers only with Custom). */
+function oversPayload(form, { clear = false } = {}) {
+  const quota = wholeNumber(form.maxBowlerOvers);
+  return {
+    ...(form.matchType === "Custom" ? { totalOvers: wholeNumber(form.totalOvers) } : {}),
+    ...(quota !== null ? { maxBowlerOvers: quota } : clear ? { maxBowlerOvers: null } : {}),
+    ...(form.ballType ? { ballType: form.ballType } : clear ? { ballType: null } : {}),
+  };
+}
+
+function OversFields({ form, set }) {
+  return (
+    <>
+      {form.matchType === "Custom" ? (
+        <Field label="Overs *">
+          <input type="number" inputMode="numeric" min={1} max={50} step={1} value={form.totalOvers ?? ""} onChange={set("totalOvers")} className={input} required />
+        </Field>
+      ) : null}
+      <Field label="Max overs per bowler" hint="Optional. Empty = the format's limit, or overs ÷ 5 rounded up.">
+        <input type="number" inputMode="numeric" min={1} max={50} step={1} value={form.maxBowlerOvers ?? ""} onChange={set("maxBowlerOvers")} className={input} />
+      </Field>
+      <Field label="Ball type">
+        <select value={form.ballType || ""} onChange={set("ballType")} className={input}>
+          {BALL_TYPES.map((ball) => (
+            <option key={ball.value} value={ball.value}>
+              {ball.label}
+            </option>
+          ))}
+        </select>
+      </Field>
+    </>
+  );
+}
 
 const toDateInput = (value) => (value ? new Date(value).toISOString().slice(0, 10) : "");
 
@@ -821,6 +888,11 @@ export function MatchForm({ orgId, teams, events = [], initial, seriesId, defaul
       setErr("Pick two different teams");
       return;
     }
+    const problem = oversProblem(form);
+    if (problem) {
+      setErr(problem);
+      return;
+    }
     setBusy(true);
     setErr("");
     try {
@@ -831,6 +903,7 @@ export function MatchForm({ orgId, teams, events = [], initial, seriesId, defaul
           matchType: form.matchType,
           startAt: form.startAt || undefined,
           useAiCommentary: form.useAiCommentary === true,
+          ...oversPayload(form, { clear: true }),
         };
         await updateOrgMatch(orgId, initial._id, Object.fromEntries(Object.entries(payload).filter(([, v]) => v !== undefined)));
         onDone();
@@ -839,6 +912,7 @@ export function MatchForm({ orgId, teams, events = [], initial, seriesId, defaul
           teams: [form.teamA, form.teamB],
           matchType: form.matchType,
           useAiCommentary: form.useAiCommentary === true,
+          ...oversPayload(form),
           ...(seriesId ? { series: seriesId } : {}),
           ...(form.venue.trim() ? { venue: form.venue.trim() } : {}),
           ...(form.startAt ? { startAt: new Date(form.startAt).toISOString() } : {}),
@@ -866,11 +940,12 @@ export function MatchForm({ orgId, teams, events = [], initial, seriesId, defaul
             <select value={form.matchType} onChange={set("matchType")} className={input}>
               {MATCH_TYPES.map((type) => (
                 <option key={type} value={type}>
-                  {type}
+                  {MATCH_TYPE_LABELS[type] || type}
                 </option>
               ))}
             </select>
           </Field>
+          <OversFields form={form} set={set} />
           <Field label="Venue">
             <input value={form.venue || ""} onChange={set("venue")} className={input} maxLength={200} />
           </Field>
@@ -904,11 +979,12 @@ export function MatchForm({ orgId, teams, events = [], initial, seriesId, defaul
             <select value={form.matchType} onChange={set("matchType")} className={input}>
               {MATCH_TYPES.map((type) => (
                 <option key={type} value={type}>
-                  {type}
+                  {MATCH_TYPE_LABELS[type] || type}
                 </option>
               ))}
             </select>
           </Field>
+          <OversFields form={form} set={set} />
           <Field label="Venue">
             <input value={form.venue} onChange={set("venue")} className={input} maxLength={200} />
           </Field>
@@ -1120,7 +1196,7 @@ export default function OrgMatches({ orgId, events = [], canManage = true, canSc
                       {teamName(first)} v {teamName(second)}
                     </p>
                     <p className="mt-1 text-xs font-semibold text-cric-muted">
-                      {match.matchType}
+                      {formatLabel(match)}
                       {match.venue ? ` · ${match.venue}` : ""}
                       {match.startAt ? ` · ${formatDate(match.startAt)}` : " · Date not set"}
                       {match.event ? ` · ${match.event.name}` : ""}

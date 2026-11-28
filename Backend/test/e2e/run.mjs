@@ -54,6 +54,8 @@ const FORMATS = {
   "8 Overs": { maxOvers: 8, maxWickets: 10 },
   T10: { maxOvers: 10, maxWickets: 10 },
   "Super Over": { maxOvers: 1, maxWickets: 2 },
+  // T1.3: the overs are the match's own totalOvers.
+  Custom: { maxOvers: null, oversFromMatch: true, maxWickets: 10 },
 };
 
 /**
@@ -572,30 +574,38 @@ async function main() {
   // ======================================================================
   if (wantScenario(7)) {
     const S = "Scenario 7 - other Match.matchType formats";
-    report.section(S, "`Match.js` offers eight formats. Each is created through the API and, where the format is short enough to bat out, played to completion and checked against the independent tally.");
+    report.section(S, "`Match.js` offers eight fixed formats and `Custom` (owner-set overs, T1.3). Each is created through the API and, where the format is short enough to bat out, played to completion and checked against the independent tally.");
 
-    for (const mt of ["6 Overs", "8 Overs", "T10", "T20", "ODI", "Test", "Tape Ball", "Super Over"]) {
+    const FORMAT_CASES = [
+      ...["6 Overs", "8 Overs", "T10", "T20", "ODI", "Test", "Tape Ball", "Super Over"].map((mt) => ({ mt })),
+      // T1.3: 7 overs is a count no fixed format has.
+      { mt: "Custom", extra: { totalOvers: 7, ballType: "tape" } },
+    ];
+    for (const { mt, extra } of FORMAT_CASES) {
         const cfg = FORMATS[mt];
         try {
-          const { matchId } = await createMatch({ ctx, matchType: mt, title: `fmt-${mt.replace(/\s+/g, "")}` });
+          const { matchId } = await createMatch({ ctx, matchType: mt, title: `fmt-${mt.replace(/\s+/g, "")}`, extra });
           const created = await fetchMatch(scorerApi, matchId);
+          // A Custom match plays the overs it was created with.
+          const overs = cfg?.oversFromMatch ? Number(created.totalOvers) : cfg?.maxOvers;
 
           // Storage check only. Deliberately no delivery is sent here: a probe
           // ball would land on the server but not in the local tally, putting the
           // two over counters one ball out of step and making the innings replay
           // reuse a bowler in consecutive overs.
-          report.check(S, `${mt}: created with the right matchType and overs limit`, created.matchType === mt, `matchType=${created.matchType} totalOvers=${created.totalOvers} status=${created.status}`);
+          const storedAsAsked = created.matchType === mt && (!extra?.totalOvers || created.totalOvers === extra.totalOvers);
+          report.check(S, `${mt}: created with the right matchType and overs limit`, storedAsAsked, `matchType=${created.matchType} totalOvers=${created.totalOvers} ballType=${created.ballType ?? ""} status=${created.status}`);
 
           if (!cfg) {
             report.note(S, `**${mt}**: not played out - this suite does not bat 90 overs or an unbounded innings. Creation verified.`);
             continue;
           }
-          if (cfg.maxOvers === null) {
+          if (overs === null || overs === undefined) {
             report.note(S, `**${mt}**: configured with \`maxOvers: null\`, so the innings has no overs limit and can only end on ten wickets or a declaration. Only creation was verified.`);
             continue;
           }
-          if (cfg.maxOvers > 20) {
-            report.note(S, `**${mt}**: configured for ${cfg.maxOvers} overs, which this suite does not bat out. Creation verified.`);
+          if (overs > 20) {
+            report.note(S, `**${mt}**: configured for ${overs} overs, which this suite does not bat out. Creation verified.`);
             continue;
           }
 
@@ -604,7 +614,7 @@ async function main() {
             api: scorerApi,
             matchId,
             inningsIndex: 0,
-            maxOvers: cfg.maxOvers,
+            maxOvers: overs,
             maxWickets: cfg.maxWickets,
             name: `${mt} innings`,
             bowlerIds: fmtBowlers,
@@ -614,7 +624,7 @@ async function main() {
           });
           let firstDelivery = null;
           try {
-            for (let i = 0; i < cfg.maxOvers * 6 + 2 && !d.tally.state.ended; i += 1) {
+            for (let i = 0; i < overs * 6 + 2 && !d.tally.state.ended; i += 1) {
               if (i === 0) firstDelivery = await d.send({ runs: 4 });
               else await d.send({ runs: i % 5 === 4 ? 4 : 0 });
             }
@@ -627,7 +637,11 @@ async function main() {
           const snap = d.snapshot();
           const m = await fetchMatch(scorerApi, matchId);
           const strikeMismatches = d.observations.strikeMismatches.filter((mismatch) => mismatch.delivery < d.observations.deliveries);
-          report.check(S, `${mt}: innings ended at the configured ${cfg.maxOvers} overs`, snap.ended && snap.endReason === "oversComplete", `reason=${snap.endReason} overs=${snap.overs} balls=${snap.balls} serverOvers=${m.innings?.[0]?.overs}`);
+          report.check(S, `${mt}: innings ended at the configured ${overs} overs`, snap.ended && snap.endReason === "oversComplete", `reason=${snap.endReason} overs=${snap.overs} balls=${snap.balls} serverOvers=${m.innings?.[0]?.overs}`);
+          if (cfg.oversFromMatch) {
+            const serverInnings = m.innings?.[0] || {};
+            report.check(S, `${mt}: the server closed the innings after ${overs * 6} balls`, serverInnings.status === "completed" && Number(serverInnings.balls) === overs * 6, `status=${serverInnings.status} balls=${serverInnings.balls}`);
+          }
           report.check(S, `${mt}: strike rotation agreed before innings end`, strikeMismatches.length === 0, JSON.stringify(strikeMismatches.slice(0, 3)));
           report.diff(S, `${mt}: scorecard independent tally vs server`, compareTally(snap, m.innings?.[0], { label: mt }));
         } catch (e) {

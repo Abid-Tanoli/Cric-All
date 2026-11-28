@@ -156,13 +156,16 @@ function sendError(res, error, fallback) {
 const escapeRegex = (value) => String(value).trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 const MATCH_SUMMARY_FIELDS =
-  "title venue matchType status startAt teams event organizationRef series seriesMatchNumber resultText statusText useAiCommentary";
+  "title venue matchType totalOvers maxBowlerOvers ballType status startAt teams event organizationRef series seriesMatchNumber resultText statusText useAiCommentary";
 
 const matchSummary = (match) => ({
   _id: match._id,
   title: match.title,
   venue: match.venue,
   matchType: match.matchType,
+  totalOvers: match.totalOvers ?? null,
+  maxBowlerOvers: match.maxBowlerOvers ?? null,
+  ballType: match.ballType ?? null,
   status: match.status,
   startAt: match.startAt,
   teams: (match.teams || []).map((team) => ({
@@ -213,7 +216,10 @@ export const listOrgMatches = async (req, res) => {
 
 export const createOrgMatch = async (req, res) => {
   try {
-    const { title, venue, matchType, startAt, teams, eventId, series, seriesMatchNumber, tournamentId, useAiCommentary } = req.body;
+    const {
+      title, venue, matchType, startAt, teams, eventId, series, seriesMatchNumber, tournamentId, useAiCommentary,
+      totalOvers, maxBowlerOvers, ballType,
+    } = req.body;
     // A standalone fixture needs two teams this organization owns; a fixture
     // filed under one of the org's tournaments may instead use guest teams the
     // host registered in that tournament.
@@ -246,6 +252,11 @@ export const createOrgMatch = async (req, res) => {
       title: title || `${nameOf.get(teams[0]) || "Team 1"} vs ${nameOf.get(teams[1]) || "Team 2"}`,
       venue: venue || "",
       matchType: matchType || "T20",
+      // The validator lets `totalOvers` through only with matchType "Custom";
+      // every other type sets its own overs in the pre-save hook (T1.3).
+      ...(totalOvers !== undefined ? { totalOvers } : {}),
+      maxBowlerOvers: maxBowlerOvers ?? null,
+      ballType: ballType ?? (matchType === "Tape Ball" ? "tape" : null),
       startAt,
       teams,
       event: eventId || null,

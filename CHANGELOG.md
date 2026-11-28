@@ -11,6 +11,9 @@ Groups: **Added** (new), **Changed** (behaviour changed), **Fixed** (bug), **Sec
 
 Nothing merged after `1708a5b` (PR #85) yet. Work in progress is tracked in [docs/product/05-IMPLEMENTATION-PLAN.md](docs/product/05-IMPLEMENTATION-PLAN.md) (T0.1–T0.4).
 
+### Added
+- Custom overs: a fixture or a tournament can be "Custom" with 1–50 overs, plus a ball type (hard, tape, tennis) and an optional bowler quota; overs are accepted only with "Custom", so a T20 cannot be shortened; the engine ends a Custom innings at its own overs (B17, T1.3)
+
 ## 2026-11-25
 
 ### Added

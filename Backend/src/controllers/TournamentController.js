@@ -35,7 +35,7 @@ import {
 import { invalidateTournamentStatsCache } from "../services/tournamentStats.js";
 import {
   CONTROLLER_MATCH_CATEGORY,
-  OVER_BY_FORMAT,
+  fixtureOvers,
   normalizeMatchType,
   findManualFixtureConflict,
   STAGE_VALUES,
@@ -391,9 +391,39 @@ export const getTournament = async (req, res) => {
   }
 };
 
+const BALL_TYPES = ["hard", "tape", "tennis"];
+
+/**
+ * T1.3: overs and ball type for a tournament create/update. A "Custom" format
+ * needs its overs (1-50); any other format takes them from the format, so
+ * `totalOvers` is refused there. Returns { totalOvers, ballType } or { error }.
+ */
+function resolveTournamentOvers(body = {}, current = {}) {
+  const format = body.format !== undefined ? body.format : current.format;
+  const given = body.totalOvers !== undefined && body.totalOvers !== null && body.totalOvers !== "";
+  if (given && format !== "Custom") return { error: "Overs can be set only with the Custom format" };
+
+  let totalOvers = null;
+  if (format === "Custom") {
+    totalOvers = Number(given ? body.totalOvers : current.totalOvers);
+    if (!Number.isInteger(totalOvers) || totalOvers < 1 || totalOvers > 50) {
+      return { error: "A Custom tournament needs its number of overs (1-50)" };
+    }
+  }
+
+  let ballType = current.ballType ?? null;
+  if (body.ballType !== undefined) {
+    if (body.ballType && !BALL_TYPES.includes(body.ballType)) return { error: "Ball type must be hard, tape or tennis" };
+    ballType = body.ballType || null;
+  }
+  return { totalOvers, ballType };
+}
+
 export const createTournament = async (req, res) => {
   try {
     const { name, shortName, type, startDate, endDate, teams, venue, format, status } = req.body;
+    const overs = resolveTournamentOvers(req.body);
+    if (overs.error) return res.status(400).json({ message: overs.error });
 
     if (!name || !String(name).trim()) {
       return res.status(400).json({ message: "Tournament name is required" });
@@ -435,6 +465,8 @@ export const createTournament = async (req, res) => {
       teams: teamIds,
       venue: venue || "",
       format: format || "T20",
+      totalOvers: overs.totalOvers,
+      ballType: overs.ballType,
       pointsConfig: parsePointsConfig(req.body),
       rules: { twelfthManEnabled: req.body?.rules?.twelfthManEnabled === true },
       pointsTable: teamIds.map(pointsRow),
@@ -490,6 +522,11 @@ export const updateTournament = async (req, res) => {
 
     const { name, shortName, type, startDate, endDate, teams, venue, format, status } = req.body;
 
+    // T1.3: overs and ball type follow the (possibly new) format.
+    const touchesOvers = format !== undefined || req.body.totalOvers !== undefined || req.body.ballType !== undefined;
+    const overs = touchesOvers ? resolveTournamentOvers(req.body, tournament) : null;
+    if (overs?.error) return res.status(400).json({ message: overs.error });
+
     // Team edits must still satisfy the count / existence rules.
     if (teams !== undefined) {
       const teamIds = uniqueTeamIds(teams);
@@ -521,6 +558,10 @@ export const updateTournament = async (req, res) => {
     if (endDate !== undefined) tournament.endDate = endDate;
     if (venue !== undefined) tournament.venue = venue;
     if (format !== undefined) tournament.format = format;
+    if (overs) {
+      tournament.totalOvers = overs.totalOvers;
+      tournament.ballType = overs.ballType;
+    }
     if (status !== undefined) tournament.status = status;
     if (req.body.pointsConfig !== undefined) tournament.pointsConfig = parsePointsConfig(req.body);
     if (req.body.rules && "twelfthManEnabled" in req.body.rules) {
@@ -1334,7 +1375,8 @@ export const applyTournamentFixtures = async (req, res) => {
         matchNumber: planned.matchNumber,
         venue: planned.venue || tournament.venue,
         matchType: resolvedMatchType,
-        totalOvers: OVER_BY_FORMAT[resolvedMatchType] || 20,
+        totalOvers: fixtureOvers(tournament, resolvedMatchType),
+        ballType: tournament.ballType || null,
         matchCategory: CONTROLLER_MATCH_CATEGORY,
         matchSubcategory: tournament.name,
         round: planned.round,

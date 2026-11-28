@@ -212,7 +212,8 @@ const matchSchema = new mongoose.Schema(
     },
     matchType: {
       type: String,
-      enum: ["6 Overs", "8 Overs", "T10", "T20", "ODI", "Test", "Tape Ball", "Super Over"],
+      // "Custom" (T1.3): the overs are whatever `totalOvers` says (1-50).
+      enum: ["6 Overs", "8 Overs", "T10", "T20", "ODI", "Test", "Tape Ball", "Super Over", "Custom"],
       default: "T20"
     },
     matchCategory: {
@@ -327,6 +328,12 @@ const matchSchema = new mongoose.Schema(
     // "use the format default, then ceil(totalOvers / 5)".
     maxBowlerOvers: {
       type: Number,
+      default: null,
+    },
+    // T1.3: what the match is played with. Null = not said.
+    ballType: {
+      type: String,
+      enum: ["hard", "tape", "tennis", null],
       default: null,
     },
     startAt: {
@@ -562,6 +569,10 @@ matchSchema.pre('save', function () {
       case 'Test': this.totalOvers = 90; break;
       case 'Tape Ball': this.totalOvers = 8; break;
       case 'Super Over': this.totalOvers = 1; break;
+      // T1.3: a Custom match keeps the overs it was given.
+      case 'Custom':
+        if (!Number.isInteger(this.totalOvers) || this.totalOvers < 1 || this.totalOvers > 50) this.totalOvers = 20;
+        break;
       default: this.totalOvers = 20;
     }
     if (this.matchType === 'T20' || this.matchType === 'ODI') {
