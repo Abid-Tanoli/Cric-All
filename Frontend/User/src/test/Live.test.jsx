@@ -126,6 +126,29 @@ describe("Live page", () => {
     expect(within(row("BAL")).getByText(/232\/10/)).toBeInTheDocument();
   });
 
+  // B10: Results used to come from yesterday only, so a match that finished today
+  // was in no tab at all (not live, not upcoming, not a result).
+  it("lists a match that finished today under Results", async () => {
+    renderLive([{ ...oldResult, _id: "done-today", startAt: daysFromNow(0), result: { description: "Baldia Zalmi won by 5 wickets." } }]);
+
+    expect(await screen.findByRole("heading", { name: "Results" })).toBeInTheDocument();
+    expect(screen.getByText("Baldia Zalmi won by 5 wickets.")).toBeInTheDocument();
+  });
+
+  it("lists today's results before yesterday's and leaves older ones out", async () => {
+    renderLive([
+      { ...oldResult, _id: "done-yesterday", startAt: daysFromNow(-1), result: { description: "Yesterday's result." } },
+      { ...oldResult, _id: "done-today", startAt: daysFromNow(0), result: { description: "Today's result." } },
+      oldResult,
+    ]);
+    await screen.findByRole("heading", { name: "Results" });
+
+    const today = screen.getByText("Today's result.");
+    const yesterday = screen.getByText("Yesterday's result.");
+    expect(today.compareDocumentPosition(yesterday) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.queryByText("Khan Associates won by 3 runs.")).not.toBeInTheDocument();
+  });
+
   it("explains itself instead of rendering a blank page when nothing is current", async () => {
     renderLive([oldResult]);
 
@@ -135,7 +158,7 @@ describe("Live page", () => {
     fireEvent.click(screen.getByRole("button", { name: "Live" }));
     expect(screen.getByText("No live matches right now")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Results" }));
-    expect(screen.getByText("No results from yesterday")).toBeInTheDocument();
+    expect(screen.getByText("No results from today or yesterday")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Upcoming" }));
     expect(screen.getByText("No matches scheduled for today or tomorrow")).toBeInTheDocument();
   });

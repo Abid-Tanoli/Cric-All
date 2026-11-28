@@ -683,7 +683,10 @@ export const setMOM = async (req, res) => {
     await match.populate("manOfMatch", "name role");
     await match.populate("teams", "name shortName logo");
 
-    recordAudit({
+    // B22: awaited, so the audit row exists when the answer goes out. Without the
+    // await a test that reads it straight after the request failed now and then.
+    // recordAudit never throws (it logs a failed write), so this adds no failure.
+    await recordAudit({
       req,
       action: "match.mom_set",
       targetType: "match",
