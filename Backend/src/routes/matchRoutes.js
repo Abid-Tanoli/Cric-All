@@ -111,6 +111,18 @@ const scoring = (idParam) => [protect, requireVerifiedEmail, requireMatchScoreAc
 // `score_handler` runs the innings and calls the toss; it must not appoint the
 // captain, vice-captain or wicket-keepers.
 const squad = (idParam) => [protect, requireVerifiedEmail, requireMatchAccess(idParam, PERMISSIONS.CREATE_MATCH), validateObjectId(idParam)];
+// Wiping an innings or the whole match is fixture repair, not scoring (B19): a
+// score_handler runs the innings but must not be able to erase it. Same
+// create_match gate as the squad routes (platform admins plus the club's
+// owner/admin/manager), with a refusal that names the action.
+const matchRepair = (idParam) => [
+  protect,
+  requireVerifiedEmail,
+  requireMatchAccess(idParam, PERMISSIONS.CREATE_MATCH, {
+    roleDeniedMessage: "Only the club owner, admin or manager can reset an innings or a match.",
+  }),
+  validateObjectId(idParam),
+];
 const scoringRateLimit = rateLimiter({ windowMs: 1000, max: 12 });
 
 // Admin list for the Manual Scorecard page. Literal path must be declared
@@ -153,8 +165,8 @@ router.post("/:matchId/set-bowler", ...scoring("matchId"), scoringRateLimit, val
 router.post("/:matchId/ai-commentary", ...scoring("matchId"), generateAICommentary);
 router.post("/:matchId/timeout", ...scoring("matchId"), validate(useStrategicTimeoutSchema), useStrategicTimeout);
 router.post("/:matchId/drs", ...scoring("matchId"), validate(recordDRSReviewSchema), recordDRSReview);
-router.post("/:matchId/reset-innings", ...scoring("matchId"), scoringRateLimit, validate(resetInningsSchema), resetInnings);
-router.post("/:matchId/reset-match", ...scoring("matchId"), scoringRateLimit, resetMatch);
+router.post("/:matchId/reset-innings", ...matchRepair("matchId"), scoringRateLimit, validate(resetInningsSchema), resetInnings);
+router.post("/:matchId/reset-match", ...matchRepair("matchId"), scoringRateLimit, resetMatch);
 router.post("/:matchId/retire-batsman", ...scoring("matchId"), validate(retireBatsmanSchema), retireBatsman);
 router.put("/:matchId/edit-ball", ...scoring("matchId"), scoringRateLimit, validate(editBallSchema), editBall);
 router.post("/:matchId/officials", ...adminOnly, validateObjectId("matchId"), assignMatchOfficial);
