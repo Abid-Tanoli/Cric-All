@@ -11,6 +11,9 @@ Groups: **Added** (new), **Changed** (behaviour changed), **Fixed** (bug), **Sec
 
 Nothing merged after `1708a5b` (PR #85) yet. Work in progress is tracked in [docs/product/05-IMPLEMENTATION-PLAN.md](docs/product/05-IMPLEMENTATION-PLAN.md) (T0.1–T0.4).
 
+### Fixed
+- The Players directory lists every player (it loads every page, not only the first 100) and its role filter reads the saved playing role, with "All-Rounder" covering the batting and bowling all-rounders; player cards show that role (B11, T0.8)
+
 ## 2026-11-25
 
 ### Added
