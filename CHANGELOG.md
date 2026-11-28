@@ -11,6 +11,9 @@ Groups: **Added** (new), **Changed** (behaviour changed), **Fixed** (bug), **Sec
 
 Nothing merged after `1708a5b` (PR #85) yet. Work in progress is tracked in [docs/product/05-IMPLEMENTATION-PLAN.md](docs/product/05-IMPLEMENTATION-PLAN.md) (T0.1–T0.4).
 
+### Added
+- Fixture generation can play every league or group pair twice (double round), and a league's preview can end with its final as 1st v 2nd on the points table; "Create the final" adds that match once every league match is finished. Applying again still never duplicates a fixture (T1.5)
+
 ## 2026-11-25
 
 ### Added
