@@ -96,7 +96,16 @@ export default function ManagePlayers() {
   };
 
   const handleDelete = (id) => {
-    setConfirmModal({ open: true, title: 'Delete Player', message: 'Delete this player?', confirmLabel: 'Delete', variant: 'danger', onConfirm: async () => { setConfirmModal({ open: false }); await dispatch(deletePlayer(id)); } });
+    setConfirmModal({ open: true, title: 'Delete Player', message: 'Delete this player?', confirmLabel: 'Delete', variant: 'danger', onConfirm: async () => {
+      setConfirmModal({ open: false });
+      try {
+        // unwrap() surfaces a refusal, such as a player with match records (B16),
+        // which used to fail silently and leave the player on screen unexplained.
+        await dispatch(deletePlayer(id)).unwrap();
+      } catch (err) {
+        showToast(typeof err === "string" && err.trim() ? err : "Failed to delete player", 'error');
+      }
+    } });
   };
 
   const handleSelectPlayer = (playerId) => {
@@ -126,13 +135,14 @@ export default function ManagePlayers() {
   const doBulkDelete = async () => {
     try {
       setBulkDeleting(true);
-      await dispatch(bulkDeletePlayers(selectedPlayers));
+      // Without unwrap() a refused request still reported success.
+      await dispatch(bulkDeletePlayers(selectedPlayers)).unwrap();
       showToast(`Successfully deleted ${selectedPlayers.length} player(s)`, 'success');
       setSelectedPlayers([]);
       dispatch(fetchPlayers({ page, search: debouncedSearch, team: filterTeam, Campus: filterCampus }));
     } catch (err) {
       console.error(err);
-      showToast("Error deleting players: " + (err.message || "Unknown error"), 'error');
+      showToast(typeof err === "string" && err.trim() ? err : "Error deleting players", 'error');
     } finally {
       setBulkDeleting(false);
     }
@@ -291,6 +301,7 @@ export default function ManagePlayers() {
                       type="checkbox"
                       checked={selectedPlayers.includes(p._id)}
                       onChange={() => handleSelectPlayer(p._id)}
+                      aria-label={`Select ${p.name}`}
                       className="mt-1 w-5 h-5 rounded border-cric-border text-cric-accent focus:ring-cric-accent cursor-pointer"
                     />
                     {p.imageUrl ? (
@@ -375,6 +386,7 @@ export default function ManagePlayers() {
                     </button>
                     <button
                       onClick={() => handleDelete(p._id)}
+                      aria-label="Delete player"
                       className="px-3 py-2.5 bg-cric-bg hover:bg-red-600 hover:text-white text-cric-muted font-bold rounded-xl transition-all border border-cric-border"
                     >
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

@@ -1,5 +1,6 @@
 import Event from "../models/Event.js";
 import Match from "../models/Match.js";
+import { deleteMatchData } from "../services/matchData.js";
 import Team from "../models/Team.js";
 import { getIO } from "../socket/socket.js";
 import { buildMatchInnings } from "../utils/matchInnings.js";
@@ -292,12 +293,14 @@ export const deleteEvent = async (req, res) => {
     const event = await Event.findById(req.params.id);
     if (!event) return res.status(404).json({ message: "Event not found" });
 
-    // Delete matches linked in event.matches array
-    if (event.matches && event.matches.length > 0) {
-      await Match.deleteMany({ _id: { $in: event.matches } });
+    // The event's matches: listed in event.matches, or pointing at it as their
+    // tournament. Their balls and other per-match rows go with them (B16).
+    const tournamentMatchIds = await Match.find({ tournament: req.params.id }).distinct("_id");
+    const matchIds = [...(event.matches || []), ...tournamentMatchIds];
+    if (matchIds.length > 0) {
+      await Match.deleteMany({ _id: { $in: matchIds } });
+      await deleteMatchData(matchIds);
     }
-    // Also delete any matches that reference this event as tournament
-    await Match.deleteMany({ tournament: req.params.id });
 
     await Event.findByIdAndDelete(req.params.id);
     try { getIO().emit("event:deleted", { id: req.params.id }); } catch { }

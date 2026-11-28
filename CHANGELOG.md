@@ -16,6 +16,7 @@ Nothing merged after `1708a5b` (PR #85) yet. Work in progress is tracked in [doc
 - A ball or undo the scorer app sends again after a lost answer is recorded once, not twice (`clientBallId` / `clientActionId`, B6, T1.2)
 - `/live` lists a match that finished today under Results, newest first; Results used to show yesterday's matches only (B10, T0.5)
 - The Players directory lists every player (it loads every page, not only the first 100) and its role filter reads the saved playing role, with "All-Rounder" covering the batting and bowling all-rounders; player cards show that role (B11, T0.8)
+- Deleting a player with cricket records (matches, balls, squads, awards) is refused with 409 and a merge hint; deleting a match, or the event or tournament that holds it, also removes its balls, deliveries and other per-match rows; Admin shows the refusal instead of failing silently or reporting success (B16, T0.7)
 
 ### Added
 - Readable UI tokens (4.5:1 colours, 16px text, 48px+ targets) and opt-in `BigButton`, `Card`, `Sheet`, `Field` components in `Frontend/Shared/ui`; nothing uses them yet (T2.2, B24)

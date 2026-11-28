@@ -5,6 +5,7 @@ import { emitToAll } from "../socket/socket.js";
 import { deleteStoredFile } from "../utils/photoStore.js";
 import { releaseOrgUpload, releaseOrgUploads } from "../services/orgUploadService.js";
 import { recordAudit } from "../utils/audit.js";
+import { describePlayerHistory, detachDeletedPlayers, findPlayerHistory } from "../services/playerReferences.js";
 import * as playerService from "../services/playerService.js";
 import { applyPlayerFieldPolicy, resolvePlayerWriteAccess } from "../middleware/playerAccess.js";
 import { getPlayerStatsBundle } from "../services/playerStats.js";
@@ -382,12 +383,18 @@ export const deletePlayer = async (req, res) => {
       });
     }
 
-    if (player.team) {
-      await Team.findByIdAndUpdate(
-        player.team,
-        { $pull: { players: player._id } }
-      );
+    // B16: a player who appears in matches, balls, squads or awards is merged,
+    // never deleted, or those records would point at nobody.
+    const history = await findPlayerHistory(player._id);
+    if (Object.keys(history).length) {
+      return res.status(409).json({
+        message: `${player.name} has cricket records (${describePlayerHistory(history)}). Merge this player into the right profile instead of deleting.`,
+        code: "PLAYER_HAS_HISTORY",
+        references: history,
+      });
     }
+
+    await detachDeletedPlayers([player._id]);
     await Player.findByIdAndDelete(req.params.id);
     if (player.imageUrl) {
       await releaseOrgUpload(player.imageUrl, access.organization).catch(() => {});
@@ -420,23 +427,25 @@ export const bulkDeletePlayers = async (req, res) => {
       return res.status(400).json({ message: "Player IDs array is required" });
     }
 
-    // Get all players to be deleted to find their teams
     const players = await Player.find({ _id: { $in: playerIds } });
 
-    // Get unique team IDs
-    const teamIds = [...new Set(
-      players
-        .filter(p => p.team)
-        .map(p => p.team.toString())
-    )];
-
-    // Remove players from their teams
-    for (const teamId of teamIds) {
-      await Team.findByIdAndUpdate(
-        teamId,
-        { $pull: { players: { $in: playerIds } } }
-      );
+    // B16: if any selected player has cricket records, delete nobody.
+    const blocked = [];
+    for (const player of players) {
+      const references = await findPlayerHistory(player._id);
+      if (Object.keys(references).length) blocked.push({ _id: player._id, name: player.name, references });
     }
+    if (blocked.length) {
+      const names = blocked.slice(0, 5).map((p) => p.name).join(", ");
+      return res.status(409).json({
+        message: `${blocked.length} selected player${blocked.length === 1 ? " has" : "s have"} cricket records (${names}${blocked.length > 5 ? ", ..." : ""}). Merge ${blocked.length === 1 ? "that player" : "them"} instead of deleting. Nothing was deleted.`,
+        code: "PLAYER_HAS_HISTORY",
+        blocked,
+      });
+    }
+
+    // Squad lists, captain/vice-captain and other players' relations.
+    await detachDeletedPlayers(players.map((p) => p._id));
 
     // Delete all players
     const result = await Player.deleteMany({ _id: { $in: playerIds } });
