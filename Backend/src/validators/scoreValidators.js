@@ -44,6 +44,9 @@ export const updateScoreSchema = z.object({
   fieldedByPosition: z.string().default(""),
   shotTypeName: z.string().default(""),
   isAppeal: z.boolean().default(false),
+  // Sent unchanged on every retry of one ball, so a retry is recorded once
+  // (B6). Optional: an older client sends none and scores as before.
+  clientBallId: z.string().uuid().optional(),
 });
 
 export const editCommentarySchema = z.object({
@@ -66,6 +69,8 @@ export const handleFieldClickSchema = z.object({
 
 export const revertLastBallSchema = z.object({
   inningsIndex: z.number().int().min(0),
+  // Same idea as clientBallId: a retried undo takes back one ball, not two.
+  clientActionId: z.string().uuid().optional(),
 });
 
 export const setBowlerSchema = z.object({

@@ -651,12 +651,18 @@ export default function ManageScore({ matchId, tabId }) {
                                     <button type="button" onClick={handleEndInnings} className="score-touch-btn rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-3 text-xs font-black uppercase tracking-widest text-red-500 hover:bg-red-500 hover:text-white">
                                         End innings
                                     </button>
-                                    <button type="button" onClick={handleResetInnings} className="score-touch-btn rounded-xl border border-cric-border bg-cric-bg px-3 py-3 text-xs font-black uppercase tracking-widest text-cric-muted hover:border-cric-accent">
-                                        Reset innings
-                                    </button>
-                                    <button type="button" onClick={handleResetMatch} className="score-touch-btn rounded-xl border border-red-500/30 bg-red-600 px-3 py-3 text-xs font-black uppercase tracking-widest text-white hover:bg-red-700">
-                                        Reset match
-                                    </button>
+                                    {/* B19: reset wipes the match, so it is not a scorer's button.
+                                        The host page sets allowReset only for create_match roles. */}
+                                    {adapters.allowReset && (
+                                        <>
+                                            <button type="button" onClick={handleResetInnings} className="score-touch-btn rounded-xl border border-cric-border bg-cric-bg px-3 py-3 text-xs font-black uppercase tracking-widest text-cric-muted hover:border-cric-accent">
+                                                Reset innings
+                                            </button>
+                                            <button type="button" onClick={handleResetMatch} className="score-touch-btn rounded-xl border border-red-500/30 bg-red-600 px-3 py-3 text-xs font-black uppercase tracking-widest text-white hover:bg-red-700">
+                                                Reset match
+                                            </button>
+                                        </>
+                                    )}
                                 </div>
                             </div>
                         </div>

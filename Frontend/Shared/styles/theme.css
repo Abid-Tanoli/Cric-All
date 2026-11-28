@@ -63,3 +63,231 @@ h1, h2, h3, .font-raj {
 
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* ─── Readable UI (T2.2) ───────────────────────────────────────────────────────
+   Opt-in tokens and classes for Frontend/Shared/ui (BigButton, Card, Field,
+   Sheet). Only `.ui-*` classes and `--ui-*` tokens live here, so pages that do
+   not use them look exactly as before. Rules: 03-UI-UX.md sections 4 and 9.
+
+   - Every text/background pair is at least 4.5:1 (WCAG 2.2 AA), in light and
+     dark. Light is the default (sunlight); `.dark` on <html> switches.
+   - Text is 16px, never below 14px, never uppercase.
+   - Targets are at least 48px; buttons and fields 56px; scoring pad 64px.
+   - Every font-size here is !important on purpose: both apps' index.css force
+     `p, li, button, input, select, textarea` to 11px with !important at 360px
+     wide. A class selector with !important wins over those element selectors,
+     so the new components keep their size at 360px. */
+:root {
+  --ui-bg: #f8fafc;
+  --ui-surface: #ffffff;
+  --ui-text: #0f172a;
+  --ui-text-muted: #475569;
+  --ui-border: #64748b;
+  --ui-divider: #e2e8f0;
+  --ui-primary: #c2410c;
+  --ui-on-primary: #ffffff;
+  --ui-success: #15803d;
+  --ui-on-success: #ffffff;
+  --ui-danger: #b91c1c;
+  --ui-on-danger: #ffffff;
+  --ui-disabled: #e2e8f0;
+  --ui-on-disabled: #475569;
+  --ui-focus: #c2410c;
+  --ui-overlay: rgba(15, 23, 42, 0.6);
+
+  --ui-font-family: 'Inter', system-ui, sans-serif;
+  --ui-font-family-urdu: 'Noto Naskh Arabic', 'Noto Nastaliq Urdu', serif;
+  --ui-font-size-small: 0.875rem;
+  --ui-font-size-body: 1rem;
+  --ui-font-size-button: 1.125rem;
+  --ui-font-size-title: 1.25rem;
+  --ui-font-size-pad: 1.5rem;
+  --ui-font-size-score: 2.5rem;
+  --ui-font-size-urdu: 0.9375rem;
+  --ui-line-height-urdu: 1.8;
+
+  --ui-target-min: 48px;
+  --ui-button-height: 56px;
+  --ui-field-height: 56px;
+  --ui-pad-height: 64px;
+  --ui-gap: 8px;
+  --ui-space-1: 4px;
+  --ui-space-2: 8px;
+  --ui-space-3: 12px;
+  --ui-space-4: 16px;
+  --ui-space-5: 24px;
+  --ui-radius: 12px;
+}
+
+.dark {
+  --ui-bg: #0a0e14;
+  --ui-surface: #141b24;
+  --ui-text: #e2e8f0;
+  --ui-text-muted: #94a3b8;
+  --ui-border: #94a3b8;
+  --ui-divider: rgba(255, 255, 255, 0.12);
+  --ui-primary: #ff6b35;
+  --ui-on-primary: #0a0e14;
+  --ui-success: #4ade80;
+  --ui-on-success: #0a0e14;
+  --ui-danger: #f87171;
+  --ui-on-danger: #0a0e14;
+  --ui-disabled: #1e293b;
+  --ui-on-disabled: #94a3b8;
+  --ui-focus: #ff6b35;
+  --ui-overlay: rgba(0, 0, 0, 0.7);
+}
+
+/* BigButton: one primary per screen, the rest secondary. */
+.ui-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ui-gap);
+  min-height: var(--ui-button-height);
+  min-width: var(--ui-target-min);
+  padding: 0 var(--ui-space-4);
+  border: 2px solid transparent;
+  border-radius: var(--ui-radius);
+  font-family: var(--ui-font-family);
+  font-size: var(--ui-font-size-button) !important;
+  font-weight: 700;
+  line-height: 1.25;
+  text-align: center;
+  text-transform: none;
+  letter-spacing: normal;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.ui-button--primary { background-color: var(--ui-primary); color: var(--ui-on-primary); }
+.ui-button--secondary { background-color: var(--ui-surface); color: var(--ui-text); border-color: var(--ui-border); }
+.ui-button--danger { background-color: var(--ui-danger); color: var(--ui-on-danger); }
+.ui-button--success { background-color: var(--ui-success); color: var(--ui-on-success); }
+.ui-button--pad { min-height: var(--ui-pad-height); font-size: var(--ui-font-size-pad) !important; }
+.ui-button--block { display: flex; width: 100%; }
+.ui-button:focus-visible { outline: 3px solid var(--ui-focus); outline-offset: 2px; }
+.ui-button:disabled,
+.ui-button[aria-disabled="true"] {
+  background-color: var(--ui-disabled);
+  color: var(--ui-on-disabled);
+  border-color: transparent;
+  cursor: not-allowed;
+}
+.ui-button__icon { display: inline-flex; flex: none; width: 1.25em; height: 1.25em; }
+.ui-button__icon > svg { width: 100%; height: 100%; }
+@media (prefers-reduced-motion: no-preference) {
+  .ui-button:not(:disabled):active { transform: scale(0.98); }
+}
+
+/* Card */
+.ui-card {
+  background-color: var(--ui-surface);
+  color: var(--ui-text);
+  border: 1px solid var(--ui-divider);
+  border-radius: var(--ui-radius);
+  padding: var(--ui-space-4);
+  font-family: var(--ui-font-family);
+  font-size: var(--ui-font-size-body) !important;
+  line-height: 1.5;
+}
+.ui-card__title,
+.ui-sheet__title {
+  margin: 0 0 var(--ui-space-2);
+  font-family: var(--ui-font-family);
+  font-size: var(--ui-font-size-title) !important;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--ui-text);
+  text-transform: none;
+  letter-spacing: normal;
+}
+/* Paragraphs inside the new containers keep 16px at 360px wide too. */
+.ui-card :is(p, li, td),
+.ui-sheet :is(p, li, td) { font-size: var(--ui-font-size-body) !important; }
+
+/* Sheet: bottom sheet on phones, centred dialog from 768px. */
+.ui-sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background-color: var(--ui-overlay);
+}
+.ui-sheet {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-gap);
+  width: 100%;
+  max-width: 560px;
+  max-height: 90vh;
+  max-height: 90dvh;
+  overflow-y: auto;
+  padding: var(--ui-space-4) var(--ui-space-4) max(var(--ui-space-4), env(safe-area-inset-bottom, 0px));
+  background-color: var(--ui-surface);
+  color: var(--ui-text);
+  border-radius: var(--ui-radius) var(--ui-radius) 0 0;
+  box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.2);
+  font-family: var(--ui-font-family);
+  font-size: var(--ui-font-size-body) !important;
+  line-height: 1.5;
+}
+.ui-sheet:focus { outline: none; }
+.ui-sheet:focus-visible { outline: 3px solid var(--ui-focus); outline-offset: -3px; }
+@media (min-width: 768px) {
+  .ui-sheet-backdrop { align-items: center; padding: var(--ui-space-5); }
+  .ui-sheet { border-radius: var(--ui-radius); padding-bottom: var(--ui-space-4); }
+}
+
+/* Field: English label, control, then one Urdu help line (T2.1 fills it). */
+.ui-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-space-1);
+  font-family: var(--ui-font-family);
+  color: var(--ui-text);
+}
+.ui-field__label {
+  font-size: var(--ui-font-size-body) !important;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--ui-text);
+}
+.ui-field__control {
+  width: 100%;
+  min-height: var(--ui-field-height);
+  padding: 0 var(--ui-space-3);
+  border: 2px solid var(--ui-border);
+  border-radius: var(--ui-radius);
+  background-color: var(--ui-surface);
+  color: var(--ui-text);
+  font-family: var(--ui-font-family);
+  font-size: var(--ui-font-size-body) !important;
+  line-height: 1.4;
+}
+textarea.ui-field__control {
+  min-height: calc(var(--ui-field-height) * 2);
+  padding: var(--ui-space-3);
+  resize: vertical;
+}
+.ui-field__control::placeholder { color: var(--ui-text-muted); opacity: 1; }
+.ui-field__control:focus-visible { outline: 3px solid var(--ui-focus); outline-offset: 1px; }
+.ui-field__control[aria-invalid="true"] { border-color: var(--ui-danger); }
+.ui-field__error {
+  display: flex;
+  flex-direction: column;
+  color: var(--ui-danger);
+  font-size: var(--ui-font-size-body) !important;
+  font-weight: 600;
+  line-height: 1.4;
+}
+.ui-field__urdu {
+  display: block;
+  font-family: var(--ui-font-family-urdu);
+  font-size: var(--ui-font-size-urdu) !important;
+  line-height: var(--ui-line-height-urdu);
+  color: var(--ui-text-muted);
+}
+.ui-field__error .ui-field__urdu { color: var(--ui-danger); font-weight: 400; }
