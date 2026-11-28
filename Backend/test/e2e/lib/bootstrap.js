@@ -346,7 +346,7 @@ export async function createMatchInOtherOrg({ ctx, matchType = "T20", title = "t
  * the other formats in the `Match.matchType` enum are exercised by
  * `assessFormats()` in the runner.
  */
-export async function createMatch({ ctx, matchType = "T20", title = "fixture" }) {
+export async function createMatch({ ctx, matchType = "T20", title = "fixture", extra = {} }) {
   const res = await ctx.owner.api.post(
     `/organizations/${ctx.orgId}/matches`,
     {
@@ -354,6 +354,8 @@ export async function createMatch({ ctx, matchType = "T20", title = "fixture" })
       venue: "Local Test Ground",
       matchType,
       teams: [ctx.teams.a.id, ctx.teams.b.id],
+      // e.g. { totalOvers: 7, ballType: "tape" } for a Custom match (T1.3)
+      ...extra,
     },
     { expect: [200, 201] },
   );

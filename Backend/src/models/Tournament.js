@@ -152,9 +152,14 @@ const tournamentSchema = new mongoose.Schema(
     },
     format: {
       type: String,
-      enum: ["6 Overs", "8 Overs", "T6", "T8", "T10", "T20", "ODI", "Test"],
+      // "Custom" (T1.3): every fixture gets `totalOvers` below.
+      enum: ["6 Overs", "8 Overs", "T6", "T8", "T10", "T20", "ODI", "Test", "Custom"],
       default: "T20"
     },
+    // T1.3: the overs of a "Custom" tournament's fixtures (1-50); null otherwise.
+    totalOvers: { type: Number, min: 1, max: 50, default: null },
+    // T1.3: what the fixtures are played with. Null = not said.
+    ballType: { type: String, enum: ["hard", "tape", "tennis", null], default: null },
     // Only the creator (or a superadmin) may edit/delete this tournament. The
     // prompt's rule is owner/admin/superadmin; `createdByAdmin` is what makes
     // "owner" real on the data model.

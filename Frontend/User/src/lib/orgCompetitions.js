@@ -12,7 +12,15 @@
 
 export const TOURNAMENT_TYPES = Object.freeze(["league", "knockout", "group-stage", "mixed"]);
 
-export const TOURNAMENT_FORMATS = Object.freeze(["6 Overs", "8 Overs", "T10", "T20", "ODI", "Test"]);
+// "Custom" (T1.3): every fixture gets the tournament's own overs (1-50).
+export const TOURNAMENT_FORMATS = Object.freeze(["6 Overs", "8 Overs", "T10", "T20", "ODI", "Test", "Custom"]);
+
+export const BALL_TYPE_OPTIONS = Object.freeze([
+  { value: "", label: "Not set" },
+  { value: "hard", label: "Hard ball" },
+  { value: "tape", label: "Tape ball" },
+  { value: "tennis", label: "Tennis ball" },
+]);
 
 export const TOURNAMENT_STATUSES = Object.freeze(["upcoming", "live", "completed"]);
 
@@ -95,6 +103,13 @@ export function validateTournamentForm(form = {}) {
     errors.teams = `A ${type.replace("-", " ")} needs at least ${min} teams (${teamCount} selected).`;
   }
 
+  if (trimmed(form.format) === "Custom") {
+    const overs = Number(form.totalOvers);
+    if (form.totalOvers === "" || form.totalOvers == null || !Number.isInteger(overs) || overs < 1 || overs > 50) {
+      errors.totalOvers = "Enter the overs: a whole number from 1 to 50.";
+    }
+  }
+
   const first = Object.values(errors)[0] || "";
   return { ok: !first, errors, message: first };
 }
@@ -125,11 +140,15 @@ export function validateSeriesForm(form = {}) {
 export function buildTournamentPayload(form = {}) {
   const name = trimmed(form.name);
   const type = trimmed(form.type) || "league";
+  const format = trimmed(form.format) || "T20";
   return {
     name,
     shortName: trimmed(form.shortName) || name.substring(0, 10).toUpperCase(),
     type,
-    format: trimmed(form.format) || "T20",
+    format,
+    // T1.3: the server takes overs only with "Custom".
+    ...(format === "Custom" ? { totalOvers: Number(form.totalOvers) } : {}),
+    ballType: trimmed(form.ballType) || null,
     startDate: isoOrUndefined(form.startDate),
     endDate: isoOrUndefined(form.endDate),
     venue: trimmed(form.venue),
