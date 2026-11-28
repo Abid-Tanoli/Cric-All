@@ -11,6 +11,12 @@ Groups: **Added** (new), **Changed** (behaviour changed), **Fixed** (bug), **Sec
 
 Nothing merged after `1708a5b` (PR #85) yet. Work in progress is tracked in [docs/product/05-IMPLEMENTATION-PLAN.md](docs/product/05-IMPLEMENTATION-PLAN.md) (T0.1–T0.4).
 
+### Fixed
+- The player-of-the-match audit entry is written before the answer is sent; the `tournamentAwards` audit test no longer fails now and then (B22)
+
+### Added
+- Readable UI tokens (4.5:1 colours, 16px text, 48px+ targets) and opt-in `BigButton`, `Card`, `Sheet`, `Field` components in `Frontend/Shared/ui`; nothing uses them yet (T2.2, B24)
+
 ### Security
 - Scorers can no longer reset an innings or a match: the Reset buttons are hidden from them, and the reset API now needs the owner, admin or manager role (`create_match`) and answers 403 to a score handler (B19, T1.6)
 
