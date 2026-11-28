@@ -29,29 +29,29 @@ Tri-series ki tareekh par tarteeb: [07-TRI-SERIES.md](07-TRI-SERIES.md) §3.
 | T0.2 | Team/player update se data na mite (B4). **T0.1 ke saath ek hi deploy**; files alag | `fix/update-defaults` | **MERGED** PR #87 (`e630fac`, 26 Nov). Deploy baqi | `safeParse({})` = `{}`; chhupi team chhupi rahe; Admin stats update se location na mite | S | — |
 | T0.3 | Purani copy, `/live` (B9) | `fix/public-site-leftover-copy` | **MERGED** PR #88 (`8577d58`, 26 Nov). Deploy baqi | Live par `/live` aur Home ki copy dekhein | S | — |
 | T0.4 | Socket, DLS (B12, B13) | `fix/socket-broadcast-and-dead-dls` | **MERGED** PR #89 (`8385e5e`, 26 Nov). Deploy baqi | Live score bina login chale | S | — |
-| T0.5 | Home aur `/live` par score sahi team (B8, B10) | `fix/home-score-attribution` | **MERGED** PR #92 (`46ff229`, 27 Nov): B8. **B10 baqi** (aaj khatam hua match `/live` ke kisi tab mein nahi). Deploy baqi | Innings `innings.team` se juri | S | T0.3 |
+| T0.5 | Home aur `/live` par score sahi team (B8, B10) | `fix/home-score-attribution` | **MERGED** PR #92 (`46ff229`, 27 Nov): B8. **B10 TAYYAR** (28 Nov) PR #99 (`18e618f`): Results mein aaj aur kal ke match. Deploy baqi | Innings `innings.team` se juri | S | T0.3 |
 | T0.6 | Data safai, 24 rows | — | **Faisle ho gaye** (27 Nov): 24 rows manzoor; list ki 6 test/atki records wali rows hatani hain. Backup ka tareeqa PR #93 (`f7e7001`) mein theek hua. VPS par run baqi | Har row par faisla | S | T0.9 |
-| T0.7 | Player merge ke baqi fields (B15), delete guards (B16) | `fix/merge-official-awards-refs` | **MERGED** PR #94 (`415b0cd`, 27 Nov): merge ke fields (B15). **Delete guards (B16) baqi**: controllers | Test: award wala player sahi mile | M | — |
-| T0.8 | Players role filter/pagination (B11) | `fix/players-list` | `Players.jsx`, player list API | 126/126, filter kaam kare | S | T0.3 |
+| T0.7 | Player merge ke baqi fields (B15), delete guards (B16) | `fix/merge-official-awards-refs` | **MERGED** PR #94 (`415b0cd`, 27 Nov): merge ke fields (B15). **B16 TAYYAR** (28 Nov) PR #100 (`258f20d`): record wala player 409 + merge ka mashwara; match ke saath us ki balls bhi | Test: award wala player sahi mile | M | — |
+| T0.8 | Players role filter/pagination (B11) | `fix/players-list` | **TAYYAR** (28 Nov) PR #101 (`5219572`): sab pages, `playingRole` filter | 126/126, filter kaam kare | S | T0.3 |
 | T0.9 | **Malik:** credentials, off-site backup + restore test, SMTP, `PUBLIC_*_URL` | — | VPS | Restore chala kar dekha | — | — |
 
 ### M1 Sahi hisaab (tri-series)
 | ID | Kaam | Branch | Files | Mukammal jab | Size | Depend |
 |---|---|---|---|---|---|---|
 | T1.1 | NRR, abandoned points, ek helper (B1–B3) | `fix/nrr-points` | **MERGED** PR #90 (`fb2526e`, 26 Nov). **ICC all-out qaida: TAY, rakhna hai** (Abid, 26 Nov). Deploy baqi | Deploy ke baad `stats:recompute` dry-run diff Abid ko, phir backup + `--apply` | M | — |
-| T1.2 | `clientBallId`, dohri ball band (B6) | `feat/idempotent-balls` | `scoreController.js`, `scoreValidators.js`, `Match.js`, `useMatchScoring.js` | 08 §2; e2e pass | M | — |
-| T1.3 | Custom overs, ball type, quota (B17) | `feat/custom-overs` | TRD §4.2 | 7-over match shuru se akhir tak | M | — |
-| T1.4 | Points setting owner UI mein | `feat/points-config-ui` | `OrgTournamentDetail.jsx`, `orgCompetitionsController.js` | 3 hindse save, table badle | S | T1.1 |
-| T1.5 | Double round + final fixtures | `feat/double-round` | `tournamentService.js`, fixtures UI | 3 teams → 6 + final | S | — |
-| T1.6 | Reset ko scorer se chhupana (B19) | `fix/scorer-danger-actions` | `ManageScore.jsx`, match routes | Scorer: nahi dikhta, API 403 | S | — |
+| T1.2 | `clientBallId`, dohri ball band (B6) | `feat/idempotent-balls` | **PR #97** (28 Nov, CI 3/3 hara). e2e 81/82: naye 4 check pass; 1 purana check `master` par bhi fail (§7) | 08 §2; e2e pass | M | — |
+| T1.3 | Custom overs, ball type, quota (B17) | `feat/custom-overs` | **TAYYAR** (28 Nov) PR #103 (`8800e0f`). TRD §4.2; e2e mein 7-over Custom match | 7-over match shuru se akhir tak | M | — |
+| T1.4 | Points setting owner UI mein | `feat/points-config-ui` | **TAYYAR** (28 Nov) PR #102 (`d8b7450`) | 3 hindse save, table badle | S | T1.1 |
+| T1.5 | Double round + final fixtures | `feat/double-round` | **TAYYAR** (28 Nov) PR #105 (`7e1746f`) | 3 teams → 6 + final | S | — |
+| T1.6 | Reset ko scorer se chhupana (B19) | `fix/scorer-danger-actions` | **PR #98** (28 Nov, CI 3/3 hara) | Scorer: nahi dikhta, API 403 | S | — |
 | T1.7 | Practice series | — | 07 §4 | Kaghaz = app | M | T1.1–T1.3 |
-| T1.8 | Socket: scoring rooms login ke saath; live dekhna anonymous hi rahe | `feat/socket-scoring-auth` | `Backend/src/socket/socket.js`, scoring ka socket join (`Frontend/Shared/scoring`) | Bina login live score aata hai; bina token scoring room join rad; scorer ka room chalta hai | M | T0.4 |
+| T1.8 | Socket: scoring rooms login ke saath; live dekhna anonymous hi rahe | `feat/socket-scoring-auth` | `Backend/src/socket/socket.js`, scoring ka socket join (`Frontend/Shared/scoring`). **Faisla baqi** (28 Nov): aaj koi scoring room nahi; kaun se events sirf scorer ko jayein | Bina login live score aata hai; bina token scoring room join rad; scorer ka room chalta hai | M | T0.4 |
 
 ### M2 Asaan bunyad
 | ID | Kaam | Branch | Files | Mukammal jab | Size | Depend |
 |---|---|---|---|---|---|---|
 | T2.1 | Forms mein Urdu madad (R1) | `feat/form-urdu-help` | TRD §3, 09; `Shared/ui/Field.jsx`, `Shared/copy/formHelp.js` | Har MUST form field par Urdu line; public pages aur scoring mein Urdu nahi | S | T2.2 |
-| T2.2 | Rang, text, button ke qaide (B24) | `feat/readable-ui` | `Shared/styles/theme.css` + naye `Shared/ui/{BigButton,Sheet,Card,Field}.jsx` | Naye components par axe saaf; screenshots | M | — |
+| T2.2 | Rang, text, button ke qaide (B24) | `feat/readable-ui` | **PR #96** (28 Nov, CI 3/3 hara). `Shared/styles/theme.css` + naye `Shared/ui/{BigButton,Sheet,Card,Field}.jsx` | Naye components par axe saaf; screenshots | M | — |
 | T2.3 | Bottom navigation, Home, flag `VITE_SIMPLE_UI` (R2) | `feat/simple-nav` | `App.jsx`, `Header.jsx`, `Home.jsx`, `config/features.js` | 03 §5; flag band = purana | M | T2.1, T2.2 |
 | T2.4 | Owner 9 tabs → 3 | `feat/simple-dashboard` | `MyOrganization.jsx` | Har purani cheez "More" mein milti hai; permissions wohi | M | T2.3 |
 | T2.5 | Lists halki (Teams, Series, Players) | `feat/simple-lists` | pages | 03 §6.9 | S | T2.2 |
@@ -61,7 +61,7 @@ Tri-series ki tareekh par tarteeb: [07-TRI-SERIES.md](07-TRI-SERIES.md) §3.
 | ID | Kaam | Branch | Files | Mukammal jab | Size | Depend |
 |---|---|---|---|---|---|---|
 | T3.1 | `recordBall(payload)` alag karna (refactor, rawaiya wohi) | `refactor/record-ball` | `useMatchScoring.js` | Purane tests + e2e bina tabdeeli pass | M | T1.2 |
-| T3.2 | Engine browser mein chal sakta hai? (jaanch, code merge nahi) | — | TRD §5.3 | 1 safhe ka jawab | S | — |
+| T3.2 | Engine browser mein chal sakta hai? (jaanch, code merge nahi) | — | **JAWAB** (28 Nov) TRD §5.3.1: haan, bina tabdeeli (PR #104, `2ed643d`) | 1 safhe ka jawab | S | — |
 | T3.3 | SimpleScorer: pad, Undo, extras (R5, R6) | `feat/simple-scorer` | `Shared/scoring/simple/*` | 360×640 bina scroll; aam ball 1 tap; 08 §3 kaam 4–5 | L | T3.1, T2.2 |
 | T3.4 | OUT sheet, agla bowler, strike | `feat/simple-wicket` | usi folder | OUT 3 taps; tamam dismissal tests | M | T3.3 |
 | T3.5 | Offline queue + sync (R7) | `feat/offline-scoring` | `Shared/scoring/offline/*`, server session | 08 §2 Offline | L | T1.2, T3.2, T3.3 |
@@ -155,3 +155,5 @@ DONE WHEN: <"Mukammal jab" column>
 
 ## 7. Progress
 Merge ke baad halat `TAYYAR → MERGED`; deploy aur jaanch ke baad row COMPLETED.md mein. `LIVE` halat yahan nahi rehti. Aaj (27 Nov): T0.1, T0.2, T0.3, T0.4, T1.1 MERGED · T0.5 MERGED, B10 baqi · T0.7 MERGED, B16 baqi · T0.6 faisle ho gaye, VPS run baqi · T0.1 live API par chalta dikha, baqi ka deploy nahi dekha · baqi NAYA.
+
+28 Nov: PR #96 (T2.2), #97 (T1.2), #98 (T1.6) khule, CI hara, merge baqi · TAYYAR, PR khule: B10 #99, B16 #100, T0.8 #101, T1.4 #102, T1.3 #103, T1.5 #105 · T3.2 ka jawab TRD §5.3.1 (#104) · T1.8 faisla baqi · e2e ka check "scoring alone does not settle the match" PR #45 (`5f62888`) se `master` par fail: target poora hone par engine match khud mukammal karta hai; check badlein ya engine, faisla malik.
