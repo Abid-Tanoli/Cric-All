@@ -14,6 +14,7 @@ Nothing merged after `1708a5b` (PR #85) yet. Work in progress is tracked in [doc
 ### Fixed
 - The player-of-the-match audit entry is written before the answer is sent; the `tournamentAwards` audit test no longer fails now and then (B22)
 - A ball or undo the scorer app sends again after a lost answer is recorded once, not twice (`clientBallId` / `clientActionId`, B6, T1.2)
+- `/live` lists a match that finished today under Results, newest first; Results used to show yesterday's matches only (B10, T0.5)
 
 ### Added
 - Readable UI tokens (4.5:1 colours, 16px text, 48px+ targets) and opt-in `BigButton`, `Card`, `Sheet`, `Field` components in `Frontend/Shared/ui`; nothing uses them yet (T2.2, B24)

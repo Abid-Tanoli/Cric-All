@@ -18,7 +18,7 @@ const isInningsBreak = (match) => String(match.status || "").startsWith("innings
 
 const EMPTY_TEXT = {
   all: "No live matches, recent results or upcoming fixtures right now",
-  results: "No results from yesterday",
+  results: "No results from today or yesterday",
   live: "No live matches right now",
   upcoming: "No matches scheduled for today or tomorrow",
 };
@@ -98,10 +98,15 @@ export default function Live() {
     return matchDate >= today && matchDate < tomorrow;
   });
 
-  const yesterdayMatches = matches.filter(m => {
-    const matchDate = new Date(m.startAt);
-    return matchDate >= yesterday && matchDate < today;
-  });
+  // Results: completed matches that started today or yesterday, newest first. They
+  // used to come from yesterday only, so a match finished today was in no tab (B10).
+  const resultMatches = matches
+    .filter(m => {
+      if (m.status !== 'completed' || !m.startAt) return false;
+      const matchDate = new Date(m.startAt);
+      return matchDate >= yesterday && matchDate < tomorrow;
+    })
+    .sort((a, b) => new Date(b.startAt) - new Date(a.startAt));
 
   const tomorrowMatches = matches.filter(m => {
     const matchDate = new Date(m.startAt);
@@ -109,7 +114,6 @@ export default function Live() {
   });
 
   const liveMatches = matches.filter(isLiveMatch);
-  const resultMatches = yesterdayMatches.filter(m => m.status === 'completed');
   const todayUpcomingMatches = todayMatches.filter(m => m.status === 'upcoming' || m.status === 'scheduled');
 
   const showResults = (activeTab === 'all' || activeTab === 'results') && resultMatches.length > 0;
