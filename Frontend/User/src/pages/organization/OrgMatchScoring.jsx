@@ -187,6 +187,8 @@ export default function OrgMatchScoring() {
     allowFormatEdit: false,
     allowRuleEdit: false,
     allowSquadSetup: canSetup,
+    // Same create_match rule the reset routes enforce: a score_handler never sees it.
+    allowReset: canSetup,
     ConfirmModal: ScoringConfirmModal,
   }), [orgId, orgMatches, matchAllowed, canSetup, navigate]);
 

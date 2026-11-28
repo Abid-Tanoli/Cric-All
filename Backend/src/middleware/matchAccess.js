@@ -128,10 +128,12 @@ export const resolveMatchScoreAccess = (req, match) =>
 /**
  * Express guard for match write routes. `idParam` is the route parameter that
  * holds the match id, so the same guard serves `:id` and `:matchId` routes.
+ * `roleDeniedMessage` replaces the generic refusal when the caller is a member
+ * whose role lacks `permission`, so a route can say what was actually refused.
  *
  * Sets `req.matchAccess` for downstream controllers and auditing.
  */
-export function requireMatchAccess(idParam = "matchId", permission = PERMISSIONS.SCORE_MATCH) {
+export function requireMatchAccess(idParam = "matchId", permission = PERMISSIONS.SCORE_MATCH, { roleDeniedMessage } = {}) {
   return async (req, res, next) => {
     try {
       if (!req.user) return res.status(401).json({ message: "Not authorized" });
@@ -148,7 +150,7 @@ export function requireMatchAccess(idParam = "matchId", permission = PERMISSIONS
       req.matchAccess = access;
       if (!access.allowed) {
         return res.status(403).json({
-          message: access.reason,
+          message: access.code === "ORG_PERMISSION_DENIED" && roleDeniedMessage ? roleDeniedMessage : access.reason,
           code: access.code || "ORG_PERMISSION_DENIED",
           requiredPermission: access.requiredPermission || permission,
         });

@@ -46,6 +46,53 @@ export function releaseScoringLock(matchId) {
   scoringLocks.delete(String(matchId));
 }
 
+// ─── One ball, one record (B6) ───────────────────────────────────────────
+// The scorer app sends the same clientBallId on every retry of one ball, and
+// the same clientActionId on every retry of one undo. A weak network can lose
+// the answer after the ball was saved; without these ids the retry recorded a
+// second ball (or took back a second one). Match.innings[].oversHistory is the
+// record of truth, so that is where the ids are looked up.
+const REVERTED_ACTION_IDS_KEPT = 20;
+
+function findBallByClientId(innings, clientBallId) {
+  const overs = innings?.oversHistory || [];
+  for (let o = 0; o < overs.length; o += 1) {
+    const balls = overs[o]?.balls || [];
+    for (let b = 0; b < balls.length; b += 1) {
+      if (balls[b]?.clientBallId === clientBallId) {
+        const isLatest = b === balls.length - 1
+          && overs.slice(o + 1).every((later) => !later?.balls?.length);
+        return { over: overs[o], ball: balls[b], isLatest };
+      }
+    }
+  }
+  return null;
+}
+
+// The answer the first request would have had, built from what is stored.
+// The over/innings flags only apply while the ball is still the latest one.
+async function duplicateBallResponse(match, inningsIndex, clientBallId) {
+  const found = findBallByClientId(match.innings[inningsIndex], clientBallId);
+  const isLegal = !found.ball.isWide && !found.ball.isNoBall;
+  const legalBallsInOver = (found.over.balls || []).filter((b) => !b.isWide && !b.isNoBall).length;
+  const isOverComplete = found.isLatest && isLegal && legalBallsInOver >= 6;
+  const shouldEndInnings = found.isLatest
+    && computeShouldEndInnings(match.innings[inningsIndex], match, inningsIndex);
+
+  await populateFullMatch(match);
+  const stored = findBallByClientId(match.innings[inningsIndex], clientBallId);
+  return {
+    match,
+    innings: match.innings[inningsIndex],
+    currentOver: stored.over,
+    ball: stored.ball,
+    isOverComplete,
+    shouldEndInnings,
+    duplicate: true,
+    message: "Ball already recorded",
+  };
+}
+
 export const updateScore = async (req, res) => {
   const { matchId } = req.params;
   if (!acquireScoringLock(matchId)) {
@@ -86,7 +133,8 @@ export const updateScore = async (req, res) => {
       groundZone = "",
       fieldedByPosition = "",
       shotTypeName = "",
-      isAppeal = false
+      isAppeal = false,
+      clientBallId = null
     } = req.body;
 
     const match = await Match.findById(matchId)
@@ -108,6 +156,12 @@ export const updateScore = async (req, res) => {
     }
 
     const innings = match.innings[inningsIndex];
+    // A retry of a ball this innings already holds: answer from what is stored
+    // and write nothing. This runs before the status checks, because the
+    // retried ball may be the one that ended the innings or the match.
+    if (clientBallId && findBallByClientId(innings, clientBallId)) {
+      return res.status(200).json(await duplicateBallResponse(match, inningsIndex, clientBallId));
+    }
     if (["completed", "pending_tie_resolution"].includes(match.status)) {
       return res.status(409).json({ message: `Cannot score while match status is ${match.status}`, code: "MATCH_NOT_SCORABLE" });
     }
@@ -395,6 +449,15 @@ export const updateScore = async (req, res) => {
       persistedBall.shotTypeName = ball.shotTypeName;
       persistedBall.wicketCancelled = ball.wicketCancelled;
       persistedBall.freeHitNext = ball.freeHitNext;
+    }
+
+    // The engine always appends the new ball to the last over, so the id goes
+    // on the last ball of the last over.
+    if (clientBallId) {
+      const lastOver = innings.oversHistory?.[innings.oversHistory.length - 1];
+      const newBall = lastOver?.balls?.[lastOver.balls.length - 1];
+      if (newBall) newBall.clientBallId = clientBallId;
+      ball.clientBallId = clientBallId;
     }
 
     // Set current bowler on innings
@@ -1233,12 +1296,19 @@ export const revertLastBall = async (req, res) => {
     return res.status(409).json({ message: "Another scoring update is already in progress for this match", code: "SCORING_IN_PROGRESS" });
   }
   try {
-    const { inningsIndex } = req.body;
+    const { inningsIndex, clientActionId = null } = req.body;
 
     const match = await Match.findById(matchId);
     if (!match) return res.status(404).json({ message: "Match not found" });
 
     const innings = match.innings[inningsIndex];
+    // A retry of an undo already applied: answer with the current match and
+    // take nothing back. Checked first, because that undo may have taken the
+    // last ball and "No balls to revert" would read as a failure.
+    if (clientActionId && innings?.revertedActionIds?.includes(clientActionId)) {
+      await populateFullMatch(match);
+      return res.status(200).json({ match, message: "Ball already reverted", duplicate: true, postMatch: null });
+    }
     if (!innings || !innings.oversHistory || innings.oversHistory.length === 0) {
       return res.status(400).json({ message: "No balls to revert" });
     }
@@ -1430,6 +1500,12 @@ export const revertLastBall = async (req, res) => {
       if (lastHighlight && Math.abs((lastHighlight.over || 0) - highlightOver) < 1e-9) {
         match.highlights.pop();
       }
+    }
+
+    // Remember this undo, so its retry is answered without a second one.
+    if (clientActionId) {
+      innings.revertedActionIds = [...(innings.revertedActionIds || []), clientActionId]
+        .slice(-REVERTED_ACTION_IDS_KEPT);
     }
 
     match.markModified("innings");
