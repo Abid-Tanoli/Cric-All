@@ -7,7 +7,7 @@
  *   2  the free-hit restriction, on its own fixture
  *   3  an innings that is bowled out inside its overs
  *   4  a tie, then a Super Over
- *   5  negative tests over HTTP
+ *   5  negative tests over HTTP, including a retried ball and undo (B6)
  *   6  negative tests over Socket.IO
  *   7  the other `Match.matchType` formats
  *
@@ -35,6 +35,7 @@ import { createReport } from "./lib/report.js";
 import { attemptScoreOverSocket } from "./lib/socket.js";
 import { SCENARIOS, parseOnly, makeSelection } from "./lib/scenarios.js";
 import { ScoringEngine } from "../../src/services/scoring/ScoringEngine.js";
+import { randomUUID } from "node:crypto";
 
 const started = Date.now();
 const runId = `${Date.now().toString(36)}`;
@@ -454,7 +455,7 @@ async function main() {
   // ======================================================================
   if (wantScenario(5)) {
     const S = "Scenario 5 - negative tests (HTTP authorization and Laws)";
-    report.section(S, "A score must be refused without a token, with an unverified mailbox, across a tenant boundary, into a completed innings, and for the same bowler in consecutive overs.");
+    report.section(S, "A score must be refused without a token, with an unverified mailbox, across a tenant boundary, into a completed innings, and for the same bowler in consecutive overs. A retried ball or undo (same `clientBallId` / `clientActionId`) must count once.");
 
     const { matchId } = await createMatch({ ctx, matchType: "T20", title: "guard" });
     const payload = {
@@ -526,6 +527,71 @@ async function main() {
       quota.blocked = { status: e.status, body: e.body };
     }
     report.check(S, "overs-per-bowler limit enforced (maxBowlerOvers = 4 for T20)", quota.blocked !== null, quota.blocked ? `refused during over ${quota.oversBowled + 1}: ${JSON.stringify(quota.blocked.body || "").slice(0, 160)}` : `one bowler was allowed ${quota.oversBowled} overs. \`maxBowlerOvers\` is declared in ScoringEngine.FORMATS (line 2) and read nowhere else in the backend.`);
+
+    // B6: a scorer's phone that loses the answer sends the ball again with the
+    // same clientBallId. It must be recorded once. Own fixture, so the checks
+    // above do not move the counts.
+    const retryMatch = (await createMatch({ ctx, matchType: "T20", title: "retry" })).matchId;
+    const retryBall = {
+      inningsIndex: 0,
+      runs: 4,
+      batsmanOnStrikeId: ctx.teams.a.xi[0].id,
+      batsmanNonStrikeId: ctx.teams.a.xi[1].id,
+      bowlerId: ctx.teams.b.xi[7].id,
+    };
+    const scored = async () => {
+      const inn = (await fetchMatch(scorerApi, retryMatch)).innings?.[0] || {};
+      const balls = (inn.oversHistory || []).flatMap((o) => o.balls || []);
+      return { runs: Number(inn.runs || 0), legal: Number(inn.balls || 0), balls };
+    };
+
+    const ballId = randomUUID();
+    const sent = await scorerApi.post(`/matches/${retryMatch}/score`, { ...retryBall, clientBallId: ballId }, { expect: null });
+    const resent = await scorerApi.post(`/matches/${retryMatch}/score`, { ...retryBall, clientBallId: ballId }, { expect: null });
+    const afterRetry = await scored();
+    report.check(
+      S,
+      "a retried ball with the same clientBallId is recorded once",
+      sent.status === 200 && resent.status === 200 && resent.body?.duplicate === true
+        && afterRetry.runs === 4 && afterRetry.legal === 1 && afterRetry.balls.filter((b) => b.clientBallId === ballId).length === 1,
+      `first=${sent.status} retry=${resent.status} duplicate=${resent.body?.duplicate} runs=${afterRetry.runs} balls=${afterRetry.legal} storedWithId=${afterRetry.balls.filter((b) => b.clientBallId === ballId).length}`,
+    );
+
+    const pairId = randomUUID();
+    const pair = await Promise.all([
+      scorerApi.post(`/matches/${retryMatch}/score`, { ...retryBall, runs: 1, clientBallId: pairId }, { expect: null }),
+      scorerApi.post(`/matches/${retryMatch}/score`, { ...retryBall, runs: 1, clientBallId: pairId }, { expect: null }),
+    ]);
+    const afterPair = await scored();
+    const pairRecorded = pair.filter((r) => r.status === 200 && r.body?.duplicate !== true).length;
+    const pairOthersOk = pair.every((r) => r.status === 200 || (r.status === 409 && r.body?.code === "SCORING_IN_PROGRESS"));
+    report.check(
+      S,
+      "two copies of one ball sent at once record one ball",
+      pairRecorded === 1 && pairOthersOk && afterPair.runs === 5 && afterPair.legal === 2,
+      `statuses=${pair.map((r) => `${r.status}${r.body?.duplicate ? " duplicate" : ""}${r.body?.code ? ` ${r.body.code}` : ""}`).join(", ")} runs=${afterPair.runs} balls=${afterPair.legal}`,
+    );
+
+    const legacy = await scorerApi.post(`/matches/${retryMatch}/score`, { ...retryBall, runs: 2 }, { expect: null });
+    const afterLegacy = await scored();
+    report.check(
+      S,
+      "a ball without clientBallId (older app) is still recorded",
+      legacy.status === 200 && legacy.body?.duplicate !== true && afterLegacy.runs === 7 && afterLegacy.legal === 3,
+      `status=${legacy.status} runs=${afterLegacy.runs} balls=${afterLegacy.legal}`,
+    );
+
+    const undoId = randomUUID();
+    const undone = await scorerApi.post(`/matches/${retryMatch}/revert-ball`, { inningsIndex: 0, clientActionId: undoId }, { expect: null });
+    const undoneAgain = await scorerApi.post(`/matches/${retryMatch}/revert-ball`, { inningsIndex: 0, clientActionId: undoId }, { expect: null });
+    const afterUndo = await scored();
+    report.check(
+      S,
+      "a retried undo with the same clientActionId takes back one ball",
+      undone.status === 200 && undoneAgain.status === 200 && undoneAgain.body?.duplicate === true
+        && afterUndo.runs === 5 && afterUndo.legal === 2,
+      `first=${undone.status} retry=${undoneAgain.status} duplicate=${undoneAgain.body?.duplicate} runs=${afterUndo.runs} balls=${afterUndo.legal}`,
+    );
   }
 
   // ======================================================================

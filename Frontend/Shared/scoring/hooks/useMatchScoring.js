@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { getTabIdFromRoute, FIELD_POSITIONS, WICKET_TYPES } from '../components/ScoreManagement/constants';
 import { useScoringAdapters } from '../ScoringAdapters';
 import { createScoringApi } from '../createScoringApi';
@@ -14,6 +14,40 @@ const isOverInProgress = (innings) => {
     const lastOver = overs[overs.length - 1];
     if (!lastOver || !Array.isArray(lastOver.balls) || lastOver.balls.length === 0) return false;
     return lastOver.balls.filter((ball) => !ball.isWide && !ball.isNoBall).length < 6;
+};
+
+// A version 4 UUID for one ball or one undo. crypto.randomUUID exists only on
+// HTTPS and localhost; getRandomValues also works on a plain-HTTP address.
+const newClientId = () => {
+    const c = globalThis.crypto;
+    if (typeof c?.randomUUID === 'function') return c.randomUUID();
+    const bytes = new Uint8Array(16);
+    c.getRandomValues(bytes);
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+};
+
+// Every tap gets a new id. Only a tap that repeats a failed one (same ball,
+// not yet confirmed) reuses that id, so a retry after an error or a lost
+// answer is recorded once (B6), while two identical balls in a row, even one
+// sent while the other is still in flight, stay two balls.
+const clientIdForTap = (ref, key) => {
+    const prev = ref.current;
+    if (prev?.failed && prev.key === key) {
+        prev.failed = false;
+        return prev.id;
+    }
+    ref.current = { key, id: newClientId(), failed: false };
+    return ref.current.id;
+};
+
+// Confirmed: forget the id. Failed: keep it for a retry of the same tap.
+const settleClientId = (ref, id, confirmed) => {
+    if (ref.current?.id !== id) return;
+    if (confirmed) ref.current = null;
+    else ref.current.failed = true;
 };
 
 export default function useMatchScoring({ matchId, tabId }) {
@@ -42,6 +76,8 @@ export default function useMatchScoring({ matchId, tabId }) {
     }, [adapters, selectedMatch, matchId]);
 
     const [reverting, setReverting] = useState(false);
+    const pendingBallRef = useRef(null);
+    const pendingUndoRef = useRef(null);
     const [selectedRuns, setSelectedRuns] = useState(0);
     const [selectedExtra, setSelectedExtra] = useState(null);
     const [selectedWicket, setSelectedWicket] = useState('');
@@ -507,12 +543,23 @@ export default function useMatchScoring({ matchId, tabId }) {
             nextBatsmanId: setupState.wicketNewBatter || undefined,
         };
 
+        // "The same ball" is the same innings, runs, extra and wicket. Batter
+        // and bowler ids are left out: a socket refresh after a lost answer can
+        // already show the ball, with the strike changed.
+        const clientBallId = clientIdForTap(pendingBallRef, JSON.stringify([
+            selectedMatch._id, ballData.inningsIndex, ballData.runs,
+            ballData.isWide, ballData.isNoBall, ballData.isBye, ballData.isLegBye,
+            ballData.wicketType, ballData.dismissedPlayerId ?? null, ballData.nextBatsmanId ?? null,
+        ]));
+
         try {
-            const res = await axios.post(`${API_BASE_URL}/matches/${selectedMatch._id}/score`, ballData, {
+            const res = await axios.post(`${API_BASE_URL}/matches/${selectedMatch._id}/score`, { ...ballData, clientBallId }, {
                 headers: { Authorization: `Bearer ${token}` }
             });
+            settleClientId(pendingBallRef, clientBallId, true);
+            pendingUndoRef.current = null;
 
-            setToast(res.data.isOverComplete ? "Over Completed!" : "Ball Submitted");
+            setToast(res.data.duplicate ? "Ball already recorded" : res.data.isOverComplete ? "Over Completed!" : "Ball Submitted");
             setSelectedMatch(res.data.match);
             setSelectedRuns(0);
             setSelectedExtra(null);
@@ -549,6 +596,7 @@ export default function useMatchScoring({ matchId, tabId }) {
             // forcing the new batter onto strike.
             checkRoles(res.data.match);
         } catch (err) {
+            settleClientId(pendingBallRef, clientBallId, false);
             showToast(err.response?.data?.message || err.message, 'error');
         }
     };
@@ -590,14 +638,20 @@ export default function useMatchScoring({ matchId, tabId }) {
     const doRevert = async (inningsIndex = selectedMatch?.currentInnings) => {
         if (reverting) return;
         setReverting(true);
+        // Pressing Undo again after a failed undo is the same undo, so a retry
+        // cannot take back a second ball.
+        const clientActionId = clientIdForTap(pendingUndoRef, JSON.stringify([selectedMatch._id, inningsIndex]));
         try {
             const res = await axios.post(`${API_BASE_URL}/matches/${selectedMatch._id}/revert-ball`,
-                { inningsIndex },
+                { inningsIndex, clientActionId },
                 { headers: { Authorization: `Bearer ${token}` } });
+            settleClientId(pendingUndoRef, clientActionId, true);
+            pendingBallRef.current = null;
             setSelectedMatch(res.data.match);
-            setToast("Reverted successfully");
+            setToast(res.data.duplicate ? "Undo already done" : "Reverted successfully");
             checkRoles(res.data.match);
         } catch (e) {
+            settleClientId(pendingUndoRef, clientActionId, false);
             showToast(e.response?.data?.message || e.message, 'error');
         } finally {
             setReverting(false);
